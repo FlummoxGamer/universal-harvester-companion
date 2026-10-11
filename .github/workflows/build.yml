@@ -120,9 +120,9 @@ jobs:
           {
             "versionCode": $VC,
             "versionName": "$VN",
-            "apkUrlArm64": "https://github.com/$REPO/releases/download/$TAG/$ARM64",
-            "apkUrlArm32": "https://github.com/$REPO/releases/download/$TAG/$ARM32",
-            "apkUrl": "https://github.com/$REPO/releases/download/$TAG/$ARM64",
+            "apkUrlArm64": "https://gh-proxy.com/https://github.com/$REPO/releases/download/$TAG/$ARM64",
+            "apkUrlArm32": "https://gh-proxy.com/https://github.com/$REPO/releases/download/$TAG/$ARM32",
+            "apkUrl": "https://gh-proxy.com/https://github.com/$REPO/releases/download/$TAG/$ARM64",
             "changelog": "",
             "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }
