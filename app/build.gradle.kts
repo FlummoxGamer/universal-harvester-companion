@@ -9,12 +9,12 @@ repositories {
 
 android {
     namespace = "app.harvester.companion"
-compileSdk = 36
+    compileSdk = 36
 
-defaultConfig {
-    applicationId = "app.harvester.companion"
-    minSdk = 29
-    targetSdk = 36
+    defaultConfig {
+        applicationId = "app.harvester.companion"
+        minSdk = 29
+        targetSdk = 36
         versionCode = 2
         versionName = "2.0.0"
     }
@@ -28,20 +28,6 @@ defaultConfig {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-}
-
-kotlin {
-    jvmToolchain(17)
-    compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-    }
-}
-
-android {
-    buildFeatures {
-        viewBinding = true
-        buildConfig = true
-    }
 
     splits {
         abi {
@@ -53,10 +39,10 @@ android {
     }
 
     packaging {
-    jniLibs {
-        useLegacyPackaging = true
-        pickFirsts += setOf("**/*.so")
-    }
+        jniLibs {
+            useLegacyPackaging = true
+            pickFirsts += setOf("**/*.so")
+        }
         resources {
             excludes += setOf(
                 "META-INF/*.kotlin_module",
@@ -76,6 +62,13 @@ android {
                 "proguard-rules.pro"
             )
         }
+    }
+}
+
+kotlin {
+    jvmToolchain(17)
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 
