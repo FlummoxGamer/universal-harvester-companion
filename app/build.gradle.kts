@@ -73,7 +73,7 @@ kotlin {
 }
 
 dependencies {
-    implementation("org.mozilla.geckoview:geckoview:154.0.20260812080401")
+    implementation("org.mozilla.geckoview:geckoview:156.0.20260921121718")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.constraintlayout:constraintlayout:2.2.0")
