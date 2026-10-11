@@ -244,13 +244,14 @@ class MainActivity : AppCompatActivity() {
         popup.show()
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        val url = intent.data?.toString() ?: return
-        val id = tabs.openNew(url)
-        switchTab(id)
-    }
+override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    val incoming = intent.data?.toString()
+    if (incoming.isNullOrBlank()) return
+    val id = tabs.openNew(incoming)
+    switchTab(id)
+}
 
     override fun onPause() {
         super.onPause()
