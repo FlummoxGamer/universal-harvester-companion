@@ -7,7 +7,7 @@ import java.io.File
 // B1: idForSession + per-session canGoBack state.
 // B2: switchTo no longer wipes restored state.
 // Also made singleton so sessions survive Activity recreation.
-class TabManager private constructor(ctx: Context) {
+class TabManager private constructor(private val ctx: Context) {
 
     companion object {
         private const val MAX_ALIVE = 5
