@@ -4,13 +4,12 @@ import android.content.Context
 import org.mozilla.geckoview.GeckoSession
 import java.io.File
 
-// B1: idForSession + per-session canGoBack state.
-// B2: switchTo no longer wipes restored state.
-// Also made singleton so sessions survive Activity recreation.
 class TabManager private constructor(private val ctx: Context) {
 
     companion object {
-        private const val MAX_ALIVE = 5
+        // FIX: 5 was too many for low-RAM devices. One live session at a time,
+        // matching Firefox Focus's model. Restore from disk on switch (~300ms).
+        private const val MAX_ALIVE = 1
 
         @Volatile private var INSTANCE: TabManager? = null
 
@@ -28,6 +27,9 @@ class TabManager private constructor(private val ctx: Context) {
 
     private val db = TabDb(ctx)
     private val alive = LinkedHashMap<Long, Slot>(MAX_ALIVE, 0.75f, true)
+    // FIX: sessions scheduled for close but still referenced by GeckoView.
+    // MainActivity calls drainPendingClose() after it reassigns the view.
+    private val pendingClose = mutableListOf<GeckoSession>()
     private val lock = Any()
     private var currentId: Long = -1L
 
@@ -43,7 +45,7 @@ class TabManager private constructor(private val ctx: Context) {
     fun openNew(url: String): Long {
         synchronized(lock) {
             val id = db.insert(url)
-            evictIfNeeded()
+            evictAllExcept(id)
             val s = GeckoEngine.newSession()
             alive[id] = Slot(s)
             currentId = id
@@ -56,29 +58,22 @@ class TabManager private constructor(private val ctx: Context) {
         synchronized(lock) {
             alive[id]?.let { currentId = id; return it.session }
 
-            evictIfNeeded()
-            val s = GeckoEngine.newSession()
-
-            // B2: only load a fallback URL if restore actually failed.
-            var restored = false
-            val f = stateFile(id)
-            if (f.exists()) {
-                try {
-                    val st = GeckoSession.SessionState.fromString(f.readText())
-                    if (st != null) {
-                        s.restoreState(st)
-                        restored = true
-                        UHLog.v("tabs", "restored id=$id")
-                    }
-                } catch (e: Exception) {
-                    UHLog.w("tabs", "restore failed id=$id ${e.message}")
-                }
+            // FIX: restoreState before open. Read state from disk first, then
+            // hand it to GeckoEngine.newSession which sequences it correctly.
+            val restoredState: GeckoSession.SessionState? = try {
+                val f = stateFile(id)
+                if (f.exists()) GeckoSession.SessionState.fromString(f.readText()) else null
+            } catch (e: Exception) {
+                UHLog.w("tabs", "state parse failed id=$id ${e.message}")
+                null
             }
 
+            evictAllExcept(id)
+            val s = GeckoEngine.newSession(restoreState = restoredState)
             alive[id] = Slot(s)
             currentId = id
 
-            if (!restored) {
+            if (restoredState == null) {
                 val fallback = db.list()
                     .firstOrNull { it.id == id }
                     ?.url
@@ -93,7 +88,6 @@ class TabManager private constructor(private val ctx: Context) {
         synchronized(lock) { alive[id]?.latestState = state }
     }
 
-    // B1: reverse lookup — every delegate callback keys on the firing session.
     fun idForSession(session: GeckoSession): Long = synchronized(lock) { idFor(session) }
 
     fun setCanGoBack(session: GeckoSession, value: Boolean) = synchronized(lock) {
@@ -118,22 +112,46 @@ class TabManager private constructor(private val ctx: Context) {
 
     fun close(id: Long) {
         synchronized(lock) {
-            alive.remove(id)?.session?.let { try { it.close() } catch (_: Exception) {} }
+            val slot = alive.remove(id)
             db.delete(id)
             try { stateFile(id).delete() } catch (_: Exception) {}
-            if (currentId == id) {
-                currentId = db.list().firstOrNull()?.id ?: -1L
+            if (slot != null) {
+                if (id == currentId) {
+                    // FIX: the session is probably still attached to GeckoView.
+                    // Defer the native close until MainActivity reassigns the view.
+                    pendingClose.add(slot.session)
+                    currentId = db.list().firstOrNull()?.id ?: -1L
+                } else {
+                    try { slot.session.close() } catch (_: Exception) {}
+                }
             }
         }
     }
 
     fun closeAll() {
         synchronized(lock) {
-            for (slot in alive.values) try { slot.session.close() } catch (_: Exception) {}
+            // FIX: defer all closes, then let MainActivity drain after detaching.
+            for (slot in alive.values) pendingClose.add(slot.session)
             alive.clear()
             db.clear()
             try { stateDir().deleteRecursively() } catch (_: Exception) {}
             currentId = -1L
+        }
+    }
+
+    /**
+     * FIX: called by MainActivity after view.setSession(newSession).
+     * At this point GeckoView has detached from any previous session, so it is
+     * safe to call native close() without risking a use-after-free.
+     */
+    fun drainPendingClose() {
+        synchronized(lock) {
+            if (pendingClose.isEmpty()) return
+            for (s in pendingClose) {
+                try { s.close() } catch (_: Exception) {}
+            }
+            UHLog.v("tabs", "drained ${pendingClose.size} pending closes")
+            pendingClose.clear()
         }
     }
 
@@ -150,24 +168,26 @@ class TabManager private constructor(private val ctx: Context) {
         }
     }
 
-    private fun evictIfNeeded() {
+    // FIX: does NOT close sessions inline. Moves victims to pendingClose so
+    // MainActivity can drain them safely after reassigning the GeckoView.
+    private fun evictAllExcept(keepId: Long) {
         while (alive.size >= MAX_ALIVE) {
             val it = alive.entries.iterator()
-            var evicted = false
+            var victim: MutableMap.MutableEntry<Long, Slot>? = null
             while (it.hasNext()) {
                 val entry = it.next()
-                if (entry.key == currentId) continue
-                try {
-                    entry.value.latestState?.let { st ->
-                        stateFile(entry.key).writeText(st.toString())
-                    }
-                    entry.value.session.close()
-                } catch (_: Exception) {}
-                it.remove()
-                evicted = true
+                if (entry.key == keepId) continue
+                victim = entry
                 break
             }
-            if (!evicted) break
+            if (victim == null) break
+            try {
+                victim.value.latestState?.let { st ->
+                    stateFile(victim.key).writeText(st.toString())
+                }
+            } catch (_: Exception) {}
+            pendingClose.add(victim.value.session)
+            it.remove()
         }
     }
 }
