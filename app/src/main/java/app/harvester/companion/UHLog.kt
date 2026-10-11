@@ -1,0 +1,154 @@
+package app.harvester.companion
+
+import android.content.Context
+import android.os.Build
+import android.util.Log
+import androidx.webkit.WebViewCompat
+import java.io.BufferedWriter
+import java.io.File
+import java.io.FileWriter
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.CopyOnWriteArrayList
+
+object UHLog {
+
+    private const val TAG = "UHCompanion"
+    private const val MAX_LINES = 3000
+    private const val MAX_FILE_BYTES = 1_500_000L
+    private const val FLUSH_EVERY = 20
+
+    private val buffer = ArrayDeque<String>(MAX_LINES)
+    private val lock = Any()
+    private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
+    private val listeners = CopyOnWriteArrayList<(String) -> Unit>()
+
+    private var writer: BufferedWriter? = null
+    private var verbose = false
+    private var pending = 0
+    private var appContext: Context? = null
+    private var initialised = false
+
+    private val RX_JWT = Regex("""eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+""")
+    private val RX_BEARER = Regex("""(?i)(bearer\s+)\S+""")
+    private val RX_COOKIE = Regex("""(?i)(cookie["']?\s*[:=]\s*["']?)[^"\r\n]+""")
+    private val RX_CF = Regex("""(?i)(cloudfront-(?:policy|signature|key-pair-id)=)[^;&"\s]+""")
+    private val RX_B64_BLOB = Regex("""[A-Za-z0-9+/=]{300,}""")
+
+    fun init(ctx: Context) {
+        synchronized(lock) {
+            if (initialised) return
+            initialised = true
+            appContext = ctx.applicationContext
+            try { writer?.close() } catch (_: Exception) {}
+            writer = null
+            buffer.clear()
+            try {
+                val f = File(ctx.filesDir, "uh_log.txt")
+                if (f.exists() && f.length() > MAX_FILE_BYTES) {
+                    val keep = f.readLines().takeLast(MAX_LINES / 2)
+                    f.writeText(keep.joinToString("\n") + "\n")
+                }
+                if (f.exists()) f.readLines().takeLast(MAX_LINES).forEach { buffer.addLast(it) }
+                writer = BufferedWriter(FileWriter(f, true))
+            } catch (_: Exception) {}
+            installCrashHandler()
+        }
+        section("BOOT")
+        d("boot", "UH Companion ${BuildConfig.VERSION_NAME} (code ${BuildConfig.VERSION_CODE})")
+        d("boot", "Android ${Build.VERSION.RELEASE} · SDK ${Build.VERSION.SDK_INT}")
+        d("boot", "Device ${Build.MANUFACTURER} ${Build.MODEL}")
+        try {
+            val pkg = WebViewCompat.getCurrentWebViewPackage(ctx)
+            if (pkg != null) d("boot", "WebView ${pkg.versionName} (${pkg.packageName})")
+        } catch (_: Exception) {}
+    }
+
+    fun setVerbose(on: Boolean) {
+        synchronized(lock) { verbose = on }
+        d("log", "verbose=${if (on) "on" else "off"}")
+    }
+    fun isVerbose(): Boolean = synchronized(lock) { verbose }
+
+    fun addListener(fn: (String) -> Unit) { listeners.add(fn) }
+    fun removeListener(fn: (String) -> Unit) { listeners.remove(fn) }
+
+    private fun sanitize(s: String): String {
+        var out = s
+        out = RX_JWT.replace(out) { "<JWT>" }
+        out = RX_BEARER.replace(out) { m -> m.groupValues[1] + "<BEARER>" }
+        out = RX_COOKIE.replace(out) { m -> m.groupValues[1] + "<COOKIE>" }
+        out = RX_CF.replace(out) { m -> m.groupValues[1] + "<CF>" }
+        out = RX_B64_BLOB.replace(out) { "<BLOB(${it.value.length}b)>" }
+        return out
+    }
+
+    private fun write(tag: String, level: Char, msg: String) {
+        val clean = sanitize(msg)
+        val line = "${timeFormat.format(Date())} $level [$tag] $clean"
+        synchronized(lock) {
+            buffer.addLast(line)
+            while (buffer.size > MAX_LINES) buffer.removeFirst()
+            try {
+                writer?.appendLine(line)
+                pending++
+                if (pending >= FLUSH_EVERY) { writer?.flush(); pending = 0 }
+            } catch (_: Exception) {}
+        }
+        for (l in listeners) try { l(line) } catch (_: Exception) {}
+        try { Log.d(TAG, line) } catch (_: Exception) {}
+    }
+
+    fun d(tag: String, msg: String) = write(tag, 'D', msg)
+    fun v(tag: String, msg: String) { if (isVerbose()) write(tag, 'V', msg) }
+    fun w(tag: String, msg: String) = write(tag, 'W', msg)
+    fun e(tag: String, msg: String) = write(tag, 'E', msg)
+    fun section(title: String) = write("---", 'S', "───── $title ─────")
+
+    fun throwable(tag: String, msg: String, t: Throwable) {
+        write(tag, 'E', "$msg: ${t.javaClass.simpleName}: ${t.message}")
+        t.stackTrace.take(25).forEach { write(tag, 'E', "  at $it") }
+    }
+
+    fun snapshot(): String = synchronized(lock) {
+        if (buffer.isEmpty()) "(empty)" else buffer.joinToString("\n")
+    }
+
+    fun size(): Int = synchronized(lock) { buffer.size }
+    fun fileSize(): Long = try { File(appContext?.filesDir, "uh_log.txt").length() } catch (_: Exception) { 0L }
+
+    fun clear() {
+        synchronized(lock) {
+            buffer.clear()
+            try { writer?.close(); writer = null } catch (_: Exception) {}
+            try {
+                appContext?.let { ctx ->
+                    File(ctx.filesDir, "uh_log.txt").delete()
+                    writer = BufferedWriter(FileWriter(File(ctx.filesDir, "uh_log.txt"), true))
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun installCrashHandler() {
+        val prev = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            try {
+                section("FATAL")
+                write("crash", 'E', "Thread ${t.name}")
+                write("crash", 'E', "${e.javaClass.name}: ${e.message}")
+                e.stackTrace.take(60).forEach { write("crash", 'E', "  at $it") }
+                var cause = e.cause
+                var depth = 0
+                while (cause != null && depth++ < 5) {
+                    write("crash", 'E', "caused by ${cause.javaClass.name}: ${cause.message}")
+                    cause.stackTrace.take(20).forEach { write("crash", 'E', "  at $it") }
+                    cause = cause.cause
+                }
+                synchronized(lock) { try { writer?.flush() } catch (_: Exception) {} }
+            } catch (_: Exception) {}
+            prev?.uncaughtException(t, e)
+        }
+    }
+}
