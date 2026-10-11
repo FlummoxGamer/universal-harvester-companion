@@ -3,7 +3,6 @@ package app.harvester.companion
 import android.content.Context
 import android.os.Build
 import android.util.Log
-import androidx.webkit.WebViewCompat
 import java.io.BufferedWriter
 import java.io.File
 import java.io.FileWriter
@@ -36,33 +35,30 @@ object UHLog {
     private val RX_CF = Regex("""(?i)(cloudfront-(?:policy|signature|key-pair-id)=)[^;&"\s]+""")
     private val RX_B64_BLOB = Regex("""[A-Za-z0-9+/=]{300,}""")
 
-fun init(ctx: Context) {
-    synchronized(lock) {
-        if (initialised) return
-        initialised = true
-        appContext = ctx.applicationContext
-        installCrashHandler()
-        try { writer?.close() } catch (_: Exception) {}
-        writer = null
-        buffer.clear()
-        try {
-            val f = File(ctx.filesDir, "uh_log.txt")
-            if (f.exists() && f.length() > MAX_FILE_BYTES) {
-                val keep = f.readLines().takeLast(MAX_LINES / 2)
-                f.writeText(keep.joinToString("\n") + "\n")
-            }
-            if (f.exists()) f.readLines().takeLast(MAX_LINES).forEach { buffer.addLast(it) }
-            writer = BufferedWriter(FileWriter(f, true))
-        } catch (_: Exception) {}
-    }
+    fun init(ctx: Context) {
+        synchronized(lock) {
+            if (initialised) return
+            initialised = true
+            appContext = ctx.applicationContext
+            installCrashHandler()
+            try { writer?.close() } catch (_: Exception) {}
+            writer = null
+            buffer.clear()
+            try {
+                val f = File(ctx.filesDir, "uh_log.txt")
+                if (f.exists() && f.length() > MAX_FILE_BYTES) {
+                    val keep = f.readLines().takeLast(MAX_LINES / 2)
+                    f.writeText(keep.joinToString("\n") + "\n")
+                }
+                if (f.exists()) f.readLines().takeLast(MAX_LINES).forEach { buffer.addLast(it) }
+                writer = BufferedWriter(FileWriter(f, true))
+            } catch (_: Exception) {}
+        }
         section("BOOT")
         d("boot", "UH Companion ${BuildConfig.VERSION_NAME} (code ${BuildConfig.VERSION_CODE})")
         d("boot", "Android ${Build.VERSION.RELEASE} · SDK ${Build.VERSION.SDK_INT}")
         d("boot", "Device ${Build.MANUFACTURER} ${Build.MODEL}")
-        try {
-            val pkg = WebViewCompat.getCurrentWebViewPackage(ctx)
-            if (pkg != null) d("boot", "WebView ${pkg.versionName} (${pkg.packageName})")
-        } catch (_: Exception) {}
+        d("boot", "ABI ${Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"}")
     }
 
     fun setVerbose(on: Boolean) {
