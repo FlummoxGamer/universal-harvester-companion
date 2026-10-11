@@ -12,29 +12,22 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
-import java.util.concurrent.TimeUnit
+import java.net.HttpURLConnection
+import java.net.URL
 
 object UpdateChecker {
 
     private const val MANIFEST_URL =
-    "https://raw.githubusercontent.com/<YOUR_USERNAME>/universal-harvester-companion/builds/version.json"
-
-    private val http = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .build()
+        "https://raw.githubusercontent.com/FlummoxGamer/universal-harvester-companion/builds/version.json"
 
     fun checkAndPrompt(activity: Activity) {
-    UHLog.section("UPDATE")
-    UHLog.d("update", "check started")
-    val scope = CoroutineScope(Dispatchers.IO)
-    scope.launch {
-        val info = fetchManifest()
-        UHLog.d("update", "manifest ${if (info == null) "unreachable" else "v${info.versionName} (${info.versionCode})"}")
+        UHLog.section("UPDATE")
+        UHLog.d("update", "check started")
+        CoroutineScope(Dispatchers.IO).launch {
+            val info = fetchManifest()
+            UHLog.d("update", "manifest ${if (info == null) "unreachable" else "v${info.versionName} (${info.versionCode})"}")
             if (info == null) {
                 withContext(Dispatchers.Main) {
                     AlertDialog.Builder(activity)
@@ -58,7 +51,7 @@ object UpdateChecker {
             withContext(Dispatchers.Main) {
                 AlertDialog.Builder(activity)
                     .setTitle("Update available")
-                    .setMessage("New version: v${info.versionName} (code ${info.versionCode}).\nInstalled: v${BuildConfig.VERSION_NAME} (code ${BuildConfig.VERSION_CODE}).\n\nDownload and install?")
+                    .setMessage("New: v${info.versionName} (${info.versionCode})\nInstalled: v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n\nDownload and install?")
                     .setPositiveButton("Install") { _, _ -> downloadAndInstall(activity, info) }
                     .setNegativeButton("Later", null)
                     .show()
@@ -68,19 +61,26 @@ object UpdateChecker {
 
     private fun fetchManifest(): Manifest? {
         return try {
-            val req = Request.Builder().url(MANIFEST_URL).get().build()
-            http.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return null
-                val body = resp.body?.string() ?: return null
-                val o = JSONObject(body)
-                Manifest(
-                    versionCode = o.optInt("versionCode", 0),
-                    versionName = o.optString("versionName", ""),
-                    apkUrl = o.optString("apkUrl", ""),
-                    changelog = o.optString("changelog", "")
-                ).takeIf { it.versionCode > 0 && it.apkUrl.isNotBlank() }
-            }
-        } catch (_: Exception) { null }
+            val url = URL(MANIFEST_URL)
+            val conn = url.openConnection() as HttpURLConnection
+            conn.connectTimeout = 15000
+            conn.readTimeout = 15000
+            conn.requestMethod = "GET"
+            conn.connect()
+            if (conn.responseCode !in 200..299) return null
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            conn.disconnect()
+            val o = JSONObject(body)
+            Manifest(
+                versionCode = o.optInt("versionCode", 0),
+                versionName = o.optString("versionName", ""),
+                apkUrl = o.optString("apkUrl", ""),
+                changelog = o.optString("changelog", "")
+            ).takeIf { it.versionCode > 0 && it.apkUrl.isNotBlank() }
+        } catch (e: Exception) {
+            UHLog.throwable("update", "manifest fetch failed", e)
+            null
+        }
     }
 
     private fun downloadAndInstall(activity: Activity, info: Manifest) {
@@ -94,33 +94,36 @@ object UpdateChecker {
         }
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val req = Request.Builder().url(info.apkUrl).get().build()
-                http.newCall(req).execute().use { resp ->
-                    if (!resp.isSuccessful) throw Exception("HTTP ${resp.code}")
-                    val body = resp.body ?: throw Exception("empty body")
-                    val total = body.contentLength()
-                    val dir = File(activity.cacheDir, "updates").apply { mkdirs() }
-                    val out = File(dir, "update.apk")
-                    body.byteStream().use { input ->
-                        out.outputStream().use { output ->
-                            val buf = ByteArray(64 * 1024)
-                            var read: Long = 0
-                            while (true) {
-                                val n = input.read(buf)
-                                if (n < 0) break
-                                output.write(buf, 0, n)
-                                read += n
-                                if (total > 0) {
-                                    val pct = ((read * 100) / total).toInt()
-                                    withContext(Dispatchers.Main) { progress.progress = pct }
-                                }
+                val url = URL(info.apkUrl)
+                val conn = url.openConnection() as HttpURLConnection
+                conn.connectTimeout = 15000
+                conn.readTimeout = 120000
+                conn.requestMethod = "GET"
+                conn.connect()
+                if (conn.responseCode !in 200..299) throw Exception("HTTP ${conn.responseCode}")
+                val total = conn.contentLengthLong
+                val dir = File(activity.cacheDir, "updates").apply { mkdirs() }
+                val out = File(dir, "update.apk")
+                conn.inputStream.use { input ->
+                    out.outputStream().use { output ->
+                        val buf = ByteArray(64 * 1024)
+                        var read: Long = 0
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            output.write(buf, 0, n)
+                            read += n
+                            if (total > 0) {
+                                val pct = ((read * 100) / total).toInt()
+                                withContext(Dispatchers.Main) { progress.progress = pct }
                             }
                         }
                     }
-                    withContext(Dispatchers.Main) { progress.dismiss() }
-                    UHLog.d("update", "downloaded ${out.length()}b → ${out.absolutePath}")
-                    installApk(activity, out)
                 }
+                conn.disconnect()
+                withContext(Dispatchers.Main) { progress.dismiss() }
+                UHLog.d("update", "downloaded ${out.length()}b")
+                installApk(activity, out)
             } catch (e: Exception) {
                 UHLog.throwable("update", "download failed", e)
                 withContext(Dispatchers.Main) {
@@ -142,8 +145,10 @@ object UpdateChecker {
                     .setTitle("Permission needed")
                     .setMessage("Allow this app to install unknown apps, then tap Install again.")
                     .setPositiveButton("Open settings") { _, _ ->
-                        val i = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                            Uri.parse("package:${activity.packageName}"))
+                        val i = Intent(
+                            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                            Uri.parse("package:${activity.packageName}")
+                        )
                         activity.startActivity(i)
                     }
                     .setNegativeButton("Cancel", null)
@@ -170,4 +175,4 @@ object UpdateChecker {
         val apkUrl: String,
         val changelog: String
     )
-}
+                    }
