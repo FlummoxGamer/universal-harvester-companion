@@ -17,6 +17,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        UHLog.init(this)
+        UHLog.section("MAIN")
+        UHLog.d("main", "onCreate intent=${intent?.data}")
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
