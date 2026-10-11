@@ -10,6 +10,7 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.PopupMenu
 import android.widget.TextView
+import androidx.activity.addCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -20,6 +21,7 @@ import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.WebRequestError
+import java.util.WeakHashMap
 
 class MainActivity : AppCompatActivity() {
 
@@ -27,8 +29,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var view: GeckoView
     private lateinit var tabs: TabManager
     private var session: GeckoSession? = null
-    private var canGoBack: Boolean = false
     private var stripAdapter: StripAdapter? = null
+
+    // B5: install delegates at most once per (Activity, session) pair.
+    // Weak keys so evicted sessions don't leak.
+    private val instrumented = WeakHashMap<GeckoSession, Boolean>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,10 +43,13 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         view = binding.geckoView
-        tabs = TabManager(this)
+        tabs = TabManager.get(this)
 
         binding.btnBack.isEnabled = false
-        binding.btnBack.setOnClickListener { if (canGoBack) session?.goBack() }
+        binding.btnBack.setOnClickListener {
+            val s = session
+            if (s != null && tabs.canGoBack(s)) s.goBack()
+        }
         binding.urlBar.setOnClickListener { openUrlDialog() }
         binding.btnMenu.setOnClickListener { showMenu() }
         binding.tabCount.setOnClickListener { openTabGrid() }
@@ -51,29 +59,43 @@ class MainActivity : AppCompatActivity() {
         stripAdapter = StripAdapter { id -> switchTab(id) }
         binding.tabStrip.adapter = stripAdapter
 
-        val existing = tabs.list()
-        if (existing.isEmpty()) {
-            val url = intent?.data?.toString() ?: "about:blank"
-            val id = tabs.openNew(url)
-            attachSession(tabs.switchTo(id))
-        } else {
-            attachSession(tabs.switchTo(existing.first().id))
+        // B4: system back → page history first, exit only at root.
+        onBackPressedDispatcher.addCallback(this) {
+            val s = session
+            if (s != null && tabs.canGoBack(s)) s.goBack() else finish()
         }
+
+        val existing = tabs.list()
+        val startId = if (existing.isEmpty()) {
+            tabs.openNew(intent?.data?.toString() ?: "about:blank")
+        } else {
+            existing.first().id
+        }
+        val s = tabs.switchTo(startId)
+        attachSession(s)
+        val url = tabs.list().firstOrNull { it.id == startId }?.url ?: ""
+        updateUrlText(url)
         refreshStrip()
     }
 
     private fun attachSession(s: GeckoSession?) {
         if (s == null) return
-        installDelegates(s)
+        if (!instrumented.containsKey(s)) {
+            installDelegates(s)
+            instrumented[s] = true
+        }
         view.setSession(s)
         session = s
+        binding.btnBack.isEnabled = tabs.canGoBack(s)
     }
 
     private fun installDelegates(s: GeckoSession) {
         s.navigationDelegate = object : GeckoSession.NavigationDelegate {
             override fun onCanGoBack(session: GeckoSession, value: Boolean) {
-                canGoBack = value
-                runOnUiThread { binding.btnBack.isEnabled = value }
+                tabs.setCanGoBack(session, value)
+                if (session === this@MainActivity.session) {
+                    runOnUiThread { binding.btnBack.isEnabled = value }
+                }
             }
 
             override fun onLoadRequest(
@@ -81,11 +103,13 @@ class MainActivity : AppCompatActivity() {
                 request: GeckoSession.NavigationDelegate.LoadRequest
             ): GeckoResult<AllowOrDeny>? {
                 val url = request.uri ?: return GeckoResult.fromValue(AllowOrDeny.ALLOW)
+
                 if (request.target === GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW) {
                     val id = tabs.openNew(url)
                     runOnUiThread { switchTab(id) }
                     return GeckoResult.fromValue(AllowOrDeny.DENY)
                 }
+
                 if (url.startsWith("intent:")) {
                     try {
                         startActivity(Intent.parseUri(url, Intent.URI_INTENT_SCHEME))
@@ -98,12 +122,15 @@ class MainActivity : AppCompatActivity() {
                     }
                     return GeckoResult.fromValue(AllowOrDeny.DENY)
                 }
+
                 val http = url.startsWith("http://") || url.startsWith("https://")
                 val internal = url.startsWith("about:") || url.startsWith("data:") ||
                     url.startsWith("moz-extension:") || url.startsWith("blob:") ||
                     url.startsWith("file:")
                 if (!http && !internal) {
-                    try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {}
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    } catch (_: Exception) {}
                     return GeckoResult.fromValue(AllowOrDeny.DENY)
                 }
                 return GeckoResult.fromValue(AllowOrDeny.ALLOW)
@@ -120,40 +147,49 @@ class MainActivity : AppCompatActivity() {
         }
 
         s.progressDelegate = object : GeckoSession.ProgressDelegate {
+            // B1: key callbacks on the firing session, never on currentId().
             override fun onPageStart(session: GeckoSession, url: String) {
                 UHLog.v("web", "start ${url.take(140)}")
-                val id = tabs.currentId()
+                val id = tabs.idForSession(session)
                 if (id > 0) {
                     tabs.updateUrl(id, url, null)
-                    runOnUiThread { refreshStrip(); updateUrlText(url) }
+                    runOnUiThread {
+                        if (session === this@MainActivity.session) updateUrlText(url)
+                        refreshStrip()
+                    }
                 }
             }
+
             override fun onPageStop(session: GeckoSession, success: Boolean) {
                 UHLog.d("web", "stop success=$success")
             }
+
             override fun onSessionStateChange(
                 session: GeckoSession,
                 sessionState: GeckoSession.SessionState
             ) {
-                val id = tabs.currentId()
+                val id = tabs.idForSession(session)
                 if (id > 0) tabs.recordState(id, sessionState)
             }
         }
 
-s.contentDelegate = object : GeckoSession.ContentDelegate {
-    override fun onTitleChange(session: GeckoSession, title: String?) {
-        val id = tabs.currentId()
-        if (id > 0 && !title.isNullOrBlank()) {
-            val storedUrl = tabs.list().firstOrNull { it.id == id }?.url ?: ""
-            tabs.updateUrl(id, storedUrl, title)
-            runOnUiThread { refreshStrip() }
+        s.contentDelegate = object : GeckoSession.ContentDelegate {
+            override fun onTitleChange(session: GeckoSession, title: String?) {
+                val id = tabs.idForSession(session)
+                if (id > 0 && !title.isNullOrBlank()) {
+                    val storedUrl = tabs.list().firstOrNull { it.id == id }?.url ?: ""
+                    tabs.updateUrl(id, storedUrl, title)
+                    runOnUiThread { refreshStrip() }
+                }
+            }
         }
-    }
-}
     }
 
     private fun switchTab(id: Long) {
-        if (id == tabs.currentId()) return
+        if (id == tabs.currentId()) {
+            refreshStrip()
+            return
+        }
         val s = tabs.switchTo(id) ?: return
         attachSession(s)
         val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
@@ -184,7 +220,16 @@ s.contentDelegate = object : GeckoSession.ContentDelegate {
                 switchTab(id)
             }
         ).apply {
-            setOnDismissListener { refreshStrip() }
+            // B3: after per-tab close or close-all, current session may differ.
+            setOnDismissListener {
+                val live = tabs.currentSession()
+                if (live != null && live !== session) {
+                    attachSession(live)
+                    val url = tabs.list().firstOrNull { it.id == tabs.currentId() }?.url ?: ""
+                    updateUrlText(url)
+                }
+                refreshStrip()
+            }
         }.show()
     }
 
@@ -245,14 +290,14 @@ s.contentDelegate = object : GeckoSession.ContentDelegate {
         popup.show()
     }
 
-override fun onNewIntent(intent: Intent) {
-    super.onNewIntent(intent)
-    setIntent(intent)
-    val incoming = intent.data?.toString()
-    if (incoming.isNullOrBlank()) return
-    val id = tabs.openNew(incoming)
-    switchTab(id)
-}
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val incoming = intent.data?.toString()
+        if (incoming.isNullOrBlank()) return
+        val id = tabs.openNew(incoming)
+        switchTab(id)
+    }
 
     override fun onPause() {
         super.onPause()
@@ -289,6 +334,7 @@ override fun onNewIntent(intent: Intent) {
             }
             h.itemView.alpha = if (t.id == current) 1f else 0.65f
             h.itemView.setOnClickListener { onTap(t.id) }
+            // NOTE: strip close button still has no handler — flagged separately.
         }
 
         override fun getItemCount(): Int = items.size
