@@ -1,10 +1,8 @@
 package app.harvester.companion
 
 import android.content.Context
-import android.os.Parcel
 import org.mozilla.geckoview.GeckoSession
 import java.io.File
-import java.io.FileOutputStream
 
 class TabManager(private val ctx: Context) {
 
@@ -18,7 +16,7 @@ class TabManager(private val ctx: Context) {
     private var currentId: Long = -1L
 
     private fun stateDir(): File = File(ctx.filesDir, "tabs").apply { mkdirs() }
-    private fun stateFile(id: Long): File = File(stateDir(), "$id.bin")
+    private fun stateFile(id: Long): File = File(stateDir(), "$id.state")
 
     fun openNew(url: String): Long {
         synchronized(lock) {
@@ -44,15 +42,8 @@ class TabManager(private val ctx: Context) {
             val f = stateFile(id)
             if (f.exists()) {
                 try {
-                    val bytes = f.readBytes()
-                    val p = Parcel.obtain()
-                    p.unmarshall(bytes, 0, bytes.size)
-                    p.setDataPosition(0)
-                    @Suppress("DEPRECATION")
-                    val state = p.readParcelable<GeckoSession.SessionState>(
-                        GeckoSession.SessionState::class.java.classLoader
-                    )
-                    p.recycle()
+                    val stateStr = f.readText()
+                    val state = GeckoSession.SessionState.fromString(stateStr)
                     if (state != null) s.restoreState(state)
                 } catch (e: Exception) {
                     UHLog.w("tabs", "restore failed id=$id ${e.message}")
@@ -102,12 +93,15 @@ class TabManager(private val ctx: Context) {
         synchronized(lock) {
             for ((id, s) in alive) {
                 try {
-                    val state = s.saveState() ?: continue
-                    val p = Parcel.obtain()
-                    p.writeParcelable(state, 0)
-                    val bytes = p.marshall()
-                    p.recycle()
-                    FileOutputStream(stateFile(id)).use { it.write(bytes) }
+                    s.saveState().accept { state ->
+                        try {
+                            if (state != null) {
+                                stateFile(id).writeText(state.toString())
+                            }
+                        } catch (e: Exception) {
+                            UHLog.w("tabs", "save write failed id=$id ${e.message}")
+                        }
+                    }
                 } catch (e: Exception) {
                     UHLog.w("tabs", "save failed id=$id ${e.message}")
                 }
@@ -123,13 +117,12 @@ class TabManager(private val ctx: Context) {
                 val eldest = it.next()
                 if (eldest.key == currentId) continue
                 try {
-                    val state = eldest.value.saveState()
-                    if (state != null) {
-                        val p = Parcel.obtain()
-                        p.writeParcelable(state, 0)
-                        val bytes = p.marshall()
-                        p.recycle()
-                        FileOutputStream(stateFile(eldest.key)).use { out -> out.write(bytes) }
+                    eldest.value.saveState().accept { state ->
+                        try {
+                            if (state != null) {
+                                stateFile(eldest.key).writeText(state.toString())
+                            }
+                        } catch (_: Exception) {}
                     }
                     eldest.value.close()
                 } catch (_: Exception) {}
