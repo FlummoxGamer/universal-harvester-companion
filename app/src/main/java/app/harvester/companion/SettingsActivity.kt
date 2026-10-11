@@ -82,7 +82,7 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun setupSelfUpdateButton() {
-    val container = binding.root as android.widget.LinearLayout
+    val container = (binding.root as android.view.ViewGroup).getChildAt(0) as android.widget.LinearLayout
 
     val logsBtn = android.widget.Button(this).apply {
         text = getString(R.string.settings_view_logs)
