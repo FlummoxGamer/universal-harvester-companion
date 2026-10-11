@@ -3,120 +3,176 @@ package app.harvester.companion
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.view.inputmethod.EditorInfo
-import androidx.activity.addCallback
+import android.view.View
+import android.widget.PopupMenu
 import androidx.appcompat.app.AppCompatActivity
-import androidx.lifecycle.lifecycleScope
 import app.harvester.companion.databinding.ActivityMainBinding
-import kotlinx.coroutines.launch
+import org.mozilla.geckoview.GeckoResult
+import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.GeckoView
+import org.mozilla.geckoview.WebRequestError
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
-    private var webView: HarvesterWebView? = null
+    private lateinit var view: GeckoView
+    private var session: GeckoSession? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         UHLog.init(this)
         UHLog.section("MAIN")
-        UHLog.d("main", "onCreate intent=${intent?.data}")
+        UHLog.d("main", "onCreate")
+
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        view = binding.geckoView
 
-        setupToolbar()
-        setupFab()
-        installBackHandler()
+        binding.btnBack.setOnClickListener { session?.goBack() }
+        binding.urlBar.setOnClickListener { openUrlDialog() }
+        binding.btnMenu.setOnClickListener { showMenu() }
+        binding.tabCount.setOnClickListener { /* batch 2 */ }
 
-        lifecycleScope.launch {
-            val repo = ScriptRepository(this@MainActivity)
-            if (repo.load() == null) {
-                val url = AppPrefs.scriptUrl(this@MainActivity)
-                if (url.isNotBlank()) {
-                    repo.download(url)
+        openSession(intent?.data?.toString())
+    }
+
+    private fun openSession(initialUrl: String?) {
+        session?.close()
+        val s = GeckoEngine.newSession()
+        installDelegates(s)
+        view.setSession(s)
+        session = s
+        s.loadUri(initialUrl ?: "about:blank")
+    }
+
+    private fun installDelegates(s: GeckoSession) {
+        s.navigationDelegate = object : GeckoSession.NavigationDelegate {
+            override fun onLocationChange(
+                session: GeckoSession, url: String?, perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>?, hasUserGesture: Boolean
+            ) {
+                runOnUiThread {
+                    binding.urlText.text = url?.take(80) ?: ""
+                    binding.urlIcon.visibility = if (url?.startsWith("https") == true) View.VISIBLE else View.GONE
+                }
+                UHLog.v("nav", "location ${url?.take(140)}")
+            }
+
+            override fun onLoadRequest(
+                session: GeckoSession, request: GeckoSession.NavigationDelegate.LoadRequest
+            ): GeckoResult<GeckoSession.NavigationDelegate.LoadRequest>? {
+                val url = request.uri
+                if (url.startsWith("intent:")) {
+                    try {
+                        val intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
+                        startActivity(intent)
+                        return GeckoResult.fromValue(null)
+                    } catch (_: Exception) {
+                        val fallback = try {
+                            Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
+                                .getStringExtra("browser_fallback_url")
+                        } catch (_: Exception) { null }
+                        if (!fallback.isNullOrBlank()) {
+                            session.loadUri(fallback)
+                            return GeckoResult.fromValue(null)
+                        }
+                    }
+                }
+                if (!url.startsWith("http") && !url.startsWith("about:") && !url.startsWith("data:") && !url.startsWith("moz-extension:")) {
+                    try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {}
+                    return GeckoResult.fromValue(null)
+                }
+                return GeckoResult.fromValue(request)
+            }
+
+            override fun onLoadError(
+                session: GeckoSession, uri: String?, error: WebRequestError
+            ): GeckoResult<String>? {
+                UHLog.w("nav", "load error code=${error.code} uri=$uri")
+                return null
+            }
+        }
+
+        s.progressDelegate = object : GeckoSession.ProgressDelegate {
+            override fun onPageStart(session: GeckoSession, url: String) {
+                UHLog.v("web", "start ${url.take(140)}")
+            }
+            override fun onPageStop(session: GeckoSession, success: Boolean) {
+                UHLog.d("web", "stop success=$success")
+            }
+        }
+
+        s.contentDelegate = object : GeckoSession.ContentDelegate {
+            override fun onTitleChange(session: GeckoSession, title: String?) {
+                UHLog.v("web", "title $title")
+            }
+        }
+    }
+
+    private fun openUrlDialog() {
+        val input = android.widget.EditText(this).apply {
+            setText(binding.urlText.text)
+            setTextColor(0xFFE6EDF5.toInt())
+            setHint("Search or URL")
+            setHintTextColor(0xFF8296AD.toInt())
+            setPadding(32, 32, 32, 32)
+            setSingleLine()
+            inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Go to")
+            .setView(input)
+            .setPositiveButton("Go") { _, _ ->
+                val raw = input.text.toString().trim()
+                val target = normalize(raw)
+                if (target.isNotBlank()) {
+                    session?.loadUri(target)
+                    binding.urlText.text = target.take(80)
                 }
             }
-            if (repo.load() == null) {
-                openSettings()
-                return@launch
-            }
-            attachWebView(intent?.data?.toString() ?: "about:blank")
-            repo.maybeAutoUpdate()
-        }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
-    private fun attachWebView(initialUrl: String) {
-        webView?.let { binding.webContainer.removeView(it); it.destroy() }
-        val wv = HarvesterWebView(this)
-        wv.onUrlChanged = { url -> runOnUiThread { binding.urlBar.setText(url) } }
-        binding.webContainer.addView(wv)
-        webView = wv
-        wv.loadUrl(initialUrl)
-    }
-
-    private fun setupToolbar() {
-        binding.btnBack.setOnClickListener {
-            webView?.let { if (it.canGoBack()) it.goBack() }
-        }
-        binding.btnSettings.setOnClickListener { openSettings() }
-        binding.urlBar.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_GO) {
-                val url = normalizeUrl(binding.urlBar.text.toString())
-                if (url.isNotEmpty()) webView?.loadUrl(url)
-                true
-            } else false
-        }
-    }
-
-    private fun setupFab() {
-        binding.fab.setOnClickListener {
-            webView?.let { FloatingMenu.show(this, it, ::attachWebView) }
-        }
-    }
-
-    private fun installBackHandler() {
-        onBackPressedDispatcher.addCallback(this) {
-            val wv = webView
-            if (wv != null && wv.canGoBack()) {
-                wv.goBack()
-            } else {
-                isEnabled = false
-                onBackPressedDispatcher.onBackPressed()
-            }
-        }
-    }
-
-    private fun openSettings() {
-        startActivity(Intent(this, SettingsActivity::class.java))
-    }
-
-    private fun normalizeUrl(input: String): String {
+    private fun normalize(input: String): String {
         val t = input.trim()
         if (t.isEmpty()) return ""
-        if (t.startsWith("http://") || t.startsWith("https://") || t.startsWith("about:")) return t
+        if (t.startsWith("http://") || t.startsWith("https://") || t.startsWith("about:") || t.startsWith("moz-extension:")) return t
         if (t.contains(".") && !t.contains(" ")) return "https://$t"
-        return "https://www.google.com/search?q=" + Uri.encode(t)
+        return "https://html.duckduckgo.com/html/?q=" + Uri.encode(t)
+    }
+
+    private fun showMenu() {
+        val popup = PopupMenu(this, binding.btnMenu)
+        popup.menu.add(0, 1, 0, "New Tab")
+        popup.menu.add(0, 2, 1, "Reload")
+        popup.menu.add(0, 3, 2, "Extensions")
+        popup.menu.add(0, 4, 3, "Settings")
+        popup.menu.add(0, 5, 4, "Logs")
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                1 -> { openSession(null); true }
+                2 -> { session?.reload(); true }
+                3 -> {
+                    startActivity(Intent(this, ExtensionsActivity::class.java))
+                    true
+                }
+                4 -> { startActivity(Intent(this, SettingsActivity::class.java)); true }
+                5 -> { startActivity(Intent(this, LogsActivity::class.java)); true }
+                else -> false
+            }
+        }
+        popup.show()
     }
 
     override fun onNewIntent(intent: Intent) {
-    super.onNewIntent(intent)
-    setIntent(intent)
-    intent.data?.toString()?.let { webView?.loadUrl(it) }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        val repo = ScriptRepository(this)
-        val live = repo.version()
-        val seen = AppPrefs.lastVersion(this)
-        if (live != null && live != seen) {
-            AppPrefs.setLastVersion(this, live)
-            attachWebView(webView?.url ?: "about:blank")
-        }
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.data?.toString()?.let { session?.loadUri(it) }
     }
 
     override fun onDestroy() {
-        webView?.destroy()
-        webView = null
+        session?.close()
+        session = null
         super.onDestroy()
     }
 }
