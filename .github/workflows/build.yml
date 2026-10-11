@@ -16,6 +16,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: src
 
       - uses: actions/setup-java@v4
         with:
@@ -27,10 +29,12 @@ jobs:
           gradle-version: '8.7'
 
       - name: Build debug APK
+        working-directory: src
         run: gradle assembleDebug --no-daemon --no-configuration-cache
 
-      - name: Read version from build.gradle.kts
+      - name: Read version
         id: ver
+        working-directory: src
         run: |
           VC=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts | head -1)
           VN=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts | head -1)
@@ -42,48 +46,55 @@ jobs:
           echo "name=$VN" >> $GITHUB_OUTPUT
           echo "Building v$VN (code $VC)"
 
-      - name: Rename APK
+      - uses: actions/checkout@v4
+        with:
+          ref: builds
+          path: builds
+        continue-on-error: true
+
+      - name: Prepare builds branch
         run: |
-          mkdir -p out
-          cp app/build/outputs/apk/debug/app-debug.apk out/uh-companion-${{ steps.ver.outputs.name }}.apk
+          mkdir -p builds
+          cd builds
+          git init -q 2>/dev/null || true
+          if [ ! -d .git ]; then
+            git init -q
+          fi
+          git remote remove origin 2>/dev/null || true
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git fetch origin builds -q || true
+          git checkout -B builds origin/builds 2>/dev/null || git checkout -B builds
+          rm -f *.apk
+          cp ../src/app/build/outputs/apk/debug/app-debug.apk "uh-companion-${{ steps.ver.outputs.name }}.apk"
+
+      - name: Write version.json
+        run: |
+          cd builds
+          REPO="${{ github.repository }}"
+          APK="uh-companion-${{ steps.ver.outputs.name }}.apk"
+          cat > version.json <<EOF
+          {
+            "versionCode": ${{ steps.ver.outputs.code }},
+            "versionName": "${{ steps.ver.outputs.name }}",
+            "apkUrl": "https://raw.githubusercontent.com/$REPO/builds/$APK",
+            "changelog": "",
+            "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+          cat version.json
+
+      - name: Push builds branch
+        working-directory: builds
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Build v${{ steps.ver.outputs.name }} (${{ steps.ver.outputs.code }})" || echo "no changes"
+          git push origin builds --force
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: uh-companion-debug
-          path: out/*.apk
+          path: src/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-
-      # ── Publish to public builds repo ──
-      # Requires secret: BUILD_REPO_TOKEN (PAT with repo write access to <user>/universal-harvester-companion-builds)
-      - name: Publish to builds repo
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-        env:
-          PUB_TOKEN: ${{ secrets.BUILD_REPO_TOKEN }}
-          PUB_REPO: universal-harvester-companion-builds
-          PUB_OWNER: ${{ github.repository_owner }}
-        run: |
-          if [ -z "$PUB_TOKEN" ]; then echo "No publish token, skipping"; exit 0; fi
-          rm -rf pub && mkdir pub && cd pub
-          git init -q
-          git remote add origin "https://x-access-token:$PUB_TOKEN@github.com/$PUB_OWNER/$PUB_REPO.git"
-          git fetch origin main -q || true
-          git checkout -B main origin/main 2>/dev/null || git checkout -B main
-          cp ../out/uh-companion-*.apk .
-          ls -la
-          APK_NAME=$(ls uh-companion-*.apk | head -1)
-          APK_URL="https://github.com/$PUB_OWNER/$PUB_REPO/releases/latest/download/$APK_NAME"
-          cat > version.json <<EOF
-          {
-            "versionCode": ${{ steps.ver.outputs.code }},
-            "versionName": "${{ steps.ver.outputs.name }}",
-            "apkUrl": "https://github.com/$PUB_OWNER/$PUB_REPO/raw/main/$APK_NAME",
-            "changelog": "",
-            "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          }
-          EOF
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "Build v${{ steps.ver.outputs.name }} (${{ steps.ver.outputs.code }})" || echo "no changes"
-          git push origin main --force
