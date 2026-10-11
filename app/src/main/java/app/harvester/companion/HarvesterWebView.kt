@@ -49,14 +49,16 @@ class HarvesterWebView(context: Context) : WebView(context) {
         webChromeClient = WebChromeClient()
 
         webViewClient = object : WebViewClient() {
-            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                super.onPageStarted(view, url, favicon)
-                url?.let { onUrlChanged?.invoke(it) }
-            }
-            override fun onPageFinished(view: WebView?, url: String?) {
-                super.onPageFinished(view, url)
-                url?.let { onUrlChanged?.invoke(it) }
-            }
+        override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+            super.onPageStarted(view, url, favicon)
+            UHLog.v("web", "page start ${url?.take(140)}")
+            url?.let { onUrlChanged?.invoke(it) }
+        }
+        override fun onPageFinished(view: WebView?, url: String?) {
+            super.onPageFinished(view, url)
+            UHLog.d("web", "page done ${url?.take(140)}")
+            url?.let { onUrlChanged?.invoke(it) }
+        }
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 return false
             }
