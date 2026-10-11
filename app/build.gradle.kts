@@ -3,6 +3,10 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+repositories {
+    maven("https://maven.mozilla.org/maven2/")
+}
+
 android {
     namespace = "app.harvester.companion"
     compileSdk = 35
@@ -66,7 +70,7 @@ android {
 }
 
 dependencies {
-    implementation("org.mozilla.geckoview:geckoview:128.0.20240823091904")
+    implementation("org.mozilla.geckoview:geckoview:139.0.20250603165925")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.constraintlayout:constraintlayout:2.2.0")
