@@ -4,14 +4,26 @@ import android.content.Context
 import org.mozilla.geckoview.GeckoSession
 import java.io.File
 
-class TabManager(private val ctx: Context) {
+// B1: idForSession + per-session canGoBack state.
+// B2: switchTo no longer wipes restored state.
+// Also made singleton so sessions survive Activity recreation.
+class TabManager private constructor(ctx: Context) {
 
     companion object {
         private const val MAX_ALIVE = 5
+
+        @Volatile private var INSTANCE: TabManager? = null
+
+        fun get(ctx: Context): TabManager {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: TabManager(ctx.applicationContext).also { INSTANCE = it }
+            }
+        }
     }
 
     private class Slot(val session: GeckoSession) {
         var latestState: GeckoSession.SessionState? = null
+        var canGoBack: Boolean = false
     }
 
     private val db = TabDb(ctx)
@@ -21,6 +33,12 @@ class TabManager(private val ctx: Context) {
 
     private fun stateDir(): File = File(ctx.filesDir, "tabs").apply { mkdirs() }
     private fun stateFile(id: Long): File = File(stateDir(), "$id.state")
+
+    private fun slotFor(session: GeckoSession): Slot? =
+        alive.entries.firstOrNull { it.value.session === session }?.value
+
+    private fun idFor(session: GeckoSession): Long =
+        alive.entries.firstOrNull { it.value.session === session }?.key ?: -1L
 
     fun openNew(url: String): Long {
         synchronized(lock) {
@@ -37,28 +55,53 @@ class TabManager(private val ctx: Context) {
     fun switchTo(id: Long): GeckoSession? {
         synchronized(lock) {
             alive[id]?.let { currentId = id; return it.session }
+
             evictIfNeeded()
             val s = GeckoEngine.newSession()
+
+            // B2: only load a fallback URL if restore actually failed.
+            var restored = false
             val f = stateFile(id)
             if (f.exists()) {
                 try {
-                    val restored = GeckoSession.SessionState.fromString(f.readText())
-                    if (restored != null) s.restoreState(restored)
+                    val st = GeckoSession.SessionState.fromString(f.readText())
+                    if (st != null) {
+                        s.restoreState(st)
+                        restored = true
+                        UHLog.v("tabs", "restored id=$id")
+                    }
                 } catch (e: Exception) {
                     UHLog.w("tabs", "restore failed id=$id ${e.message}")
                 }
             }
+
             alive[id] = Slot(s)
             currentId = id
-            if (alive.size == 1) s.loadUri("about:blank")
+
+            if (!restored) {
+                val fallback = db.list()
+                    .firstOrNull { it.id == id }
+                    ?.url
+                    ?.takeIf { it.isNotBlank() }
+                s.loadUri(fallback ?: "about:blank")
+            }
             return s
         }
     }
 
     fun recordState(id: Long, state: GeckoSession.SessionState) {
-        synchronized(lock) {
-            alive[id]?.latestState = state
-        }
+        synchronized(lock) { alive[id]?.latestState = state }
+    }
+
+    // B1: reverse lookup — every delegate callback keys on the firing session.
+    fun idForSession(session: GeckoSession): Long = synchronized(lock) { idFor(session) }
+
+    fun setCanGoBack(session: GeckoSession, value: Boolean) = synchronized(lock) {
+        slotFor(session)?.canGoBack = value
+    }
+
+    fun canGoBack(session: GeckoSession): Boolean = synchronized(lock) {
+        slotFor(session)?.canGoBack ?: false
     }
 
     fun currentId(): Long = synchronized(lock) { currentId }
