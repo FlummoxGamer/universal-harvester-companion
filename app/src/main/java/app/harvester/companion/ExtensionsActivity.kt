@@ -114,31 +114,6 @@ class ExtensionsActivity : AppCompatActivity() {
         return root
     }
 
-    // ─── Reflection factory for PermissionPromptResponse ──────────────────────
-    // VERIFIED: GeckoView 153's PermissionPromptResponse constructor takes
-    // java.lang.Boolean (boxed) parameters. Kotlin's Boolean literal is a
-    // primitive, which fails to match. Reflection bypasses the interop issue.
-
-    private fun buildPermissionResponse(
-        permissionsGranted: Boolean
-    ): WebExtension.PermissionPromptResponse {
-        return try {
-            val constructor = WebExtension.PermissionPromptResponse::class.java.getConstructor(
-                java.lang.Boolean::class.java,
-                java.lang.Boolean::class.java,
-                java.lang.Boolean::class.java
-            )
-            constructor.newInstance(
-                java.lang.Boolean.valueOf(permissionsGranted),
-                java.lang.Boolean.FALSE,
-                java.lang.Boolean.FALSE
-            )
-        } catch (e: Exception) {
-            UHLog.throwable("ext", "reflection failed for PermissionPromptResponse", e)
-            throw RuntimeException("Failed to create PermissionPromptResponse", e)
-        }
-    }
-
     // ─── Prompt delegate ──────────────────────────────────────────────────────
 
     private fun installPromptDelegate() {
@@ -180,11 +155,18 @@ class ExtensionsActivity : AppCompatActivity() {
                         .setCancelable(false)
                         .setPositiveButton("Install") { _, _ ->
                             UHLog.d("ext", "approved install ${meta.name}")
-                            deferred.complete(buildPermissionResponse(true))
+                            // VERIFIED: constructor is public in GeckoView 154.
+                            // Params: isPermissionsGranted, isPrivateModeGranted,
+                            //         isTechnicalAndInteractionDataGranted
+                            deferred.complete(
+                                WebExtension.PermissionPromptResponse(true, false, false)
+                            )
                         }
                         .setNegativeButton("Cancel") { _, _ ->
                             UHLog.d("ext", "denied install ${meta.name}")
-                            deferred.complete(buildPermissionResponse(false))
+                            deferred.complete(
+                                WebExtension.PermissionPromptResponse(false, false, false)
+                            )
                         }
                         .show()
                 }
