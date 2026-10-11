@@ -46,33 +46,22 @@ jobs:
           echo "name=$VN" >> $GITHUB_OUTPUT
           echo "Building v$VN (code $VC)"
 
-      - uses: actions/checkout@v4
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          ref: builds
-          path: builds
-        continue-on-error: true
+          name: uh-companion-debug
+          path: src/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
 
-      - name: Prepare builds branch
+      - name: Publish to builds branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p builds
-          cd builds
-          git init -q 2>/dev/null || true
-          if [ ! -d .git ]; then
-            git init -q
-          fi
-          git remote remove origin 2>/dev/null || true
-          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
-          git fetch origin builds -q || true
-          git checkout -B builds origin/builds 2>/dev/null || git checkout -B builds
-          rm -f *.apk
-          cp ../src/app/build/outputs/apk/debug/app-debug.apk "uh-companion-${{ steps.ver.outputs.name }}.apk"
-
-      - name: Write version.json
-        run: |
-          cd builds
           REPO="${{ github.repository }}"
           APK="uh-companion-${{ steps.ver.outputs.name }}.apk"
-          cat > version.json <<EOF
+          mkdir -p /tmp/publish
+          cp src/app/build/outputs/apk/debug/app-debug.apk "/tmp/publish/$APK"
+          cat > /tmp/publish/version.json <<EOF
           {
             "versionCode": ${{ steps.ver.outputs.code }},
             "versionName": "${{ steps.ver.outputs.name }}",
@@ -81,20 +70,11 @@ jobs:
             "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }
           EOF
-          cat version.json
-
-      - name: Push builds branch
-        working-directory: builds
-        run: |
+          cd /tmp/publish
+          git init -q -b builds
+          git remote add origin "https://x-access-token:$GH_TOKEN@github.com/$REPO.git"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Build v${{ steps.ver.outputs.name }} (${{ steps.ver.outputs.code }})" || echo "no changes"
+          git commit -m "Build v${{ steps.ver.outputs.name }} (${{ steps.ver.outputs.code }})"
           git push origin builds --force
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: uh-companion-debug
-          path: src/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
