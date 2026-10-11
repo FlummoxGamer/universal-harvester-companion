@@ -20,10 +20,8 @@ import java.util.concurrent.TimeUnit
 
 object UpdateChecker {
 
-    // Point this at your public builds repo.
-    // Format: https://raw.githubusercontent.com/<user>/<repo>/<branch>/version.json
     private const val MANIFEST_URL =
-        "https://raw.githubusercontent.com/CHANGE_ME/universal-harvester-companion-builds/main/version.json"
+    "https://raw.githubusercontent.com/<YOUR_USERNAME>/universal-harvester-companion/builds/version.json"
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
