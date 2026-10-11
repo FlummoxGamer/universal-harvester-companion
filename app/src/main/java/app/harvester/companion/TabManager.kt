@@ -10,8 +10,12 @@ class TabManager(private val ctx: Context) {
         private const val MAX_ALIVE = 5
     }
 
+    private class Slot(val session: GeckoSession) {
+        var latestState: GeckoSession.SessionState? = null
+    }
+
     private val db = TabDb(ctx)
-    private val alive = LinkedHashMap<Long, GeckoSession>(MAX_ALIVE, 0.75f, true)
+    private val alive = LinkedHashMap<Long, Slot>(MAX_ALIVE, 0.75f, true)
     private val lock = Any()
     private var currentId: Long = -1L
 
@@ -23,7 +27,7 @@ class TabManager(private val ctx: Context) {
             val id = db.insert(url)
             evictIfNeeded()
             val s = GeckoEngine.newSession()
-            alive[id] = s
+            alive[id] = Slot(s)
             currentId = id
             s.loadUri(url)
             return id
@@ -32,33 +36,34 @@ class TabManager(private val ctx: Context) {
 
     fun switchTo(id: Long): GeckoSession? {
         synchronized(lock) {
-            val existing = alive[id]
-            if (existing != null) {
-                currentId = id
-                return existing
-            }
+            alive[id]?.let { currentId = id; return it.session }
             evictIfNeeded()
             val s = GeckoEngine.newSession()
             val f = stateFile(id)
             if (f.exists()) {
                 try {
-                    val stateStr = f.readText()
-                    val state = GeckoSession.SessionState.fromString(stateStr)
-                    if (state != null) s.restoreState(state)
+                    val restored = GeckoSession.SessionState.fromString(f.readText())
+                    if (restored != null) s.restoreState(restored)
                 } catch (e: Exception) {
                     UHLog.w("tabs", "restore failed id=$id ${e.message}")
                 }
             }
-            alive[id] = s
+            alive[id] = Slot(s)
             currentId = id
             if (alive.size == 1) s.loadUri("about:blank")
             return s
         }
     }
 
+    fun recordState(id: Long, state: GeckoSession.SessionState) {
+        synchronized(lock) {
+            alive[id]?.latestState = state
+        }
+    }
+
     fun currentId(): Long = synchronized(lock) { currentId }
 
-    fun currentSession(): GeckoSession? = synchronized(lock) { alive[currentId] }
+    fun currentSession(): GeckoSession? = synchronized(lock) { alive[currentId]?.session }
 
     fun list(): List<TabEntity> = db.list()
 
@@ -70,7 +75,7 @@ class TabManager(private val ctx: Context) {
 
     fun close(id: Long) {
         synchronized(lock) {
-            alive.remove(id)?.let { try { it.close() } catch (_: Exception) {} }
+            alive.remove(id)?.session?.let { try { it.close() } catch (_: Exception) {} }
             db.delete(id)
             try { stateFile(id).delete() } catch (_: Exception) {}
             if (currentId == id) {
@@ -81,7 +86,7 @@ class TabManager(private val ctx: Context) {
 
     fun closeAll() {
         synchronized(lock) {
-            for (s in alive.values) try { s.close() } catch (_: Exception) {}
+            for (slot in alive.values) try { slot.session.close() } catch (_: Exception) {}
             alive.clear()
             db.clear()
             try { stateDir().deleteRecursively() } catch (_: Exception) {}
@@ -91,17 +96,10 @@ class TabManager(private val ctx: Context) {
 
     fun saveAll() {
         synchronized(lock) {
-            for ((id, s) in alive) {
+            for ((id, slot) in alive) {
                 try {
-                    s.saveState().accept { state ->
-                        try {
-                            if (state != null) {
-                                stateFile(id).writeText(state.toString())
-                            }
-                        } catch (e: Exception) {
-                            UHLog.w("tabs", "save write failed id=$id ${e.message}")
-                        }
-                    }
+                    val s = slot.latestState ?: continue
+                    stateFile(id).writeText(s.toString())
                 } catch (e: Exception) {
                     UHLog.w("tabs", "save failed id=$id ${e.message}")
                 }
@@ -114,17 +112,13 @@ class TabManager(private val ctx: Context) {
             val it = alive.entries.iterator()
             var evicted = false
             while (it.hasNext()) {
-                val eldest = it.next()
-                if (eldest.key == currentId) continue
+                val entry = it.next()
+                if (entry.key == currentId) continue
                 try {
-                    eldest.value.saveState().accept { state ->
-                        try {
-                            if (state != null) {
-                                stateFile(eldest.key).writeText(state.toString())
-                            }
-                        } catch (_: Exception) {}
+                    entry.value.latestState?.let { st ->
+                        stateFile(entry.key).writeText(st.toString())
                     }
-                    eldest.value.close()
+                    entry.value.session.close()
                 } catch (_: Exception) {}
                 it.remove()
                 evicted = true
