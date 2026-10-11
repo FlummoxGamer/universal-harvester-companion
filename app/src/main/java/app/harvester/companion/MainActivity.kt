@@ -79,16 +79,16 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread { binding.btnBack.isEnabled = value }
             }
 
-            override fun onLoadRequest(
-                session: GeckoSession,
-                request: GeckoSession.NavigationDelegate.LoadRequest
-            ): GeckoResult<AllowOrDeny>? {
-                val url = request.uri
-                if (request.target === GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW) {
-                    val id = tabs.openNew(url)
-                    runOnUiThread { switchTab(id) }
-                    return GeckoResult.fromValue(AllowOrDeny.DENY)
-                }
+override fun onLoadRequest(
+    session: GeckoSession,
+    request: GeckoSession.NavigationDelegate.LoadRequest
+): GeckoResult<AllowOrDeny>? {
+    val url = request.uri ?: return GeckoResult.fromValue(AllowOrDeny.ALLOW)
+    if (request.target === GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW) {
+        val id = tabs.openNew(url)
+        runOnUiThread { switchTab(id) }
+        return GeckoResult.fromValue(AllowOrDeny.DENY)
+    }
                 if (url.startsWith("intent:")) {
                     try {
                         startActivity(Intent.parseUri(url, Intent.URI_INTENT_SCHEME))
