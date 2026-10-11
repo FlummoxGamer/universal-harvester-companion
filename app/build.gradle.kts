@@ -9,12 +9,12 @@ repositories {
 
 android {
     namespace = "app.harvester.companion"
-    compileSdk = 35
+compileSdk = 36
 
-    defaultConfig {
-        applicationId = "app.harvester.companion"
-        minSdk = 29
-        targetSdk = 35
+defaultConfig {
+    applicationId = "app.harvester.companion"
+    minSdk = 29
+    targetSdk = 36
         versionCode = 2
         versionName = "2.0.0"
     }
