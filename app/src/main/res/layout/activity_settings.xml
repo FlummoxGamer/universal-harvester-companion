@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg"
+    android:padding="20dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_title"
+            android:textColor="@color/text"
+            android:textSize="26sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/versionLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/settings_script_missing"
+            android:textColor="@color/subtext"
+            android:textSize="12sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/settings_script_url"
+            android:textColor="@color/text"
+            android:textSize="14sp" />
+
+        <EditText
+            android:id="@+id/scriptUrl"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:background="@color/surface"
+            android:hint="https://gist.githubusercontent.com/.../raw/..."
+            android:inputType="textUri"
+            android:padding="12dp"
+            android:textColor="@color/text"
+            android:textColorHint="@color/subtext"
+            android:textSize="13sp" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/autoUpdate"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/settings_auto_update"
+            android:textColor="@color/text" />
+
+        <Button
+            android:id="@+id/btnCheckNow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/settings_check_now"
+            android:backgroundTint="@color/accent_strong"
+            android:textColor="@color/bg" />
+
+        <Button
+            android:id="@+id/btnSave"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/settings_save"
+            android:backgroundTint="@color/accent_strong"
+            android:textColor="@color/bg" />
+
+        <Button
+            android:id="@+id/btnClearState"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="32dp"
+            android:text="@string/settings_clear_state"
+            android:backgroundTint="@color/red"
+            android:textColor="@color/bg" />
+
+    </LinearLayout>
+</ScrollView>
