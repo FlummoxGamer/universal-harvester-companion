@@ -34,14 +34,16 @@ class ScriptRepository(private val ctx: Context) {
     }
 
     suspend fun download(url: String): Result<String> = withContext(Dispatchers.IO) {
+        UHLog.d("script", "download ${url.take(120)}")
         try {
-            val req = Request.Builder().url(url).get().build()
+             val req = Request.Builder().url(url).get().build()
             http.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return@withContext Result.failure(Exception("HTTP ${resp.code}"))
                 val body = resp.body?.string() ?: return@withContext Result.failure(Exception("empty"))
                 if (body.length < 100) return@withContext Result.failure(Exception("too small"))
                 scriptFile.writeText(body)
                 val v = extractVersion(body) ?: System.currentTimeMillis().toString()
+                UHLog.d("script", "downloaded v$v (${body.length}b)")
                 JSONObject().apply {
                     put("version", v)
                     put("source", url)
