@@ -72,6 +72,8 @@ kotlin {
 }
 
 dependencies {
+    // xCrash: captures Java crashes, native crashes, and ANRs without root.
+    implementation("com.iqiyi.xcrash:xcrash-android-lib:3.1.0")
     implementation("org.mozilla.geckoview:geckoview:153.0.20260810162159")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
