@@ -39,9 +39,10 @@ android {
     }
 
     packaging {
-        jniLibs {
-            useLegacyPackaging = true
-        }
+    jniLibs {
+        useLegacyPackaging = true
+        pickFirsts += setOf("**/*.so")
+    }
         resources {
             excludes += setOf(
                 "META-INF/*.kotlin_module",
@@ -65,7 +66,7 @@ android {
 }
 
 dependencies {
-    implementation("org.mozilla.geckoview:geckoview:144.0.20251007130639")
+    implementation("org.mozilla.geckoview:geckoview:128.0.20240823091904")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.constraintlayout:constraintlayout:2.2.0")
