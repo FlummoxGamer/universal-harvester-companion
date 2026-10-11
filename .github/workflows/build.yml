@@ -50,24 +50,26 @@ jobs:
         id: apks
         working-directory: src
         run: |
-          ls -la app/build/outputs/apk/debug/
+          ls -la app/build/outputs/apk/debug/ || true
           ARM64=$(find app/build/outputs/apk/debug -name "*-arm64-v8a-debug.apk" | head -1)
           ARM32=$(find app/build/outputs/apk/debug -name "*-armeabi-v7a-debug.apk" | head -1)
-          if [ -z "$ARM64" ] || [ -z "$ARM32" ]; then
-            echo "Missing split APK(s). Found:"
+          if [ -z "$ARM64" ]; then
+            echo "Missing arm64 APK"
             find app/build/outputs/apk/debug -name "*.apk"
             exit 1
           fi
           echo "arm64=$ARM64" >> $GITHUB_OUTPUT
           echo "arm32=$ARM32" >> $GITHUB_OUTPUT
-          echo "ARM64 APK: $ARM64"
-          echo "ARM32 APK: $ARM32"
+          echo "ARM64: $ARM64"
+          echo "ARM32: $ARM32"
 
       - name: Stage artifacts
         run: |
           mkdir -p out
           cp "src/${{ steps.apks.outputs.arm64 }}" "out/uh-companion-${{ steps.ver.outputs.name }}-arm64-v8a.apk"
-          cp "src/${{ steps.apks.outputs.arm32 }}" "out/uh-companion-${{ steps.ver.outputs.name }}-armeabi-v7a.apk"
+          if [ -n "${{ steps.apks.outputs.arm32 }}" ]; then
+            cp "src/${{ steps.apks.outputs.arm32 }}" "out/uh-companion-${{ steps.ver.outputs.name }}-armeabi-v7a.apk"
+          fi
           ls -la out/
 
       - name: Upload artifacts
@@ -77,33 +79,49 @@ jobs:
           path: out/*.apk
           if-no-files-found: error
 
-      - name: Publish to builds branch
+      - name: Publish APKs to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           REPO="${{ github.repository }}"
           VN="${{ steps.ver.outputs.name }}"
+          VC="${{ steps.ver.outputs.code }}"
+          TAG="v$VN-$VC"
+          gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" \
+            --repo "$REPO" \
+            --title "Build $VN ($VC)" \
+            --notes "Automated build" \
+            out/*.apk
+
+      - name: Publish version.json to builds branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPO="${{ github.repository }}"
+          VN="${{ steps.ver.outputs.name }}"
+          VC="${{ steps.ver.outputs.code }}"
+          TAG="v$VN-$VC"
           ARM64="uh-companion-$VN-arm64-v8a.apk"
           ARM32="uh-companion-$VN-armeabi-v7a.apk"
           mkdir -p /tmp/publish
-          cp "out/$ARM64" /tmp/publish/
-          cp "out/$ARM32" /tmp/publish/
           cat > /tmp/publish/version.json <<EOF
           {
-            "versionCode": ${{ steps.ver.outputs.code }},
+            "versionCode": $VC,
             "versionName": "$VN",
-            "apkUrlArm64": "https://raw.githubusercontent.com/$REPO/builds/$ARM64",
-            "apkUrlArm32": "https://raw.githubusercontent.com/$REPO/builds/$ARM32",
-            "apkUrl": "https://raw.githubusercontent.com/$REPO/builds/$ARM64",
+            "apkUrlArm64": "https://github.com/$REPO/releases/download/$TAG/$ARM64",
+            "apkUrlArm32": "https://github.com/$REPO/releases/download/$TAG/$ARM32",
+            "apkUrl": "https://github.com/$REPO/releases/download/$TAG/$ARM64",
             "changelog": "",
             "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }
           EOF
+          cat /tmp/publish/version.json
           cd /tmp/publish
           git init -q -b builds
           git remote add origin "https://x-access-token:$GH_TOKEN@github.com/$REPO.git"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Build v$VN (${{ steps.ver.outputs.code }})"
+          git commit -m "Build v$VN ($VC)"
           git push origin builds --force
