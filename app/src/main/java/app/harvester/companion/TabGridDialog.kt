@@ -13,6 +13,8 @@ import android.widget.TextView
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
+// B3: dismiss on tab tap so MainActivity's dismiss listener re-attaches;
+// auto-open a fresh tab if the last one is closed from the grid.
 class TabGridDialog(
     ctx: Context,
     private val manager: TabManager,
@@ -34,11 +36,23 @@ class TabGridDialog(
 
         val grid = findViewById<RecyclerView>(R.id.tabGrid)
         grid.layoutManager = GridLayoutManager(context, 2)
-        adapter = Adapter(manager.list(), manager.currentId(), onSwitch, onClose = { id ->
-            manager.close(id)
-            adapter?.update(manager.list(), manager.currentId())
-            if (manager.list().isEmpty()) dismiss()
-        })
+        adapter = Adapter(
+            manager.list(),
+            manager.currentId(),
+            onTap = { id ->
+                dismiss()
+                onSwitch(id)
+            },
+            onClose = { id ->
+                manager.close(id)
+                val remaining = manager.list()
+                adapter?.update(remaining, manager.currentId())
+                if (remaining.isEmpty()) {
+                    dismiss()
+                    onNew()
+                }
+            }
+        )
         grid.adapter = adapter
 
         findViewById<Button>(R.id.btnNewTab).setOnClickListener {
