@@ -38,6 +38,11 @@
                 android:exported="false"
                 android:label="@string/settings_title" />
 
+            <activity
+                android:name=".LogsActivity"
+                android:exported="false"
+                android:label="Logs" />
+
             <provider
                 android:name="androidx.core.content.FileProvider"
                 android:authorities="${applicationId}.fileprovider"
