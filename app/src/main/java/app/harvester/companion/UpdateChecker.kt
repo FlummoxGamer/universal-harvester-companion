@@ -29,9 +29,12 @@ object UpdateChecker {
         .build()
 
     fun checkAndPrompt(activity: Activity) {
-        val scope = CoroutineScope(Dispatchers.IO)
-        scope.launch {
-            val info = fetchManifest()
+    UHLog.section("UPDATE")
+    UHLog.d("update", "check started")
+    val scope = CoroutineScope(Dispatchers.IO)
+    scope.launch {
+        val info = fetchManifest()
+        UHLog.d("update", "manifest ${if (info == null) "unreachable" else "v${info.versionName} (${info.versionCode})"}")
             if (info == null) {
                 withContext(Dispatchers.Main) {
                     AlertDialog.Builder(activity)
@@ -115,9 +118,11 @@ object UpdateChecker {
                         }
                     }
                     withContext(Dispatchers.Main) { progress.dismiss() }
+                    UHLog.d("update", "downloaded ${out.length()}b → ${out.absolutePath}")
                     installApk(activity, out)
                 }
             } catch (e: Exception) {
+                UHLog.throwable("update", "download failed", e)
                 withContext(Dispatchers.Main) {
                     progress.dismiss()
                     AlertDialog.Builder(activity)
