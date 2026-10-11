@@ -48,7 +48,7 @@ class GmApiBridge(private val ctx: Context) {
     }
 
     @JavascriptInterface fun log(msg: String) {
-        android.util.Log.d("UH_GM", msg)
+        UHLog.d("gm", msg)
     }
 
     @JavascriptInterface fun saveBlob(name: String, text: String) {
@@ -81,6 +81,7 @@ class GmApiBridge(private val ctx: Context) {
                     payload.put("responseHeaders", ho)
                 }
             } catch (e: Exception) {
+                UHLog.throwable("gm-xhr", "GM_xmlhttpRequest failed: $url", e)
                 payload.put("requestId", requestId)
                 payload.put("status", 0)
                 payload.put("responseText", "")
