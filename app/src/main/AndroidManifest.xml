@@ -14,7 +14,8 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.UHCompanion"
         android:usesCleartextTraffic="true"
-        android:hardwareAccelerated="true">
+        android:hardwareAccelerated="true"
+        android:largeHeap="true">
 
         <activity
             android:name=".MainActivity"
