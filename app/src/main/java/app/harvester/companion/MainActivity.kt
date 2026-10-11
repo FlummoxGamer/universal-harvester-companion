@@ -57,12 +57,9 @@ class MainActivity : AppCompatActivity() {
             val id = tabs.openNew(url)
             attachSession(tabs.switchTo(id))
         } else {
-            val first = existing.first()
-            attachSession(tabs.switchTo(first.id))
+            attachSession(tabs.switchTo(existing.first().id))
         }
         refreshStrip()
-
-        handleIntentData(intent)
     }
 
     private fun attachSession(s: GeckoSession?) {
@@ -79,16 +76,16 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread { binding.btnBack.isEnabled = value }
             }
 
-override fun onLoadRequest(
-    session: GeckoSession,
-    request: GeckoSession.NavigationDelegate.LoadRequest
-): GeckoResult<AllowOrDeny>? {
-    val url = request.uri ?: return GeckoResult.fromValue(AllowOrDeny.ALLOW)
-    if (request.target === GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW) {
-        val id = tabs.openNew(url)
-        runOnUiThread { switchTab(id) }
-        return GeckoResult.fromValue(AllowOrDeny.DENY)
-    }
+            override fun onLoadRequest(
+                session: GeckoSession,
+                request: GeckoSession.NavigationDelegate.LoadRequest
+            ): GeckoResult<AllowOrDeny>? {
+                val url = request.uri ?: return GeckoResult.fromValue(AllowOrDeny.ALLOW)
+                if (request.target === GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW) {
+                    val id = tabs.openNew(url)
+                    runOnUiThread { switchTab(id) }
+                    return GeckoResult.fromValue(AllowOrDeny.DENY)
+                }
                 if (url.startsWith("intent:")) {
                     try {
                         startActivity(Intent.parseUri(url, Intent.URI_INTENT_SCHEME))
@@ -134,6 +131,13 @@ override fun onLoadRequest(
             override fun onPageStop(session: GeckoSession, success: Boolean) {
                 UHLog.d("web", "stop success=$success")
             }
+            override fun onSessionStateChange(
+                session: GeckoSession,
+                sessionState: GeckoSession.SessionState
+            ) {
+                val id = tabs.currentId()
+                if (id > 0) tabs.recordState(id, sessionState)
+            }
         }
 
         s.contentDelegate = object : GeckoSession.ContentDelegate {
@@ -173,9 +177,7 @@ override fun onLoadRequest(
         TabGridDialog(
             this,
             tabs,
-            onSwitch = { id ->
-                switchTab(id)
-            },
+            onSwitch = { id -> switchTab(id) },
             onNew = {
                 val id = tabs.openNew("about:blank")
                 switchTab(id)
@@ -242,16 +244,12 @@ override fun onLoadRequest(
         popup.show()
     }
 
-    private fun handleIntentData(intent: Intent?) {
-        val url = intent?.data?.toString() ?: return
-        val id = tabs.openNew(url)
-        switchTab(id)
-    }
-
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleIntentData(intent)
+        val url = intent.data?.toString() ?: return
+        val id = tabs.openNew(url)
+        switchTab(id)
     }
 
     override fun onPause() {
@@ -284,10 +282,11 @@ override fun onLoadRequest(
 
         override fun onBindViewHolder(h: VH, position: Int) {
             val t = items[position]
-            h.title.text = t.title.ifBlank { t.url.substringAfter("//").take(30).ifBlank { "New Tab" } }
+            h.title.text = t.title.ifBlank {
+                t.url.substringAfter("//").take(30).ifBlank { "New Tab" }
+            }
             h.itemView.alpha = if (t.id == current) 1f else 0.65f
             h.itemView.setOnClickListener { onTap(t.id) }
-            h.close.setOnClickListener { /* handled by grid for now */ }
         }
 
         override fun getItemCount(): Int = items.size
