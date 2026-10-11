@@ -3,10 +3,17 @@ package app.harvester.companion
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
+import android.widget.EditText
+import android.widget.ImageView
 import android.widget.PopupMenu
+import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import app.harvester.companion.databinding.ActivityMainBinding
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
@@ -18,42 +25,55 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var view: GeckoView
+    private lateinit var tabs: TabManager
     private var session: GeckoSession? = null
     private var canGoBack: Boolean = false
+    private var stripAdapter: StripAdapter? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         UHLog.init(this)
         UHLog.section("MAIN")
-        UHLog.d("main", "onCreate")
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         view = binding.geckoView
+        tabs = TabManager(this)
 
         binding.btnBack.isEnabled = false
-        binding.btnBack.setOnClickListener {
-            if (canGoBack) session?.goBack()
-        }
+        binding.btnBack.setOnClickListener { if (canGoBack) session?.goBack() }
         binding.urlBar.setOnClickListener { openUrlDialog() }
         binding.btnMenu.setOnClickListener { showMenu() }
-        binding.tabCount.setOnClickListener { /* batch 2 */ }
+        binding.tabCount.setOnClickListener { openTabGrid() }
 
-        openSession(intent?.data?.toString())
+        binding.tabStrip.layoutManager =
+            LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
+        stripAdapter = StripAdapter { id -> switchTab(id) }
+        binding.tabStrip.adapter = stripAdapter
+
+        val existing = tabs.list()
+        if (existing.isEmpty()) {
+            val url = intent?.data?.toString() ?: "about:blank"
+            val id = tabs.openNew(url)
+            attachSession(tabs.switchTo(id))
+        } else {
+            val first = existing.first()
+            attachSession(tabs.switchTo(first.id))
+        }
+        refreshStrip()
+
+        handleIntentData(intent)
     }
 
-    private fun openSession(initialUrl: String?) {
-        session?.close()
-        val s = GeckoEngine.newSession()
+    private fun attachSession(s: GeckoSession?) {
+        if (s == null) return
         installDelegates(s)
         view.setSession(s)
         session = s
-        s.loadUri(initialUrl ?: "about:blank")
     }
 
     private fun installDelegates(s: GeckoSession) {
         s.navigationDelegate = object : GeckoSession.NavigationDelegate {
-
             override fun onCanGoBack(session: GeckoSession, value: Boolean) {
                 canGoBack = value
                 runOnUiThread { binding.btnBack.isEnabled = value }
@@ -64,38 +84,31 @@ class MainActivity : AppCompatActivity() {
                 request: GeckoSession.NavigationDelegate.LoadRequest
             ): GeckoResult<AllowOrDeny>? {
                 val url = request.uri
-
                 if (request.target === GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW) {
-                    session.loadUri(url)
+                    val id = tabs.openNew(url)
+                    runOnUiThread { switchTab(id) }
                     return GeckoResult.fromValue(AllowOrDeny.DENY)
                 }
-
                 if (url.startsWith("intent:")) {
                     try {
-                        val intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
-                        startActivity(intent)
-                        return GeckoResult.fromValue(AllowOrDeny.DENY)
+                        startActivity(Intent.parseUri(url, Intent.URI_INTENT_SCHEME))
                     } catch (_: Exception) {
                         val fallback = try {
                             Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
                                 .getStringExtra("browser_fallback_url")
                         } catch (_: Exception) { null }
-                        if (!fallback.isNullOrBlank()) {
-                            session.loadUri(fallback)
-                        }
-                        return GeckoResult.fromValue(AllowOrDeny.DENY)
+                        if (!fallback.isNullOrBlank()) session.loadUri(fallback)
                     }
+                    return GeckoResult.fromValue(AllowOrDeny.DENY)
                 }
-
-                val isHttp = url.startsWith("http://") || url.startsWith("https://")
-                val isInternal = url.startsWith("about:") || url.startsWith("data:") ||
+                val http = url.startsWith("http://") || url.startsWith("https://")
+                val internal = url.startsWith("about:") || url.startsWith("data:") ||
                     url.startsWith("moz-extension:") || url.startsWith("blob:") ||
                     url.startsWith("file:")
-                if (!isHttp && !isInternal) {
+                if (!http && !internal) {
                     try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {}
                     return GeckoResult.fromValue(AllowOrDeny.DENY)
                 }
-
                 return GeckoResult.fromValue(AllowOrDeny.ALLOW)
             }
 
@@ -112,7 +125,11 @@ class MainActivity : AppCompatActivity() {
         s.progressDelegate = object : GeckoSession.ProgressDelegate {
             override fun onPageStart(session: GeckoSession, url: String) {
                 UHLog.v("web", "start ${url.take(140)}")
-                updateUrlBar(url)
+                val id = tabs.currentId()
+                if (id > 0) {
+                    tabs.updateUrl(id, url, null)
+                    runOnUiThread { refreshStrip(); updateUrlText(url) }
+                }
             }
             override fun onPageStop(session: GeckoSession, success: Boolean) {
                 UHLog.d("web", "stop success=$success")
@@ -121,22 +138,55 @@ class MainActivity : AppCompatActivity() {
 
         s.contentDelegate = object : GeckoSession.ContentDelegate {
             override fun onTitleChange(session: GeckoSession, title: String?) {
-                UHLog.v("web", "title $title")
+                val id = tabs.currentId()
+                if (id > 0 && !title.isNullOrBlank()) {
+                    tabs.updateUrl(id, session.url ?: "", title)
+                    runOnUiThread { refreshStrip() }
+                }
             }
         }
     }
 
-    private fun updateUrlBar(url: String) {
-        val safe = url.take(80)
-        runOnUiThread {
-            binding.urlText.text = safe
-            binding.urlIcon.visibility =
-                if (url.startsWith("https")) View.VISIBLE else View.INVISIBLE
-        }
+    private fun switchTab(id: Long) {
+        if (id == tabs.currentId()) return
+        val s = tabs.switchTo(id) ?: return
+        attachSession(s)
+        val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
+        updateUrlText(url)
+        refreshStrip()
+    }
+
+    private fun updateUrlText(url: String) {
+        binding.urlText.text = url.take(80)
+        binding.urlIcon.visibility =
+            if (url.startsWith("https")) View.VISIBLE else View.INVISIBLE
+    }
+
+    private fun refreshStrip() {
+        val list = tabs.list()
+        binding.tabCount.text = list.size.toString()
+        binding.tabStrip.visibility = if (list.size > 1) View.VISIBLE else View.GONE
+        stripAdapter?.update(list, tabs.currentId())
+    }
+
+    private fun openTabGrid() {
+        TabGridDialog(
+            this,
+            tabs,
+            onSwitch = { id ->
+                switchTab(id)
+            },
+            onNew = {
+                val id = tabs.openNew("about:blank")
+                switchTab(id)
+            }
+        ).apply {
+            setOnDismissListener { refreshStrip() }
+        }.show()
     }
 
     private fun openUrlDialog() {
-        val input = android.widget.EditText(this).apply {
+        val input = EditText(this).apply {
             setText(binding.urlText.text)
             setTextColor(0xFFE6EDF5.toInt())
             setHint("Search or URL")
@@ -149,8 +199,7 @@ class MainActivity : AppCompatActivity() {
             .setTitle("Go to")
             .setView(input)
             .setPositiveButton("Go") { _, _ ->
-                val raw = input.text.toString().trim()
-                val target = normalize(raw)
+                val target = normalize(input.text.toString().trim())
                 if (target.isNotBlank()) {
                     session?.loadUri(target)
                     binding.urlText.text = target.take(80)
@@ -178,7 +227,11 @@ class MainActivity : AppCompatActivity() {
         popup.menu.add(0, 5, 4, "Logs")
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
-                1 -> { openSession(null); true }
+                1 -> {
+                    val id = tabs.openNew("about:blank")
+                    switchTab(id)
+                    true
+                }
                 2 -> { session?.reload(); true }
                 3 -> { startActivity(Intent(this, ExtensionsActivity::class.java)); true }
                 4 -> { startActivity(Intent(this, SettingsActivity::class.java)); true }
@@ -189,15 +242,60 @@ class MainActivity : AppCompatActivity() {
         popup.show()
     }
 
+    private fun handleIntentData(intent: Intent?) {
+        val url = intent?.data?.toString() ?: return
+        val id = tabs.openNew(url)
+        switchTab(id)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        intent.data?.toString()?.let { session?.loadUri(it) }
+        handleIntentData(intent)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        tabs.saveAll()
     }
 
     override fun onDestroy() {
-        session?.close()
-        session = null
+        tabs.saveAll()
         super.onDestroy()
+    }
+
+    private class StripAdapter(
+        private val onTap: (Long) -> Unit
+    ) : RecyclerView.Adapter<StripAdapter.VH>() {
+
+        class VH(v: View) : RecyclerView.ViewHolder(v) {
+            val title: TextView = v.findViewById(R.id.tabTitle)
+            val close: ImageView = v.findViewById(R.id.tabClose)
+        }
+
+        private var items: List<TabEntity> = emptyList()
+        private var current: Long = -1L
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
+            val v = LayoutInflater.from(parent.context)
+                .inflate(R.layout.item_tab_strip, parent, false)
+            return VH(v)
+        }
+
+        override fun onBindViewHolder(h: VH, position: Int) {
+            val t = items[position]
+            h.title.text = t.title.ifBlank { t.url.substringAfter("//").take(30).ifBlank { "New Tab" } }
+            h.itemView.alpha = if (t.id == current) 1f else 0.65f
+            h.itemView.setOnClickListener { onTap(t.id) }
+            h.close.setOnClickListener { /* handled by grid for now */ }
+        }
+
+        override fun getItemCount(): Int = items.size
+
+        fun update(list: List<TabEntity>, currentId: Long) {
+            items = list
+            current = currentId
+            notifyDataSetChanged()
+        }
     }
 }
