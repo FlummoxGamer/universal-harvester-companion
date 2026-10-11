@@ -1,6 +1,7 @@
 package app.harvester.companion
 
-import android.app.Application 
+import android.app.Application
+import android.content.Context
 
 class UHApp : Application() {
     override fun attachBaseContext(base: Context) {
