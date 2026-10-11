@@ -2,6 +2,7 @@ package app.harvester.companion
 
 import android.os.Bundle
 import android.text.InputType
+import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -15,6 +16,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.WebExtension
 import org.mozilla.geckoview.WebExtensionController
@@ -23,8 +25,6 @@ class ExtensionsActivity : AppCompatActivity() {
 
     private lateinit var list: RecyclerView
     private lateinit var empty: TextView
-    private lateinit var btnInstall: Button
-    private lateinit var btnRefresh: Button
     private lateinit var adapter: ExtAdapter
 
     private val controller: WebExtensionController
@@ -38,7 +38,7 @@ class ExtensionsActivity : AppCompatActivity() {
         refresh()
     }
 
-    // ─── Layout built in code to avoid extra XML churn ────────────────────────
+    // ─── Layout ───────────────────────────────────────────────────────────────
 
     private fun buildRoot(): View {
         val root = LinearLayout(this).apply {
@@ -55,17 +55,16 @@ class ExtensionsActivity : AppCompatActivity() {
         })
 
         root.addView(TextView(this).apply {
-            text = "Firefox-format add-ons only. Install via AMO URL or direct .xpi link."
+            text = "Firefox-format add-ons only."
             setTextColor(0xFF8296AD.toInt())
             textSize = 12f
             setPadding(0, dp(4), 0, dp(14))
         })
 
-        // Action row
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
-        btnInstall = Button(this).apply {
+        val btnInstall = Button(this).apply {
             text = "Install from URL"
             isAllCaps = false
             setTextColor(0xFF0A0D14.toInt())
@@ -75,7 +74,7 @@ class ExtensionsActivity : AppCompatActivity() {
             }
             setOnClickListener { promptInstallUrl() }
         }
-        btnRefresh = Button(this).apply {
+        val btnRefresh = Button(this).apply {
             text = "Refresh"
             isAllCaps = false
             setTextColor(0xFF7DD3FC.toInt())
@@ -89,18 +88,16 @@ class ExtensionsActivity : AppCompatActivity() {
         actions.addView(btnRefresh)
         root.addView(actions)
 
-        // Empty state
         empty = TextView(this).apply {
             text = "No extensions installed."
             setTextColor(0xFF8296AD.toInt())
             textSize = 13f
-            gravity = android.view.Gravity.CENTER
+            gravity = Gravity.CENTER
             visibility = View.GONE
             setPadding(0, dp(40), 0, 0)
         }
         root.addView(empty)
 
-        // List
         list = RecyclerView(this).apply {
             layoutManager = LinearLayoutManager(this@ExtensionsActivity)
             layoutParams = LinearLayout.LayoutParams(
@@ -117,12 +114,14 @@ class ExtensionsActivity : AppCompatActivity() {
         return root
     }
 
-    // ─── Prompt delegate: fires on install AND on permission bump ─────────────
+    // ─── Prompt delegate ──────────────────────────────────────────────────────
 
     private fun installPromptDelegate() {
         controller.promptDelegate = object : WebExtensionController.PromptDelegate() {
 
-            // Called once per install. Must return ALLOW or DENY.
+            // FIX: return type is GeckoResult<WebExtension.PermissionPromptResponse>.
+            // FIX: PermissionPromptResponse is a class with a 3-arg constructor.
+            //      No static ALLOW / DENY constants exist.
             override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
@@ -147,7 +146,9 @@ class ExtensionsActivity : AppCompatActivity() {
                         }
                         if (dataCollectionPermissions.isNotEmpty()) {
                             append("\nData collection:\n")
-                            dataCollectionPermissions.forEach { append(" • ").append(it).append('\n') }
+                            dataCollectionPermissions.forEach {
+                                append(" • ").append(it).append('\n')
+                            }
                         }
                     }
 
@@ -157,14 +158,15 @@ class ExtensionsActivity : AppCompatActivity() {
                         .setCancelable(false)
                         .setPositiveButton("Install") { _, _ ->
                             UHLog.d("ext", "approved install ${meta.name}")
+                            // FIX: constructor (permissionsGranted, privateGranted, dataGranted)
                             deferred.complete(
-                                WebExtension.PermissionPromptResponse.ALLOW
+                                WebExtension.PermissionPromptResponse(true, false, false)
                             )
                         }
                         .setNegativeButton("Cancel") { _, _ ->
                             UHLog.d("ext", "denied install ${meta.name}")
                             deferred.complete(
-                                WebExtension.PermissionPromptResponse.DENY
+                                WebExtension.PermissionPromptResponse(false, false, false)
                             )
                         }
                         .show()
@@ -172,32 +174,32 @@ class ExtensionsActivity : AppCompatActivity() {
                 return deferred
             }
 
-            // Optional-permission requests at runtime. Auto-deny is safest.
+            // FIX: onOptionalPrompt returns GeckoResult<AllowOrDeny>, not PermissionPromptResponse.
             override fun onOptionalPrompt(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
                 dataCollectionPermissions: Array<String>
-            ): GeckoResult<WebExtension.PermissionPromptResponse> {
+            ): GeckoResult<AllowOrDeny> {
                 UHLog.d("ext", "optional prompt for ${extension.metaData.name} — denied")
-                return GeckoResult.fromValue(
-                    WebExtension.PermissionPromptResponse.DENY
-                )
+                return GeckoResult.fromValue(AllowOrDeny.DENY)
             }
         }
     }
 
-    // ─── List ─────────────────────────────────────────────────────────────────
+    // ─── Refresh list ─────────────────────────────────────────────────────────
 
     private fun refresh() {
-        controller.listInstalled().accept({ exts ->
+        // FIX: method is list(), not listInstalled().
+        // FIX: error callback param is platform-type Throwable; guard with ?.let.
+        controller.list().accept({ exts ->
             runOnUiThread {
                 adapter.submit(exts.orEmpty())
                 empty.visibility = if (exts.isNullOrEmpty()) View.VISIBLE else View.GONE
                 UHLog.d("ext", "listed ${exts?.size ?: 0} extensions")
             }
         }, { err ->
-            UHLog.throwable("ext", "listInstalled failed", err)
+            err?.let { UHLog.throwable("ext", "list failed", it) }
             runOnUiThread {
                 Toast.makeText(this, "Failed to list extensions", Toast.LENGTH_SHORT).show()
             }
@@ -232,7 +234,7 @@ class ExtensionsActivity : AppCompatActivity() {
                         refresh()
                     }
                 }, { err ->
-                    UHLog.throwable("ext", "install failed", err)
+                    err?.let { UHLog.throwable("ext", "install failed", it) }
                     runOnUiThread {
                         AlertDialog.Builder(this)
                             .setTitle("Install failed")
@@ -246,15 +248,20 @@ class ExtensionsActivity : AppCompatActivity() {
             .show()
     }
 
-    // ─── Toggle enable / disable ──────────────────────────────────────────────
+    // ─── Toggle ───────────────────────────────────────────────────────────────
 
     private fun toggleExtension(ext: WebExtension, enable: Boolean) {
-        val op = if (enable) controller.enable(ext, WebExtensionController.ENABLE_SOURCE_USER) else controller.disable(ext, WebExtensionController.DISABLE_SOURCE_USER)
+        // FIX: constants live on WebExtensionController.EnableSource, not directly on the controller.
+        val op = if (enable) {
+            controller.enable(ext, WebExtensionController.EnableSource.USER)
+        } else {
+            controller.disable(ext, WebExtensionController.EnableSource.USER)
+        }
         op.accept({
             UHLog.d("ext", "${if (enable) "enabled" else "disabled"} ${ext.metaData.name}")
             runOnUiThread { refresh() }
         }, { err ->
-            UHLog.throwable("ext", "toggle failed", err)
+            err?.let { UHLog.throwable("ext", "toggle failed", it) }
             runOnUiThread {
                 Toast.makeText(this, "Failed: ${err?.message}", Toast.LENGTH_SHORT).show()
             }
@@ -272,7 +279,7 @@ class ExtensionsActivity : AppCompatActivity() {
                     UHLog.d("ext", "uninstalled ${ext.metaData.name}")
                     runOnUiThread { refresh() }
                 }, { err ->
-                    UHLog.throwable("ext", "uninstall failed", err)
+                    err?.let { UHLog.throwable("ext", "uninstall failed", it) }
                     runOnUiThread {
                         Toast.makeText(this, "Failed: ${err?.message}", Toast.LENGTH_SHORT).show()
                     }
@@ -284,7 +291,7 @@ class ExtensionsActivity : AppCompatActivity() {
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
-    // ─── RecyclerView adapter ─────────────────────────────────────────────────
+    // ─── Adapter ──────────────────────────────────────────────────────────────
 
     private class ExtAdapter(
         private val onToggle: (WebExtension, Boolean) -> Unit,
@@ -312,7 +319,9 @@ class ExtensionsActivity : AppCompatActivity() {
             h.name.text = m.name
             h.meta.text = "v${m.version} · ${if (m.enabled) "enabled" else "disabled"}"
             h.toggle.alpha = if (m.enabled) 1f else 0.4f
-            h.toggle.setImageResource(if (m.enabled) R.drawable.ic_ext_on else R.drawable.ic_ext_off)
+            h.toggle.setImageResource(
+                if (m.enabled) R.drawable.ic_ext_on else R.drawable.ic_ext_off
+            )
             h.toggle.setOnClickListener { onToggle(e, !m.enabled) }
             h.remove.setOnClickListener { onRemove(e) }
         }
