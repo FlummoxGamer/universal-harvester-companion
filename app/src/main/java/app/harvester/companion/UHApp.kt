@@ -6,5 +6,6 @@ class UHApp : Application() {
     override fun onCreate() {
         super.onCreate()
         UHLog.init(this)
+        GeckoEngine.init(this)
     }
 }
