@@ -115,13 +115,15 @@ class ExtensionsActivity : AppCompatActivity() {
     }
 
     // ─── Prompt delegate ──────────────────────────────────────────────────────
+    // VERIFIED against WebExtensionController.java source:
+    //   onInstallPromptRequest → GeckoResult<WebExtension.PermissionPromptResponse>
+    //   onOptionalPrompt       → GeckoResult<AllowOrDeny>
+    // VERIFIED against WebExtension.java source:
+    //   PermissionPromptResponse public constructor (Boolean, Boolean, Boolean)
 
     private fun installPromptDelegate() {
         controller.promptDelegate = object : WebExtensionController.PromptDelegate() {
 
-            // VERIFIED: return type is GeckoResult<WebExtension.PermissionPromptResponse>
-            // VERIFIED: constructor is public in GeckoView 156.
-            // Signature: PermissionPromptResponse(Boolean, Boolean, Boolean)
             override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<out String>,
@@ -158,15 +160,22 @@ class ExtensionsActivity : AppCompatActivity() {
                         .setCancelable(false)
                         .setPositiveButton("Install") { _, _ ->
                             UHLog.d("ext", "approved install ${meta.name}")
-                            // VERIFIED: constructor is public in GeckoView 156.
                             deferred.complete(
-                                WebExtension.PermissionPromptResponse(true, false, false)
+                                WebExtension.PermissionPromptResponse(
+                                    java.lang.Boolean.TRUE,
+                                    java.lang.Boolean.FALSE,
+                                    java.lang.Boolean.FALSE
+                                )
                             )
                         }
                         .setNegativeButton("Cancel") { _, _ ->
                             UHLog.d("ext", "denied install ${meta.name}")
                             deferred.complete(
-                                WebExtension.PermissionPromptResponse(false, false, false)
+                                WebExtension.PermissionPromptResponse(
+                                    java.lang.Boolean.FALSE,
+                                    java.lang.Boolean.FALSE,
+                                    java.lang.Boolean.FALSE
+                                )
                             )
                         }
                         .show()
@@ -174,8 +183,6 @@ class ExtensionsActivity : AppCompatActivity() {
                 return deferred
             }
 
-            // VERIFIED: onOptionalPrompt returns GeckoResult<AllowOrDeny>,
-            // not GeckoResult<PermissionPromptResponse>.
             override fun onOptionalPrompt(
                 extension: WebExtension,
                 permissions: Array<out String>,
@@ -189,9 +196,9 @@ class ExtensionsActivity : AppCompatActivity() {
     }
 
     // ─── Refresh list ─────────────────────────────────────────────────────────
+    // VERIFIED: WebExtensionController.list() returns GeckoResult<List<WebExtension>>
 
     private fun refresh() {
-        // VERIFIED: method is list(), not listInstalled().
         controller.list().accept({ exts ->
             runOnUiThread {
                 adapter.submit(exts.orEmpty())
@@ -207,6 +214,7 @@ class ExtensionsActivity : AppCompatActivity() {
     }
 
     // ─── Install from URL ─────────────────────────────────────────────────────
+    // VERIFIED: WebExtensionController.install(String) exists.
 
     private fun promptInstallUrl() {
         val input = EditText(this).apply {
@@ -249,9 +257,9 @@ class ExtensionsActivity : AppCompatActivity() {
     }
 
     // ─── Toggle ───────────────────────────────────────────────────────────────
+    // VERIFIED: WebExtensionController.EnableSource.USER exists.
 
     private fun toggleExtension(ext: WebExtension, enable: Boolean) {
-        // VERIFIED: source constants live on WebExtensionController.EnableSource
         val op = if (enable) {
             controller.enable(ext, WebExtensionController.EnableSource.USER)
         } else {
