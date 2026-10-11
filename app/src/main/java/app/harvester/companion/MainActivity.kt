@@ -8,6 +8,7 @@ import android.widget.PopupMenu
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import app.harvester.companion.databinding.ActivityMainBinding
+import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoView
@@ -58,41 +59,22 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread { binding.btnBack.isEnabled = value }
             }
 
-            override fun onCanGoForward(session: GeckoSession, value: Boolean) {
-                // forward button not in this layout yet
-            }
-
-            override fun onLocationChange(
-                session: GeckoSession,
-                url: String?,
-                perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>?,
-                hasUserGesture: Boolean
-            ) {
-                val safe = url?.take(80) ?: ""
-                runOnUiThread {
-                    binding.urlText.text = safe
-                    binding.urlIcon.visibility =
-                        if (url?.startsWith("https") == true) View.VISIBLE else View.INVISIBLE
-                }
-                UHLog.v("nav", "location ${url?.take(140)}")
-            }
-
             override fun onLoadRequest(
                 session: GeckoSession,
                 request: GeckoSession.NavigationDelegate.LoadRequest
-            ): GeckoResult<GeckoSession.NavigationDelegate.AllowOrDeny>? {
+            ): GeckoResult<AllowOrDeny>? {
                 val url = request.uri
 
                 if (request.target === GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW) {
                     session.loadUri(url)
-                    return GeckoResult.fromValue(GeckoSession.NavigationDelegate.AllowOrDeny.DENY)
+                    return GeckoResult.fromValue(AllowOrDeny.DENY)
                 }
 
                 if (url.startsWith("intent:")) {
                     try {
                         val intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
                         startActivity(intent)
-                        return GeckoResult.fromValue(GeckoSession.NavigationDelegate.AllowOrDeny.DENY)
+                        return GeckoResult.fromValue(AllowOrDeny.DENY)
                     } catch (_: Exception) {
                         val fallback = try {
                             Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
@@ -100,9 +82,8 @@ class MainActivity : AppCompatActivity() {
                         } catch (_: Exception) { null }
                         if (!fallback.isNullOrBlank()) {
                             session.loadUri(fallback)
-                            return GeckoResult.fromValue(GeckoSession.NavigationDelegate.AllowOrDeny.DENY)
                         }
-                        return GeckoResult.fromValue(GeckoSession.NavigationDelegate.AllowOrDeny.DENY)
+                        return GeckoResult.fromValue(AllowOrDeny.DENY)
                     }
                 }
 
@@ -112,10 +93,10 @@ class MainActivity : AppCompatActivity() {
                     url.startsWith("file:")
                 if (!isHttp && !isInternal) {
                     try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {}
-                    return GeckoResult.fromValue(GeckoSession.NavigationDelegate.AllowOrDeny.DENY)
+                    return GeckoResult.fromValue(AllowOrDeny.DENY)
                 }
 
-                return null
+                return GeckoResult.fromValue(AllowOrDeny.ALLOW)
             }
 
             override fun onLoadError(
@@ -131,6 +112,7 @@ class MainActivity : AppCompatActivity() {
         s.progressDelegate = object : GeckoSession.ProgressDelegate {
             override fun onPageStart(session: GeckoSession, url: String) {
                 UHLog.v("web", "start ${url.take(140)}")
+                updateUrlBar(url)
             }
             override fun onPageStop(session: GeckoSession, success: Boolean) {
                 UHLog.d("web", "stop success=$success")
@@ -141,6 +123,15 @@ class MainActivity : AppCompatActivity() {
             override fun onTitleChange(session: GeckoSession, title: String?) {
                 UHLog.v("web", "title $title")
             }
+        }
+    }
+
+    private fun updateUrlBar(url: String) {
+        val safe = url.take(80)
+        runOnUiThread {
+            binding.urlText.text = safe
+            binding.urlIcon.visibility =
+                if (url.startsWith("https")) View.VISIBLE else View.INVISIBLE
         }
     }
 
