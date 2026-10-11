@@ -97,9 +97,10 @@ class MainActivity : AppCompatActivity() {
         return "https://www.google.com/search?q=" + Uri.encode(t)
     }
 
-    override fun onNewIntent(intent: Intent?) {
-        super.onNewIntent(intent)
-        intent?.data?.toString()?.let { webView?.loadUrl(it) }
+    override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    intent.data?.toString()?.let { webView?.loadUrl(it) }
     }
 
     override fun onResume() {
