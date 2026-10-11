@@ -44,6 +44,11 @@
                 android:name=".LogsActivity"
                 android:exported="false"
                 android:label="Logs" />
+  
+            <activity
+                android:name=".ExtensionsActivity"
+                android:exported="false"
+                android:label="Extensions" />
 
             <provider
                 android:name="androidx.core.content.FileProvider"
