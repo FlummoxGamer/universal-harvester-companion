@@ -3,9 +3,7 @@ pluginManagement {
         google()
         mavenCentral()
         gradlePluginPortal()
-        maven("https://maven.mozilla.org/maven2/") {
-            content { includeGroup("org.mozilla.geckoview") }
-        }
+        maven("https://maven.mozilla.org/maven2/")
     }
 }
 dependencyResolutionManagement {
