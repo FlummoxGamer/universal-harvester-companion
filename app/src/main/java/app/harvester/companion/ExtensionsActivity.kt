@@ -16,7 +16,6 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.WebExtension
 import org.mozilla.geckoview.WebExtensionController
@@ -34,7 +33,6 @@ class ExtensionsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         UHLog.section("EXT")
         setContentView(buildRoot())
-        installPromptDelegate()
         refresh()
     }
 
@@ -114,89 +112,7 @@ class ExtensionsActivity : AppCompatActivity() {
         return root
     }
 
-    // ─── Prompt delegate ──────────────────────────────────────────────────────
-    // VERIFIED against WebExtensionController.java source:
-    //   onInstallPromptRequest → GeckoResult<WebExtension.PermissionPromptResponse>
-    //   onOptionalPrompt       → GeckoResult<AllowOrDeny>
-    // VERIFIED against WebExtension.java source:
-    //   PermissionPromptResponse public constructor (Boolean, Boolean, Boolean)
-
-    private fun installPromptDelegate() {
-        controller.promptDelegate = object : WebExtensionController.PromptDelegate() {
-
-            override fun onInstallPromptRequest(
-                extension: WebExtension,
-                permissions: Array<out String>,
-                origins: Array<out String>,
-                dataCollectionPermissions: Array<out String>
-            ): GeckoResult<WebExtension.PermissionPromptResponse> {
-                val meta = extension.metaData
-                val deferred = GeckoResult<WebExtension.PermissionPromptResponse>()
-
-                runOnUiThread {
-                    val msg = buildString {
-                        append("Name: ").append(meta.name).append('\n')
-                        append("Version: ").append(meta.version).append('\n')
-                        append("Author: ").append(meta.creatorName ?: "unknown").append('\n')
-                        if (permissions.isNotEmpty()) {
-                            append("\nPermissions:\n")
-                            permissions.forEach { append(" • ").append(it).append('\n') }
-                        }
-                        if (origins.isNotEmpty()) {
-                            append("\nSite access:\n")
-                            origins.forEach { append(" • ").append(it).append('\n') }
-                        }
-                        if (dataCollectionPermissions.isNotEmpty()) {
-                            append("\nData collection:\n")
-                            dataCollectionPermissions.forEach {
-                                append(" • ").append(it).append('\n')
-                            }
-                        }
-                    }
-
-                    AlertDialog.Builder(this@ExtensionsActivity)
-                        .setTitle("Install ${meta.name}?")
-                        .setMessage(msg)
-                        .setCancelable(false)
-                        .setPositiveButton("Install") { _, _ ->
-                            UHLog.d("ext", "approved install ${meta.name}")
-                            deferred.complete(
-                                WebExtension.PermissionPromptResponse(
-                                    java.lang.Boolean.TRUE,
-                                    java.lang.Boolean.FALSE,
-                                    java.lang.Boolean.FALSE
-                                )
-                            )
-                        }
-                        .setNegativeButton("Cancel") { _, _ ->
-                            UHLog.d("ext", "denied install ${meta.name}")
-                            deferred.complete(
-                                WebExtension.PermissionPromptResponse(
-                                    java.lang.Boolean.FALSE,
-                                    java.lang.Boolean.FALSE,
-                                    java.lang.Boolean.FALSE
-                                )
-                            )
-                        }
-                        .show()
-                }
-                return deferred
-            }
-
-            override fun onOptionalPrompt(
-                extension: WebExtension,
-                permissions: Array<out String>,
-                origins: Array<out String>,
-                dataCollectionPermissions: Array<out String>
-            ): GeckoResult<AllowOrDeny> {
-                UHLog.d("ext", "optional prompt for ${extension.metaData.name} — denied")
-                return GeckoResult.fromValue(AllowOrDeny.DENY)
-            }
-        }
-    }
-
     // ─── Refresh list ─────────────────────────────────────────────────────────
-    // VERIFIED: WebExtensionController.list() returns GeckoResult<List<WebExtension>>
 
     private fun refresh() {
         controller.list().accept({ exts ->
@@ -214,7 +130,6 @@ class ExtensionsActivity : AppCompatActivity() {
     }
 
     // ─── Install from URL ─────────────────────────────────────────────────────
-    // VERIFIED: WebExtensionController.install(String) exists.
 
     private fun promptInstallUrl() {
         val input = EditText(this).apply {
@@ -257,7 +172,6 @@ class ExtensionsActivity : AppCompatActivity() {
     }
 
     // ─── Toggle ───────────────────────────────────────────────────────────────
-    // VERIFIED: WebExtensionController.EnableSource.USER exists.
 
     private fun toggleExtension(ext: WebExtension, enable: Boolean) {
         val op = if (enable) {
