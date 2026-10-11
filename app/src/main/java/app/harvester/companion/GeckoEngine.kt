@@ -28,14 +28,30 @@ object GeckoEngine {
     fun runtime(): GeckoRuntime =
         runtimeRef ?: error("GeckoEngine not initialised — call init() first")
 
-    fun newSession(private: Boolean = false): GeckoSession {
+    /**
+     * FIX: restoreState must be called BEFORE open(), otherwise GeckoView throws
+     * IllegalStateException("Session is open"). The caller passes state in, and this
+     * function sequences restore -> open correctly.
+     */
+    fun newSession(
+        private: Boolean = false,
+        restoreState: GeckoSession.SessionState? = null
+    ): GeckoSession {
         val settings = GeckoSessionSettings.Builder()
             .usePrivateMode(private)
             .useTrackingProtection(true)
             .build()
         val session = GeckoSession(settings)
+        if (restoreState != null) {
+            try {
+                session.restoreState(restoreState)
+                UHLog.v("gecko", "session state restored")
+            } catch (e: Exception) {
+                UHLog.w("gecko", "restoreState failed: ${e.message}")
+            }
+        }
         session.open(runtime())
-        UHLog.v("gecko", "session opened private=$private")
+        UHLog.v("gecko", "session opened private=$private restored=${restoreState != null}")
         return session
     }
 }
