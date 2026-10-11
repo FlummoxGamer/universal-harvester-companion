@@ -28,7 +28,7 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Build debug APK
+      - name: Build debug APKs
         working-directory: src
         run: gradle assembleDebug --no-daemon --no-configuration-cache
 
@@ -46,11 +46,35 @@ jobs:
           echo "name=$VN" >> $GITHUB_OUTPUT
           echo "Building v$VN (code $VC)"
 
-      - name: Upload artifact
+      - name: Locate APKs
+        id: apks
+        working-directory: src
+        run: |
+          ls -la app/build/outputs/apk/debug/
+          ARM64=$(find app/build/outputs/apk/debug -name "*-arm64-v8a-debug.apk" | head -1)
+          ARM32=$(find app/build/outputs/apk/debug -name "*-armeabi-v7a-debug.apk" | head -1)
+          if [ -z "$ARM64" ] || [ -z "$ARM32" ]; then
+            echo "Missing split APK(s). Found:"
+            find app/build/outputs/apk/debug -name "*.apk"
+            exit 1
+          fi
+          echo "arm64=$ARM64" >> $GITHUB_OUTPUT
+          echo "arm32=$ARM32" >> $GITHUB_OUTPUT
+          echo "ARM64 APK: $ARM64"
+          echo "ARM32 APK: $ARM32"
+
+      - name: Stage artifacts
+        run: |
+          mkdir -p out
+          cp "src/${{ steps.apks.outputs.arm64 }}" "out/uh-companion-${{ steps.ver.outputs.name }}-arm64-v8a.apk"
+          cp "src/${{ steps.apks.outputs.arm32 }}" "out/uh-companion-${{ steps.ver.outputs.name }}-armeabi-v7a.apk"
+          ls -la out/
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: uh-companion-debug
-          path: src/app/build/outputs/apk/debug/app-debug.apk
+          path: out/*.apk
           if-no-files-found: error
 
       - name: Publish to builds branch
@@ -58,14 +82,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           REPO="${{ github.repository }}"
-          APK="uh-companion-${{ steps.ver.outputs.name }}.apk"
+          VN="${{ steps.ver.outputs.name }}"
+          ARM64="uh-companion-$VN-arm64-v8a.apk"
+          ARM32="uh-companion-$VN-armeabi-v7a.apk"
           mkdir -p /tmp/publish
-          cp src/app/build/outputs/apk/debug/app-debug.apk "/tmp/publish/$APK"
+          cp "out/$ARM64" /tmp/publish/
+          cp "out/$ARM32" /tmp/publish/
           cat > /tmp/publish/version.json <<EOF
           {
             "versionCode": ${{ steps.ver.outputs.code }},
-            "versionName": "${{ steps.ver.outputs.name }}",
-            "apkUrl": "https://raw.githubusercontent.com/$REPO/builds/$APK",
+            "versionName": "$VN",
+            "apkUrlArm64": "https://raw.githubusercontent.com/$REPO/builds/$ARM64",
+            "apkUrlArm32": "https://raw.githubusercontent.com/$REPO/builds/$ARM32",
+            "apkUrl": "https://raw.githubusercontent.com/$REPO/builds/$ARM64",
             "changelog": "",
             "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }
@@ -76,5 +105,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Build v${{ steps.ver.outputs.name }} (${{ steps.ver.outputs.code }})"
+          git commit -m "Build v$VN (${{ steps.ver.outputs.code }})"
           git push origin builds --force
