@@ -2,4 +2,6 @@
 <paths>
     <files-path name="scripts" path="scripts/" />
     <cache-path name="cache" path="." />
+    <cache-path name="updates" path="updates/" />
+    <external-files-path name="ext" path="." />
 </paths>
