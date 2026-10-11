@@ -140,15 +140,16 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        s.contentDelegate = object : GeckoSession.ContentDelegate {
-            override fun onTitleChange(session: GeckoSession, title: String?) {
-                val id = tabs.currentId()
-                if (id > 0 && !title.isNullOrBlank()) {
-                    tabs.updateUrl(id, session.url ?: "", title)
-                    runOnUiThread { refreshStrip() }
-                }
-            }
+s.contentDelegate = object : GeckoSession.ContentDelegate {
+    override fun onTitleChange(session: GeckoSession, title: String?) {
+        val id = tabs.currentId()
+        if (id > 0 && !title.isNullOrBlank()) {
+            val storedUrl = tabs.list().firstOrNull { it.id == id }?.url ?: ""
+            tabs.updateUrl(id, storedUrl, title)
+            runOnUiThread { refreshStrip() }
         }
+    }
+}
     }
 
     private fun switchTab(id: Long) {
