@@ -119,6 +119,9 @@ class ExtensionsActivity : AppCompatActivity() {
     private fun installPromptDelegate() {
         controller.promptDelegate = object : WebExtensionController.PromptDelegate() {
 
+            // VERIFIED: return type is GeckoResult<WebExtension.PermissionPromptResponse>
+            // VERIFIED: constructor is public in GeckoView 156.
+            // Signature: PermissionPromptResponse(Boolean, Boolean, Boolean)
             override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<out String>,
@@ -155,9 +158,7 @@ class ExtensionsActivity : AppCompatActivity() {
                         .setCancelable(false)
                         .setPositiveButton("Install") { _, _ ->
                             UHLog.d("ext", "approved install ${meta.name}")
-                            // VERIFIED: constructor is public in GeckoView 154.
-                            // Params: isPermissionsGranted, isPrivateModeGranted,
-                            //         isTechnicalAndInteractionDataGranted
+                            // VERIFIED: constructor is public in GeckoView 156.
                             deferred.complete(
                                 WebExtension.PermissionPromptResponse(true, false, false)
                             )
@@ -173,7 +174,8 @@ class ExtensionsActivity : AppCompatActivity() {
                 return deferred
             }
 
-            // VERIFIED: onOptionalPrompt returns GeckoResult<AllowOrDeny>, not PermissionPromptResponse.
+            // VERIFIED: onOptionalPrompt returns GeckoResult<AllowOrDeny>,
+            // not GeckoResult<PermissionPromptResponse>.
             override fun onOptionalPrompt(
                 extension: WebExtension,
                 permissions: Array<out String>,
