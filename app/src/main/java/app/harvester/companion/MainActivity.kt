@@ -321,9 +321,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         tabs.saveAll()
-        // FIX: detach from view before closing anything, so GeckoView releases
-        // the native surface reference first.
-        try { view.setSession(null) } catch (_: Exception) {}
+        // FIX: releaseSession() detaches the current session from the view and
+        // releases the native surface. setSession(null) is not valid — the
+        // parameter is non-null.
+        try { view.releaseSession() } catch (_: Exception) {}
         tabs.drainPendingClose()
         super.onDestroy()
     }
