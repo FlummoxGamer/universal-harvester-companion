@@ -82,9 +82,24 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun setupSelfUpdateButton() {
-        val container = binding.root as android.widget.LinearLayout
-        val btn = android.widget.Button(this).apply {
-            text = "Check for app update"
+    val container = binding.root as android.widget.LinearLayout
+
+    val logsBtn = android.widget.Button(this).apply {
+        text = getString(R.string.settings_view_logs)
+        setBackgroundColor(0xFF141B28.toInt())
+        setTextColor(0xFF7DD3FC.toInt())
+        layoutParams = android.widget.LinearLayout.LayoutParams(
+            android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+            android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = 24 }
+        setOnClickListener {
+            startActivity(android.content.Intent(this@SettingsActivity, LogsActivity::class.java))
+        }
+    }
+    container.addView(logsBtn)
+
+    val btn = android.widget.Button(this).apply {
+        text = "Check for app update"
             setBackgroundColor(0xFF38BDF8.toInt())
             setTextColor(0xFF0A0D14.toInt())
             layoutParams = android.widget.LinearLayout.LayoutParams(
