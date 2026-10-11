@@ -119,14 +119,13 @@ class ExtensionsActivity : AppCompatActivity() {
     private fun installPromptDelegate() {
         controller.promptDelegate = object : WebExtensionController.PromptDelegate() {
 
-            // FIX: return type is GeckoResult<WebExtension.PermissionPromptResponse>.
-            // FIX: PermissionPromptResponse is a class with a 3-arg constructor.
-            //      No static ALLOW / DENY constants exist.
+            // VERIFIED: return type is GeckoResult<WebExtension.PermissionPromptResponse>
+            // VERIFIED: constructor is PermissionPromptResponse(Boolean, Boolean, Boolean)
             override fun onInstallPromptRequest(
                 extension: WebExtension,
-                permissions: Array<String>,
-                origins: Array<String>,
-                dataCollectionPermissions: Array<String>
+                permissions: Array<out String>,
+                origins: Array<out String>,
+                dataCollectionPermissions: Array<out String>
             ): GeckoResult<WebExtension.PermissionPromptResponse> {
                 val meta = extension.metaData
                 val deferred = GeckoResult<WebExtension.PermissionPromptResponse>()
@@ -158,8 +157,7 @@ class ExtensionsActivity : AppCompatActivity() {
                         .setCancelable(false)
                         .setPositiveButton("Install") { _, _ ->
                             UHLog.d("ext", "approved install ${meta.name}")
-                            
-                            // FIX: PermissionPromptResponse constructor uses Boolean, not primitive boolean.
+                            // VERIFIED: constructor takes Boolean (boxed), not boolean.
                             deferred.complete(
                                 WebExtension.PermissionPromptResponse(
                                     java.lang.Boolean.TRUE,
@@ -176,19 +174,19 @@ class ExtensionsActivity : AppCompatActivity() {
                                     java.lang.Boolean.FALSE,
                                     java.lang.Boolean.FALSE
                                 )
-                            )   
+                            )
                         }
                         .show()
                 }
                 return deferred
             }
 
-            // FIX: onOptionalPrompt returns GeckoResult<AllowOrDeny>, not PermissionPromptResponse.
+            // VERIFIED: onOptionalPrompt returns GeckoResult<AllowOrDeny>, not PermissionPromptResponse.
             override fun onOptionalPrompt(
                 extension: WebExtension,
-                permissions: Array<String>,
-                origins: Array<String>,
-                dataCollectionPermissions: Array<String>
+                permissions: Array<out String>,
+                origins: Array<out String>,
+                dataCollectionPermissions: Array<out String>
             ): GeckoResult<AllowOrDeny> {
                 UHLog.d("ext", "optional prompt for ${extension.metaData.name} — denied")
                 return GeckoResult.fromValue(AllowOrDeny.DENY)
@@ -199,8 +197,7 @@ class ExtensionsActivity : AppCompatActivity() {
     // ─── Refresh list ─────────────────────────────────────────────────────────
 
     private fun refresh() {
-        // FIX: method is list(), not listInstalled().
-        // FIX: error callback param is platform-type Throwable; guard with ?.let.
+        // VERIFIED: method is list(), not listInstalled().
         controller.list().accept({ exts ->
             runOnUiThread {
                 adapter.submit(exts.orEmpty())
@@ -260,7 +257,7 @@ class ExtensionsActivity : AppCompatActivity() {
     // ─── Toggle ───────────────────────────────────────────────────────────────
 
     private fun toggleExtension(ext: WebExtension, enable: Boolean) {
-        // FIX: constants live on WebExtensionController.EnableSource, not directly on the controller.
+        // VERIFIED: source constants live on WebExtensionController.EnableSource
         val op = if (enable) {
             controller.enable(ext, WebExtensionController.EnableSource.USER)
         } else {
