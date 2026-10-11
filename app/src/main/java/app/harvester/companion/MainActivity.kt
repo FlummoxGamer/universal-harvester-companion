@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.PopupMenu
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import app.harvester.companion.databinding.ActivityMainBinding
 import org.mozilla.geckoview.GeckoResult
@@ -17,6 +18,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var view: GeckoView
     private var session: GeckoSession? = null
+    private var canGoBack: Boolean = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -28,7 +30,10 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
         view = binding.geckoView
 
-        binding.btnBack.setOnClickListener { session?.goBack() }
+        binding.btnBack.isEnabled = false
+        binding.btnBack.setOnClickListener {
+            if (canGoBack) session?.goBack()
+        }
         binding.urlBar.setOnClickListener { openUrlDialog() }
         binding.btnMenu.setOnClickListener { showMenu() }
         binding.tabCount.setOnClickListener { /* batch 2 */ }
@@ -47,25 +52,47 @@ class MainActivity : AppCompatActivity() {
 
     private fun installDelegates(s: GeckoSession) {
         s.navigationDelegate = object : GeckoSession.NavigationDelegate {
+
+            override fun onCanGoBack(session: GeckoSession, value: Boolean) {
+                canGoBack = value
+                runOnUiThread { binding.btnBack.isEnabled = value }
+            }
+
+            override fun onCanGoForward(session: GeckoSession, value: Boolean) {
+                // forward button not in this layout yet
+            }
+
             override fun onLocationChange(
-                session: GeckoSession, url: String?, perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>?, hasUserGesture: Boolean
+                session: GeckoSession,
+                url: String?,
+                perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>?,
+                hasUserGesture: Boolean
             ) {
+                val safe = url?.take(80) ?: ""
                 runOnUiThread {
-                    binding.urlText.text = url?.take(80) ?: ""
-                    binding.urlIcon.visibility = if (url?.startsWith("https") == true) View.VISIBLE else View.GONE
+                    binding.urlText.text = safe
+                    binding.urlIcon.visibility =
+                        if (url?.startsWith("https") == true) View.VISIBLE else View.INVISIBLE
                 }
                 UHLog.v("nav", "location ${url?.take(140)}")
             }
 
             override fun onLoadRequest(
-                session: GeckoSession, request: GeckoSession.NavigationDelegate.LoadRequest
-            ): GeckoResult<GeckoSession.NavigationDelegate.LoadRequest>? {
+                session: GeckoSession,
+                request: GeckoSession.NavigationDelegate.LoadRequest
+            ): GeckoResult<GeckoSession.NavigationDelegate.AllowOrDeny>? {
                 val url = request.uri
+
+                if (request.target === GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW) {
+                    session.loadUri(url)
+                    return GeckoResult.fromValue(GeckoSession.NavigationDelegate.AllowOrDeny.DENY)
+                }
+
                 if (url.startsWith("intent:")) {
                     try {
                         val intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
                         startActivity(intent)
-                        return GeckoResult.fromValue(null)
+                        return GeckoResult.fromValue(GeckoSession.NavigationDelegate.AllowOrDeny.DENY)
                     } catch (_: Exception) {
                         val fallback = try {
                             Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
@@ -73,19 +100,28 @@ class MainActivity : AppCompatActivity() {
                         } catch (_: Exception) { null }
                         if (!fallback.isNullOrBlank()) {
                             session.loadUri(fallback)
-                            return GeckoResult.fromValue(null)
+                            return GeckoResult.fromValue(GeckoSession.NavigationDelegate.AllowOrDeny.DENY)
                         }
+                        return GeckoResult.fromValue(GeckoSession.NavigationDelegate.AllowOrDeny.DENY)
                     }
                 }
-                if (!url.startsWith("http") && !url.startsWith("about:") && !url.startsWith("data:") && !url.startsWith("moz-extension:")) {
+
+                val isHttp = url.startsWith("http://") || url.startsWith("https://")
+                val isInternal = url.startsWith("about:") || url.startsWith("data:") ||
+                    url.startsWith("moz-extension:") || url.startsWith("blob:") ||
+                    url.startsWith("file:")
+                if (!isHttp && !isInternal) {
                     try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {}
-                    return GeckoResult.fromValue(null)
+                    return GeckoResult.fromValue(GeckoSession.NavigationDelegate.AllowOrDeny.DENY)
                 }
-                return GeckoResult.fromValue(request)
+
+                return null
             }
 
             override fun onLoadError(
-                session: GeckoSession, uri: String?, error: WebRequestError
+                session: GeckoSession,
+                uri: String?,
+                error: WebRequestError
             ): GeckoResult<String>? {
                 UHLog.w("nav", "load error code=${error.code} uri=$uri")
                 return null
@@ -118,7 +154,7 @@ class MainActivity : AppCompatActivity() {
             setSingleLine()
             inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI
         }
-        androidx.appcompat.app.AlertDialog.Builder(this)
+        AlertDialog.Builder(this)
             .setTitle("Go to")
             .setView(input)
             .setPositiveButton("Go") { _, _ ->
@@ -136,7 +172,8 @@ class MainActivity : AppCompatActivity() {
     private fun normalize(input: String): String {
         val t = input.trim()
         if (t.isEmpty()) return ""
-        if (t.startsWith("http://") || t.startsWith("https://") || t.startsWith("about:") || t.startsWith("moz-extension:")) return t
+        if (t.startsWith("http://") || t.startsWith("https://") ||
+            t.startsWith("about:") || t.startsWith("moz-extension:")) return t
         if (t.contains(".") && !t.contains(" ")) return "https://$t"
         return "https://html.duckduckgo.com/html/?q=" + Uri.encode(t)
     }
@@ -152,10 +189,7 @@ class MainActivity : AppCompatActivity() {
             when (item.itemId) {
                 1 -> { openSession(null); true }
                 2 -> { session?.reload(); true }
-                3 -> {
-                    startActivity(Intent(this, ExtensionsActivity::class.java))
-                    true
-                }
+                3 -> { startActivity(Intent(this, ExtensionsActivity::class.java)); true }
                 4 -> { startActivity(Intent(this, SettingsActivity::class.java)); true }
                 5 -> { startActivity(Intent(this, LogsActivity::class.java)); true }
                 else -> false
