@@ -31,8 +31,6 @@ class MainActivity : AppCompatActivity() {
     private var session: GeckoSession? = null
     private var stripAdapter: StripAdapter? = null
 
-    // B5: install delegates at most once per (Activity, session) pair.
-    // Weak keys so evicted sessions don't leak.
     private val instrumented = WeakHashMap<GeckoSession, Boolean>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,25 +57,28 @@ class MainActivity : AppCompatActivity() {
         stripAdapter = StripAdapter { id -> switchTab(id) }
         binding.tabStrip.adapter = stripAdapter
 
-        // B4: system back → page history first, exit only at root.
         onBackPressedDispatcher.addCallback(this) {
             val s = session
             if (s != null && tabs.canGoBack(s)) s.goBack() else finish()
         }
 
+        // Startup: attach exactly one session.
         val existing = tabs.list()
-        val startId = if (existing.isEmpty()) {
+        if (existing.isEmpty()) {
             tabs.openNew(intent?.data?.toString() ?: "about:blank")
         } else {
-            existing.first().id
+            tabs.switchTo(existing.first().id)
         }
-        val s = tabs.switchTo(startId)
-        attachSession(s)
-        val url = tabs.list().firstOrNull { it.id == startId }?.url ?: ""
+        attachSession(tabs.currentSession())
+        val url = tabs.list().firstOrNull { it.id == tabs.currentId() }?.url ?: ""
         updateUrlText(url)
         refreshStrip()
     }
 
+    /**
+     * FIX: after view.setSession(s) the old session is fully detached from the
+     * native view. Only then is it safe to drain pending native closes.
+     */
     private fun attachSession(s: GeckoSession?) {
         if (s == null) return
         if (!instrumented.containsKey(s)) {
@@ -87,6 +88,8 @@ class MainActivity : AppCompatActivity() {
         view.setSession(s)
         session = s
         binding.btnBack.isEnabled = tabs.canGoBack(s)
+        // Now safe — old sessions are detached.
+        tabs.drainPendingClose()
     }
 
     private fun installDelegates(s: GeckoSession) {
@@ -147,7 +150,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         s.progressDelegate = object : GeckoSession.ProgressDelegate {
-            // B1: key callbacks on the firing session, never on currentId().
             override fun onPageStart(session: GeckoSession, url: String) {
                 UHLog.v("web", "start ${url.take(140)}")
                 val id = tabs.idForSession(session)
@@ -185,12 +187,17 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * FIX: no more same-id early return that skipped attach. Always attach the
+     * session returned by switchTo (which is the alive session for that id, or
+     * a freshly restored one).
+     */
     private fun switchTab(id: Long) {
-        if (id == tabs.currentId()) {
+        val s = tabs.switchTo(id) ?: return
+        if (s === session) {
             refreshStrip()
             return
         }
-        val s = tabs.switchTo(id) ?: return
         attachSession(s)
         val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
         updateUrlText(url)
@@ -216,11 +223,13 @@ class MainActivity : AppCompatActivity() {
             tabs,
             onSwitch = { id -> switchTab(id) },
             onNew = {
-                val id = tabs.openNew("about:blank")
-                switchTab(id)
+                tabs.openNew("about:blank")
+                val s = tabs.currentSession()
+                if (s != null) attachSession(s)
+                updateUrlText("about:blank")
+                refreshStrip()
             }
         ).apply {
-            // B3: after per-tab close or close-all, current session may differ.
             setOnDismissListener {
                 val live = tabs.currentSession()
                 if (live != null && live !== session) {
@@ -276,8 +285,11 @@ class MainActivity : AppCompatActivity() {
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> {
-                    val id = tabs.openNew("about:blank")
-                    switchTab(id)
+                    tabs.openNew("about:blank")
+                    val s = tabs.currentSession()
+                    if (s != null) attachSession(s)
+                    updateUrlText("about:blank")
+                    refreshStrip()
                     true
                 }
                 2 -> { session?.reload(); true }
@@ -295,8 +307,11 @@ class MainActivity : AppCompatActivity() {
         setIntent(intent)
         val incoming = intent.data?.toString()
         if (incoming.isNullOrBlank()) return
-        val id = tabs.openNew(incoming)
-        switchTab(id)
+        tabs.openNew(incoming)
+        val s = tabs.currentSession()
+        if (s != null) attachSession(s)
+        updateUrlText(incoming)
+        refreshStrip()
     }
 
     override fun onPause() {
@@ -306,6 +321,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         tabs.saveAll()
+        // FIX: detach from view before closing anything, so GeckoView releases
+        // the native surface reference first.
+        try { view.setSession(null) } catch (_: Exception) {}
+        tabs.drainPendingClose()
         super.onDestroy()
     }
 
@@ -334,7 +353,6 @@ class MainActivity : AppCompatActivity() {
             }
             h.itemView.alpha = if (t.id == current) 1f else 0.65f
             h.itemView.setOnClickListener { onTap(t.id) }
-            // NOTE: strip close button still has no handler — flagged separately.
         }
 
         override fun getItemCount(): Int = items.size
