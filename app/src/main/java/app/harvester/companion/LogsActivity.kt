@@ -86,6 +86,7 @@ class LogsActivity : AppCompatActivity() {
         btnRow.addView(mk("SAVE", 0xFFE6EDF5.toInt()) { save() })
         btnRow.addView(mk("COPY", 0xFFE6EDF5.toInt()) { copy() })
         btnRow.addView(mk("CLEAR", 0xFFF87171.toInt()) { UHLog.clear(); refresh() })
+        btnRow.addView(mk("Tombstones", 0xFFF87171.toInt()) { exportTombstones() })
         root.addView(btnRow)
 
         val close = Button(this).apply {
@@ -128,10 +129,36 @@ class LogsActivity : AppCompatActivity() {
     }
 
     private fun copy() {
-        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        cm.setPrimaryClip(ClipData.newPlainText("UH Logs", UHLog.snapshot()))
-        Toast.makeText(this, "Copied ${UHLog.size()} lines", Toast.LENGTH_SHORT).show()
+    val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    cm.setPrimaryClip(ClipData.newPlainText("UH Logs", UHLog.snapshot()))
+    Toast.makeText(this, "Copied ${UHLog.size()} lines", Toast.LENGTH_SHORT).show()
+}
+
+/**
+ * Copies all xCrash tombstone files to Downloads/uh_tombstones/ so they
+ * can be accessed without root or ADB.
+ */
+private fun exportTombstones() {
+    try {
+        val dir = java.io.File(filesDir, "tombstones")
+        if (!dir.exists() || dir.listFiles().isNullOrEmpty()) {
+            Toast.makeText(this, "No tombstones found", Toast.LENGTH_SHORT).show()
+            return
+        }
+        var count = 0
+        dir.listFiles()?.forEach { f ->
+            if (f.isFile) {
+                // Reuse DownloadHelper to save text content
+                DownloadHelper.saveTextToDownloads(this, "tombstone_${f.name}", f.readText())
+                count++
+            }
+        }
+        Toast.makeText(this, "Exported $count tombstone(s) to Downloads", Toast.LENGTH_LONG).show()
+    } catch (e: Exception) {
+        UHLog.throwable("tombstone", "export failed", e)
+        Toast.makeText(this, "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
     }
+}
 
     override fun onStart() {
         super.onStart()
