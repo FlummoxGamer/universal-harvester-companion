@@ -158,16 +158,25 @@ class ExtensionsActivity : AppCompatActivity() {
                         .setCancelable(false)
                         .setPositiveButton("Install") { _, _ ->
                             UHLog.d("ext", "approved install ${meta.name}")
-                            // FIX: constructor (permissionsGranted, privateGranted, dataGranted)
+                            
+                            // FIX: PermissionPromptResponse constructor uses Boolean, not primitive boolean.
                             deferred.complete(
-                                WebExtension.PermissionPromptResponse(true, false, false)
+                                WebExtension.PermissionPromptResponse(
+                                    java.lang.Boolean.TRUE,
+                                    java.lang.Boolean.FALSE,
+                                    java.lang.Boolean.FALSE
+                                )
                             )
                         }
                         .setNegativeButton("Cancel") { _, _ ->
                             UHLog.d("ext", "denied install ${meta.name}")
                             deferred.complete(
-                                WebExtension.PermissionPromptResponse(false, false, false)
-                            )
+                                WebExtension.PermissionPromptResponse(
+                                    java.lang.Boolean.FALSE,
+                                    java.lang.Boolean.FALSE,
+                                    java.lang.Boolean.FALSE
+                                )
+                            )   
                         }
                         .show()
                 }
