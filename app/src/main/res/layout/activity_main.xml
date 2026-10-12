@@ -46,23 +46,25 @@
             android:alignmentMode="alignMargins"
             android:columnOrderPreserved="false">
 
-            <!-- Google -->
-            <LinearLayout
-                android:layout_width="80dp"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:gravity="center">
-                <ImageView
-                    android:layout_width="56dp"
-                    android:layout_height="56dp"
-                    android:background="@drawable/ic_google_rounded"
-                    android:padding="12dp" />
-                <TextView
-                    android:text="Google"
-                    android:textColor="@color/text"
-                    android:textSize="12sp"
-                    android:layout_marginTop="8dp" />
-            </LinearLayout>
+        <!-- Search Engine -->
+        <LinearLayout
+            android:layout_width="80dp"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center">
+       <ImageView
+            android:id="@+id/homeSearchIcon"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="@drawable/ic_google_rounded"
+            android:padding="12dp" />
+       <TextView
+            android:id="@+id/homeSearchLabel"
+            android:text="Google"
+            android:textColor="@color/text"
+            android:textSize="12sp"
+            android:layout_marginTop="8dp" />
+       </LinearLayout>
 
             <!-- Extensions -->
             <LinearLayout
