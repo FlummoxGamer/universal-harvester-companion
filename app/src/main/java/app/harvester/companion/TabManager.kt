@@ -37,7 +37,18 @@ class TabManager private constructor(private val ctx: Context) {
             val view = WebViewEngine.create(ctx)
             alive[id] = Slot(view)
             currentId = id
-            view.loadUrl(url)
+            if (url.isNotBlank() && url != "about:blank") view.loadUrl(url)
+            return id
+        }
+    }
+
+    fun openBlankTab(): Long {
+        synchronized(lock) {
+            val id = db.insert("about:blank")
+            evictAllExcept(id)
+            val view = WebViewEngine.create(ctx)
+            alive[id] = Slot(view)
+            currentId = id
             return id
         }
     }
@@ -54,7 +65,9 @@ class TabManager private constructor(private val ctx: Context) {
             val restored = restoreState(id, view)
             if (!restored) {
                 val fallback = db.list().firstOrNull { it.id == id }?.url
-                view.loadUrl(fallback ?: "about:blank")
+                if (!fallback.isNullOrBlank() && fallback != "about:blank") {
+                    view.loadUrl(fallback)
+                }
             }
             return view
         }
