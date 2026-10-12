@@ -18,9 +18,6 @@ class SettingsActivity : AppCompatActivity() {
 
         binding.versionLabel.text = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
 
-        binding.btnExtensions.setOnClickListener {
-            startActivity(Intent(this, ExtensionsActivity::class.java))
-        }
         binding.btnLogs.setOnClickListener {
             startActivity(Intent(this, LogsActivity::class.java))
         }
@@ -33,10 +30,10 @@ class SettingsActivity : AppCompatActivity() {
     private fun confirmClear() {
         AlertDialog.Builder(this)
             .setTitle("Clear all state?")
-            .setMessage("Cookies, cached data, and page storage will be wiped. Extensions stay installed.")
+            .setSubtitle(null)
+            .setMessage("Cookies, cached data, page storage, and installed userscripts will be wiped.")
             .setPositiveButton("Clear") { _, _ ->
                 try {
-                    // Clear any legacy prefs from the WebView build
                     getSharedPreferences("uh_gm", MODE_PRIVATE).edit().clear().apply()
                     java.io.File(filesDir, "scripts").deleteRecursively()
                 } catch (_: Exception) {}
