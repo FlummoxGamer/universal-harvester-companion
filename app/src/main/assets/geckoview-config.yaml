@@ -1,0 +1,3 @@
+prefs:
+  gfx.webrender.software: true
+  gfx.webrender.software.opengl: true
