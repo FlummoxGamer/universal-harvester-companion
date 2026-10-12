@@ -15,7 +15,6 @@ class UHApp : Application() {
         super.onCreate()
 
         CrashReporter(
-            context = this,
             services = listOf()
         ).install(this)
 
