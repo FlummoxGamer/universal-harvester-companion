@@ -10,7 +10,7 @@ object DebugPrefs {
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 
     fun verboseLogging(ctx: Context): Boolean =
-        prefs(ctx).getBoolean(KEY_VERBOSE, false)
+        prefs(ctx).getBoolean(KEY_VERBOSE, true)
 
     fun setVerboseLogging(ctx: Context, on: Boolean) {
         prefs(ctx).edit().putBoolean(KEY_VERBOSE, on).apply()
