@@ -15,9 +15,8 @@ object UHLog {
 
     private const val TAG = "UHCompanion"
     private const val MAX_LINES = 3000
-    private const val MAX_FILE_BYTES = 1_500_000L
     private const val FLUSH_EVERY = 20
-    private const val KEEP_ROTATIONS = 3
+    private const val RETENTION_MS = 24L * 60L * 60L * 1000L
 
     private val buffer = ArrayDeque<String>(MAX_LINES)
     private val lock = Any()
@@ -28,7 +27,7 @@ object UHLog {
     private var pending = 0
     private var appContext: Context? = null
     private var initialised = false
-    @Volatile private var verbose = false
+    @Volatile private var verbose = true
 
     @Volatile var externalPath: String = ""
 
@@ -53,27 +52,32 @@ object UHLog {
                 val dir = ext ?: ctx.filesDir
                 dir.mkdirs()
                 val current = File(dir, "uh_log.txt")
-                rotateIfNeeded(dir, current)
+                archiveAndCleanup(dir, current)
                 writer = BufferedWriter(FileWriter(current, true))
                 externalPath = current.absolutePath
             } catch (_: Exception) {}
         }
         section("BOOT")
-        d("boot", "UH Companion ${BuildConfig.VERSION_NAME} (code ${BuildConfig.VERSION_CODE})")
+        d("boot", "Harvester ${BuildConfig.VERSION_NAME} (code ${BuildConfig.VERSION_CODE})")
         d("boot", "Android ${Build.VERSION.RELEASE} · SDK ${Build.VERSION.SDK_INT}")
         d("boot", "Device ${Build.MANUFACTURER} ${Build.MODEL}")
         d("boot", "ABI ${Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"}")
     }
 
-    private fun rotateIfNeeded(dir: File, current: File) {
-        if (!current.exists() || current.length() == 0L) return
+    private fun archiveAndCleanup(dir: File, current: File) {
         try {
-            val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-            val archived = File(dir, "uh_log_$ts.txt")
-            current.renameTo(archived)
-            val all = dir.listFiles { f -> f.name.startsWith("uh_log_") && f.name != "uh_log.txt" }
-                ?.sortedByDescending { it.name } ?: emptyList()
-            all.drop(KEEP_ROTATIONS).forEach { it.delete() }
+            if (current.exists() && current.length() > 0L) {
+                val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                current.renameTo(File(dir, "uh_log_$ts.txt"))
+            }
+            val cutoff = System.currentTimeMillis() - RETENTION_MS
+            dir.listFiles { f ->
+                f.name.startsWith("uh_log_") && f.name.endsWith(".txt")
+            }?.forEach { f ->
+                if (f.lastModified() < cutoff) {
+                    try { f.delete() } catch (_: Exception) {}
+                }
+            }
         } catch (_: Exception) {}
     }
 
