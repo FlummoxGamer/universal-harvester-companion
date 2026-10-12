@@ -73,9 +73,7 @@ kotlin {
 
 dependencies {
     
-    // lib-crash: captures GeckoView child-process native crashes.
-    // Uses the latest published release; no GeckoView version lock required.
-    implementation("org.mozilla.components:lib-crash:158.0b5")
+    implementation("org.mozilla.components:lib-crash:153.0.0")
     implementation("org.mozilla.geckoview:geckoview:153.0.20260810162159")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
