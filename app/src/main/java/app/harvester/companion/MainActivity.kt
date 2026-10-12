@@ -285,8 +285,9 @@ class MainActivity : AppCompatActivity() {
             override fun onCreateWindow(
                 v: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message
             ): Boolean {
-                val id = tabs.openNew("about:blank")
-                switchTab(id)
+                val id = tabs.openBlankTab()
+                tabs.acquireView(id)
+                attachCurrent()
                 val newView = tabs.currentView() ?: return false
                 val transport = resultMsg.obj as WebView.WebViewTransport
                 transport.webView = newView
