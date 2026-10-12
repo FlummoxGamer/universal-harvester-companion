@@ -6,8 +6,8 @@
     android:layout_height="match_parent"
     android:background="@color/bg">
 
-    <org.mozilla.geckoview.GeckoView
-        android:id="@+id/geckoView"
+    <FrameLayout
+        android:id="@+id/webContainer"
         android:layout_width="0dp"
         android:layout_height="0dp"
         app:layout_constraintTop_toTopOf="parent"
@@ -50,6 +50,15 @@
             android:scaleType="centerInside"
             android:contentDescription="Back" />
 
+        <ImageButton
+            android:id="@+id/btnForward"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_forward"
+            android:scaleType="centerInside"
+            android:contentDescription="Forward" />
+
         <LinearLayout
             android:id="@+id/urlBar"
             android:layout_width="0dp"
@@ -81,6 +90,15 @@
                 android:ellipsize="end"
                 android:textColor="@color/text"
                 android:textSize="13sp" />
+
+            <ProgressBar
+                android:id="@+id/pageProgress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="0dp"
+                android:layout_height="2dp"
+                android:layout_weight="0"
+                android:max="100"
+                android:visibility="gone" />
         </LinearLayout>
 
         <TextView
