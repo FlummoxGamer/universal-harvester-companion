@@ -70,6 +70,8 @@ kotlin {
 
 dependencies {
     implementation("org.mozilla.geckoview:geckoview:153.0.20260810162159")
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("org.mozilla.components:support-base:150.0.3")
     implementation("org.mozilla.components:lib-crash:150.0.3")
     implementation("org.mozilla.components:concept-base:150.0.3")
     implementation("androidx.appcompat:appcompat:1.7.0")
