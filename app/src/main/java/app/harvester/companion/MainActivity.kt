@@ -66,12 +66,7 @@ class MainActivity : AppCompatActivity() {
         binding.tabCount.setOnClickListener { openTabGrid() }
 
         binding.homeScreen.findViewById<View>(R.id.homeSearchIcon)?.setOnClickListener {
-            val url = when (SearchEnginePrefs.getEngine(this)) {
-                SearchEnginePrefs.ENGINE_DUCKDUCKGO -> "https://duckduckgo.com"
-                SearchEnginePrefs.ENGINE_BING -> "https://www.bing.com"
-                else -> "https://www.google.com"
-            }
-            loadUrlFromHome(url)
+            loadUrlFromHome(SearchEnginePrefs.getHomeUrl(this))
         }
         binding.homeScreen.findViewWithTag<View>("btnExtensions")?.setOnClickListener {
             promptInstallUserscript()
