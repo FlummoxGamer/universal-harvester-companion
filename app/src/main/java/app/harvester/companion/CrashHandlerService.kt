@@ -3,6 +3,7 @@ package app.harvester.companion
 import android.app.Service
 import android.content.Intent
 import android.os.IBinder
+import org.mozilla.geckoview.GeckoRuntime
 
 class CrashHandlerService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
