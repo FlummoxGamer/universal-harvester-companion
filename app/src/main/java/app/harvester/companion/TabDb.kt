@@ -5,7 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
-class TabDb(ctx: Context) : SQLiteOpenHelper(ctx, "uh_tabs.db", null, 1) {
+class TabDb(ctx: Context) : SQLiteOpenHelper(ctx, "uh_tabs.db", null, 2) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -14,7 +14,8 @@ class TabDb(ctx: Context) : SQLiteOpenHelper(ctx, "uh_tabs.db", null, 1) {
                 "url TEXT NOT NULL," +
                 "title TEXT," +
                 "position INTEGER NOT NULL," +
-                "created_at INTEGER NOT NULL)"
+                "created_at INTEGER NOT NULL," +
+                "state BLOB)"
         )
     }
 
@@ -65,6 +66,22 @@ class TabDb(ctx: Context) : SQLiteOpenHelper(ctx, "uh_tabs.db", null, 1) {
             if (!title.isNullOrBlank()) put("title", title)
         }
         writableDatabase.update("tabs", cv, "id=?", arrayOf(id.toString()))
+    }
+
+    @Synchronized
+    fun saveState(id: Long, bytes: ByteArray) {
+        val cv = ContentValues().apply { put("state", bytes) }
+        writableDatabase.update("tabs", cv, "id=?", arrayOf(id.toString()))
+    }
+
+    @Synchronized
+    fun loadState(id: Long): ByteArray? {
+        readableDatabase.rawQuery(
+            "SELECT state FROM tabs WHERE id=?", arrayOf(id.toString())
+        ).use {
+            if (it.moveToFirst() && !it.isNull(0)) return it.getBlob(0)
+        }
+        return null
     }
 
     @Synchronized
