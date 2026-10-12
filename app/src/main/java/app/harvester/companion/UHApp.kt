@@ -16,7 +16,6 @@ class UHApp : Application() {
     override fun onCreate() {
         super.onCreate()
         UHLog.init(this)
-        UHLog.d("xcrash", "initialized=${xcrash.XCrash.initialized}")
         GeckoEngine.init(this)
         // Fire-and-forget: dump any pending tombstones to Downloads.
         Thread { exportTombstones(this) }.start()
@@ -29,9 +28,15 @@ class UHApp : Application() {
     private fun exportTombstones(ctx: Context) {
         try {
             val src = File(ctx.filesDir, "tombstones")
-            if (!src.exists()) return
-            val files = src.listFiles() ?: return
-            if (files.isEmpty()) return
+            if (!src.exists()) {
+                UHLog.d("tombstone", "no tombstones dir at ${src.absolutePath}")
+                return
+            }
+            val files = src.listFiles()
+            if (files == null || files.isEmpty()) {
+                UHLog.d("tombstone", "tombstones dir empty")
+                return
+            }
             var exported = 0
             for (f in files) {
                 if (!f.isFile) continue
@@ -47,9 +52,7 @@ class UHApp : Application() {
                     UHLog.w("tombstone", "export failed for ${f.name}: ${e.message}")
                 }
             }
-            if (exported > 0) {
-                UHLog.d("tombstone", "exported $exported tombstone(s) to Downloads/uh_tombstones")
-            }
+            UHLog.d("tombstone", "exported $exported of ${files.size} file(s) to Downloads")
         } catch (e: Exception) {
             UHLog.throwable("tombstone", "export crashed", e)
         }
