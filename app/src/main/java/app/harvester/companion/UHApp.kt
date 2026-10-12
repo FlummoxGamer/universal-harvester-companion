@@ -2,7 +2,9 @@ package app.harvester.companion
 
 import android.app.Application
 import android.content.Context
+import androidx.core.app.NotificationManagerCompat
 import mozilla.components.lib.crash.CrashReporter
+import mozilla.components.support.base.android.NotificationsDelegate
 import java.io.File
 
 class UHApp : Application() {
@@ -15,7 +17,11 @@ class UHApp : Application() {
         super.onCreate()
 
         CrashReporter(
-            services = listOf()
+            context = this,
+            services = listOf(),
+            notificationsDelegate = NotificationsDelegate(
+                NotificationManagerCompat.from(this)
+            )
         ).install(this)
 
         UHLog.init(this)
