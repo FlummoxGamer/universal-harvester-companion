@@ -1,7 +1,6 @@
 package app.harvester.companion
 
 import android.annotation.SuppressLint
-import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -25,6 +24,7 @@ import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.GridLayoutManager
 import app.harvester.companion.databinding.ActivityMainBinding
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import kotlinx.coroutines.CoroutineScope
@@ -38,6 +38,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var tabs: TabManager
+    private lateinit var shortcutAdapter: ShortcutAdapter
     private var currentView: WebView? = null
 
     private val filePickerLauncher = registerForActivityResult(
@@ -55,33 +56,9 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
         tabs = TabManager.get(this)
 
-        binding.btnBack.setOnClickListener {
-            currentView?.let { if (it.canGoBack()) it.goBack() }
-        }
-        binding.btnForward.setOnClickListener {
-            currentView?.let { if (it.canGoForward()) it.goForward() }
-        }
-        binding.urlBar.setOnClickListener { openUrlDialog() }
-        binding.btnMenu.setOnClickListener { showMenu() }
-        binding.tabCount.setOnClickListener { openTabGrid() }
-
-        binding.homeScreen.findViewById<View>(R.id.homeSearchIcon)?.setOnClickListener {
-            loadUrlFromHome(SearchEnginePrefs.getHomeUrl(this))
-        }
-        binding.homeScreen.findViewWithTag<View>("btnExtensions")?.setOnClickListener {
-            promptInstallUserscript()
-        }
-        binding.homeScreen.findViewWithTag<View>("btnX")?.setOnClickListener {
-            loadUrlFromHome("https://x.com")
-        }
-        binding.homeScreen.findViewWithTag<View>("btnAdd")?.setOnClickListener {
-            openUrlDialog()
-        }
-
-        onBackPressedDispatcher.addCallback(this) {
-            val v = currentView
-            if (v != null && v.canGoBack()) v.goBack() else finish()
-        }
+        setupHomeGrid()
+        setupBottomBar()
+        setupBackDispatcher()
 
         val existing = tabs.list()
         if (existing.isEmpty()) {
@@ -91,6 +68,93 @@ class MainActivity : AppCompatActivity() {
         }
         attachCurrent()
         UHLog.d("main", "onCreate complete")
+    }
+
+    private fun setupHomeGrid() {
+        shortcutAdapter = ShortcutAdapter(
+            onOpen = { s -> loadUrlFromHome(s.url) },
+            onAdd = { showAddShortcutDialog() },
+            onLongPress = { s -> confirmRemoveShortcut(s) }
+        )
+        binding.shortcutsGrid.layoutManager = GridLayoutManager(this, 4)
+        binding.shortcutsGrid.adapter = shortcutAdapter
+        shortcutAdapter.submit(ShortcutStore.list(this))
+    }
+
+    private fun setupBottomBar() {
+        binding.btnBack.setOnClickListener {
+            currentView?.let { if (it.canGoBack()) it.goBack() }
+        }
+        binding.btnForward.setOnClickListener {
+            currentView?.let { if (it.canGoForward()) it.goForward() }
+        }
+        binding.urlBar.setOnClickListener { openUrlDialog() }
+        binding.btnMenu.setOnClickListener { showMenu() }
+        binding.tabCount.setOnClickListener { openTabGrid() }
+    }
+
+    private fun setupBackDispatcher() {
+        onBackPressedDispatcher.addCallback(this) {
+            val v = currentView
+            if (v != null && v.canGoBack()) v.goBack() else finish()
+        }
+    }
+
+    private fun showAddShortcutDialog() {
+        val sheet = BottomSheetDialog(this)
+        val v = layoutInflater.inflate(R.layout.dialog_add_shortcut, null)
+        val inputUrl = v.findViewById<EditText>(R.id.inputUrl)
+        val inputName = v.findViewById<EditText>(R.id.inputName)
+        sheet.setContentView(v)
+        sheet.behavior.peekHeight = 600
+
+        v.findViewById<View>(android.R.id.content)
+        val btnRow = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.END
+            setPadding(20, 0, 20, 20)
+        }
+        val cancel = android.widget.Button(this).apply {
+            text = "Cancel"
+            setOnClickListener { sheet.dismiss() }
+        }
+        val add = android.widget.Button(this).apply {
+            text = "Add"
+            setOnClickListener {
+                val url = inputUrl.text.toString().trim()
+                val name = inputName.text.toString().trim()
+                if (url.isBlank()) return@setOnClickListener
+                val fixedUrl = if (url.startsWith("http")) url else "https://$url"
+                val finalName = name.ifBlank {
+                    try { java.net.URI(fixedUrl).host?.removePrefix("www.") ?: fixedUrl }
+                    catch (_: Exception) { fixedUrl }
+                }
+                val s = Shortcut(
+                    name = finalName,
+                    url = fixedUrl,
+                    iconUrl = ShortcutStore.iconUrlFor(fixedUrl)
+                )
+                ShortcutStore.add(this@MainActivity, s)
+                shortcutAdapter.submit(ShortcutStore.list(this@MainActivity))
+                sheet.dismiss()
+            }
+        }
+        btnRow.addView(cancel)
+        btnRow.addView(add)
+        (v as android.widget.LinearLayout).addView(btnRow)
+
+        sheet.show()
+    }
+
+    private fun confirmRemoveShortcut(s: Shortcut) {
+        AlertDialog.Builder(this)
+            .setTitle("Remove ${s.name}?")
+            .setPositiveButton("Remove") { _, _ ->
+                ShortcutStore.remove(this, s.url)
+                shortcutAdapter.submit(ShortcutStore.list(this))
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun loadUrlFromHome(url: String) {
@@ -110,7 +174,6 @@ class MainActivity : AppCompatActivity() {
             updateHomeVisibility()
             return
         }
-
         binding.webContainer.removeAllViews()
         (view.parent as? ViewGroup)?.removeView(view)
         binding.webContainer.addView(view)
@@ -120,13 +183,13 @@ class MainActivity : AppCompatActivity() {
             installClients(view)
             view.setTag(R.id.webContainer, true)
         }
-
         updateUi()
         tabs.drainPendingDestroy()
     }
 
     private fun updateHomeVisibility() {
-        val isBlank = currentView?.url == "about:blank" || currentView == null
+        val url = currentView?.url
+        val isBlank = url.isNullOrBlank() || url == "about:blank"
         binding.homeScreen.visibility = if (isBlank) View.VISIBLE else View.GONE
         binding.webContainer.visibility = if (isBlank) View.GONE else View.VISIBLE
     }
@@ -136,8 +199,7 @@ class MainActivity : AppCompatActivity() {
         view.webViewClient = object : WebViewClient() {
 
             override fun shouldInterceptRequest(
-                v: WebView,
-                request: WebResourceRequest
+                v: WebView, request: WebResourceRequest
             ): WebResourceResponse? {
                 try {
                     val url = request.url.toString()
@@ -155,8 +217,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun shouldOverrideUrlLoading(
-                v: WebView,
-                request: WebResourceRequest
+                v: WebView, request: WebResourceRequest
             ): Boolean {
                 val url = request.url.toString()
                 if (url.startsWith("intent:")) {
@@ -176,9 +237,7 @@ class MainActivity : AppCompatActivity() {
             override fun onPageStarted(v: WebView, url: String, favicon: Bitmap?) {
                 UHLog.d("web", "start ${url.take(140)}")
                 tabs.updateUrl(tabs.currentId(), url, null)
-                if (v === currentView) {
-                    binding.urlText.text = if (url == "about:blank") "" else url
-                }
+                if (v === currentView) binding.urlText.text = if (url == "about:blank") "" else url
                 UserscriptManager.injectOnPageStart(this@MainActivity, v, url)
                 updateHomeVisibility()
             }
@@ -199,9 +258,7 @@ class MainActivity : AppCompatActivity() {
             override fun onReceivedError(
                 v: WebView, request: WebResourceRequest, error: WebResourceError
             ) {
-                if (request.isForMainFrame) {
-                    UHLog.w("web", "error ${error.errorCode} ${request.url}")
-                }
+                if (request.isForMainFrame) UHLog.w("web", "error ${error.errorCode} ${request.url}")
             }
 
             override fun onReceivedSslError(
@@ -212,7 +269,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         view.webChromeClient = object : WebChromeClient() {
-
             override fun onProgressChanged(v: WebView, newProgress: Int) {
                 if (v !== currentView) return
                 binding.pageProgress.visibility = if (newProgress in 1..99) View.VISIBLE else View.GONE
@@ -255,22 +311,18 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateUi() {
         val id = tabs.currentId()
-        val entity = tabs.list().firstOrNull { it.id == id }
-        val url = entity?.url ?: ""
+        val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
         binding.urlText.text = if (url == "about:blank") "" else url
         binding.urlIcon.visibility = if (url.startsWith("https")) View.VISIBLE else View.INVISIBLE
         binding.btnBack.isEnabled = currentView?.canGoBack() ?: false
         binding.btnForward.isEnabled = currentView?.canGoForward() ?: false
         binding.tabCount.text = tabs.list().size.toString()
-        binding.homeSearchIcon.setImageResource(SearchEnginePrefs.getIconRes(this))
-        binding.homeSearchLabel.text = SearchEnginePrefs.getLabel(this)
         updateHomeVisibility()
     }
 
     private fun openTabGrid() {
         TabGridDialog(
-            this,
-            tabs,
+            this, tabs,
             onSwitch = { id -> switchTab(id) },
             onNew = {
                 tabs.openNew("about:blank")
@@ -322,29 +374,33 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showMenu() {
-        val bottomSheetDialog = BottomSheetDialog(this)
-        val sheetView = layoutInflater.inflate(R.layout.dialog_main_menu, null)
-        bottomSheetDialog.setContentView(sheetView)
+        val sheet = BottomSheetDialog(this)
+        val v = layoutInflater.inflate(R.layout.dialog_main_menu, null)
+        sheet.setContentView(v)
 
-        sheetView.findViewById<View>(R.id.btnSetDefault)?.setOnClickListener {
-            val intent = Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
-            startActivity(intent)
-            bottomSheetDialog.dismiss()
-        }
-
-        sheetView.findViewById<View>(R.id.btnSettings)?.setOnClickListener {
-            startActivity(Intent(this, SettingsActivity::class.java))
-            bottomSheetDialog.dismiss()
-        }
-
-        sheetView.findViewById<View>(R.id.btnNewTab)?.setOnClickListener {
+        v.findViewById<View>(R.id.btnNewTab)?.setOnClickListener {
             tabs.openNew("about:blank")
             attachCurrent()
             updateUi()
-            bottomSheetDialog.dismiss()
+            sheet.dismiss()
         }
-
-        bottomSheetDialog.show()
+        v.findViewById<View>(R.id.btnReload)?.setOnClickListener {
+            currentView?.reload()
+            sheet.dismiss()
+        }
+        v.findViewById<View>(R.id.btnInstallScript)?.setOnClickListener {
+            sheet.dismiss()
+            promptInstallUserscript()
+        }
+        v.findViewById<View>(R.id.btnSettings)?.setOnClickListener {
+            sheet.dismiss()
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
+        v.findViewById<View>(R.id.btnLogs)?.setOnClickListener {
+            sheet.dismiss()
+            startActivity(Intent(this, LogsActivity::class.java))
+        }
+        sheet.show()
     }
 
     private fun promptInstallUserscript() {
@@ -355,7 +411,7 @@ class MainActivity : AppCompatActivity() {
                 when (which) {
                     0 -> showUrlInstallDialog()
                     1 -> installFromClipboard()
-                    2 -> filePickerLauncher.launch("text/javascript")
+                    2 -> filePickerLauncher.launch("*/*")
                 }
             }
             .show()
@@ -382,8 +438,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun installFromClipboard() {
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = clipboard.primaryClip
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = cm.primaryClip
         if (clip != null && clip.itemCount > 0) {
             val text = clip.getItemAt(0).text.toString()
             if (text.contains("@match") || text.contains("==UserScript==")) {
@@ -392,7 +448,7 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this, "Installed from clipboard", Toast.LENGTH_SHORT).show()
                 }
             } else {
-                Toast.makeText(this, "Clipboard does not contain a userscript", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Clipboard is not a userscript", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -414,19 +470,24 @@ class MainActivity : AppCompatActivity() {
     private fun downloadAndInstallScript(url: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val connection = URL(url).openConnection() as HttpURLConnection
-                connection.connect()
-                if (connection.responseCode in 200..299) {
-                    val scriptContent = connection.inputStream.bufferedReader().use { it.readText() }
+                val conn = URL(url).openConnection() as HttpURLConnection
+                conn.connectTimeout = 15000
+                conn.readTimeout = 15000
+                conn.connect()
+                if (conn.responseCode in 200..299) {
+                    val body = conn.inputStream.bufferedReader().use { it.readText() }
                     val name = "script_" + System.currentTimeMillis()
-                    val success = UserscriptManager.install(this@MainActivity, name, scriptContent)
+                    val ok = UserscriptManager.install(this@MainActivity, name, body)
                     withContext(Dispatchers.Main) {
-                        if (success) Toast.makeText(this@MainActivity, "Script installed", Toast.LENGTH_SHORT).show()
-                        else Toast.makeText(this@MainActivity, "Install failed", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            this@MainActivity,
+                            if (ok) "Script installed" else "Install failed",
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 } else {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "Download failed: HTTP ${connection.responseCode}", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@MainActivity, "HTTP ${conn.responseCode}", Toast.LENGTH_SHORT).show()
                     }
                 }
             } catch (e: Exception) {
