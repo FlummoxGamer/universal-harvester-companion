@@ -123,7 +123,7 @@ object UpdateChecker {
                 conn.disconnect()
                 withContext(Dispatchers.Main) { progress.dismiss() }
                 UHLog.d("update", "downloaded ${out.length()}b")
-                installApk(activity, out)
+                withContext(Dispatchers.Main) { installApk(activity, out) }
             } catch (e: Exception) {
                 UHLog.throwable("update", "download failed", e)
                 withContext(Dispatchers.Main) {
