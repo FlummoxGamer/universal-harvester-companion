@@ -35,9 +35,32 @@ class UserscriptBridge(private val ctx: Context) {
     }
 
     @JavascriptInterface
-    fun capture(type: String, data: String) {
+    fun captureWasm(base64: String) {
         val ts = System.currentTimeMillis()
-        DownloadHelper.saveTextToDownloads(ctx, "${type}_$ts.txt", data)
+        DownloadHelper.saveTextToDownloads(ctx, "wasm_$ts.txt", base64)
+        UHLog.d("capture", "WASM module captured (${base64.length} bytes)")
+    }
+
+    @JavascriptInterface
+    fun captureCrypto(algorithm: String, data: String) {
+        val ts = System.currentTimeMillis()
+        val content = "algorithm=$algorithm\ndata=$data\n"
+        DownloadHelper.saveTextToDownloads(ctx, "crypto_$ts.txt", content)
+        UHLog.d("capture", "crypto.subtle call: $algorithm")
+    }
+
+    @JavascriptInterface
+    fun captureAtob(decoded: String) {
+        val ts = System.currentTimeMillis()
+        DownloadHelper.saveTextToDownloads(ctx, "atob_$ts.txt", decoded)
+        UHLog.d("capture", "atob decoded ${decoded.length} chars")
+    }
+
+    @JavascriptInterface
+    fun captureTextDecoder(text: String) {
+        val ts = System.currentTimeMillis()
+        DownloadHelper.saveTextToDownloads(ctx, "textdecode_$ts.txt", text)
+        UHLog.d("capture", "TextDecoder decoded ${text.length} chars")
     }
 
     @JavascriptInterface
