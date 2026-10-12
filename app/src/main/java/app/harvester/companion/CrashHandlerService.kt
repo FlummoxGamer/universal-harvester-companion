@@ -11,12 +11,17 @@ class CrashHandlerService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == GeckoRuntime.ACTION_CRASHED) {
-            val fatal = intent.getBooleanExtra(GeckoRuntime.EXTRA_CRASH_FATAL, false)
-            val processVisibility = intent.getIntExtra(
-                GeckoRuntime.EXTRA_CRASH_PROCESS_VISIBILITY, -1
+            val visibility = intent.getIntExtra(
+                GeckoRuntime.EXTRA_CRASH_PROCESS_VISIBILITY,
+                -1
             )
             UHLog.section("GECKO CRASH")
-            UHLog.e("gecko", "fatal=$fatal visibility=$processVisibility")
+            UHLog.e("gecko", "A Gecko process crashed.")
+            UHLog.e("gecko", "Process visibility: $visibility")
+            
+            // Dump the current UHLog buffer so we can see what the app was doing
+            // in its final moments.
+            UHLog.e("gecko", UHLog.snapshot())
         }
         stopSelf()
         return START_NOT_STICKY
