@@ -84,10 +84,10 @@ class MainActivity : AppCompatActivity() {
         binding.webContainer.addView(view)
         currentView = view
 
-        if (view.getTag(R.id.webContainer) == null) {
-            view.tag = view.tag ?: Any()
-            installClients(view)
-        }
+if (view.getTag(R.id.webContainer) == null) {
+    installClients(view)
+    view.setTag(R.id.webContainer, true)
+}
 
         updateUi()
         tabs.drainPendingDestroy()
