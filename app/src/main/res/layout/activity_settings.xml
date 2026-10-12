@@ -28,20 +28,49 @@
             android:textSize="12sp"
             android:text="" />
 
-        <Button
-            android:id="@+id/btnExtensions"
+        <LinearLayout
+            android:id="@+id/rowVerbose"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
-            android:text="Extensions"
-            android:backgroundTint="@color/accent_strong"
-            android:textColor="@color/bg" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@color/surface"
+            android:padding="16dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Verbose logging"
+                    android:textColor="@color/text"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="Writes network and capture events to uh_log.txt"
+                    android:textColor="@color/subtext"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <Switch
+                android:id="@+id/switchVerbose"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+        </LinearLayout>
 
         <Button
             android:id="@+id/btnLogs"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="16dp"
             android:text="View logs"
             android:backgroundTint="@color/surface"
             android:textColor="@color/accent" />
