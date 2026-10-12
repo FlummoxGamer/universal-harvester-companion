@@ -2,79 +2,15 @@ package app.harvester.companion
 
 import android.content.Context
 import android.webkit.WebView
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 
 object UserscriptManager {
-
-    private const val BOOTSTRAP = """
-(function() {
-  if (window.__uh_bootstrapped) return;
-  window.__uh_bootstrapped = true;
-
-  var B = window.UH_BRIDGE;
-  if (!B) return;
-
-  // WebAssembly.instantiate / compile
-  try {
-    var iOrig = WebAssembly.instantiate;
-    WebAssembly.instantiate = function(src, imports) {
-      try {
-        var buf = (src instanceof ArrayBuffer) ? src :
-                  (src && src.buffer) ? src.buffer : null;
-        if (buf) {
-          var u8 = new Uint8Array(buf);
-          var s = '';
-          for (var i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
-          B.capture('wasm', btoa(s));
-        }
-      } catch(e) { B.report(location.href, 'wasm_err', String(e)); }
-      return iOrig.apply(this, arguments);
-    };
-  } catch(e) {}
-
-  // crypto.subtle
-  try {
-    if (window.crypto && window.crypto.subtle) {
-      ['encrypt','decrypt','sign','verify','digest','deriveBits','deriveKey'].forEach(function(fn) {
-        var o = crypto.subtle[fn];
-        if (!o) return;
-        crypto.subtle[fn] = function() {
-          try {
-            var alg = arguments[0];
-            var name = (alg && alg.name) ? alg.name : String(alg);
-            B.report(location.href, 'subtle_' + fn, name);
-          } catch(e) {}
-          return o.apply(this, arguments);
-        };
-      });
-    }
-  } catch(e) {}
-
-  // atob
-  try {
-    var aOrig = window.atob;
-    window.atob = function(s) {
-      var r = aOrig(s);
-      try { B.report(location.href, 'atob', String(r.length)); } catch(e) {}
-      return r;
-    };
-  } catch(e) {}
-
-  // TextDecoder
-  try {
-    var TDO = TextDecoder;
-    window.TextDecoder = function() {
-      var inst = new TDO(...arguments);
-      var dOrig = inst.decode;
-      inst.decode = function() {
-        try { B.report(location.href, 'textdecode', ''); } catch(e) {}
-        return dOrig.apply(this, arguments);
-      };
-      return inst;
-    };
-  } catch(e) {}
-})();
-"""
 
     private const val BRIDGE_BOOT = """
 (function(){
@@ -87,6 +23,73 @@ object UserscriptManager {
   window.GM_deleteValue = function(k) { B.GM_deleteValue(k); };
   window.GM_listValues = function() { return JSON.parse(B.GM_listValues()); };
   window.GM_log = function(m) { B.GM_log(String(m)); };
+})();
+"""
+
+    private const val BOOTSTRAP = """
+(function() {
+  if (window.__uh_bootstrapped) return;
+  window.__uh_bootstrapped = true;
+
+  var B = window.UH_BRIDGE;
+  if (!B) return;
+
+  try {
+    var iOrig = WebAssembly.instantiate;
+    WebAssembly.instantiate = function(src, imports) {
+      try {
+        var buf = (src instanceof ArrayBuffer) ? src :
+                  (src && src.buffer) ? src.buffer : null;
+        if (buf) {
+          var u8 = new Uint8Array(buf);
+          var s = '';
+          for (var i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
+          B.captureWasm(btoa(s));
+        }
+      } catch(e) { B.report(location.href, 'wasm_err', String(e)); }
+      return iOrig.apply(this, arguments);
+    };
+  } catch(e) {}
+
+  try {
+    if (window.crypto && window.crypto.subtle) {
+      ['encrypt','decrypt','sign','verify','digest','deriveBits','deriveKey'].forEach(function(fn) {
+        var o = crypto.subtle[fn];
+        if (!o) return;
+        crypto.subtle[fn] = function() {
+          try {
+            var alg = arguments[0];
+            var name = (alg && alg.name) ? alg.name : String(alg);
+            B.captureCrypto(name, '');
+          } catch(e) {}
+          return o.apply(this, arguments);
+        };
+      });
+    }
+  } catch(e) {}
+
+  try {
+    var aOrig = window.atob;
+    window.atob = function(s) {
+      var r = aOrig(s);
+      try { B.captureAtob(r); } catch(e) {}
+      return r;
+    };
+  } catch(e) {}
+
+  try {
+    var TDO = TextDecoder;
+    window.TextDecoder = function() {
+      var inst = new TDO(...arguments);
+      var dOrig = inst.decode;
+      inst.decode = function() {
+        var r = dOrig.apply(this, arguments);
+        try { B.captureTextDecoder(String(r)); } catch(e) {}
+        return r;
+      };
+      return inst;
+    };
+  } catch(e) {}
 })();
 """
 
@@ -123,6 +126,36 @@ object UserscriptManager {
         return try {
             File(File(ctx.filesDir, "scripts"), "$name.js").delete()
         } catch (_: Exception) { false }
+    }
+
+    fun installFromUrl(ctx: Context, url: String, callback: (Boolean) -> Unit) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val connection = URL(url).openConnection() as HttpURLConnection
+                connection.connectTimeout = 15000
+                connection.readTimeout = 15000
+                connection.connect()
+                if (connection.responseCode in 200..299) {
+                    val scriptContent = connection.inputStream.bufferedReader().use { it.readText() }
+                    val scriptName = extractNameFromScript(scriptContent)
+                        ?: "script_${System.currentTimeMillis()}"
+                    val success = install(ctx, scriptName, scriptContent)
+                    withContext(Dispatchers.Main) { callback(success) }
+                } else {
+                    withContext(Dispatchers.Main) { callback(false) }
+                }
+                connection.disconnect()
+            } catch (e: Exception) {
+                UHLog.throwable("userscript", "install from url failed", e)
+                withContext(Dispatchers.Main) { callback(false) }
+            }
+        }
+    }
+
+    private fun extractNameFromScript(script: String): String? {
+        val regex = Regex("""@name\s+(.+)$""", RegexOption.MULTILINE)
+        val raw = regex.find(script)?.groupValues?.get(1)?.trim() ?: return null
+        return raw.replace(Regex("""[^a-zA-Z0-9_\-]"""), "_").take(60)
     }
 
     private fun matches(body: String, url: String): Boolean {
