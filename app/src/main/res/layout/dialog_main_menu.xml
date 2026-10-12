@@ -29,6 +29,8 @@
             android:src="@drawable/ic_add"
             app:tint="@color/accent" />
         <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:text="New Tab"
             android:textColor="@color/text"
             android:textSize="15sp"
@@ -50,6 +52,8 @@
             android:src="@drawable/ic_forward"
             app:tint="@color/accent" />
         <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:text="Reload"
             android:textColor="@color/text"
             android:textSize="15sp"
@@ -71,6 +75,8 @@
             android:src="@drawable/ic_extension_rounded"
             app:tint="@color/accent" />
         <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:text="Install userscript"
             android:textColor="@color/text"
             android:textSize="15sp"
@@ -92,6 +98,8 @@
             android:src="@drawable/ic_menu"
             app:tint="@color/accent" />
         <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:text="Settings"
             android:textColor="@color/text"
             android:textSize="15sp"
@@ -113,6 +121,8 @@
             android:src="@drawable/ic_tabs"
             app:tint="@color/accent" />
         <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:text="Logs"
             android:textColor="@color/text"
             android:textSize="15sp"
