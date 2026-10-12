@@ -14,11 +14,10 @@ object GeckoEngine {
         runtimeRef?.let { return it }
         synchronized(this) {
             runtimeRef?.let { return it }
-val settings = GeckoRuntimeSettings.Builder()
-    .aboutConfigEnabled(false)
-    .remoteDebuggingEnabled(false)
-    .crashHandler(CrashHandlerService::class.java)
-    .build()
+            val settings = GeckoRuntimeSettings.Builder()
+                .aboutConfigEnabled(false)
+                .remoteDebuggingEnabled(false)
+                .build()
             val rt = GeckoRuntime.create(ctx.applicationContext, settings)
             UHLog.d("gecko", "runtime created")
             runtimeRef = rt
@@ -29,32 +28,29 @@ val settings = GeckoRuntimeSettings.Builder()
     fun runtime(): GeckoRuntime =
         runtimeRef ?: error("GeckoEngine not initialised — call init() first")
 
-    /**
-     * FIX: restoreState must be called BEFORE open(), otherwise GeckoView throws
-     * IllegalStateException("Session is open"). The caller passes state in, and this
-     * function sequences restore -> open correctly.
-     */
     fun newSession(
         private: Boolean = false,
         restoreState: GeckoSession.SessionState? = null
     ): GeckoSession {
         val settings = GeckoSessionSettings.Builder()
-    .usePrivateMode(private)
-    .build()
-UHLog.d("gecko", "settings built")
-val session = GeckoSession(settings)
-UHLog.d("gecko", "session constructed")
+            .usePrivateMode(private)
+            .build()
+        UHLog.d("gecko", "settings built")
+        val session = GeckoSession(settings)
+        UHLog.d("gecko", "session constructed")
+
         if (restoreState != null) {
             try {
                 session.restoreState(restoreState)
-                UHLog.v("gecko", "session state restored")
+                UHLog.d("gecko", "state restored")
             } catch (e: Exception) {
                 UHLog.w("gecko", "restoreState failed: ${e.message}")
             }
         }
+
         UHLog.d("gecko", "calling open")
-session.open(runtime())
-UHLog.d("gecko", "open returned")
-return session
+        session.open(runtime())
+        UHLog.d("gecko", "open returned")
+        return session
     }
 }
