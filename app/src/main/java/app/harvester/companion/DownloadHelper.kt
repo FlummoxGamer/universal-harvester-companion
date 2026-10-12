@@ -49,4 +49,20 @@ object DownloadHelper {
             true
         } catch (_: Exception) { false }
     }
+
+    fun saveBytesToDownloads(ctx: Context, filename: String, bytes: ByteArray): Boolean {
+        return try {
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            }
+            val uri = ctx.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: return false
+            ctx.contentResolver.openOutputStream(uri)?.use { os ->
+                os.write(bytes)
+            }
+            true
+        } catch (_: Exception) { false }
+    }
 }
