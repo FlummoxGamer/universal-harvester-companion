@@ -6,7 +6,6 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.os.Build
 import android.os.IBinder
 import org.mozilla.geckoview.GeckoRuntime
 import java.io.File
@@ -15,8 +14,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// Runs in :crash process. GeckoView throws in GeckoRuntime.init if the crash
-// handler shares the main process. Writes to filesDir/uh_native_crash.txt.
 class CrashHandlerService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -49,11 +46,7 @@ class CrashHandlerService : Service() {
             .setContentTitle("UH Companion crash")
             .setSmallIcon(android.R.drawable.stat_notify_error)
             .build()
-        startForeground(
-            99001,
-            notif,
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-        )
+        startForeground(99001, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
     }
 
     private fun writeCrashLog(
@@ -76,6 +69,34 @@ class CrashHandlerService : Service() {
                 w.write("remoteType=$remoteType\n")
                 w.write("minidump=$minidump\n")
                 w.write("extras=$extras\n\n")
+            }
+
+            val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+
+            if (!extras.isNullOrBlank()) {
+                try {
+                    val f = File(extras)
+                    if (f.isFile) {
+                        DownloadHelper.saveTextToDownloads(
+                            this,
+                            "crash_extras_$stamp.txt",
+                            f.readText()
+                        )
+                    }
+                } catch (_: Exception) {}
+            }
+
+            if (!minidump.isNullOrBlank()) {
+                try {
+                    val f = File(minidump)
+                    if (f.isFile) {
+                        DownloadHelper.saveBytesToDownloads(
+                            this,
+                            "crash_minidump_$stamp.dmp",
+                            f.readBytes()
+                        )
+                    }
+                } catch (_: Exception) {}
             }
         } catch (_: Exception) {}
     }
