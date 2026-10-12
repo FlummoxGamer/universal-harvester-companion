@@ -24,7 +24,6 @@ object UHLog {
     private val listeners = CopyOnWriteArrayList<(String) -> Unit>()
 
     private var writer: BufferedWriter? = null
-    private var verbose = false
     private var pending = 0
     private var appContext: Context? = null
     private var initialised = false
@@ -61,12 +60,6 @@ object UHLog {
         d("boot", "ABI ${Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"}")
     }
 
-    fun setVerbose(on: Boolean) {
-        synchronized(lock) { verbose = on }
-        d("log", "verbose=${if (on) "on" else "off"}")
-    }
-    fun isVerbose(): Boolean = synchronized(lock) { verbose }
-
     fun addListener(fn: (String) -> Unit) { listeners.add(fn) }
     fun removeListener(fn: (String) -> Unit) { listeners.remove(fn) }
 
@@ -97,7 +90,8 @@ object UHLog {
     }
 
     fun d(tag: String, msg: String) = write(tag, 'D', msg)
-    fun v(tag: String, msg: String) { if (isVerbose()) write(tag, 'V', msg) }
+    // v() now writes unconditionally — verbose is always on.
+    fun v(tag: String, msg: String) = write(tag, 'V', msg)
     fun w(tag: String, msg: String) = write(tag, 'W', msg)
     fun e(tag: String, msg: String) = write(tag, 'E', msg)
     fun section(title: String) = write("---", 'S', "───── $title ─────")
