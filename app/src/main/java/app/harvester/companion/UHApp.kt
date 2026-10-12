@@ -3,6 +3,7 @@ package app.harvester.companion
 import android.app.Application
 import android.content.Context
 import mozilla.components.lib.crash.CrashReporter
+import mozilla.components.lib.crash.db.CrashDatabase
 import java.io.File
 
 class UHApp : Application() {
@@ -15,7 +16,8 @@ class UHApp : Application() {
         super.onCreate()
 
         CrashReporter(
-            services = listOf()
+            services = listOf(),
+            databaseProvider = { CrashDatabase.get(this) }
         ).install(this)
 
         UHLog.init(this)
