@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:background="@color/surface_2"
     android:padding="16dp">
 
-    <!-- Drag Handle -->
     <View
         android:layout_width="40dp"
         android:layout_height="4dp"
@@ -14,7 +14,6 @@
         android:layout_gravity="center_horizontal"
         android:layout_marginBottom="16dp" />
 
-    <!-- Top Row: Favorites, History, Downloads, Playlist -->
     <GridLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -97,7 +96,6 @@
         </LinearLayout>
     </GridLayout>
 
-    <!-- Set Default Browser Button -->
     <Button
         android:id="@+id/btnSetDefault"
         android:layout_width="match_parent"
@@ -107,7 +105,27 @@
         android:textColor="@color/bg"
         android:layout_marginBottom="8dp" />
 
-    <!-- Bottom Row: Settings -->
+    <LinearLayout
+        android:id="@+id/btnNewTab"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="?attr/selectableItemBackground"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp">
+        <ImageView
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:src="@drawable/ic_add"
+            app:tint="#F06292" />
+        <TextView
+            android:text="New Tab"
+            android:textColor="@color/text"
+            android:textSize="16sp"
+            android:layout_marginStart="16dp" />
+    </LinearLayout>
+
     <LinearLayout
         android:id="@+id/btnSettings"
         android:layout_width="match_parent"
@@ -120,7 +138,7 @@
         <ImageView
             android:layout_width="24dp"
             android:layout_height="24dp"
-            android:src="@drawable/ic_settings"
+            android:src="@drawable/ic_menu"
             app:tint="#F06292" />
         <TextView
             android:text="Settings"
