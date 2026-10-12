@@ -2,21 +2,30 @@ package app.harvester.companion
 
 import android.app.Application
 import android.content.Context
+import mozilla.components.lib.crash.CrashReporter
 import java.io.File
 
 class UHApp : Application() {
 
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(base)
-        // xCrash MUST be initialized in attachBaseContext so its native signal
-        // handler is installed before any other code runs.
-        xcrash.XCrash.init(this)
+        // xCrash REMOVED — conflicts with lib-crash per official README:
+        // "To avoid conflicting setups do not use any other crash reporting
+        // libraries/services independently from this library."
     }
 
     override fun onCreate() {
         super.onCreate()
+
+        // Install lib-crash BEFORE GeckoEngine.init().
+        // Empty services list: capture locally, do not upload anywhere.
+        CrashReporter(
+            services = listOf()
+        ).install(this)
+
         UHLog.init(this)
         GeckoEngine.init(this)
+
         // Fire-and-forget: dump any pending tombstones to Downloads.
         Thread { exportTombstones(this) }.start()
     }
