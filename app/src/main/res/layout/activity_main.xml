@@ -56,11 +56,11 @@
             android:id="@+id/homeSearchIcon"
             android:layout_width="56dp"
             android:layout_height="56dp"
-            android:background="@drawable/ic_google_rounded"
+            android:background="@drawable/ic_duckduckgo"
             android:padding="12dp" />
        <TextView
             android:id="@+id/homeSearchLabel"
-            android:text="Google"
+            android:text="DuckDuckGo"
             android:textColor="@color/text"
             android:textSize="12sp"
             android:layout_marginTop="8dp" />
