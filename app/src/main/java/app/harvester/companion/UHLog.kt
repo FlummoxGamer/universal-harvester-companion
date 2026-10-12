@@ -17,6 +17,7 @@ object UHLog {
     private const val MAX_LINES = 3000
     private const val MAX_FILE_BYTES = 1_500_000L
     private const val FLUSH_EVERY = 20
+    private const val KEEP_ROTATIONS = 3
 
     private val buffer = ArrayDeque<String>(MAX_LINES)
     private val lock = Any()
@@ -26,8 +27,10 @@ object UHLog {
     private var writer: BufferedWriter? = null
     private var pending = 0
     private var appContext: Context? = null
-    @Volatile var externalPath: String = ""
     private var initialised = false
+    @Volatile private var verbose = false
+
+    @Volatile var externalPath: String = ""
 
     private val RX_JWT = Regex("""eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+""")
     private val RX_BEARER = Regex("""(?i)(bearer\s+)\S+""")
@@ -40,21 +43,19 @@ object UHLog {
             if (initialised) return
             initialised = true
             appContext = ctx.applicationContext
+            verbose = DebugPrefs.verboseLogging(ctx)
             installCrashHandler()
             try { writer?.close() } catch (_: Exception) {}
             writer = null
             buffer.clear()
             try {
                 val ext = ctx.getExternalFilesDir(null)
-                val f = if (ext != null) File(ext, "uh_log.txt")
-                        else File(ctx.filesDir, "uh_log.txt")
-                if (f.exists() && f.length() > MAX_FILE_BYTES) {
-                    val keep = f.readLines().takeLast(MAX_LINES / 2)
-                    f.writeText(keep.joinToString("\n") + "\n")
-                }
-                if (f.exists()) f.readLines().takeLast(MAX_LINES).forEach { buffer.addLast(it) }
-                writer = BufferedWriter(FileWriter(f, true))
-                UHLog.externalPath = f.absolutePath
+                val dir = ext ?: ctx.filesDir
+                dir.mkdirs()
+                val current = File(dir, "uh_log.txt")
+                rotateIfNeeded(dir, current)
+                writer = BufferedWriter(FileWriter(current, true))
+                externalPath = current.absolutePath
             } catch (_: Exception) {}
         }
         section("BOOT")
@@ -64,8 +65,27 @@ object UHLog {
         d("boot", "ABI ${Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"}")
     }
 
+    private fun rotateIfNeeded(dir: File, current: File) {
+        if (!current.exists() || current.length() == 0L) return
+        try {
+            val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val archived = File(dir, "uh_log_$ts.txt")
+            current.renameTo(archived)
+            val all = dir.listFiles { f -> f.name.startsWith("uh_log_") && f.name != "uh_log.txt" }
+                ?.sortedByDescending { it.name } ?: emptyList()
+            all.drop(KEEP_ROTATIONS).forEach { it.delete() }
+        } catch (_: Exception) {}
+    }
+
     fun addListener(fn: (String) -> Unit) { listeners.add(fn) }
     fun removeListener(fn: (String) -> Unit) { listeners.remove(fn) }
+
+    fun isVerbose(): Boolean = verbose
+
+    fun setVerbose(on: Boolean) {
+        verbose = on
+        appContext?.let { DebugPrefs.setVerboseLogging(it, on) }
+    }
 
     private fun sanitize(s: String): String {
         var out = s
@@ -77,7 +97,8 @@ object UHLog {
         return out
     }
 
-    private fun write(tag: String, level: Char, msg: String) {
+    private fun write(tag: String, level: Char, msg: String, force: Boolean = false) {
+        if (!force && !verbose) return
         val clean = sanitize(msg)
         val line = "${timeFormat.format(Date())} $level [$tag] $clean"
         synchronized(lock) {
@@ -93,8 +114,21 @@ object UHLog {
         try { Log.d(TAG, line) } catch (_: Exception) {}
     }
 
+    private fun writeAlways(tag: String, level: Char, msg: String) {
+        val clean = sanitize(msg)
+        val line = "${timeFormat.format(Date())} $level [$tag] $clean"
+        synchronized(lock) {
+            buffer.addLast(line)
+            while (buffer.size > MAX_LINES) buffer.removeFirst()
+            try {
+                writer?.appendLine(line)
+                writer?.flush()
+            } catch (_: Exception) {}
+        }
+        try { Log.d(TAG, line) } catch (_: Exception) {}
+    }
+
     fun d(tag: String, msg: String) = write(tag, 'D', msg)
-    // v() now writes unconditionally — verbose is always on.
     fun v(tag: String, msg: String) = write(tag, 'V', msg)
     fun w(tag: String, msg: String) = write(tag, 'W', msg)
     fun e(tag: String, msg: String) = write(tag, 'E', msg)
@@ -110,17 +144,18 @@ object UHLog {
     }
 
     fun size(): Int = synchronized(lock) { buffer.size }
-    fun fileSize(): Long = try { File(appContext?.filesDir, "uh_log.txt").length() } catch (_: Exception) { 0L }
+    fun fileSize(): Long = try {
+        File(externalPath).length()
+    } catch (_: Exception) { 0L }
 
     fun clear() {
         synchronized(lock) {
             buffer.clear()
             try { writer?.close(); writer = null } catch (_: Exception) {}
             try {
-                appContext?.let { ctx ->
-                    File(ctx.filesDir, "uh_log.txt").delete()
-                    writer = BufferedWriter(FileWriter(File(ctx.filesDir, "uh_log.txt"), true))
-                }
+                val f = File(externalPath)
+                f.delete()
+                writer = BufferedWriter(FileWriter(f, true))
             } catch (_: Exception) {}
         }
     }
@@ -129,18 +164,17 @@ object UHLog {
         val prev = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
             try {
-                section("FATAL")
-                write("crash", 'E', "Thread ${t.name}")
-                write("crash", 'E', "${e.javaClass.name}: ${e.message}")
-                e.stackTrace.take(60).forEach { write("crash", 'E', "  at $it") }
+                writeAlways("---", 'S', "───── FATAL ─────")
+                writeAlways("crash", 'E', "Thread ${t.name}")
+                writeAlways("crash", 'E', "${e.javaClass.name}: ${e.message}")
+                e.stackTrace.take(60).forEach { writeAlways("crash", 'E', "  at $it") }
                 var cause = e.cause
                 var depth = 0
                 while (cause != null && depth++ < 5) {
-                    write("crash", 'E', "caused by ${cause.javaClass.name}: ${cause.message}")
-                    cause.stackTrace.take(20).forEach { write("crash", 'E', "  at $it") }
+                    writeAlways("crash", 'E', "caused by ${cause.javaClass.name}: ${cause.message}")
+                    cause.stackTrace.take(20).forEach { writeAlways("crash", 'E', "  at $it") }
                     cause = cause.cause
                 }
-                synchronized(lock) { try { writer?.flush() } catch (_: Exception) {} }
             } catch (_: Exception) {}
             prev?.uncaughtException(t, e)
         }
