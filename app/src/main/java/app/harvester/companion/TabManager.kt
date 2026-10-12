@@ -1,14 +1,13 @@
 package app.harvester.companion
 
 import android.content.Context
-import org.mozilla.geckoview.GeckoSession
-import java.io.File
+import android.os.Bundle
+import android.os.Parcel
+import android.webkit.WebView
 
 class TabManager private constructor(private val ctx: Context) {
 
     companion object {
-        // FIX: 5 was too many for low-RAM devices. One live session at a time,
-        // matching Firefox Focus's model. Restore from disk on switch (~300ms).
         private const val MAX_ALIVE = 1
 
         @Volatile private var INSTANCE: TabManager? = null
@@ -20,109 +19,81 @@ class TabManager private constructor(private val ctx: Context) {
         }
     }
 
-    private class Slot(val session: GeckoSession) {
-        var latestState: GeckoSession.SessionState? = null
+    private class Slot(val view: WebView) {
         var canGoBack: Boolean = false
+        var canGoForward: Boolean = false
     }
 
     private val db = TabDb(ctx)
     private val alive = LinkedHashMap<Long, Slot>(MAX_ALIVE, 0.75f, true)
-    // FIX: sessions scheduled for close but still referenced by GeckoView.
-    // MainActivity calls drainPendingClose() after it reassigns the view.
-    private val pendingClose = mutableListOf<GeckoSession>()
+    private val pendingDestroy = mutableListOf<WebView>()
     private val lock = Any()
     private var currentId: Long = -1L
-
-    private fun stateDir(): File = File(ctx.filesDir, "tabs").apply { mkdirs() }
-    private fun stateFile(id: Long): File = File(stateDir(), "$id.state")
-
-    private fun slotFor(session: GeckoSession): Slot? =
-        alive.entries.firstOrNull { it.value.session === session }?.value
-
-    private fun idFor(session: GeckoSession): Long =
-        alive.entries.firstOrNull { it.value.session === session }?.key ?: -1L
 
     fun openNew(url: String): Long {
         synchronized(lock) {
             val id = db.insert(url)
             evictAllExcept(id)
-            val s = GeckoEngine.newSession()
-            alive[id] = Slot(s)
+            val view = WebViewEngine.create(ctx)
+            alive[id] = Slot(view)
             currentId = id
-            s.loadUri(url)
+            view.loadUrl(url)
             return id
         }
     }
 
-    fun switchTo(id: Long): GeckoSession? {
+    fun acquireView(id: Long): WebView? {
         synchronized(lock) {
-            alive[id]?.let { currentId = id; return it.session }
-
-            // FIX: restoreState before open. Read state from disk first, then
-            // hand it to GeckoEngine.newSession which sequences it correctly.
-            val restoredState: GeckoSession.SessionState? = try {
-                val f = stateFile(id)
-                if (f.exists()) GeckoSession.SessionState.fromString(f.readText()) else null
-            } catch (e: Exception) {
-                UHLog.w("tabs", "state parse failed id=$id ${e.message}")
-                null
-            }
+            alive[id]?.let { currentId = id; return it.view }
 
             evictAllExcept(id)
-            val s = GeckoEngine.newSession(restoreState = restoredState)
-            alive[id] = Slot(s)
+            val view = WebViewEngine.create(ctx)
+            alive[id] = Slot(view)
             currentId = id
 
-            if (restoredState == null) {
-                val fallback = db.list()
-                    .firstOrNull { it.id == id }
-                    ?.url
-                    ?.takeIf { it.isNotBlank() }
-                s.loadUri(fallback ?: "about:blank")
+            val restored = restoreState(id, view)
+            if (!restored) {
+                val fallback = db.list().firstOrNull { it.id == id }?.url
+                view.loadUrl(fallback ?: "about:blank")
             }
-            return s
+            return view
         }
-    }
-
-    fun recordState(id: Long, state: GeckoSession.SessionState) {
-        synchronized(lock) { alive[id]?.latestState = state }
-    }
-
-    fun idForSession(session: GeckoSession): Long = synchronized(lock) { idFor(session) }
-
-    fun setCanGoBack(session: GeckoSession, value: Boolean) = synchronized(lock) {
-        slotFor(session)?.canGoBack = value
-    }
-
-    fun canGoBack(session: GeckoSession): Boolean = synchronized(lock) {
-        slotFor(session)?.canGoBack ?: false
     }
 
     fun currentId(): Long = synchronized(lock) { currentId }
 
-    fun currentSession(): GeckoSession? = synchronized(lock) { alive[currentId]?.session }
+    fun currentView(): WebView? = synchronized(lock) { alive[currentId]?.view }
 
     fun list(): List<TabEntity> = db.list()
 
-    fun count(): Int = db.list().size
+    fun updateUrl(id: Long, url: String, title: String?) = db.update(id, url, title)
 
-    fun updateUrl(id: Long, url: String, title: String?) {
-        db.update(id, url, title)
+    fun setNav(view: WebView, back: Boolean, forward: Boolean) {
+        synchronized(lock) {
+            val slot = alive.entries.firstOrNull { it.value.view === view }?.value ?: return
+            slot.canGoBack = back
+            slot.canGoForward = forward
+        }
+    }
+
+    fun canGoBack(view: WebView): Boolean = synchronized(lock) {
+        alive.entries.firstOrNull { it.value.view === view }?.value?.canGoBack ?: false
+    }
+
+    fun canGoForward(view: WebView): Boolean = synchronized(lock) {
+        alive.entries.firstOrNull { it.value.view === view }?.value?.canGoForward ?: false
     }
 
     fun close(id: Long) {
         synchronized(lock) {
             val slot = alive.remove(id)
             db.delete(id)
-            try { stateFile(id).delete() } catch (_: Exception) {}
             if (slot != null) {
                 if (id == currentId) {
-                    // FIX: the session is probably still attached to GeckoView.
-                    // Defer the native close until MainActivity reassigns the view.
-                    pendingClose.add(slot.session)
+                    pendingDestroy.add(slot.view)
                     currentId = db.list().firstOrNull()?.id ?: -1L
                 } else {
-                    try { slot.session.close() } catch (_: Exception) {}
+                    try { slot.view.destroy() } catch (_: Exception) {}
                 }
             }
         }
@@ -130,46 +101,63 @@ class TabManager private constructor(private val ctx: Context) {
 
     fun closeAll() {
         synchronized(lock) {
-            // FIX: defer all closes, then let MainActivity drain after detaching.
-            for (slot in alive.values) pendingClose.add(slot.session)
+            for (slot in alive.values) pendingDestroy.add(slot.view)
             alive.clear()
             db.clear()
-            try { stateDir().deleteRecursively() } catch (_: Exception) {}
             currentId = -1L
         }
     }
 
-    /**
-     * FIX: called by MainActivity after view.setSession(newSession).
-     * At this point GeckoView has detached from any previous session, so it is
-     * safe to call native close() without risking a use-after-free.
-     */
-    fun drainPendingClose() {
+    fun drainPendingDestroy() {
         synchronized(lock) {
-            if (pendingClose.isEmpty()) return
-            for (s in pendingClose) {
-                try { s.close() } catch (_: Exception) {}
+            if (pendingDestroy.isEmpty()) return
+            for (view in pendingDestroy) {
+                try {
+                    (view.parent as? android.view.ViewGroup)?.removeView(view)
+                    view.destroy()
+                } catch (_: Exception) {}
             }
-            UHLog.v("tabs", "drained ${pendingClose.size} pending closes")
-            pendingClose.clear()
+            pendingDestroy.clear()
+        }
+    }
+
+    fun saveCurrentState() {
+        synchronized(lock) {
+            val slot = alive[currentId] ?: return
+            saveState(currentId, slot.view)
         }
     }
 
     fun saveAll() {
         synchronized(lock) {
-            for ((id, slot) in alive) {
-                try {
-                    val s = slot.latestState ?: continue
-                    stateFile(id).writeText(s.toString())
-                } catch (e: Exception) {
-                    UHLog.w("tabs", "save failed id=$id ${e.message}")
-                }
-            }
+            for ((id, slot) in alive) saveState(id, slot.view)
         }
     }
 
-    // FIX: does NOT close sessions inline. Moves victims to pendingClose so
-    // MainActivity can drain them safely after reassigning the GeckoView.
+    private fun saveState(id: Long, view: WebView) {
+        try {
+            val bundle = Bundle()
+            view.saveState(bundle)
+            val parcel = Parcel.obtain()
+            bundle.writeToParcel(parcel, 0)
+            val bytes = parcel.marshall()
+            parcel.recycle()
+            db.saveState(id, bytes)
+        } catch (_: Exception) {}
+    }
+
+    private fun restoreState(id: Long, view: WebView): Boolean {
+        val bytes = db.loadState(id) ?: return false
+        return try {
+            val parcel = Parcel.obtain()
+            parcel.unmarshall(bytes, 0, bytes.size)
+            parcel.setDataPosition(0)
+            val bundle = Bundle.CREATOR.createFromParcel(parcel)
+            parcel.recycle()
+            view.restoreState(bundle) != null
+        } catch (_: Exception) { false }
+    }
+
     private fun evictAllExcept(keepId: Long) {
         while (alive.size >= MAX_ALIVE) {
             val it = alive.entries.iterator()
@@ -181,12 +169,8 @@ class TabManager private constructor(private val ctx: Context) {
                 break
             }
             if (victim == null) break
-            try {
-                victim.value.latestState?.let { st ->
-                    stateFile(victim.key).writeText(st.toString())
-                }
-            } catch (_: Exception) {}
-            pendingClose.add(victim.value.session)
+            saveState(victim.key, victim.value.view)
+            pendingDestroy.add(victim.value.view)
             it.remove()
         }
     }
