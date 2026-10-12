@@ -12,6 +12,14 @@ class UHApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+
+        // Skip init in the ":crash" process. GeckoRuntime must be created
+        // only once, in the main process. Creating it in the crash handler
+        // process would crash the service before it can log the crash.
+        if (Application.getProcessName().endsWith(":crash")) {
+            return
+        }
+
         UHLog.init(this)
         GeckoEngine.init(this)
         Thread { exportCrashFiles(this) }.start()
