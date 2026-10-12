@@ -26,6 +26,7 @@ object UHLog {
     private var writer: BufferedWriter? = null
     private var pending = 0
     private var appContext: Context? = null
+    @Volatile var externalPath: String = ""
     private var initialised = false
 
     private val RX_JWT = Regex("""eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+""")
@@ -44,13 +45,16 @@ object UHLog {
             writer = null
             buffer.clear()
             try {
-                val f = File(ctx.filesDir, "uh_log.txt")
+                val ext = ctx.getExternalFilesDir(null)
+                val f = if (ext != null) File(ext, "uh_log.txt")
+                        else File(ctx.filesDir, "uh_log.txt")
                 if (f.exists() && f.length() > MAX_FILE_BYTES) {
                     val keep = f.readLines().takeLast(MAX_LINES / 2)
                     f.writeText(keep.joinToString("\n") + "\n")
                 }
                 if (f.exists()) f.readLines().takeLast(MAX_LINES).forEach { buffer.addLast(it) }
                 writer = BufferedWriter(FileWriter(f, true))
+                UHLog.externalPath = f.absolutePath
             } catch (_: Exception) {}
         }
         section("BOOT")
