@@ -11,117 +11,50 @@
         android:layout_width="0dp"
         android:layout_height="0dp"
         app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toTopOf="@id/homeScreen"
+        app:layout_constraintBottom_toTopOf="@id/bottomBar"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
     <LinearLayout
         android:id="@+id/homeScreen"
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="0dp"
         android:orientation="vertical"
-        android:gravity="center"
+        android:gravity="center_horizontal"
         android:background="@color/bg"
+        android:paddingBottom="60dp"
         app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/bottomBar"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
+        <Space
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
         <TextView
+            android:id="@+id/homeTitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Quetta"
-            android:textColor="#F06292"
-            android:textSize="48sp"
+            android:text="Universal Harvester"
+            android:textColor="@color/accent"
+            android:textSize="34sp"
             android:textStyle="bold"
-            android:layout_marginBottom="48dp" />
+            android:layout_marginBottom="36dp" />
 
-        <GridLayout
-            android:layout_width="wrap_content"
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/shortcutsGrid"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:columnCount="4"
-            android:rowCount="1"
-            android:alignmentMode="alignMargins"
-            android:columnOrderPreserved="false">
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:clipToPadding="false" />
 
-            <LinearLayout
-                android:layout_width="80dp"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:gravity="center">
-                <ImageView
-                    android:id="@+id/homeSearchIcon"
-                    android:layout_width="56dp"
-                    android:layout_height="56dp"
-                    android:background="@drawable/ic_duckduckgo"
-                    android:padding="12dp" />
-                <TextView
-                    android:id="@+id/homeSearchLabel"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="DuckDuckGo"
-                    android:textColor="@color/text"
-                    android:textSize="12sp"
-                    android:layout_marginTop="8dp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="80dp"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:gravity="center">
-                <ImageView
-                    android:layout_width="56dp"
-                    android:layout_height="56dp"
-                    android:background="@drawable/ic_extension_rounded"
-                    android:padding="12dp" />
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Extensions"
-                    android:textColor="@color/text"
-                    android:textSize="12sp"
-                    android:layout_marginTop="8dp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="80dp"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:gravity="center">
-                <ImageView
-                    android:layout_width="56dp"
-                    android:layout_height="56dp"
-                    android:background="@drawable/ic_x_rounded"
-                    android:padding="12dp" />
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="X"
-                    android:textColor="@color/text"
-                    android:textSize="12sp"
-                    android:layout_marginTop="8dp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="80dp"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:gravity="center">
-                <ImageView
-                    android:layout_width="56dp"
-                    android:layout_height="56dp"
-                    android:background="@drawable/ic_add_rounded"
-                    android:padding="12dp" />
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Add"
-                    android:textColor="@color/text"
-                    android:textSize="12sp"
-                    android:layout_marginTop="8dp" />
-            </LinearLayout>
-        </GridLayout>
+        <Space
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1.4" />
     </LinearLayout>
 
     <LinearLayout
