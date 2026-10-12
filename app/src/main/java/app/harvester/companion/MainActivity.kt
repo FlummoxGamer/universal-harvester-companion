@@ -1,12 +1,14 @@
 package app.harvester.companion
 
 import android.annotation.SuppressLint
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
 import android.os.Message
-import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.PermissionRequest
@@ -18,22 +20,31 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.EditText
-import android.widget.ImageView
-import android.widget.PopupMenu
-import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.addCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import app.harvester.companion.databinding.ActivityMainBinding
+import com.google.android.material.bottomsheet.BottomSheetDialog
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
+import java.net.URL
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var tabs: TabManager
     private var currentView: WebView? = null
-    private var stripAdapter: StripAdapter? = null
+
+    private val filePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { installScriptFromUri(it) }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,10 +65,18 @@ class MainActivity : AppCompatActivity() {
         binding.btnMenu.setOnClickListener { showMenu() }
         binding.tabCount.setOnClickListener { openTabGrid() }
 
-        binding.tabStrip.layoutManager =
-            LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
-        stripAdapter = StripAdapter { id -> switchTab(id) }
-        binding.tabStrip.adapter = stripAdapter
+        binding.homeScreen.findViewWithTag<View>("btnGoogle")?.setOnClickListener {
+            loadUrlFromHome("https://www.google.com")
+        }
+        binding.homeScreen.findViewWithTag<View>("btnExtensions")?.setOnClickListener {
+            promptInstallUserscript()
+        }
+        binding.homeScreen.findViewWithTag<View>("btnX")?.setOnClickListener {
+            loadUrlFromHome("https://x.com")
+        }
+        binding.homeScreen.findViewWithTag<View>("btnAdd")?.setOnClickListener {
+            openUrlDialog()
+        }
 
         onBackPressedDispatcher.addCallback(this) {
             val v = currentView
@@ -66,31 +85,50 @@ class MainActivity : AppCompatActivity() {
 
         val existing = tabs.list()
         if (existing.isEmpty()) {
-            tabs.openNew(intent?.data?.toString() ?: "about:blank")
+            tabs.openNew("about:blank")
         } else {
-            tabs.currentId().let { }
             tabs.acquireView(existing.first().id)
         }
         attachCurrent()
         UHLog.d("main", "onCreate complete")
     }
 
+    private fun loadUrlFromHome(url: String) {
+        var view = currentView
+        if (view == null || view.url == "about:blank") {
+            tabs.openNew(url)
+            attachCurrent()
+            view = currentView
+        }
+        view?.loadUrl(url)
+        updateHomeVisibility()
+    }
+
     private fun attachCurrent() {
         val view = tabs.currentView() ?: return
-        if (view === currentView) return
+        if (view === currentView) {
+            updateHomeVisibility()
+            return
+        }
 
         binding.webContainer.removeAllViews()
         (view.parent as? ViewGroup)?.removeView(view)
         binding.webContainer.addView(view)
         currentView = view
 
-if (view.getTag(R.id.webContainer) == null) {
-    installClients(view)
-    view.setTag(R.id.webContainer, true)
-}
+        if (view.getTag(R.id.webContainer) == null) {
+            installClients(view)
+            view.setTag(R.id.webContainer, true)
+        }
 
         updateUi()
         tabs.drainPendingDestroy()
+    }
+
+    private fun updateHomeVisibility() {
+        val isBlank = currentView?.url == "about:blank" || currentView == null
+        binding.homeScreen.visibility = if (isBlank) View.VISIBLE else View.GONE
+        binding.webContainer.visibility = if (isBlank) View.GONE else View.VISIBLE
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -138,9 +176,11 @@ if (view.getTag(R.id.webContainer) == null) {
             override fun onPageStarted(v: WebView, url: String, favicon: Bitmap?) {
                 UHLog.d("web", "start ${url.take(140)}")
                 tabs.updateUrl(tabs.currentId(), url, null)
-                if (v === currentView) binding.urlText.text = url.take(80)
+                if (v === currentView) {
+                    binding.urlText.text = if (url == "about:blank") "" else url
+                }
                 UserscriptManager.injectOnPageStart(this@MainActivity, v, url)
-                refreshStrip()
+                updateHomeVisibility()
             }
 
             override fun onPageFinished(v: WebView, url: String) {
@@ -184,7 +224,6 @@ if (view.getTag(R.id.webContainer) == null) {
                 val id = tabs.currentId()
                 val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
                 tabs.updateUrl(id, url, title)
-                refreshStrip()
             }
 
             override fun onCreateWindow(
@@ -210,26 +249,20 @@ if (view.getTag(R.id.webContainer) == null) {
         tabs.acquireView(id)
         attachCurrent()
         val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
-        binding.urlText.text = url.take(80)
-        refreshStrip()
+        binding.urlText.text = if (url == "about:blank") "" else url
+        updateUi()
     }
 
     private fun updateUi() {
         val id = tabs.currentId()
         val entity = tabs.list().firstOrNull { it.id == id }
         val url = entity?.url ?: ""
-        binding.urlText.text = url.take(80)
+        binding.urlText.text = if (url == "about:blank") "" else url
         binding.urlIcon.visibility = if (url.startsWith("https")) View.VISIBLE else View.INVISIBLE
         binding.btnBack.isEnabled = currentView?.canGoBack() ?: false
         binding.btnForward.isEnabled = currentView?.canGoForward() ?: false
-        refreshStrip()
-    }
-
-    private fun refreshStrip() {
-        val list = tabs.list()
-        binding.tabCount.text = list.size.toString()
-        binding.tabStrip.visibility = if (list.size > 1) View.VISIBLE else View.GONE
-        stripAdapter?.update(list, tabs.currentId())
+        binding.tabCount.text = tabs.list().size.toString()
+        updateHomeVisibility()
     }
 
     private fun openTabGrid() {
@@ -255,9 +288,9 @@ if (view.getTag(R.id.webContainer) == null) {
 
     private fun openUrlDialog() {
         val input = EditText(this).apply {
-            setText(binding.urlText.text)
+            setText("")
             setTextColor(0xFFE6EDF5.toInt())
-            setHint("Search or URL")
+            setHint("Search or type URL")
             setHintTextColor(0xFF8296AD.toInt())
             setPadding(32, 32, 32, 32)
             setSingleLine()
@@ -268,7 +301,10 @@ if (view.getTag(R.id.webContainer) == null) {
             .setView(input)
             .setPositiveButton("Go") { _, _ ->
                 val target = normalize(input.text.toString().trim())
-                if (target.isNotBlank()) currentView?.loadUrl(target)
+                if (target.isNotBlank()) {
+                    currentView?.loadUrl(target)
+                    updateHomeVisibility()
+                }
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -284,48 +320,119 @@ if (view.getTag(R.id.webContainer) == null) {
     }
 
     private fun showMenu() {
-        val popup = PopupMenu(this, binding.btnMenu)
-        popup.menu.add(0, 1, 0, "New Tab")
-        popup.menu.add(0, 2, 1, "Reload")
-        popup.menu.add(0, 3, 2, "Install userscript")
-        popup.menu.add(0, 4, 3, "Settings")
-        popup.menu.add(0, 5, 4, "Logs")
-        popup.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                1 -> { tabs.openNew("about:blank"); attachCurrent(); updateUi(); true }
-                2 -> { currentView?.reload(); true }
-                3 -> { promptInstallUserscript(); true }
-                4 -> { startActivity(Intent(this, SettingsActivity::class.java)); true }
-                5 -> { startActivity(Intent(this, LogsActivity::class.java)); true }
-                else -> false
-            }
+        val bottomSheetDialog = BottomSheetDialog(this)
+        val sheetView = layoutInflater.inflate(R.layout.dialog_main_menu, null)
+        bottomSheetDialog.setContentView(sheetView)
+
+        sheetView.findViewById<View>(R.id.btnSetDefault)?.setOnClickListener {
+            val intent = Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
+            startActivity(intent)
+            bottomSheetDialog.dismiss()
         }
-        popup.show()
+
+        sheetView.findViewById<View>(R.id.btnSettings)?.setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+            bottomSheetDialog.dismiss()
+        }
+
+        sheetView.findViewById<View>(R.id.btnNewTab)?.setOnClickListener {
+            tabs.openNew("about:blank")
+            attachCurrent()
+            updateUi()
+            bottomSheetDialog.dismiss()
+        }
+
+        bottomSheetDialog.show()
     }
 
     private fun promptInstallUserscript() {
+        val options = arrayOf("From URL", "From Clipboard", "From Local File")
+        AlertDialog.Builder(this)
+            .setTitle("Install userscript")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> showUrlInstallDialog()
+                    1 -> installFromClipboard()
+                    2 -> filePickerLauncher.launch("text/javascript")
+                }
+            }
+            .show()
+    }
+
+    private fun showUrlInstallDialog() {
         val input = EditText(this).apply {
-            setHint("// @match *://example.com/*\n// code...")
+            setHint("https://example.com/script.user.js")
             setTextColor(0xFFE6EDF5.toInt())
             setHintTextColor(0xFF8296AD.toInt())
             setPadding(32, 32, 32, 32)
-            minLines = 6
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or
-                    android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            setSingleLine()
+            inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI
         }
         AlertDialog.Builder(this)
-            .setTitle("Install userscript")
+            .setTitle("Install from URL")
             .setView(input)
-            .setPositiveButton("Save") { _, _ ->
-                val body = input.text.toString()
-                if (body.isBlank()) return@setPositiveButton
-                val name = "script_" + System.currentTimeMillis()
-                if (UserscriptManager.install(this, name, body)) {
-                    UHLog.d("userscript", "installed $name")
-                }
+            .setPositiveButton("Install") { _, _ ->
+                val url = input.text.toString().trim()
+                if (url.isNotBlank()) downloadAndInstallScript(url)
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    private fun installFromClipboard() {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = clipboard.primaryClip
+        if (clip != null && clip.itemCount > 0) {
+            val text = clip.getItemAt(0).text.toString()
+            if (text.contains("@match") || text.contains("==UserScript==")) {
+                val name = "script_" + System.currentTimeMillis()
+                if (UserscriptManager.install(this, name, text)) {
+                    Toast.makeText(this, "Installed from clipboard", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Toast.makeText(this, "Clipboard does not contain a userscript", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun installScriptFromUri(uri: Uri) {
+        try {
+            val content = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+            if (content != null) {
+                val name = "script_" + System.currentTimeMillis()
+                if (UserscriptManager.install(this, name, content)) {
+                    Toast.makeText(this, "Script installed", Toast.LENGTH_SHORT).show()
+                }
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Failed to read file", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun downloadAndInstallScript(url: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val connection = URL(url).openConnection() as HttpURLConnection
+                connection.connect()
+                if (connection.responseCode in 200..299) {
+                    val scriptContent = connection.inputStream.bufferedReader().use { it.readText() }
+                    val name = "script_" + System.currentTimeMillis()
+                    val success = UserscriptManager.install(this@MainActivity, name, scriptContent)
+                    withContext(Dispatchers.Main) {
+                        if (success) Toast.makeText(this@MainActivity, "Script installed", Toast.LENGTH_SHORT).show()
+                        else Toast.makeText(this@MainActivity, "Install failed", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "Download failed: HTTP ${connection.responseCode}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -345,40 +452,5 @@ if (view.getTag(R.id.webContainer) == null) {
     override fun onDestroy() {
         tabs.saveAll()
         super.onDestroy()
-    }
-
-    private class StripAdapter(private val onTap: (Long) -> Unit) :
-        RecyclerView.Adapter<StripAdapter.VH>() {
-
-        class VH(v: View) : RecyclerView.ViewHolder(v) {
-            val title: TextView = v.findViewById(R.id.tabTitle)
-            val close: ImageView = v.findViewById(R.id.tabClose)
-        }
-
-        private var items: List<TabEntity> = emptyList()
-        private var current: Long = -1L
-
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
-            val v = LayoutInflater.from(parent.context)
-                .inflate(R.layout.item_tab_strip, parent, false)
-            return VH(v)
-        }
-
-        override fun onBindViewHolder(h: VH, position: Int) {
-            val t = items[position]
-            h.title.text = t.title.ifBlank {
-                t.url.substringAfter("//").take(30).ifBlank { "New Tab" }
-            }
-            h.itemView.alpha = if (t.id == current) 1f else 0.65f
-            h.itemView.setOnClickListener { onTap(t.id) }
-        }
-
-        override fun getItemCount(): Int = items.size
-
-        fun update(list: List<TabEntity>, currentId: Long) {
-            items = list
-            current = currentId
-            notifyDataSetChanged()
-        }
     }
 }
