@@ -8,44 +8,45 @@ class UHApp : Application() {
 
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(base)
+
+        // xCrash must be initialized here, before any other code runs.
+        // It installs a native signal handler inside this process so that
+        // SIGSEGV/SIGABRT in libxul.so or libEGL.so are captured before
+        // the process dies. ColorOS cannot block this — it runs in-process.
+        val crashDir = File(base.filesDir, "tombstones")
+        crashDir.mkdirs()
+
+        xcrash.XCrash.init(
+            this,
+            xcrash.InitParameters().apply {
+                setLogDir(crashDir.absolutePath)
+                setJavaCallback { _, _, _ -> }
+                setNativeCallback { _, _ -> }
+                setAnrCallback { _, _ -> }
+                setLogFile(null) // do not write a separate xCrash log file
+            }
+        )
     }
 
     override fun onCreate() {
         super.onCreate()
-
-        if (applicationProcessName() == "$packageName:crash") {
-            // Crash handler process: do not init GeckoRuntime here.
-            return
-        }
-
         UHLog.init(this)
         GeckoEngine.init(this)
-        Thread { exportCrashFiles(this) }.start()
+        Thread { exportTombstones(this) }.start()
     }
 
-    private fun applicationProcessName(): String {
-        return try {
-            val pid = android.os.Process.myPid()
-            val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-            am.runningAppProcesses?.firstOrNull { it.pid == pid }?.processName ?: ""
-        } catch (_: Exception) { "" }
-    }
+    private fun exportTombstones(ctx: Context) {
+        val src = File(ctx.filesDir, "tombstones")
+        if (!src.isDirectory) return
 
-    private fun exportCrashFiles(ctx: Context) {
-        val dir = ctx.filesDir ?: return
-        for (f in dir.listFiles() ?: return) {
+        for (f in src.listFiles() ?: return) {
             if (!f.isFile) continue
-            val name = f.name
-            if (!name.startsWith("uh_native_crash") &&
-                !name.startsWith("crash_service_invoked") &&
-                !name.startsWith("crash_extras") &&
-                !name.startsWith("crash_minidump")) continue
             try {
-                if (name.endsWith(".dmp")) {
-                    DownloadHelper.saveBytesToDownloads(ctx, name, f.readBytes())
-                } else {
-                    DownloadHelper.saveTextToDownloads(ctx, name, f.readText())
-                }
+                DownloadHelper.saveTextToDownloads(
+                    ctx,
+                    "tombstone_${f.name}",
+                    f.readText()
+                )
             } catch (_: Exception) {}
         }
     }
