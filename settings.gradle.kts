@@ -12,7 +12,10 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven("https://maven.mozilla.org/maven2/") {
-            content { includeGroup("org.mozilla.geckoview") }
+            content {
+                includeGroup("org.mozilla.geckoview")
+                includeGroup("org.mozilla.components")
+            }
         }
     }
 }
