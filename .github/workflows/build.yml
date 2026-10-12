@@ -31,17 +31,6 @@ jobs:
       - name: Build debug APKs
         working-directory: src
         run: gradle assembleDebug --no-daemon --no-configuration-cache
-
-      - name: Debug — dump GeckoView AAR signatures
-        working-directory: src
-        run: |
-          find ~/.gradle/caches -name "geckoview-*.aar" -exec unzip -o {} -d /tmp/gv \; -quit
-          cd /tmp/gv && unzip -o classes.jar -d cls
-          echo "=== PermissionPromptResponse ==="
-          javap -p -classpath cls 'org.mozilla.geckoview.WebExtension$PermissionPromptResponse'
-          echo "=== PromptDelegate ==="
-          javap -p -classpath cls 'org.mozilla.geckoview.WebExtensionController$PromptDelegate'
-        continue-on-error: true
       
       - name: Read version
         id: ver
