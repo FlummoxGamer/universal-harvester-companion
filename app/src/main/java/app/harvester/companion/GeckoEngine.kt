@@ -15,9 +15,15 @@ object GeckoEngine {
         synchronized(this) {
             runtimeRef?.let { return it }
             val settings = GeckoRuntimeSettings.Builder()
-                .aboutConfigEnabled(false)
-                .remoteDebuggingEnabled(false)
-                .build()
+    .aboutConfigEnabled(false)
+    .remoteDebuggingEnabled(false)
+    .crashHandler(object : GeckoRuntime.CrashHandler {
+        override fun onCrash() {
+            UHLog.section("GECKO NATIVE CRASH")
+            UHLog.e("gecko", "native crash detected by GeckoRuntime")
+        }
+    })
+    .build()
             val rt = GeckoRuntime.create(ctx.applicationContext, settings)
             UHLog.d("gecko", "runtime created")
             runtimeRef = rt
@@ -38,10 +44,11 @@ object GeckoEngine {
         restoreState: GeckoSession.SessionState? = null
     ): GeckoSession {
         val settings = GeckoSessionSettings.Builder()
-            .usePrivateMode(private)
-            .useTrackingProtection(true)
-            .build()
-        val session = GeckoSession(settings)
+    .usePrivateMode(private)
+    .build()
+UHLog.d("gecko", "settings built")
+val session = GeckoSession(settings)
+UHLog.d("gecko", "session constructed")
         if (restoreState != null) {
             try {
                 session.restoreState(restoreState)
@@ -50,8 +57,9 @@ object GeckoEngine {
                 UHLog.w("gecko", "restoreState failed: ${e.message}")
             }
         }
-        session.open(runtime())
-        UHLog.v("gecko", "session opened private=$private restored=${restoreState != null}")
-        return session
+        UHLog.d("gecko", "calling open")
+session.open(runtime())
+UHLog.d("gecko", "open returned")
+return session
     }
 }
