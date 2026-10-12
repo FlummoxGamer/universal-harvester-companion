@@ -5,6 +5,7 @@ import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
+import java.io.File
 
 object GeckoEngine {
 
@@ -14,9 +15,25 @@ object GeckoEngine {
         runtimeRef?.let { return it }
         synchronized(this) {
             runtimeRef?.let { return it }
+
+            // Copy YAML from assets to filesDir. GeckoView requires an absolute
+            // path to a readable file. It reads this at runtime creation and
+            // applies the prefs listed under "prefs:".
+            val configFile = File(ctx.filesDir, "geckoview-config.yaml")
+            if (!configFile.exists()) {
+                try {
+                    ctx.assets.open("geckoview-config.yaml").use { input ->
+                        configFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+
             val settings = GeckoRuntimeSettings.Builder()
                 .aboutConfigEnabled(false)
                 .remoteDebuggingEnabled(false)
+                .configFilePath(configFile.absolutePath)
                 .build()
             val rt = GeckoRuntime.create(ctx.applicationContext, settings)
             UHLog.d("gecko", "runtime created")
