@@ -4,6 +4,7 @@ import android.app.DownloadManager
 import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import java.text.SimpleDateFormat
@@ -34,33 +35,35 @@ object DownloadHelper {
         } catch (_: Exception) {}
     }
 
-    fun saveTextToDownloads(ctx: Context, filename: String, content: String): Boolean {
-        return try {
-            val values = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-                put(MediaStore.MediaColumns.MIME_TYPE, "application/json")
-                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-            }
-            val uri = ctx.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                ?: return false
-            ctx.contentResolver.openOutputStream(uri)?.use { os ->
-                os.write(content.toByteArray(Charsets.UTF_8))
-            }
-            true
-        } catch (_: Exception) { false }
-    }
+    fun saveTextToDownloads(ctx: Context, filename: String, content: String): Boolean =
+        saveBytesToDownloads(ctx, filename, content.toByteArray(Charsets.UTF_8), "text/plain")
 
-    fun saveBytesToDownloads(ctx: Context, filename: String, bytes: ByteArray): Boolean {
+    fun saveBytesToDownloads(
+        ctx: Context,
+        filename: String,
+        bytes: ByteArray,
+        mime: String = "application/octet-stream"
+    ): Boolean {
         return try {
             val values = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-                put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
+                put(MediaStore.MediaColumns.MIME_TYPE, mime)
                 put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                }
             }
-            val uri = ctx.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                ?: return false
+            val uri = ctx.contentResolver.insert(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI, values
+            ) ?: return false
             ctx.contentResolver.openOutputStream(uri)?.use { os ->
                 os.write(bytes)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val done = ContentValues().apply {
+                    put(MediaStore.MediaColumns.IS_PENDING, 0)
+                }
+                ctx.contentResolver.update(uri, done, null, null)
             }
             true
         } catch (_: Exception) { false }
