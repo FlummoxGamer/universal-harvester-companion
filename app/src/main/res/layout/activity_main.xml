@@ -94,9 +94,8 @@
             <ProgressBar
                 android:id="@+id/pageProgress"
                 style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="0dp"
+                android:layout_width="40dp"
                 android:layout_height="2dp"
-                android:layout_weight="0"
                 android:max="100"
                 android:visibility="gone" />
         </LinearLayout>
