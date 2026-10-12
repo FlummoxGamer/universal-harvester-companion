@@ -17,7 +17,6 @@ object GeckoEngine {
             val settings = GeckoRuntimeSettings.Builder()
                 .aboutConfigEnabled(false)
                 .remoteDebuggingEnabled(false)
-                .crashHandler(CrashHandlerService::class.java)
                 .build()
             val rt = GeckoRuntime.create(ctx.applicationContext, settings)
             UHLog.d("gecko", "runtime created")
