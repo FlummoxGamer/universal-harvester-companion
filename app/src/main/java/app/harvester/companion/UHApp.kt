@@ -16,12 +16,14 @@ class UHApp : Application() {
     override fun onCreate() {
         super.onCreate()
 
+        val notificationsDelegate = NotificationsDelegate(
+            NotificationManagerCompat.from(this)
+        )
+
         CrashReporter(
             context = this,
             services = listOf(),
-            notificationsDelegate = NotificationsDelegate(
-                NotificationManagerCompat.from(this)
-            )
+            notificationsDelegate = notificationsDelegate
         ).install(this)
 
         UHLog.init(this)
