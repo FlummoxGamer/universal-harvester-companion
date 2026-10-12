@@ -14,15 +14,10 @@ object GeckoEngine {
         runtimeRef?.let { return it }
         synchronized(this) {
             runtimeRef?.let { return it }
-            val settings = GeckoRuntimeSettings.Builder()
+val settings = GeckoRuntimeSettings.Builder()
     .aboutConfigEnabled(false)
     .remoteDebuggingEnabled(false)
-    .crashHandler(object : GeckoRuntime.CrashHandler {
-        override fun onCrash() {
-            UHLog.section("GECKO NATIVE CRASH")
-            UHLog.e("gecko", "native crash detected by GeckoRuntime")
-        }
-    })
+    .crashHandler(CrashHandlerService::class.java)
     .build()
             val rt = GeckoRuntime.create(ctx.applicationContext, settings)
             UHLog.d("gecko", "runtime created")
