@@ -17,7 +17,6 @@ object GeckoEngine {
             val settings = GeckoRuntimeSettings.Builder()
                 .aboutConfigEnabled(false)
                 .remoteDebuggingEnabled(false)
-                .prefs(mapOf("gfx.webrender.software" to true))
                 .build()
             val rt = GeckoRuntime.create(ctx.applicationContext, settings)
             UHLog.d("gecko", "runtime created")
