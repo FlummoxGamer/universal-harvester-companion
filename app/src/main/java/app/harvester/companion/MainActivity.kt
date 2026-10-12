@@ -65,8 +65,13 @@ class MainActivity : AppCompatActivity() {
         binding.btnMenu.setOnClickListener { showMenu() }
         binding.tabCount.setOnClickListener { openTabGrid() }
 
-        binding.homeScreen.findViewWithTag<View>("btnGoogle")?.setOnClickListener {
-            loadUrlFromHome("https://www.google.com")
+        binding.homeScreen.findViewById<View>(R.id.homeSearchIcon)?.setOnClickListener {
+            val url = when (SearchEnginePrefs.getEngine(this)) {
+                SearchEnginePrefs.ENGINE_DUCKDUCKGO -> "https://duckduckgo.com"
+                SearchEnginePrefs.ENGINE_BING -> "https://www.bing.com"
+                else -> "https://www.google.com"
+            }
+            loadUrlFromHome(url)
         }
         binding.homeScreen.findViewWithTag<View>("btnExtensions")?.setOnClickListener {
             promptInstallUserscript()
@@ -262,6 +267,8 @@ class MainActivity : AppCompatActivity() {
         binding.btnBack.isEnabled = currentView?.canGoBack() ?: false
         binding.btnForward.isEnabled = currentView?.canGoForward() ?: false
         binding.tabCount.text = tabs.list().size.toString()
+        binding.homeSearchIcon.setImageResource(SearchEnginePrefs.getIconRes(this))
+        binding.homeSearchLabel.text = SearchEnginePrefs.getLabel(this)
         updateHomeVisibility()
     }
 
@@ -316,7 +323,7 @@ class MainActivity : AppCompatActivity() {
         if (t.startsWith("http://") || t.startsWith("https://") ||
             t.startsWith("about:") || t.startsWith("file:")) return t
         if (t.contains(".") && !t.contains(" ")) return "https://$t"
-        return "https://html.duckduckgo.com/html/?q=" + Uri.encode(t)
+        return SearchEnginePrefs.getSearchUrl(this, t)
     }
 
     private fun showMenu() {
