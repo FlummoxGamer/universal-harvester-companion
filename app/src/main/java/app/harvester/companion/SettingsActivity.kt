@@ -17,6 +17,11 @@ class SettingsActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         binding.versionLabel.text = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
+        binding.switchVerbose.isChecked = DebugPrefs.verboseLogging(this)
+        binding.switchVerbose.setOnCheckedChangeListener { _, checked ->
+            DebugPrefs.setVerboseLogging(this, checked)
+            UHLog.setVerbose(checked)
+        }
 
         binding.btnLogs.setOnClickListener {
             startActivity(Intent(this, LogsActivity::class.java))
