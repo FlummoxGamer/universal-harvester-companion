@@ -1,11 +1,22 @@
 package app.harvester.companion
 
+import android.annotation.SuppressLint
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
+import android.os.Message
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.PermissionRequest
+import android.webkit.SslErrorHandler
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.PopupMenu
@@ -16,22 +27,13 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import app.harvester.companion.databinding.ActivityMainBinding
-import org.mozilla.geckoview.AllowOrDeny
-import org.mozilla.geckoview.GeckoResult
-import org.mozilla.geckoview.GeckoSession
-import org.mozilla.geckoview.GeckoView
-import org.mozilla.geckoview.WebRequestError
-import java.util.WeakHashMap
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
-    private lateinit var view: GeckoView
     private lateinit var tabs: TabManager
-    private var session: GeckoSession? = null
+    private var currentView: WebView? = null
     private var stripAdapter: StripAdapter? = null
-
-    private val instrumented = WeakHashMap<GeckoSession, Boolean>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,13 +42,13 @@ class MainActivity : AppCompatActivity() {
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        view = binding.geckoView
         tabs = TabManager.get(this)
 
-        binding.btnBack.isEnabled = false
         binding.btnBack.setOnClickListener {
-            val s = session
-            if (s != null && tabs.canGoBack(s)) s.goBack()
+            currentView?.let { if (it.canGoBack()) it.goBack() }
+        }
+        binding.btnForward.setOnClickListener {
+            currentView?.let { if (it.canGoForward()) it.goForward() }
         }
         binding.urlBar.setOnClickListener { openUrlDialog() }
         binding.btnMenu.setOnClickListener { showMenu() }
@@ -58,159 +60,169 @@ class MainActivity : AppCompatActivity() {
         binding.tabStrip.adapter = stripAdapter
 
         onBackPressedDispatcher.addCallback(this) {
-            val s = session
-            if (s != null && tabs.canGoBack(s)) s.goBack() else finish()
+            val v = currentView
+            if (v != null && v.canGoBack()) v.goBack() else finish()
         }
 
-        // Startup: attach exactly one session.
         val existing = tabs.list()
         if (existing.isEmpty()) {
             tabs.openNew(intent?.data?.toString() ?: "about:blank")
         } else {
-            tabs.switchTo(existing.first().id)
+            tabs.currentId().let { }
+            tabs.acquireView(existing.first().id)
         }
-        attachSession(tabs.currentSession())
-        val url = tabs.list().firstOrNull { it.id == tabs.currentId() }?.url ?: ""
-        updateUrlText(url)
-        refreshStrip()
+        attachCurrent()
         UHLog.d("main", "onCreate complete")
     }
 
-    /**
-     * FIX: after view.setSession(s) the old session is fully detached from the
-     * native view. Only then is it safe to drain pending native closes.
-     */
-    private fun attachSession(s: GeckoSession?) {
-        if (s == null) return
-        if (!instrumented.containsKey(s)) {
-            installDelegates(s)
-            instrumented[s] = true
+    private fun attachCurrent() {
+        val view = tabs.currentView() ?: return
+        if (view === currentView) return
+
+        binding.webContainer.removeAllViews()
+        (view.parent as? ViewGroup)?.removeView(view)
+        binding.webContainer.addView(view)
+        currentView = view
+
+        if (view.getTag(R.id.webContainer) == null) {
+            view.tag = view.tag ?: Any()
+            installClients(view)
         }
-        UHLog.d("main", "setSession start")
-        view.setSession(s)
-        UHLog.d("main", "setSession done")
-        session = s
-        binding.btnBack.isEnabled = tabs.canGoBack(s)
-        // Now safe — old sessions are detached.
-        tabs.drainPendingClose()
+
+        updateUi()
+        tabs.drainPendingDestroy()
     }
 
-    private fun installDelegates(s: GeckoSession) {
-        s.navigationDelegate = object : GeckoSession.NavigationDelegate {
-            override fun onCanGoBack(session: GeckoSession, value: Boolean) {
-                tabs.setCanGoBack(session, value)
-                if (session === this@MainActivity.session) {
-                    runOnUiThread { binding.btnBack.isEnabled = value }
-                }
-            }
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun installClients(view: WebView) {
+        view.webViewClient = object : WebViewClient() {
 
-            override fun onLoadRequest(
-                session: GeckoSession,
-                request: GeckoSession.NavigationDelegate.LoadRequest
-            ): GeckoResult<AllowOrDeny>? {
-                val url = request.uri ?: return GeckoResult.fromValue(AllowOrDeny.ALLOW)
-
-                if (request.target === GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW) {
-                    val id = tabs.openNew(url)
-                    runOnUiThread { switchTab(id) }
-                    return GeckoResult.fromValue(AllowOrDeny.DENY)
-                }
-
-                if (url.startsWith("intent:")) {
-                    try {
-                        startActivity(Intent.parseUri(url, Intent.URI_INTENT_SCHEME))
-                    } catch (_: Exception) {
-                        val fallback = try {
-                            Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
-                                .getStringExtra("browser_fallback_url")
-                        } catch (_: Exception) { null }
-                        if (!fallback.isNullOrBlank()) session.loadUri(fallback)
+            override fun shouldInterceptRequest(
+                v: WebView,
+                request: WebResourceRequest
+            ): WebResourceResponse? {
+                try {
+                    val url = request.url.toString()
+                    if (request.method == "GET" || request.method == "POST") {
+                        val hdrs = request.requestHeaders ?: emptyMap()
+                        if (hdrs.isNotEmpty()) {
+                            val sb = StringBuilder()
+                            sb.append(request.method).append(' ').append(url).append('\n')
+                            for ((k, value) in hdrs) sb.append(k).append(": ").append(value).append('\n')
+                            UHLog.d("net", sb.toString().trim())
+                        }
                     }
-                    return GeckoResult.fromValue(AllowOrDeny.DENY)
-                }
-
-                val http = url.startsWith("http://") || url.startsWith("https://")
-                val internal = url.startsWith("about:") || url.startsWith("data:") ||
-                    url.startsWith("moz-extension:") || url.startsWith("blob:") ||
-                    url.startsWith("file:")
-                if (!http && !internal) {
-                    try {
-                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                    } catch (_: Exception) {}
-                    return GeckoResult.fromValue(AllowOrDeny.DENY)
-                }
-                return GeckoResult.fromValue(AllowOrDeny.ALLOW)
-            }
-
-            override fun onLoadError(
-                session: GeckoSession,
-                uri: String?,
-                error: WebRequestError
-            ): GeckoResult<String>? {
-                UHLog.w("nav", "load error code=${error.code} uri=$uri")
+                } catch (_: Exception) {}
                 return null
             }
-        }
 
-        s.progressDelegate = object : GeckoSession.ProgressDelegate {
-            override fun onPageStart(session: GeckoSession, url: String) {
-                UHLog.d("web", "onPageStart ${url.take(140)}")
-                val id = tabs.idForSession(session)
-                if (id > 0) {
-                    tabs.updateUrl(id, url, null)
-                    runOnUiThread {
-                        if (session === this@MainActivity.session) updateUrlText(url)
-                        refreshStrip()
-                    }
+            override fun shouldOverrideUrlLoading(
+                v: WebView,
+                request: WebResourceRequest
+            ): Boolean {
+                val url = request.url.toString()
+                if (url.startsWith("intent:")) {
+                    try { startActivity(Intent.parseUri(url, Intent.URI_INTENT_SCHEME)) } catch (_: Exception) {}
+                    return true
+                }
+                val internal = url.startsWith("http") || url.startsWith("https") ||
+                        url.startsWith("about:") || url.startsWith("data:") ||
+                        url.startsWith("blob:") || url.startsWith("file:")
+                if (!internal) {
+                    try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {}
+                    return true
+                }
+                return false
+            }
+
+            override fun onPageStarted(v: WebView, url: String, favicon: Bitmap?) {
+                UHLog.d("web", "start ${url.take(140)}")
+                tabs.updateUrl(tabs.currentId(), url, null)
+                if (v === currentView) binding.urlText.text = url.take(80)
+                UserscriptManager.injectOnPageStart(this@MainActivity, v, url)
+                refreshStrip()
+            }
+
+            override fun onPageFinished(v: WebView, url: String) {
+                UHLog.d("web", "finish ${url.take(140)}")
+                if (v === currentView) updateUi()
+            }
+
+            override fun doUpdateVisitedHistory(v: WebView, url: String?, isReload: Boolean) {
+                tabs.setNav(v, v.canGoBack(), v.canGoForward())
+                if (v === currentView) {
+                    binding.btnBack.isEnabled = v.canGoBack()
+                    binding.btnForward.isEnabled = v.canGoForward()
                 }
             }
 
-            override fun onPageStop(session: GeckoSession, success: Boolean) {
-                UHLog.d("web", "onPageStop success=$success")
-            }
-
-            override fun onSessionStateChange(
-                session: GeckoSession,
-                sessionState: GeckoSession.SessionState
+            override fun onReceivedError(
+                v: WebView, request: WebResourceRequest, error: WebResourceError
             ) {
-                val id = tabs.idForSession(session)
-                if (id > 0) tabs.recordState(id, sessionState)
+                if (request.isForMainFrame) {
+                    UHLog.w("web", "error ${error.errorCode} ${request.url}")
+                }
+            }
+
+            override fun onReceivedSslError(
+                v: WebView, handler: SslErrorHandler, error: android.net.http.SslError
+            ) {
+                handler.cancel()
             }
         }
 
-        s.contentDelegate = object : GeckoSession.ContentDelegate {
-            override fun onTitleChange(session: GeckoSession, title: String?) {
-                val id = tabs.idForSession(session)
-                if (id > 0 && !title.isNullOrBlank()) {
-                    val storedUrl = tabs.list().firstOrNull { it.id == id }?.url ?: ""
-                    tabs.updateUrl(id, storedUrl, title)
-                    runOnUiThread { refreshStrip() }
-                }
+        view.webChromeClient = object : WebChromeClient() {
+
+            override fun onProgressChanged(v: WebView, newProgress: Int) {
+                if (v !== currentView) return
+                binding.pageProgress.visibility = if (newProgress in 1..99) View.VISIBLE else View.GONE
+                binding.pageProgress.progress = newProgress
+            }
+
+            override fun onReceivedTitle(v: WebView, title: String?) {
+                if (title.isNullOrBlank()) return
+                val id = tabs.currentId()
+                val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
+                tabs.updateUrl(id, url, title)
+                refreshStrip()
+            }
+
+            override fun onCreateWindow(
+                v: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message
+            ): Boolean {
+                val id = tabs.openNew("about:blank")
+                switchTab(id)
+                val newView = tabs.currentView() ?: return false
+                val transport = resultMsg.obj as WebView.WebViewTransport
+                transport.webView = newView
+                resultMsg.sendToTarget()
+                return true
+            }
+
+            override fun onPermissionRequest(request: PermissionRequest) {
+                request.deny()
             }
         }
     }
 
-    /**
-     * FIX: no more same-id early return that skipped attach. Always attach the
-     * session returned by switchTo (which is the alive session for that id, or
-     * a freshly restored one).
-     */
     private fun switchTab(id: Long) {
-        val s = tabs.switchTo(id) ?: return
-        if (s === session) {
-            refreshStrip()
-            return
-        }
-        attachSession(s)
+        tabs.saveCurrentState()
+        tabs.acquireView(id)
+        attachCurrent()
         val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
-        updateUrlText(url)
+        binding.urlText.text = url.take(80)
         refreshStrip()
     }
 
-    private fun updateUrlText(url: String) {
+    private fun updateUi() {
+        val id = tabs.currentId()
+        val entity = tabs.list().firstOrNull { it.id == id }
+        val url = entity?.url ?: ""
         binding.urlText.text = url.take(80)
-        binding.urlIcon.visibility =
-            if (url.startsWith("https")) View.VISIBLE else View.INVISIBLE
+        binding.urlIcon.visibility = if (url.startsWith("https")) View.VISIBLE else View.INVISIBLE
+        binding.btnBack.isEnabled = currentView?.canGoBack() ?: false
+        binding.btnForward.isEnabled = currentView?.canGoForward() ?: false
+        refreshStrip()
     }
 
     private fun refreshStrip() {
@@ -227,20 +239,16 @@ class MainActivity : AppCompatActivity() {
             onSwitch = { id -> switchTab(id) },
             onNew = {
                 tabs.openNew("about:blank")
-                val s = tabs.currentSession()
-                if (s != null) attachSession(s)
-                updateUrlText("about:blank")
-                refreshStrip()
+                attachCurrent()
+                updateUi()
             }
         ).apply {
             setOnDismissListener {
-                val live = tabs.currentSession()
-                if (live != null && live !== session) {
-                    attachSession(live)
-                    val url = tabs.list().firstOrNull { it.id == tabs.currentId() }?.url ?: ""
-                    updateUrlText(url)
+                val live = tabs.currentView()
+                if (live != null && live !== currentView) {
+                    attachCurrent()
+                    updateUi()
                 }
-                refreshStrip()
             }
         }.show()
     }
@@ -260,10 +268,7 @@ class MainActivity : AppCompatActivity() {
             .setView(input)
             .setPositiveButton("Go") { _, _ ->
                 val target = normalize(input.text.toString().trim())
-                if (target.isNotBlank()) {
-                    session?.loadUri(target)
-                    binding.urlText.text = target.take(80)
-                }
+                if (target.isNotBlank()) currentView?.loadUrl(target)
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -273,7 +278,7 @@ class MainActivity : AppCompatActivity() {
         val t = input.trim()
         if (t.isEmpty()) return ""
         if (t.startsWith("http://") || t.startsWith("https://") ||
-            t.startsWith("about:") || t.startsWith("moz-extension:")) return t
+            t.startsWith("about:") || t.startsWith("file:")) return t
         if (t.contains(".") && !t.contains(" ")) return "https://$t"
         return "https://html.duckduckgo.com/html/?q=" + Uri.encode(t)
     }
@@ -282,21 +287,14 @@ class MainActivity : AppCompatActivity() {
         val popup = PopupMenu(this, binding.btnMenu)
         popup.menu.add(0, 1, 0, "New Tab")
         popup.menu.add(0, 2, 1, "Reload")
-        popup.menu.add(0, 3, 2, "Extensions")
+        popup.menu.add(0, 3, 2, "Install userscript")
         popup.menu.add(0, 4, 3, "Settings")
         popup.menu.add(0, 5, 4, "Logs")
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
-                1 -> {
-                    tabs.openNew("about:blank")
-                    val s = tabs.currentSession()
-                    if (s != null) attachSession(s)
-                    updateUrlText("about:blank")
-                    refreshStrip()
-                    true
-                }
-                2 -> { session?.reload(); true }
-                3 -> { startActivity(Intent(this, ExtensionsActivity::class.java)); true }
+                1 -> { tabs.openNew("about:blank"); attachCurrent(); updateUi(); true }
+                2 -> { currentView?.reload(); true }
+                3 -> { promptInstallUserscript(); true }
                 4 -> { startActivity(Intent(this, SettingsActivity::class.java)); true }
                 5 -> { startActivity(Intent(this, LogsActivity::class.java)); true }
                 else -> false
@@ -305,16 +303,38 @@ class MainActivity : AppCompatActivity() {
         popup.show()
     }
 
+    private fun promptInstallUserscript() {
+        val input = EditText(this).apply {
+            setHint("// @match *://example.com/*\n// code...")
+            setTextColor(0xFFE6EDF5.toInt())
+            setHintTextColor(0xFF8296AD.toInt())
+            setPadding(32, 32, 32, 32)
+            minLines = 6
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                    android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Install userscript")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val body = input.text.toString()
+                if (body.isBlank()) return@setPositiveButton
+                val name = "script_" + System.currentTimeMillis()
+                if (UserscriptManager.install(this, name, body)) {
+                    UHLog.d("userscript", "installed $name")
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        val incoming = intent.data?.toString()
-        if (incoming.isNullOrBlank()) return
+        val incoming = intent.data?.toString() ?: return
         tabs.openNew(incoming)
-        val s = tabs.currentSession()
-        if (s != null) attachSession(s)
-        updateUrlText(incoming)
-        refreshStrip()
+        attachCurrent()
+        updateUi()
     }
 
     override fun onPause() {
@@ -324,17 +344,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         tabs.saveAll()
-        // FIX: releaseSession() detaches the current session from the view and
-        // releases the native surface. setSession(null) is not valid — the
-        // parameter is non-null.
-        try { view.releaseSession() } catch (_: Exception) {}
-        tabs.drainPendingClose()
         super.onDestroy()
     }
 
-    private class StripAdapter(
-        private val onTap: (Long) -> Unit
-    ) : RecyclerView.Adapter<StripAdapter.VH>() {
+    private class StripAdapter(private val onTap: (Long) -> Unit) :
+        RecyclerView.Adapter<StripAdapter.VH>() {
 
         class VH(v: View) : RecyclerView.ViewHolder(v) {
             val title: TextView = v.findViewById(R.id.tabTitle)
