@@ -73,6 +73,7 @@ class MainActivity : AppCompatActivity() {
         val url = tabs.list().firstOrNull { it.id == tabs.currentId() }?.url ?: ""
         updateUrlText(url)
         refreshStrip()
+        UHLog.d("main", "onCreate complete")
     }
 
     /**
@@ -153,7 +154,7 @@ class MainActivity : AppCompatActivity() {
 
         s.progressDelegate = object : GeckoSession.ProgressDelegate {
             override fun onPageStart(session: GeckoSession, url: String) {
-                UHLog.v("web", "start ${url.take(140)}")
+                UHLog.d("web", "onPageStart ${url.take(140)}")
                 val id = tabs.idForSession(session)
                 if (id > 0) {
                     tabs.updateUrl(id, url, null)
@@ -165,7 +166,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onPageStop(session: GeckoSession, success: Boolean) {
-                UHLog.d("web", "stop success=$success")
+                UHLog.d("web", "onPageStop success=$success")
             }
 
             override fun onSessionStateChange(
