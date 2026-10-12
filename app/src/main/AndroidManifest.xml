@@ -51,6 +51,10 @@
                 android:exported="false"
                 android:label="Extensions" />
 
+            <service
+                android:name=".CrashHandlerService"
+                android:exported="false" />
+
             <provider
                 android:name="androidx.core.content.FileProvider"
                 android:authorities="${applicationId}.fileprovider"
