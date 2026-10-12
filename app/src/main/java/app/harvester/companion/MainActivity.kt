@@ -85,7 +85,9 @@ class MainActivity : AppCompatActivity() {
             installDelegates(s)
             instrumented[s] = true
         }
+        UHLog.d("main", "setSession start")
         view.setSession(s)
+        UHLog.d("main", "setSession done")
         session = s
         binding.btnBack.isEnabled = tabs.canGoBack(s)
         // Now safe — old sessions are detached.
