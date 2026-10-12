@@ -13,10 +13,8 @@ class UHApp : Application() {
     override fun onCreate() {
         super.onCreate()
 
-        // Skip init in the ":crash" process. GeckoRuntime must be created
-        // only once, in the main process. Creating it in the crash handler
-        // process would crash the service before it can log the crash.
-        if (Application.getProcessName().endsWith(":crash")) {
+        if (applicationProcessName() == "$packageName:crash") {
+            // Crash handler process: do not init GeckoRuntime here.
             return
         }
 
@@ -25,32 +23,30 @@ class UHApp : Application() {
         Thread { exportCrashFiles(this) }.start()
     }
 
+    private fun applicationProcessName(): String {
+        return try {
+            val pid = android.os.Process.myPid()
+            val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            am.runningAppProcesses?.firstOrNull { it.pid == pid }?.processName ?: ""
+        } catch (_: Exception) { "" }
+    }
+
     private fun exportCrashFiles(ctx: Context) {
-        val files = listOf(
-            File(ctx.filesDir, "uh_native_crash.txt"),
-            File(ctx.filesDir, "tombstones")
-        )
-        for (src in files) {
-            if (src.isFile) {
-                try {
-                    DownloadHelper.saveTextToDownloads(
-                        ctx,
-                        "crash_${src.name}",
-                        src.readText()
-                    )
-                } catch (_: Exception) {}
-            } else if (src.isDirectory) {
-                for (f in src.listFiles() ?: continue) {
-                    if (!f.isFile) continue
-                    try {
-                        DownloadHelper.saveTextToDownloads(
-                            ctx,
-                            "crash_${f.name}",
-                            f.readText()
-                        )
-                    } catch (_: Exception) {}
+        val dir = ctx.filesDir ?: return
+        for (f in dir.listFiles() ?: return) {
+            if (!f.isFile) continue
+            val name = f.name
+            if (!name.startsWith("uh_native_crash") &&
+                !name.startsWith("crash_service_invoked") &&
+                !name.startsWith("crash_extras") &&
+                !name.startsWith("crash_minidump")) continue
+            try {
+                if (name.endsWith(".dmp")) {
+                    DownloadHelper.saveBytesToDownloads(ctx, name, f.readBytes())
+                } else {
+                    DownloadHelper.saveTextToDownloads(ctx, name, f.readText())
                 }
-            }
+            } catch (_: Exception) {}
         }
     }
 }
