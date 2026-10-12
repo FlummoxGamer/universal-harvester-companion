@@ -50,12 +50,7 @@
                 android:name=".ExtensionsActivity"
                 android:exported="false"
                 android:label="Extensions" />
-
-            <service
-                android:name=".CrashHandlerService"
-                android:exported="false"
-                android:process=":crash"
-                android:foregroundServiceType="dataSync" />
+   
 
             <provider
                 android:name="androidx.core.content.FileProvider"
