@@ -9,7 +9,6 @@ class UHApp : Application() {
         super.onCreate()
         UHLog.init(this)
         SessionRecorder.init(this)
-        SessionRecorder.start(this)
         try {
             startService(Intent(this, SessionService::class.java))
         } catch (_: Exception) {}
