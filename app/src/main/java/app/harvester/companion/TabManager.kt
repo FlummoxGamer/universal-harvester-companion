@@ -8,8 +8,6 @@ import android.webkit.WebView
 class TabManager private constructor(private val ctx: Context) {
 
     companion object {
-        private const val MAX_ALIVE = 1
-
         @Volatile private var INSTANCE: TabManager? = null
 
         fun get(ctx: Context): TabManager {
@@ -25,7 +23,7 @@ class TabManager private constructor(private val ctx: Context) {
     }
 
     private val db = TabDb(ctx)
-    private val alive = LinkedHashMap<Long, Slot>(MAX_ALIVE, 0.75f, true)
+    private val alive = LinkedHashMap<Long, Slot>(16, 0.75f, true)
     private val pendingDestroy = mutableListOf<WebView>()
     private val lock = Any()
     private var currentId: Long = -1L
@@ -33,7 +31,6 @@ class TabManager private constructor(private val ctx: Context) {
     fun openNew(url: String): Long {
         synchronized(lock) {
             val id = db.insert(url)
-            evictAllExcept(id)
             val view = WebViewEngine.create(ctx)
             alive[id] = Slot(view)
             currentId = id
@@ -45,7 +42,6 @@ class TabManager private constructor(private val ctx: Context) {
     fun openBlankTab(): Long {
         synchronized(lock) {
             val id = db.insert("about:blank")
-            evictAllExcept(id)
             val view = WebViewEngine.create(ctx)
             alive[id] = Slot(view)
             currentId = id
@@ -56,12 +52,9 @@ class TabManager private constructor(private val ctx: Context) {
     fun acquireView(id: Long): WebView? {
         synchronized(lock) {
             alive[id]?.let { currentId = id; return it.view }
-
-            evictAllExcept(id)
             val view = WebViewEngine.create(ctx)
             alive[id] = Slot(view)
             currentId = id
-
             val restored = restoreState(id, view)
             if (!restored) {
                 val fallback = db.list().firstOrNull { it.id == id }?.url
@@ -125,6 +118,29 @@ class TabManager private constructor(private val ctx: Context) {
         }
     }
 
+    fun evictForMemory(keepCount: Int) {
+        val victims: List<Long>
+        synchronized(lock) {
+            if (alive.size <= keepCount) return
+            val keepId = currentId
+            val out = mutableListOf<Long>()
+            for (id in alive.keys) {
+                if (id == keepId) continue
+                if (alive.size - out.size <= keepCount) break
+                out.add(id)
+            }
+            victims = out
+        }
+        if (victims.isEmpty()) return
+        synchronized(lock) {
+            for (id in victims) {
+                val slot = alive.remove(id) ?: continue
+                try { saveState(id, slot.view) } catch (_: Exception) {}
+                pendingDestroy.add(slot.view)
+            }
+        }
+    }
+
     fun drainPendingDestroy() {
         synchronized(lock) {
             if (pendingDestroy.isEmpty()) return
@@ -173,22 +189,5 @@ class TabManager private constructor(private val ctx: Context) {
             parcel.recycle()
             view.restoreState(bundle) != null
         } catch (_: Exception) { false }
-    }
-
-    private fun evictAllExcept(keepId: Long) {
-        while (alive.size >= MAX_ALIVE) {
-            val it = alive.entries.iterator()
-            var victim: MutableMap.MutableEntry<Long, Slot>? = null
-            while (it.hasNext()) {
-                val entry = it.next()
-                if (entry.key == keepId) continue
-                victim = entry
-                break
-            }
-            if (victim == null) break
-            saveState(victim.key, victim.value.view)
-            pendingDestroy.add(victim.value.view)
-            it.remove()
-        }
     }
 }
