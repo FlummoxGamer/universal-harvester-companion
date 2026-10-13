@@ -41,6 +41,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var shortcutAdapter: ShortcutAdapter
     private var currentView: WebView? = null
 
+    private val popupTabs = mutableSetOf<Long>()
+    private val page3p = mutableSetOf<String>()
+    private val page3pLock = Any()
+    private val recentUrls = LinkedHashMap<String, Long>()
+    private val recentUrlsLock = Any()
+
     private val filePickerLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -172,46 +178,126 @@ class MainActivity : AppCompatActivity() {
         tabs.drainPendingDestroy()
     }
 
-private fun updateHomeVisibility() {
-    val id = tabs.currentId()
-    val url = tabs.list().firstOrNull { it.id == id }?.url
-    val isBlank = url.isNullOrBlank() || url == "about:blank"
-    binding.homeScreen.visibility = if (isBlank) View.VISIBLE else View.GONE
-    binding.webContainer.visibility = if (isBlank) View.GONE else View.VISIBLE
-}
+    private fun updateHomeVisibility() {
+        val id = tabs.currentId()
+        if (id in popupTabs) {
+            binding.homeScreen.visibility = View.GONE
+            binding.webContainer.visibility = View.VISIBLE
+            return
+        }
+        val url = tabs.list().firstOrNull { it.id == id }?.url
+        val isBlank = url.isNullOrBlank() || url == "about:blank"
+        binding.homeScreen.visibility = if (isBlank) View.VISIBLE else View.GONE
+        binding.webContainer.visibility = if (isBlank) View.GONE else View.VISIBLE
+    }
+
+    private fun prunePopupTabs() {
+        val live = tabs.list().map { it.id }.toSet()
+        popupTabs.retainAll(live)
+    }
+
+    private fun isStaticAsset(url: String, headers: Map<String, String>?): Boolean {
+        val accept = headers?.entries?.firstOrNull { it.key.equals("Accept", true) }?.value ?: ""
+        if (accept.contains("image/") || accept.contains("text/css") ||
+            accept.contains("font/") || accept.contains("video/") || accept.contains("audio/")) {
+            return true
+        }
+        val path = url.substringBefore('?').substringBefore('#').lowercase()
+        val exts = listOf(
+            ".js", ".mjs", ".css", ".map",
+            ".woff", ".woff2", ".ttf", ".otf", ".eot",
+            ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".avif", ".ico", ".bmp"
+        )
+        return exts.any { path.endsWith(it) }
+    }
+
+    private fun isBeaconHost(url: String): Boolean {
+        val host = try { java.net.URI(url).host?.lowercase() ?: return false } catch (_: Exception) { return false }
+        if (host.endsWith(".googletagmanager.com") || host == "googletagmanager.com") return true
+        if (host.endsWith(".google-analytics.com") || host == "google-analytics.com") return true
+        if (host == "improving.duckduckgo.com") return true
+        if (host == "my.rtmark.net") return true
+        if (host.endsWith(".cloudflareinsights.com")) return true
+        if (host.endsWith(".sentry.io")) return true
+        return false
+    }
+
+    private fun recordUrlOnce(url: String): Boolean {
+        val key = url.substringBefore('?').substringBefore('#')
+        val now = System.currentTimeMillis()
+        synchronized(recentUrlsLock) {
+            val it = recentUrls.entries.iterator()
+            while (it.hasNext()) {
+                if (now - it.next().value > 2000L) it.remove()
+            }
+            val last = recentUrls[key]
+            recentUrls[key] = now
+            return !(last != null && now - last < 1000L)
+        }
+    }
+
+    private fun collect3p(view: WebView, url: String) {
+        val host = try { java.net.URI(url).host?.lowercase() ?: return } catch (_: Exception) { return }
+        val pageHost = try { java.net.URI(view.url ?: "").host?.lowercase() ?: return } catch (_: Exception) { return }
+        if (host == pageHost) return
+        synchronized(page3pLock) { page3p.add(host) }
+    }
+
+    private fun flush3p(view: WebView, pageUrl: String) {
+        val hosts = synchronized(page3pLock) {
+            val copy = page3p.toList()
+            page3p.clear()
+            copy
+        }
+        if (hosts.isNotEmpty()) UHLog.net3p(pageUrl, hosts)
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun installClients(view: WebView) {
         view.webViewClient = object : WebViewClient() {
 
-override fun shouldInterceptRequest(
-    v: WebView, request: WebResourceRequest
-): WebResourceResponse? {
-    try {
-        val url = request.url.toString()
-        if (request.isForMainFrame && url.isNotBlank() && url != "about:blank") {
-            val id = tabs.idForView(v)
-            if (id > 0L) {
-                tabs.updateUrl(id, url, null)
-                if (v === currentView) {
-                    v.post { updateHomeVisibility() }
-                }
+            override fun shouldInterceptRequest(
+                v: WebView, request: WebResourceRequest
+            ): WebResourceResponse? {
+                try {
+                    val url = request.url.toString()
+                    val method = request.method ?: "GET"
+                    val headers = request.requestHeaders
+
+                    if (request.isForMainFrame && url.isNotBlank() && url != "about:blank") {
+                        val id = tabs.idForView(v)
+                        if (id > 0L) {
+                            tabs.updateUrl(id, url, null)
+                            if (v === currentView) v.post { updateHomeVisibility() }
+                        }
+                        val ref = headers?.entries?.firstOrNull { it.key.equals("Referer", true) }?.value
+                        val hasCookie = headers?.keys?.any { it.equals("Cookie", true) } == true
+                        val hasAuth = headers?.keys?.any { it.equals("Authorization", true) } == true
+                        UHLog.netNav(method, url, ref, hasCookie, hasAuth)
+                        return null
+                    }
+
+                    if (isStaticAsset(url, headers)) return null
+                    if (isBeaconHost(url)) return null
+                    if (!recordUrlOnce(url)) return null
+
+                    val accept = headers?.entries?.firstOrNull { it.key.equals("Accept", true) }?.value ?: ""
+                    val isApi = accept.contains("json", true)
+                            || url.contains("/api/")
+                            || headers?.keys?.any { it.equals("X-Requested-With", true) } == true
+
+                    when {
+                        method == "POST" -> {
+                            val ct = headers?.entries?.firstOrNull { it.key.equals("Content-Type", true) }?.value
+                            val cl = headers?.entries?.firstOrNull { it.key.equals("Content-Length", true) }?.value?.toLongOrNull() ?: -1L
+                            UHLog.netPost(url, ct, cl)
+                        }
+                        isApi -> UHLog.netApi(method, url)
+                    }
+                    if (v === currentView) collect3p(v, url)
+                } catch (_: Exception) {}
+                return null
             }
-        }
-        if (request.method == "GET" || request.method == "POST") {
-            val hdrs = request.requestHeaders ?: emptyMap()
-            if (hdrs.isNotEmpty()) {
-                val sb = StringBuilder()
-                sb.append(request.method).append(' ').append(url).append('\n')
-                for ((k, value) in hdrs) {
-                    sb.append(k).append(": ").append(value).append('\n')
-                }
-                UHLog.v("net", sb.toString().trim())
-            }
-        }
-    } catch (_: Exception) {}
-    return null
-}
 
             override fun shouldOverrideUrlLoading(
                 v: WebView, request: WebResourceRequest
@@ -227,27 +313,35 @@ override fun shouldInterceptRequest(
                 if (scheme == "about" || scheme == "data" || scheme == "blob" ||
                     scheme == "file" || scheme == "javascript") return false
 
+                UHLog.netScheme(url, "dialog")
                 askOpenExternal(v, url)
                 return true
             }
 
             override fun onPageStarted(v: WebView, url: String, favicon: Bitmap?) {
                 UHLog.d("web", "start ${url.take(140)}")
-                tabs.updateUrl(tabs.currentId(), url, null)
+                val id = tabs.idForView(v)
+                if (id > 0L) tabs.updateUrl(id, url, null)
                 if (v === currentView) {
                     binding.urlText.text = if (url == "about:blank") "" else url
+                    synchronized(page3pLock) { page3p.clear() }
                 }
-                UserscriptManager.injectOnPageStart(this@MainActivity, v, url)
-                updateHomeVisibility()
+                if (id in popupTabs) UHLog.netPopupLoad(url)
+                if (url != "about:blank") {
+                    UserscriptManager.injectOnPageStart(this@MainActivity, v, url)
+                }
+                if (v === currentView) updateHomeVisibility()
             }
 
-override fun onPageFinished(v: WebView, url: String) {
-    UHLog.d("web", "finish ${url.take(140)}")
-    if (v === currentView) {
-        tabs.updateUrl(tabs.currentId(), url, null)
-        updateUi()
-    }
-}
+            override fun onPageFinished(v: WebView, url: String) {
+                UHLog.d("web", "finish ${url.take(140)}")
+                val id = tabs.idForView(v)
+                if (id > 0L) tabs.updateUrl(id, url, null)
+                if (v === currentView) {
+                    updateUi()
+                    flush3p(v, url)
+                }
+            }
 
             override fun doUpdateVisitedHistory(v: WebView, url: String?, isReload: Boolean) {
                 tabs.setNav(v, v.canGoBack(), v.canGoForward())
@@ -281,36 +375,42 @@ override fun onPageFinished(v: WebView, url: String) {
 
             override fun onReceivedTitle(v: WebView, title: String?) {
                 if (title.isNullOrBlank()) return
-                val id = tabs.currentId()
+                val id = tabs.idForView(v)
+                if (id <= 0L) return
                 val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
                 tabs.updateUrl(id, url, title)
             }
 
-override fun onCreateWindow(
-    v: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message
-): Boolean {
-    val id = tabs.openBlankTab()
-    val newView = tabs.acquireView(id) ?: return false
+            override fun onCreateWindow(
+                v: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message
+            ): Boolean {
+                val parentId = tabs.idForView(v)
+                val parentUrl = tabs.list().firstOrNull { it.id == parentId }?.url ?: v.url ?: ""
+                UHLog.netPopupOpen(parentUrl, isUserGesture, isDialog)
 
-    if (newView.getTag(R.id.webContainer) == null) {
-        installClients(newView)
-        newView.setTag(R.id.webContainer, true)
-    }
+                val id = tabs.openBlankTab()
+                val newView = tabs.acquireView(id) ?: return false
+                popupTabs.add(id)
 
-    binding.webContainer.removeAllViews()
-    (newView.parent as? ViewGroup)?.removeView(newView)
-    binding.webContainer.addView(newView)
-    binding.webContainer.visibility = View.VISIBLE
-    binding.homeScreen.visibility = View.GONE
-    currentView = newView
-    tabs.drainPendingDestroy()
+                if (newView.getTag(R.id.webContainer) == null) {
+                    installClients(newView)
+                    newView.setTag(R.id.webContainer, true)
+                }
 
-    val transport = resultMsg.obj as WebView.WebViewTransport
-    transport.webView = newView
-    resultMsg.sendToTarget()
+                binding.webContainer.removeAllViews()
+                (newView.parent as? ViewGroup)?.removeView(newView)
+                binding.webContainer.addView(newView)
+                binding.webContainer.visibility = View.VISIBLE
+                binding.homeScreen.visibility = View.GONE
+                currentView = newView
 
-    return true
-}
+                val transport = resultMsg.obj as WebView.WebViewTransport
+                transport.webView = newView
+                resultMsg.sendToTarget()
+
+                updateUi()
+                return true
+            }
 
             override fun onPermissionRequest(request: PermissionRequest) {
                 request.deny()
@@ -328,6 +428,7 @@ override fun onCreateWindow(
     }
 
     private fun updateUi() {
+        prunePopupTabs()
         val id = tabs.currentId()
         val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
         binding.urlText.text = if (url == "about:blank") "" else url
@@ -352,6 +453,8 @@ override fun onCreateWindow(
                 val live = tabs.currentView()
                 if (live != null && live !== currentView) {
                     attachCurrent()
+                    updateUi()
+                } else {
                     updateUi()
                 }
             }
@@ -533,6 +636,7 @@ override fun onCreateWindow(
             if (isWeb) {
                 val target = intent.data?.toString()
                 if (!target.isNullOrBlank()) {
+                    UHLog.netScheme(url, "unwrapped→$target")
                     currentView?.loadUrl(target)
                     return
                 }
@@ -540,14 +644,17 @@ override fun onCreateWindow(
 
             val resolved = packageManager.queryIntentActivities(intent, 0)
             if (resolved.isNotEmpty()) {
+                UHLog.netScheme(url, "external")
                 askOpenExternalIntent(intent, currentView)
             } else {
                 val fallback = intent.getStringExtra("browser_fallback_url")
                 if (!fallback.isNullOrBlank()) {
+                    UHLog.netScheme(url, "fallback→$fallback")
                     currentView?.loadUrl(fallback)
                 } else {
                     val pkg = intent.`package`
                     if (!pkg.isNullOrBlank()) {
+                        UHLog.netScheme(url, "market→$pkg")
                         try {
                             startActivity(
                                 Intent(Intent.ACTION_VIEW).apply {
@@ -558,6 +665,7 @@ override fun onCreateWindow(
                             Toast.makeText(this, "App not installed", Toast.LENGTH_SHORT).show()
                         }
                     } else {
+                        UHLog.netScheme(url, "unresolved")
                         Toast.makeText(this, "App not installed", Toast.LENGTH_SHORT).show()
                     }
                 }
@@ -569,11 +677,13 @@ override fun onCreateWindow(
 
     private fun askOpenExternal(view: WebView, url: String) {
         val isFreshPopup = view.url.isNullOrBlank() || view.url == "about:blank"
+        UHLog.netExtDialog(url)
 
         AlertDialog.Builder(this)
             .setTitle("Open in another app?")
             .setMessage(url)
             .setPositiveButton("Open") { _, _ ->
+                UHLog.netExtOpen(url)
                 try {
                     startActivity(
                         Intent(Intent.ACTION_VIEW, Uri.parse(url))
@@ -585,6 +695,7 @@ override fun onCreateWindow(
                 if (isFreshPopup) closeBlankPopup(view)
             }
             .setNegativeButton("Stay") { _, _ ->
+                UHLog.netExtStay(url)
                 if (isFreshPopup) closeBlankPopup(view)
             }
             .show()
@@ -592,10 +703,14 @@ override fun onCreateWindow(
 
     private fun askOpenExternalIntent(intent: Intent, view: WebView?) {
         val isFreshPopup = view?.url.isNullOrBlank() || view?.url == "about:blank"
+        val urlString = intent.data?.toString() ?: "External app link"
+        UHLog.netExtDialog(urlString)
+
         AlertDialog.Builder(this)
             .setTitle("Open in another app?")
-            .setMessage(intent.data?.toString() ?: "External app link")
+            .setMessage(urlString)
             .setPositiveButton("Open") { _, _ ->
+                UHLog.netExtOpen(urlString)
                 try {
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     startActivity(intent)
@@ -605,20 +720,24 @@ override fun onCreateWindow(
                 if (isFreshPopup) view?.let { closeBlankPopup(it) }
             }
             .setNegativeButton("Stay") { _, _ ->
+                UHLog.netExtStay(urlString)
                 if (isFreshPopup) view?.let { closeBlankPopup(it) }
             }
             .show()
     }
 
     private fun closeBlankPopup(view: WebView) {
-        val id = tabs.currentId()
+        val id = tabs.idForView(view)
         if (id <= 0L) return
+        popupTabs.remove(id)
         tabs.close(id)
         val remaining = tabs.list()
-        if (remaining.isNotEmpty()) {
+        if (remaining.isEmpty()) {
+            tabs.openNew("about:blank")
+        } else {
             tabs.acquireView(remaining.first().id)
-            attachCurrent()
         }
+        attachCurrent()
         updateUi()
     }
 
@@ -626,21 +745,26 @@ override fun onCreateWindow(
         super.onNewIntent(intent)
         setIntent(intent)
         val incoming = intent.data?.toString() ?: return
+        val alreadyOpen = tabs.list().firstOrNull { it.url == incoming }
+        if (alreadyOpen != null) {
+            switchTab(alreadyOpen.id)
+            return
+        }
         tabs.openNew(incoming)
         attachCurrent()
         updateUi()
     }
 
-override fun onResume() {
-    super.onResume()
-    UpdateChecker.resumePendingInstallIfPossible(this)
-}
+    override fun onResume() {
+        super.onResume()
+        UpdateChecker.resumePendingInstallIfPossible(this)
+    }
 
-override fun onPause() {
-    super.onPause()
-    tabs.saveAll()
-    UHLog.onActivityPause(this)
-}
+    override fun onPause() {
+        super.onPause()
+        tabs.saveAll()
+        UHLog.onActivityPause(this)
+    }
 
     override fun onDestroy() {
         tabs.saveAll()
