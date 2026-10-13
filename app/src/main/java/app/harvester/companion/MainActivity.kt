@@ -184,25 +184,34 @@ private fun updateHomeVisibility() {
     private fun installClients(view: WebView) {
         view.webViewClient = object : WebViewClient() {
 
-            override fun shouldInterceptRequest(
-                v: WebView, request: WebResourceRequest
-            ): WebResourceResponse? {
-                try {
-                    val url = request.url.toString()
-                    if (request.method == "GET" || request.method == "POST") {
-                        val hdrs = request.requestHeaders ?: emptyMap()
-                        if (hdrs.isNotEmpty()) {
-                            val sb = StringBuilder()
-                            sb.append(request.method).append(' ').append(url).append('\n')
-                            for ((k, value) in hdrs) {
-                                sb.append(k).append(": ").append(value).append('\n')
-                            }
-                            UHLog.v("net", sb.toString().trim())
-                        }
-                    }
-                } catch (_: Exception) {}
-                return null
+override fun shouldInterceptRequest(
+    v: WebView, request: WebResourceRequest
+): WebResourceResponse? {
+    try {
+        val url = request.url.toString()
+        if (request.isForMainFrame && url.isNotBlank() && url != "about:blank") {
+            val id = tabs.idForView(v)
+            if (id > 0L) {
+                tabs.updateUrl(id, url, null)
+                if (v === currentView) {
+                    v.post { updateHomeVisibility() }
+                }
             }
+        }
+        if (request.method == "GET" || request.method == "POST") {
+            val hdrs = request.requestHeaders ?: emptyMap()
+            if (hdrs.isNotEmpty()) {
+                val sb = StringBuilder()
+                sb.append(request.method).append(' ').append(url).append('\n')
+                for ((k, value) in hdrs) {
+                    sb.append(k).append(": ").append(value).append('\n')
+                }
+                UHLog.v("net", sb.toString().trim())
+            }
+        }
+    } catch (_: Exception) {}
+    return null
+}
 
             override fun shouldOverrideUrlLoading(
                 v: WebView, request: WebResourceRequest
