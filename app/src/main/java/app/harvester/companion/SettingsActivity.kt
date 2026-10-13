@@ -34,6 +34,13 @@ class SettingsActivity : AppCompatActivity() {
         binding.btnClearState.setOnClickListener { confirmClear() }
     }
 
+    override fun onResume() {
+        super.onResume()
+       // If user just came back from granting "Install unknown apps",
+       // resume the pending install automatically.
+       UpdateChecker.resumePendingInstallIfPossible(this)
+    }
+
     private fun confirmClear() {
         val builder = AlertDialog.Builder(this)
         builder.setTitle("Clear all state?")
