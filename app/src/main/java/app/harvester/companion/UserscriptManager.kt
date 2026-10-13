@@ -12,91 +12,44 @@ import java.net.URL
 
 object UserscriptManager {
 
-    private const val BRIDGE_BOOT = """
-(function(){
-  if (window.__uh_bridge_ready) return;
-  window.__uh_bridge_ready = true;
-  var B = window.UH_BRIDGE;
-  if (!B) return;
-  window.GM_getValue = function(k, d) { return B.GM_getValue(k, d == null ? null : String(d)); };
-  window.GM_setValue = function(k, v) { B.GM_setValue(k, String(v)); };
-  window.GM_deleteValue = function(k) { B.GM_deleteValue(k); };
-  window.GM_listValues = function() { return JSON.parse(B.GM_listValues()); };
-  window.GM_log = function(m) { B.GM_log(String(m)); };
-})();
-"""
+    private const val BRIDGE_HOOK = "bridge"
 
-    private const val BOOTSTRAP = """
-(function() {
-  if (window.__uh_bootstrapped) return;
-  window.__uh_bootstrapped = true;
+    private val HOOK_ORDER = listOf(
+        "wasm_blob",
+        "crypto",
+        "atob",
+        "textdecoder",
+        "wasm_memory",
+        "wasm_call",
+        "worker_fetch",
+        "sw_fetch"
+    )
 
-  var B = window.UH_BRIDGE;
-  if (!B) return;
+    private val hookCache = mutableMapOf<String, String>()
 
-  try {
-    var iOrig = WebAssembly.instantiate;
-    WebAssembly.instantiate = function(src, imports) {
-      try {
-        var buf = (src instanceof ArrayBuffer) ? src :
-                  (src && src.buffer) ? src.buffer : null;
-        if (buf) {
-          var u8 = new Uint8Array(buf);
-          var s = '';
-          for (var i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
-          B.captureWasm(btoa(s));
+    private fun loadHook(ctx: Context, name: String): String {
+        synchronized(hookCache) {
+            hookCache[name]?.let { return it }
         }
-      } catch(e) { B.report(location.href, 'wasm_err', String(e)); }
-      return iOrig.apply(this, arguments);
-    };
-  } catch(e) {}
-
-  try {
-    if (window.SubtleCrypto && SubtleCrypto.prototype) {
-      var SP = SubtleCrypto.prototype;
-      ['encrypt','decrypt','sign','verify','digest','deriveBits','deriveKey'].forEach(function(fn) {
-        var orig = SP[fn];
-        if (!orig) return;
-        SP[fn] = function() {
-          try {
-            var alg = arguments[0];
-            var name = (alg && alg.name) ? alg.name : String(alg);
-            B.captureCrypto(name, '');
-          } catch(e) {}
-          return orig.apply(this, arguments);
-        };
-      });
+        val body = try {
+            ctx.assets.open("hooks/$name.js").bufferedReader().use { it.readText() }
+        } catch (_: Exception) { "" }
+        if (body.isNotBlank()) {
+            synchronized(hookCache) { hookCache[name] = body }
+        }
+        return body
     }
-  } catch(e) {}
-
-  try {
-    var aOrig = window.atob;
-    window.atob = function(s) {
-      var r = aOrig(s);
-      try { B.captureAtob(r); } catch(e) {}
-      return r;
-    };
-  } catch(e) {}
-
-  try {
-    if (window.TextDecoder && TextDecoder.prototype) {
-      var TDP = TextDecoder.prototype;
-      var decOrig = TDP.decode;
-      if (decOrig) {
-        TDP.decode = function() {
-          var r = decOrig.apply(this, arguments);
-          try { B.captureTextDecoder(String(r)); } catch(e) {}
-          return r;
-        };
-      }
-    }
-  } catch(e) {}
-})();
-"""
 
     fun injectOnPageStart(ctx: Context, view: WebView, url: String) {
-        view.evaluateJavascript(BRIDGE_BOOT, null)
-        view.evaluateJavascript(BOOTSTRAP, null)
+        val bridge = loadHook(ctx, BRIDGE_HOOK)
+        if (bridge.isNotBlank()) view.evaluateJavascript(bridge, null)
+
+        for (hook in HOOK_ORDER) {
+            if (!SessionRecorder.isEnabled(hook)) continue
+            val body = loadHook(ctx, hook)
+            if (body.isNotBlank()) view.evaluateJavascript(body, null)
+        }
+
         for (script in loadScripts(ctx)) {
             if (matches(script.body, url)) {
                 view.evaluateJavascript(script.body, null)
