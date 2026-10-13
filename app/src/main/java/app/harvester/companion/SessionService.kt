@@ -12,9 +12,10 @@ class SessionService : Service() {
         return START_STICKY
     }
 
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        UHLog.endSession(this)
-        stopSelf()
-        super.onTaskRemoved(rootIntent)
-    }
+override fun onTaskRemoved(rootIntent: Intent?) {
+    try { SessionRecorder.end(this) } catch (_: Exception) {}
+    UHLog.endSession(this)
+    stopSelf()
+    super.onTaskRemoved(rootIntent)
+}
 }
