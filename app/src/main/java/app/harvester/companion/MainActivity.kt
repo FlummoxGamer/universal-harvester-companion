@@ -101,49 +101,34 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showAddShortcutDialog() {
-        val sheet = BottomSheetDialog(this)
-        val v = layoutInflater.inflate(R.layout.dialog_add_shortcut, null)
-        val inputUrl = v.findViewById<EditText>(R.id.inputUrl)
-        val inputName = v.findViewById<EditText>(R.id.inputName)
-        sheet.setContentView(v)
-        sheet.behavior.peekHeight = 600
-
-        v.findViewById<View>(android.R.id.content)
-        val btnRow = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.END
-            setPadding(20, 0, 20, 20)
+        val input = EditText(this).apply {
+            setHint("https://example.com")
+            setTextColor(0xFFE6EDF5.toInt())
+            setHintTextColor(0xFF8296AD.toInt())
+            setPadding(32, 32, 32, 32)
+            setSingleLine()
+            inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI
         }
-        val cancel = android.widget.Button(this).apply {
-            text = "Cancel"
-            setOnClickListener { sheet.dismiss() }
-        }
-        val add = android.widget.Button(this).apply {
-            text = "Add"
-            setOnClickListener {
-                val url = inputUrl.text.toString().trim()
-                val name = inputName.text.toString().trim()
-                if (url.isBlank()) return@setOnClickListener
-                val fixedUrl = if (url.startsWith("http")) url else "https://$url"
-                val finalName = name.ifBlank {
-                    try { java.net.URI(fixedUrl).host?.removePrefix("www.") ?: fixedUrl }
-                    catch (_: Exception) { fixedUrl }
-                }
+        AlertDialog.Builder(this)
+            .setTitle("Add shortcut")
+            .setView(input)
+            .setPositiveButton("Add") { _, _ ->
+                val raw = input.text.toString().trim()
+                if (raw.isBlank()) return@setPositiveButton
+                val fixedUrl = if (raw.startsWith("http")) raw else "https://$raw"
+                val name = try {
+                    java.net.URI(fixedUrl).host?.removePrefix("www.") ?: fixedUrl
+                } catch (_: Exception) { fixedUrl }
                 val s = Shortcut(
-                    name = finalName,
+                    name = name,
                     url = fixedUrl,
                     iconUrl = ShortcutStore.iconUrlFor(fixedUrl)
                 )
-                ShortcutStore.add(this@MainActivity, s)
-                shortcutAdapter.submit(ShortcutStore.list(this@MainActivity))
-                sheet.dismiss()
+                ShortcutStore.add(this, s)
+                shortcutAdapter.submit(ShortcutStore.list(this))
             }
-        }
-        btnRow.addView(cancel)
-        btnRow.addView(add)
-        (v as android.widget.LinearLayout).addView(btnRow)
-
-        sheet.show()
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun confirmRemoveShortcut(s: Shortcut) {
@@ -208,38 +193,40 @@ class MainActivity : AppCompatActivity() {
                         if (hdrs.isNotEmpty()) {
                             val sb = StringBuilder()
                             sb.append(request.method).append(' ').append(url).append('\n')
-                            for ((k, value) in hdrs) sb.append(k).append(": ").append(value).append('\n')
+                            for ((k, value) in hdrs) {
+                                sb.append(k).append(": ").append(value).append('\n')
+                            }
                             UHLog.v("net", sb.toString().trim())
                         }
                     }
                 } catch (_: Exception) {}
                 return null
             }
-override fun shouldOverrideUrlLoading(
-    v: WebView, request: WebResourceRequest
-): Boolean {
-    val url = request.url.toString()
-    val scheme = request.url.scheme ?: ""
 
-    // intent:// URLs
-    if (scheme == "intent") {
-        handleIntentUrl(url)
-        return true
-    }
+            override fun shouldOverrideUrlLoading(
+                v: WebView, request: WebResourceRequest
+            ): Boolean {
+                val url = request.url.toString()
+                val scheme = request.url.scheme ?: ""
 
-    // Standard web navigation — let WebView handle
-    if (scheme == "http" || scheme == "https") return false
-    if (scheme == "about" || scheme == "data" || scheme == "blob" ||
-        scheme == "file" || scheme == "javascript") return false
+                if (scheme == "intent") {
+                    handleIntentUrl(url)
+                    return true
+                }
+                if (scheme == "http" || scheme == "https") return false
+                if (scheme == "about" || scheme == "data" || scheme == "blob" ||
+                    scheme == "file" || scheme == "javascript") return false
 
-// Custom scheme (whatsapp://, market://, tg://, upi://, etc.)
-askOpenExternal(v, url)
-return true
+                askOpenExternal(v, url)
+                return true
+            }
 
             override fun onPageStarted(v: WebView, url: String, favicon: Bitmap?) {
                 UHLog.d("web", "start ${url.take(140)}")
                 tabs.updateUrl(tabs.currentId(), url, null)
-                if (v === currentView) binding.urlText.text = if (url == "about:blank") "" else url
+                if (v === currentView) {
+                    binding.urlText.text = if (url == "about:blank") "" else url
+                }
                 UserscriptManager.injectOnPageStart(this@MainActivity, v, url)
                 updateHomeVisibility()
             }
@@ -260,7 +247,9 @@ return true
             override fun onReceivedError(
                 v: WebView, request: WebResourceRequest, error: WebResourceError
             ) {
-                if (request.isForMainFrame) UHLog.w("web", "error ${error.errorCode} ${request.url}")
+                if (request.isForMainFrame) {
+                    UHLog.w("web", "error ${error.errorCode} ${request.url}")
+                }
             }
 
             override fun onReceivedSslError(
@@ -490,7 +479,11 @@ return true
                     }
                 } else {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "HTTP ${conn.responseCode}", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            this@MainActivity,
+                            "HTTP ${conn.responseCode}",
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 }
             } catch (e: Exception) {
@@ -499,6 +492,108 @@ return true
                 }
             }
         }
+    }
+
+    private fun handleIntentUrl(url: String) {
+        try {
+            val intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
+
+            val dataScheme = intent.data?.scheme ?: ""
+            val schemeExtra = intent.scheme ?: ""
+            val isWeb =
+                dataScheme == "http" || dataScheme == "https" ||
+                schemeExtra == "http" || schemeExtra == "https"
+
+            if (isWeb) {
+                val target = intent.data?.toString()
+                if (!target.isNullOrBlank()) {
+                    currentView?.loadUrl(target)
+                    return
+                }
+            }
+
+            val resolved = packageManager.queryIntentActivities(intent, 0)
+            if (resolved.isNotEmpty()) {
+                askOpenExternalIntent(intent, currentView)
+            } else {
+                val fallback = intent.getStringExtra("browser_fallback_url")
+                if (!fallback.isNullOrBlank()) {
+                    currentView?.loadUrl(fallback)
+                } else {
+                    val pkg = intent.`package`
+                    if (!pkg.isNullOrBlank()) {
+                        try {
+                            startActivity(
+                                Intent(Intent.ACTION_VIEW).apply {
+                                    data = Uri.parse("market://details?id=$pkg")
+                                }
+                            )
+                        } catch (_: Exception) {
+                            Toast.makeText(this, "App not installed", Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        Toast.makeText(this, "App not installed", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            UHLog.throwable("nav", "intent parse failed: $url", e)
+        }
+    }
+
+    private fun askOpenExternal(view: WebView, url: String) {
+        val isFreshPopup = view.url.isNullOrBlank() || view.url == "about:blank"
+
+        AlertDialog.Builder(this)
+            .setTitle("Open in another app?")
+            .setMessage(url)
+            .setPositiveButton("Open") { _, _ ->
+                try {
+                    startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                } catch (_: Exception) {
+                    Toast.makeText(this, "No app can handle this link", Toast.LENGTH_SHORT).show()
+                }
+                if (isFreshPopup) closeBlankPopup(view)
+            }
+            .setNegativeButton("Stay") { _, _ ->
+                if (isFreshPopup) closeBlankPopup(view)
+            }
+            .show()
+    }
+
+    private fun askOpenExternalIntent(intent: Intent, view: WebView?) {
+        val isFreshPopup = view?.url.isNullOrBlank() || view?.url == "about:blank"
+        AlertDialog.Builder(this)
+            .setTitle("Open in another app?")
+            .setMessage(intent.data?.toString() ?: "External app link")
+            .setPositiveButton("Open") { _, _ ->
+                try {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(intent)
+                } catch (_: Exception) {
+                    Toast.makeText(this, "Failed to open app", Toast.LENGTH_SHORT).show()
+                }
+                if (isFreshPopup) view?.let { closeBlankPopup(it) }
+            }
+            .setNegativeButton("Stay") { _, _ ->
+                if (isFreshPopup) view?.let { closeBlankPopup(it) }
+            }
+            .show()
+    }
+
+    private fun closeBlankPopup(view: WebView) {
+        val id = tabs.currentId()
+        if (id <= 0L) return
+        tabs.close(id)
+        val remaining = tabs.list()
+        if (remaining.isNotEmpty()) {
+            tabs.acquireView(remaining.first().id)
+            attachCurrent()
+        }
+        updateUi()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -519,115 +614,4 @@ return true
         tabs.saveAll()
         super.onDestroy()
     }
-
-private fun handleIntentUrl(url: String) {
-    try {
-        val intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
-
-        // If this intent wraps a plain web URL, load it in our WebView.
-        // Only fall through to the dialog for genuine external schemes.
-        val dataScheme = intent.data?.scheme ?: ""
-        val schemeExtra = intent.scheme ?: ""
-
-        val isWeb =
-            dataScheme == "http" || dataScheme == "https" ||
-            schemeExtra == "http" || schemeExtra == "https"
-
-        if (isWeb) {
-            val target = intent.data?.toString()
-            if (!target.isNullOrBlank()) {
-                currentView?.loadUrl(target)
-                return
-            }
-        }
-
-        // Genuine external app intent (market://, whatsapp://, etc.)
-        val resolved = packageManager.queryIntentActivities(intent, 0)
-        if (resolved.isNotEmpty()) {
-            askOpenExternalIntent(intent, currentView)
-        } else {
-            val fallback = intent.getStringExtra("browser_fallback_url")
-            if (!fallback.isNullOrBlank()) {
-                currentView?.loadUrl(fallback)
-            } else {
-                val pkg = intent.`package`
-                if (!pkg.isNullOrBlank()) {
-                    try {
-                        startActivity(
-                            Intent(Intent.ACTION_VIEW).apply {
-                                data = Uri.parse("market://details?id=$pkg")
-                            }
-                        )
-                    } catch (_: Exception) {
-                        Toast.makeText(this, "App not installed", Toast.LENGTH_SHORT).show()
-                    }
-                } else {
-                    Toast.makeText(this, "App not installed", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    } catch (e: Exception) {
-        UHLog.throwable("nav", "intent parse failed: $url", e)
-    }
-}
-
-private fun askOpenExternal(view: WebView, url: String) {
-    // If this WebView is still on about:blank, it is a fresh popup
-    // created by onCreateWindow. Closing it after the dialog is the
-    // only way to avoid leaving an empty tab behind.
-    val isFreshPopup = view.url.isNullOrBlank() || view.url == "about:blank"
-
-    AlertDialog.Builder(this)
-        .setTitle("Open in another app?")
-        .setMessage(url)
-        .setPositiveButton("Open") { _, _ ->
-            try {
-                startActivity(
-                    Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-            } catch (_: Exception) {
-                Toast.makeText(this, "No app can handle this link", Toast.LENGTH_SHORT).show()
-            }
-            if (isFreshPopup) closeBlankPopup(view)
-        }
-        .setNegativeButton("Stay") { _, _ ->
-            if (isFreshPopup) closeBlankPopup(view)
-        }
-        .show()
-}
-
-private fun closeBlankPopup(view: WebView) {
-    // Find the tab id for this WebView and close it.
-    val id = tabs.list().firstOrNull { it.id == tabs.currentId() }?.id ?: return
-    if (id <= 0L) return
-    tabs.close(id)
-    // Fall back to any remaining tab.
-    val remaining = tabs.list()
-    if (remaining.isNotEmpty()) {
-        tabs.acquireView(remaining.first().id)
-        attachCurrent()
-    }
-    updateUi()
-}
-
-private fun askOpenExternalIntent(intent: Intent, view: WebView?) {
-    val isFreshPopup = view?.url.isNullOrBlank() || view?.url == "about:blank"
-    AlertDialog.Builder(this)
-        .setTitle("Open in another app?")
-        .setMessage(intent.data?.toString() ?: "External app link")
-        .setPositiveButton("Open") { _, _ ->
-            try {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                startActivity(intent)
-            } catch (_: Exception) {
-                Toast.makeText(this, "Failed to open app", Toast.LENGTH_SHORT).show()
-            }
-            if (isFreshPopup) view?.let { closeBlankPopup(it) }
-        }
-        .setNegativeButton("Stay") { _, _ ->
-            if (isFreshPopup) view?.let { closeBlankPopup(it) }
-        }
-        .show()
-}
 }
