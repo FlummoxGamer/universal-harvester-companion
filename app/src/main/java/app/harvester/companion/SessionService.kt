@@ -13,7 +13,10 @@ class SessionService : Service() {
     }
 
 override fun onTaskRemoved(rootIntent: Intent?) {
-    try { SessionRecorder.end(this) } catch (_: Exception) {}
+    try {
+        if (SessionRecorder.isActive()) SessionRecorder.save(this)
+    } catch (_: Exception) {}
+    try { SessionRecorder.stop() } catch (_: Exception) {}
     UHLog.endSession(this)
     stopSelf()
     super.onTaskRemoved(rootIntent)
