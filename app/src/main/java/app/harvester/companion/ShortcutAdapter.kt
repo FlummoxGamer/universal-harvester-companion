@@ -38,6 +38,7 @@ class ShortcutAdapter(
     override fun onBindViewHolder(h: VH, position: Int) {
         if (position == items.size) {
             h.icon.setImageDrawable(null)
+            h.icon.tag = null
             h.icon.visibility = View.GONE
             h.plus.visibility = View.VISIBLE
             h.label.text = "Add"
@@ -50,6 +51,7 @@ class ShortcutAdapter(
         h.plus.visibility = View.GONE
         h.label.text = s.name
         h.icon.setImageDrawable(null)
+        h.icon.tag = s.iconUrl
         loadIcon(h.icon, s.iconUrl)
         h.itemView.setOnClickListener { onOpen(s) }
         h.itemView.setOnLongClickListener { onLongPress(s); true }
@@ -64,17 +66,23 @@ class ShortcutAdapter(
     }
 
     private fun loadIcon(view: ImageView, iconUrl: String) {
-        iconCache[iconUrl]?.let {
-            if (it != null) view.setImageBitmap(it)
+        if (iconUrl.isBlank()) {
+            view.setImageDrawable(null)
             return
         }
+        val cached = iconCache[iconUrl]
+        if (cached != null) {
+            if (view.tag == iconUrl) view.setImageBitmap(cached)
+            return
+        }
+        if (iconCache.containsKey(iconUrl)) return
         CoroutineScope(Dispatchers.IO).launch {
             val bmp = try {
                 URL(iconUrl).openStream().use { BitmapFactory.decodeStream(it) }
             } catch (_: Exception) { null }
             withContext(Dispatchers.Main) {
                 iconCache[iconUrl] = bmp
-                if (bmp != null) view.setImageBitmap(bmp)
+                if (bmp != null && view.tag == iconUrl) view.setImageBitmap(bmp)
             }
         }
     }
