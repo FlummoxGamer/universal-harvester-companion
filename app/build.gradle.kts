@@ -47,16 +47,16 @@ android {
     }
 
     signingConfigs {
-        create("shared") {
-            val ks = file("../uh-debug.jks")
-            if (ks.exists()) {
-                storeFile = ks
-                storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "uhdebug123"
-                keyAlias = System.getenv("KEY_ALIAS") ?: "uhdebug"
-                keyPassword = System.getenv("KEY_PASSWORD") ?: "uhdebug123"
-           }
+    create("shared") {
+        val ks = file("../uh-debug.jks")
+        if (ks.exists()) {
+            storeFile = ks
+            storePassword = "uhdebug123"
+            keyAlias = "uhdebug"
+            keyPassword = "uhdebug123"
         }
     }
+}
 
     buildTypes {
         debug {
