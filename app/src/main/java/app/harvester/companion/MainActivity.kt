@@ -209,7 +209,7 @@ class MainActivity : AppCompatActivity() {
                             val sb = StringBuilder()
                             sb.append(request.method).append(' ').append(url).append('\n')
                             for ((k, value) in hdrs) sb.append(k).append(": ").append(value).append('\n')
-                            UHLog.d("net", sb.toString().trim())
+                            UHLog.v("net", sb.toString().trim())
                         }
                     }
                 } catch (_: Exception) {}
