@@ -278,15 +278,18 @@ class MainActivity : AppCompatActivity() {
             ): Boolean {
                 val id = tabs.openBlankTab()
                 val newView = tabs.acquireView(id) ?: return false
-     
-               // WebView requires the popup WebView to have NO parent when
-               // assigned to the transport. Attach it only after sendToTarget.
-               val transport = resultMsg.obj as WebView.WebViewTransport
-               transport.webView = newView
-               resultMsg.sendToTarget()
 
-               attachCurrent()
-               return true
+                if (newView.getTag(R.id.webContainer) == null) {
+                    installClients(newView)
+                    newView.setTag(R.id.webContainer, true)
+                }
+
+                val transport = resultMsg.obj as WebView.WebViewTransport
+                transport.webView = newView
+                resultMsg.sendToTarget()
+
+                attachCurrent()
+                return true
             }
 
             override fun onPermissionRequest(request: PermissionRequest) {
