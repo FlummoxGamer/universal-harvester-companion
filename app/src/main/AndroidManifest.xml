@@ -42,6 +42,11 @@
             android:label="Capture Tools" />
 
         <activity
+            android:name=".ScriptsActivity"
+            android:exported="false"
+            android:label="Scripts" />
+
+        <activity
             android:name=".SettingsActivity"
             android:exported="false"
             android:label="@string/settings_title" />
