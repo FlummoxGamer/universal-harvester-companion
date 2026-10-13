@@ -55,13 +55,14 @@ object ShortcutStore {
         save(ctx, current)
     }
 
-    fun iconUrlFor(targetUrl: String): String {
-        val host = try {
-            java.net.URI(targetUrl).host ?: targetUrl
-        } catch (_: Exception) { targetUrl }
-        val clean = host.removePrefix("www.")
-        return "https://icons.duckduckgo.com/ip3/$clean.ico"
-    }
+fun iconUrlFor(targetUrl: String): String {
+    val host = try {
+        java.net.URI(targetUrl).host
+    } catch (_: Exception) { null }
+    if (host.isNullOrBlank()) return ""
+    val clean = host.removePrefix("www.")
+    return "https://icons.duckduckgo.com/ip3/$clean.ico"
+}
 
     private fun defaultList(): MutableList<Shortcut> = mutableListOf(
         Shortcut(
