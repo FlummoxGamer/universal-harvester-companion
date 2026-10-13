@@ -27,7 +27,10 @@ object UpdateChecker {
         UHLog.d("update", "check started")
         CoroutineScope(Dispatchers.IO).launch {
             val info = fetchManifest()
-            UHLog.d("update", "manifest ${if (info == null) "unreachable" else "v${info.versionName} (${info.versionCode})"}")
+            UHLog.d(
+                "update",
+                "manifest ${if (info == null) "unreachable" else "v${info.versionName} (${info.versionCode})"}"
+            )
             if (info == null) {
                 withContext(Dispatchers.Main) {
                     AlertDialog.Builder(activity)
@@ -51,12 +54,37 @@ object UpdateChecker {
             withContext(Dispatchers.Main) {
                 AlertDialog.Builder(activity)
                     .setTitle("Update available")
-                    .setMessage("New: v${info.versionName} (${info.versionCode})\nInstalled: v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n\nDownload and install?")
+                    .setMessage(
+                        "New: v${info.versionName} (${info.versionCode})\n" +
+                        "Installed: v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n\n" +
+                        "Download and install?"
+                    )
                     .setPositiveButton("Install") { _, _ -> downloadAndInstall(activity, info) }
                     .setNegativeButton("Later", null)
                     .show()
             }
         }
+    }
+
+    /**
+     * Called from an Activity's onResume. If a previous install was waiting for
+     * the user to grant "Install unknown apps", resume it now.
+     */
+    fun resumePendingInstallIfPossible(activity: Activity) {
+        val path = DebugPrefs.pendingApk(activity) ?: return
+        val apk = File(path)
+        if (!apk.exists() || apk.length() == 0L) {
+            DebugPrefs.setPendingApk(activity, null)
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !activity.packageManager.canRequestPackageInstalls()
+        ) {
+            // Permission still not granted. Leave it pending.
+            return
+        }
+        DebugPrefs.setPendingApk(activity, null)
+        installApk(activity, apk)
     }
 
     private fun fetchManifest(): Manifest? {
@@ -138,12 +166,20 @@ object UpdateChecker {
         }
     }
 
-private fun installApk(activity: Activity, apk: File) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        if (!activity.packageManager.canRequestPackageInstalls()) {
+    private fun installApk(activity: Activity, apk: File) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !activity.packageManager.canRequestPackageInstalls()
+        ) {
+            // Remember the APK so we can resume after the user grants permission.
+            DebugPrefs.setPendingApk(activity, apk.absolutePath)
+
             AlertDialog.Builder(activity)
                 .setTitle("Permission needed")
-                .setMessage("Allow this app to install unknown apps, then tap Install again.")
+                .setMessage(
+                    "Allow this app to install unknown apps. " +
+                    "After enabling it in Settings, come back here — the " +
+                    "install will continue automatically."
+                )
                 .setPositiveButton("Open settings") { _, _ ->
                     val i = Intent(
                         Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
@@ -151,18 +187,36 @@ private fun installApk(activity: Activity, apk: File) {
                     )
                     activity.startActivity(i)
                 }
-                .setNegativeButton("Cancel", null)
+                .setNegativeButton("Cancel") { _, _ ->
+                    DebugPrefs.setPendingApk(activity, null)
+                }
                 .show()
             return
         }
-    }
 
-    val intent = Intent(activity, UpdateInstallActivity::class.java).apply {
-        putExtra(UpdateInstallActivity.EXTRA_APK_PATH, apk.absolutePath)
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val uri = FileProvider.getUriForFile(
+            activity,
+            "${activity.packageName}.fileprovider",
+            apk
+        )
+
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            activity.startActivity(intent)
+            UHLog.d("update", "handed APK to installer")
+        } catch (e: Exception) {
+            UHLog.throwable("update", "installer launch failed", e)
+            AlertDialog.Builder(activity)
+                .setTitle("Install failed")
+                .setMessage(e.message ?: "unknown error")
+                .setPositiveButton("OK", null)
+                .show()
+        }
     }
-    activity.startActivity(intent)
-}
 
     private data class Manifest(
         val versionCode: Int,
@@ -170,4 +224,4 @@ private fun installApk(activity: Activity, apk: File) {
         val apkUrl: String,
         val changelog: String
     )
-                    }
+}
