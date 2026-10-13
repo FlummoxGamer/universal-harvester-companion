@@ -52,17 +52,18 @@ object UserscriptManager {
   } catch(e) {}
 
   try {
-    if (window.crypto && window.crypto.subtle) {
+    if (window.SubtleCrypto && SubtleCrypto.prototype) {
+      var SP = SubtleCrypto.prototype;
       ['encrypt','decrypt','sign','verify','digest','deriveBits','deriveKey'].forEach(function(fn) {
-        var o = crypto.subtle[fn];
-        if (!o) return;
-        crypto.subtle[fn] = function() {
+        var orig = SP[fn];
+        if (!orig) return;
+        SP[fn] = function() {
           try {
             var alg = arguments[0];
             var name = (alg && alg.name) ? alg.name : String(alg);
             B.captureCrypto(name, '');
           } catch(e) {}
-          return o.apply(this, arguments);
+          return orig.apply(this, arguments);
         };
       });
     }
@@ -78,17 +79,17 @@ object UserscriptManager {
   } catch(e) {}
 
   try {
-    var TDO = TextDecoder;
-    window.TextDecoder = function() {
-      var inst = new TDO(...arguments);
-      var dOrig = inst.decode;
-      inst.decode = function() {
-        var r = dOrig.apply(this, arguments);
-        try { B.captureTextDecoder(String(r)); } catch(e) {}
-        return r;
-      };
-      return inst;
-    };
+    if (window.TextDecoder && TextDecoder.prototype) {
+      var TDP = TextDecoder.prototype;
+      var decOrig = TDP.decode;
+      if (decOrig) {
+        TDP.decode = function() {
+          var r = decOrig.apply(this, arguments);
+          try { B.captureTextDecoder(String(r)); } catch(e) {}
+          return r;
+        };
+      }
+    }
   } catch(e) {}
 })();
 """
@@ -159,9 +160,11 @@ object UserscriptManager {
     }
 
     private fun matches(body: String, url: String): Boolean {
-        val lines = body.lineSequence().take(40)
-        for (line in lines) {
+        var lineNo = 0
+        for (line in body.lineSequence()) {
+            if (lineNo++ > 500) break
             val t = line.trim()
+            if (t.contains("==/UserScript==")) break
             if (t.startsWith("// @match") || t.startsWith("// @include")) {
                 val pattern = t.substringAfter("match").substringAfter("include").trim()
                 if (patternMatches(pattern, url)) return true
@@ -172,10 +175,16 @@ object UserscriptManager {
 
     private fun patternMatches(pattern: String, url: String): Boolean {
         if (pattern.isBlank()) return false
-        val rx = pattern
-            .replace(".", "\\.")
-            .replace("*", ".*")
-        return try { Regex(rx).matches(url) } catch (_: Exception) { false }
+        val sb = StringBuilder()
+        for (c in pattern) {
+            when (c) {
+                '*' -> sb.append(".*")
+                '.', '(', ')', '[', ']', '{', '}', '+', '?', '^', '$', '|', '\\' ->
+                    sb.append('\\').append(c)
+                else -> sb.append(c)
+            }
+        }
+        return try { Regex(sb.toString()).matches(url) } catch (_: Exception) { false }
     }
 
     data class Script(val name: String, val body: String)
