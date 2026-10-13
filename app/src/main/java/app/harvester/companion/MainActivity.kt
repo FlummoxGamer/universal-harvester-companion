@@ -266,6 +266,8 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun installClients(view: WebView) {
+        UserscriptManager.registerDocumentStart(view, this)
+
         view.webViewClient = object : WebViewClient() {
 
             override fun shouldInterceptRequest(
@@ -348,19 +350,19 @@ class MainActivity : AppCompatActivity() {
                     binding.urlText.text = if (url == "about:blank") "" else url
                 }
                 if (id in popupTabs) UHLog.netPopupLoad(url)
-                if (url != "about:blank") {
-                    UserscriptManager.injectOnPageStart(this@MainActivity, v, url)
-                }
                 if (v === currentView) updateHomeVisibility()
             }
 
-            override fun onPageFinished(v: WebView, url: String) {
-                UHLog.d("web", "finish ${url.take(140)}")
-                val id = tabs.idForView(v)
-                if (id > 0L) tabs.updateUrl(id, url, null)
-                flush3p(v, url)
-                if (v === currentView) updateUi()
-            }
+override fun onPageFinished(v: WebView, url: String) {
+    UHLog.d("web", "finish ${url.take(140)}")
+    val id = tabs.idForView(v)
+    if (id > 0L) tabs.updateUrl(id, url, null)
+    flush3p(v, url)
+    if (url != "about:blank") {
+        UserscriptManager.injectOnPageFinished(this@MainActivity, v, url)
+    }
+    if (v === currentView) updateUi()
+}
 
             override fun doUpdateVisitedHistory(v: WebView, url: String?, isReload: Boolean) {
                 tabs.setNav(v, v.canGoBack(), v.canGoForward())
@@ -536,6 +538,10 @@ class MainActivity : AppCompatActivity() {
         v.findViewById<View>(R.id.btnTools)?.setOnClickListener {
             sheet.dismiss()
             startActivity(Intent(this, ToolsActivity::class.java))
+        }
+        v.findViewById<View>(R.id.btnScripts)?.setOnClickListener {
+            sheet.dismiss()
+            startActivity(Intent(this, ScriptsActivity::class.java))
         }
         v.findViewById<View>(R.id.btnSettings)?.setOnClickListener {
             sheet.dismiss()
@@ -780,10 +786,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onResume() {
-        super.onResume()
-        UpdateChecker.resumePendingInstallIfPossible(this)
+    super.onResume()
+    UpdateChecker.resumePendingInstallIfPossible(this)
+    if (UserscriptStore.consumeDirty(this)) {
+        tabs.list().forEach { _ ->
+            // re-register on every alive view
+        }
+        val v = currentView
+        if (v != null) UserscriptManager.registerDocumentStart(v, this)
     }
-
+    }
     override fun onPause() {
         super.onPause()
         tabs.saveAll()
