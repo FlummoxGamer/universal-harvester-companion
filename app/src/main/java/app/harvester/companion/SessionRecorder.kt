@@ -4,44 +4,83 @@ import android.content.Context
 import android.os.Build
 import org.json.JSONArray
 import org.json.JSONObject
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import kotlin.random.Random
 
 object SessionRecorder {
 
     private const val TAG = "session"
+
+    val ALL_CATEGORIES = listOf(
+        "header",
+        "wasm_blob",
+        "wasm_memory",
+        "crypto",
+        "atob",
+        "textdecoder",
+        "worker_fetch",
+        "sw_fetch",
+        "wasm_call"
+    )
+
     private val lock = Any()
-    private val timeFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
+    private val categories = mutableSetOf<String>().also { it.addAll(ALL_CATEGORIES) }
+    private val events = mutableListOf<JSONObject>()
+    private var appContext: Context? = null
 
     @Volatile private var active = false
-    private var sessionId: String = ""
     private var startedAt: Long = 0L
-    private val events = mutableListOf<JSONObject>()
+
+    fun init(ctx: Context) {
+        appContext = ctx.applicationContext
+    }
 
     fun isActive(): Boolean = active
 
-    fun start(): Boolean {
+    fun isEnabled(category: String): Boolean = synchronized(lock) { category in categories }
+
+    fun setEnabled(category: String, on: Boolean) {
         synchronized(lock) {
-            if (active) return false
-            active = true
-            sessionId = "sess_${timeFormat.format(Date())}_${Random.nextInt(100000, 999999)}"
-            startedAt = System.currentTimeMillis()
-            events.clear()
+            if (on) categories.add(category) else categories.remove(category)
         }
-        UHLog.d(TAG, "started $sessionId")
-        return true
     }
 
-    fun stop(ctx: Context): String? {
+    fun enableAll() { synchronized(lock) { categories.addAll(ALL_CATEGORIES) } }
+    fun disableAll() { synchronized(lock) { categories.clear() } }
+
+    fun start(ctx: Context) {
+        init(ctx)
+        synchronized(lock) {
+            if (active) return
+            active = true
+            startedAt = System.currentTimeMillis()
+            events.clear()
+            if (categories.isEmpty()) categories.addAll(ALL_CATEGORIES)
+        }
+        UHLog.d(TAG, "started")
+    }
+
+    fun pause() {
+        synchronized(lock) { active = false }
+        UHLog.d(TAG, "paused, events=${events.size}")
+    }
+
+    fun end(ctx: Context) {
+        val saved = save(ctx)
+        synchronized(lock) {
+            active = false
+            events.clear()
+        }
+        UHLog.d(TAG, "ended, saved=$saved")
+    }
+
+    fun save(ctx: Context): String? {
         val idSnapshot: String
         val startSnapshot: Long
+        val evs: List<JSONObject>
         synchronized(lock) {
-            if (!active) return null
-            active = false
-            idSnapshot = sessionId
-            startSnapshot = startedAt
+            if (events.isEmpty()) return null
+            idSnapshot = UHLog.sessionId
+            startSnapshot = if (startedAt > 0) startedAt else System.currentTimeMillis()
+            evs = events.toList()
         }
         val root = JSONObject()
         try {
@@ -54,22 +93,20 @@ object SessionRecorder {
             root.put("startedAt", startSnapshot)
             root.put("endedAt", System.currentTimeMillis())
             val arr = JSONArray()
-            synchronized(lock) {
-                for (e in events) arr.put(e)
-            }
+            for (e in evs) arr.put(e)
             root.put("eventCount", arr.length())
             root.put("events", arr)
         } catch (_: Exception) {}
-        val filename = "$idSnapshot.json"
-        val ok = DownloadHelper.saveTextToDownloads(
-            ctx, filename, root.toString(2), DownloadHelper.HARVESTER_DIR
-        )
-        UHLog.d(TAG, "stopped $idSnapshot, ${events.size} events, saved=$ok")
-        return if (ok) filename else null
+
+        val subfolder = "${DownloadHelper.HARVESTER_DIR}/sess_$idSnapshot"
+        val ok = DownloadHelper.saveTextToDownloads(ctx, "session.json", root.toString(2), subfolder)
+        UHLog.d(TAG, "saved events=${evs.size} ok=$ok")
+        return if (ok) "session.json" else null
     }
 
     fun record(type: String, payload: JSONObject) {
         if (!active) return
+        if (type !in categories) return
         synchronized(lock) {
             val e = JSONObject()
             try {
@@ -82,6 +119,8 @@ object SessionRecorder {
     }
 
     fun record(type: String, block: JSONObject.() -> Unit) {
+        if (!active) return
+        if (type !in categories) return
         val o = JSONObject()
         try { o.block() } catch (_: Exception) {}
         record(type, o)
@@ -89,5 +128,5 @@ object SessionRecorder {
 
     fun count(): Int = synchronized(lock) { events.size }
 
-    fun currentId(): String = sessionId
+    fun currentId(): String = UHLog.sessionId
 }
