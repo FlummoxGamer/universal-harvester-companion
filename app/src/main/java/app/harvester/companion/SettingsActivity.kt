@@ -17,10 +17,12 @@ class SettingsActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         binding.versionLabel.text = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
-        binding.switchVerbose.isChecked = DebugPrefs.verboseLogging(this)
+
+        // Switch reflects verbose level: ON = VERBOSE, OFF = INFO
+        binding.switchVerbose.isChecked = DebugPrefs.logLevel(this) == LogLevel.VERBOSE
         binding.switchVerbose.setOnCheckedChangeListener { _, checked ->
-            DebugPrefs.setVerboseLogging(this, checked)
-            UHLog.setVerbose(checked)
+            val level = if (checked) LogLevel.VERBOSE else LogLevel.INFO
+            UHLog.setLevel(level)
         }
 
         binding.btnLogs.setOnClickListener {
