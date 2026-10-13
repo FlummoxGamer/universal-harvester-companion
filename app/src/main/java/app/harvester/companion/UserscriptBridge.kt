@@ -8,12 +8,6 @@ class UserscriptBridge(private val ctx: Context) {
 
     private val prefs = ctx.getSharedPreferences("uh_gm", Context.MODE_PRIVATE)
 
-    private fun sessionSubfolder(): String {
-        val id = UHLog.sessionId
-        return if (id.isBlank()) DownloadHelper.HARVESTER_DIR
-               else "${DownloadHelper.HARVESTER_DIR}/sess_$id"
-    }
-
     @JavascriptInterface
     fun GM_getValue(key: String, defaultValue: String?): String? =
         prefs.getString(key, defaultValue)
@@ -42,31 +36,34 @@ class UserscriptBridge(private val ctx: Context) {
 
     @JavascriptInterface
     fun captureWasm(base64: String) {
-        val ts = System.currentTimeMillis()
-        DownloadHelper.saveTextToDownloads(ctx, "wasm_$ts.txt", base64, sessionSubfolder())
-        UHLog.d("capture", "WASM module captured (${base64.length} bytes)")
+        SessionRecorder.record("wasm_blob") {
+            put("base64", base64)
+            put("size", base64.length)
+        }
     }
 
     @JavascriptInterface
     fun captureCrypto(algorithm: String, data: String) {
-        val ts = System.currentTimeMillis()
-        val content = "algorithm=$algorithm\ndata=$data\n"
-        DownloadHelper.saveTextToDownloads(ctx, "crypto_$ts.txt", content, sessionSubfolder())
-        UHLog.d("capture", "crypto.subtle call: $algorithm")
+        SessionRecorder.record("crypto") {
+            put("algo", algorithm)
+            put("data", data)
+        }
     }
 
     @JavascriptInterface
     fun captureAtob(decoded: String) {
-        val ts = System.currentTimeMillis()
-        DownloadHelper.saveTextToDownloads(ctx, "atob_$ts.txt", decoded, sessionSubfolder())
-        UHLog.d("capture", "atob decoded ${decoded.length} chars")
+        SessionRecorder.record("atob") {
+            put("data", decoded)
+            put("size", decoded.length)
+        }
     }
 
     @JavascriptInterface
     fun captureTextDecoder(text: String) {
-        val ts = System.currentTimeMillis()
-        DownloadHelper.saveTextToDownloads(ctx, "textdecode_$ts.txt", text, sessionSubfolder())
-        UHLog.d("capture", "TextDecoder decoded ${text.length} chars")
+        SessionRecorder.record("textdecoder") {
+            put("data", text)
+            put("size", text.length)
+        }
     }
 
     @JavascriptInterface
