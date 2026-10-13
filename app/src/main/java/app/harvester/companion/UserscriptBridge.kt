@@ -8,6 +8,12 @@ class UserscriptBridge(private val ctx: Context) {
 
     private val prefs = ctx.getSharedPreferences("uh_gm", Context.MODE_PRIVATE)
 
+    private fun sessionSubfolder(): String {
+        val id = UHLog.sessionId
+        return if (id.isBlank()) DownloadHelper.HARVESTER_DIR
+               else "${DownloadHelper.HARVESTER_DIR}/sess_$id"
+    }
+
     @JavascriptInterface
     fun GM_getValue(key: String, defaultValue: String?): String? =
         prefs.getString(key, defaultValue)
@@ -37,7 +43,7 @@ class UserscriptBridge(private val ctx: Context) {
     @JavascriptInterface
     fun captureWasm(base64: String) {
         val ts = System.currentTimeMillis()
-        DownloadHelper.saveTextToDownloads(ctx, "wasm_$ts.txt", base64)
+        DownloadHelper.saveTextToDownloads(ctx, "wasm_$ts.txt", base64, sessionSubfolder())
         UHLog.d("capture", "WASM module captured (${base64.length} bytes)")
     }
 
@@ -45,21 +51,21 @@ class UserscriptBridge(private val ctx: Context) {
     fun captureCrypto(algorithm: String, data: String) {
         val ts = System.currentTimeMillis()
         val content = "algorithm=$algorithm\ndata=$data\n"
-        DownloadHelper.saveTextToDownloads(ctx, "crypto_$ts.txt", content)
+        DownloadHelper.saveTextToDownloads(ctx, "crypto_$ts.txt", content, sessionSubfolder())
         UHLog.d("capture", "crypto.subtle call: $algorithm")
     }
 
     @JavascriptInterface
     fun captureAtob(decoded: String) {
         val ts = System.currentTimeMillis()
-        DownloadHelper.saveTextToDownloads(ctx, "atob_$ts.txt", decoded)
+        DownloadHelper.saveTextToDownloads(ctx, "atob_$ts.txt", decoded, sessionSubfolder())
         UHLog.d("capture", "atob decoded ${decoded.length} chars")
     }
 
     @JavascriptInterface
     fun captureTextDecoder(text: String) {
         val ts = System.currentTimeMillis()
-        DownloadHelper.saveTextToDownloads(ctx, "textdecode_$ts.txt", text)
+        DownloadHelper.saveTextToDownloads(ctx, "textdecode_$ts.txt", text, sessionSubfolder())
         UHLog.d("capture", "TextDecoder decoded ${text.length} chars")
     }
 
