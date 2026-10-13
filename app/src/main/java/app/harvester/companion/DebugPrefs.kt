@@ -18,8 +18,8 @@ object DebugPrefs {
     }
 
     fun logLevel(ctx: Context): LogLevel {
-        val name = prefs(ctx).getString(KEY_LOG_LEVEL, LogLevel.INFO.name) ?: LogLevel.INFO.name
-        return try { LogLevel.valueOf(name) } catch (_: Exception) { LogLevel.INFO }
+        val name = prefs(ctx).getString(KEY_LOG_LEVEL, LogLevel.DEBUG.name) ?: LogLevel.DEBUG.name
+        return try { LogLevel.valueOf(name) } catch (_: Exception) { LogLevel.DEBUG }
     }
 
     fun setLogLevel(ctx: Context, level: LogLevel) {
