@@ -31,6 +31,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -42,10 +43,8 @@ class MainActivity : AppCompatActivity() {
     private var currentView: WebView? = null
 
     private val popupTabs = mutableSetOf<Long>()
-    private val page3p = mutableSetOf<String>()
-    private val page3pLock = Any()
+    private val page3p = mutableMapOf<Long, MutableSet<String>>()
     private val recentUrls = LinkedHashMap<String, Long>()
-    private val recentUrlsLock = Any()
 
     private val filePickerLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
@@ -56,6 +55,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         UHLog.init(this)
+        SessionRecorder.init(this)
         UHLog.section("MAIN")
 
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -225,7 +225,7 @@ class MainActivity : AppCompatActivity() {
     private fun recordUrlOnce(url: String): Boolean {
         val key = url.substringBefore('?').substringBefore('#')
         val now = System.currentTimeMillis()
-        synchronized(recentUrlsLock) {
+        synchronized(recentUrls) {
             val it = recentUrls.entries.iterator()
             while (it.hasNext()) {
                 if (now - it.next().value > 2000L) it.remove()
@@ -236,20 +236,32 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun collect3p(view: WebView, url: String) {
+    private fun collect3p(v: WebView, url: String) {
         val host = try { java.net.URI(url).host?.lowercase() ?: return } catch (_: Exception) { return }
-        val pageHost = try { java.net.URI(view.url ?: "").host?.lowercase() ?: return } catch (_: Exception) { return }
-        if (host == pageHost) return
-        synchronized(page3pLock) { page3p.add(host) }
+        val viewUrl = v.url ?: return
+        val viewHost = try { java.net.URI(viewUrl).host?.lowercase() ?: return } catch (_: Exception) { return }
+        if (host == viewHost) return
+        val id = tabs.idForView(v)
+        if (id <= 0L) return
+        synchronized(page3p) {
+            page3p.getOrPut(id) { mutableSetOf() }.add(host)
+        }
     }
 
-    private fun flush3p(view: WebView, pageUrl: String) {
-        val hosts = synchronized(page3pLock) {
-            val copy = page3p.toList()
-            page3p.clear()
-            copy
+    private fun flush3p(v: WebView, pageUrl: String) {
+        val id = tabs.idForView(v)
+        if (id <= 0L) return
+        val hosts = synchronized(page3p) {
+            val set = page3p.remove(id) ?: return
+            set.toList()
         }
         if (hosts.isNotEmpty()) UHLog.net3p(pageUrl, hosts)
+    }
+
+    private fun clear3p(v: WebView) {
+        val id = tabs.idForView(v)
+        if (id <= 0L) return
+        synchronized(page3p) { page3p.remove(id) }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -274,6 +286,15 @@ class MainActivity : AppCompatActivity() {
                         val hasCookie = headers?.keys?.any { it.equals("Cookie", true) } == true
                         val hasAuth = headers?.keys?.any { it.equals("Authorization", true) } == true
                         UHLog.netNav(method, url, ref, hasCookie, hasAuth)
+                        if (SessionRecorder.isActive() && SessionRecorder.isEnabled("header")) {
+                            SessionRecorder.record("header") {
+                                put("url", url)
+                                put("method", method)
+                                val h = JSONObject()
+                                for ((k, value) in headers ?: emptyMap()) h.put(k, value)
+                                put("headers", h)
+                            }
+                        }
                         return null
                     }
 
@@ -294,7 +315,7 @@ class MainActivity : AppCompatActivity() {
                         }
                         isApi -> UHLog.netApi(method, url)
                     }
-                    if (v === currentView) collect3p(v, url)
+                    collect3p(v, url)
                 } catch (_: Exception) {}
                 return null
             }
@@ -322,9 +343,9 @@ class MainActivity : AppCompatActivity() {
                 UHLog.d("web", "start ${url.take(140)}")
                 val id = tabs.idForView(v)
                 if (id > 0L) tabs.updateUrl(id, url, null)
+                clear3p(v)
                 if (v === currentView) {
                     binding.urlText.text = if (url == "about:blank") "" else url
-                    synchronized(page3pLock) { page3p.clear() }
                 }
                 if (id in popupTabs) UHLog.netPopupLoad(url)
                 if (url != "about:blank") {
@@ -337,10 +358,8 @@ class MainActivity : AppCompatActivity() {
                 UHLog.d("web", "finish ${url.take(140)}")
                 val id = tabs.idForView(v)
                 if (id > 0L) tabs.updateUrl(id, url, null)
-                if (v === currentView) {
-                    updateUi()
-                    flush3p(v, url)
-                }
+                flush3p(v, url)
+                if (v === currentView) updateUi()
             }
 
             override fun doUpdateVisitedHistory(v: WebView, url: String?, isReload: Boolean) {
@@ -391,6 +410,7 @@ class MainActivity : AppCompatActivity() {
                 val id = tabs.openBlankTab()
                 val newView = tabs.acquireView(id) ?: return false
                 popupTabs.add(id)
+                UHLog.netPopupCreated(id)
 
                 if (newView.getTag(R.id.webContainer) == null) {
                     installClients(newView)
@@ -512,6 +532,10 @@ class MainActivity : AppCompatActivity() {
         v.findViewById<View>(R.id.btnInstallScript)?.setOnClickListener {
             sheet.dismiss()
             promptInstallUserscript()
+        }
+        v.findViewById<View>(R.id.btnTools)?.setOnClickListener {
+            sheet.dismiss()
+            startActivity(Intent(this, ToolsActivity::class.java))
         }
         v.findViewById<View>(R.id.btnSettings)?.setOnClickListener {
             sheet.dismiss()
