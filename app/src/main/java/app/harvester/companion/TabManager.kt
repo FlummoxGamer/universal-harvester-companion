@@ -77,6 +77,10 @@ class TabManager private constructor(private val ctx: Context) {
 
     fun currentView(): WebView? = synchronized(lock) { alive[currentId]?.view }
 
+    fun idForView(view: WebView): Long = synchronized(lock) {
+        alive.entries.firstOrNull { it.value.view === view }?.key ?: -1L
+    }
+
     fun list(): List<TabEntity> = db.list()
 
     fun updateUrl(id: Long, url: String, title: String?) = db.update(id, url, title)
