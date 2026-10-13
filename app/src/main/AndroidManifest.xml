@@ -37,6 +37,11 @@
         </activity>
 
         <activity
+            android:name=".ToolsActivity"
+            android:exported="false"
+            android:label="Capture Tools" />
+
+        <activity
             android:name=".SettingsActivity"
             android:exported="false"
             android:label="@string/settings_title" />
