@@ -215,24 +215,27 @@ class MainActivity : AppCompatActivity() {
                 } catch (_: Exception) {}
                 return null
             }
+override fun shouldOverrideUrlLoading(
+    v: WebView, request: WebResourceRequest
+): Boolean {
+    val url = request.url.toString()
+    val scheme = request.url.scheme ?: ""
 
-            override fun shouldOverrideUrlLoading(
-                v: WebView, request: WebResourceRequest
-            ): Boolean {
-                val url = request.url.toString()
-                if (url.startsWith("intent:")) {
-                    try { startActivity(Intent.parseUri(url, Intent.URI_INTENT_SCHEME)) } catch (_: Exception) {}
-                    return true
-                }
-                val internal = url.startsWith("http") || url.startsWith("https") ||
-                        url.startsWith("about:") || url.startsWith("data:") ||
-                        url.startsWith("blob:") || url.startsWith("file:")
-                if (!internal) {
-                    try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {}
-                    return true
-                }
-                return false
-            }
+    // intent:// URLs
+    if (scheme == "intent") {
+        handleIntentUrl(url)
+        return true
+    }
+
+    // Standard web navigation — let WebView handle
+    if (scheme == "http" || scheme == "https") return false
+    if (scheme == "about" || scheme == "data" || scheme == "blob" ||
+        scheme == "file" || scheme == "javascript") return false
+
+    // Custom scheme (whatsapp://, market://, tg://, upi://, etc.)
+    askOpenExternal(url)
+    return true
+}
 
             override fun onPageStarted(v: WebView, url: String, favicon: Bitmap?) {
                 UHLog.d("web", "start ${url.take(140)}")
@@ -516,5 +519,71 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         tabs.saveAll()
         super.onDestroy()
+    }
+
+    private fun handleIntentUrl(url: String) {
+        try {
+            val intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
+            val resolved = packageManager.queryIntentActivities(intent, 0)
+            if (resolved.isNotEmpty()) {
+                askOpenExternalIntent(intent)
+            } else {
+                val fallback = intent.getStringExtra("browser_fallback_url")
+                if (!fallback.isNullOrBlank()) {
+                    currentView?.loadUrl(fallback)
+                } else {
+                    val pkg = intent.`package`
+                    if (!pkg.isNullOrBlank()) {
+                        try {
+                            startActivity(
+                                Intent(Intent.ACTION_VIEW).apply {
+                                    data = Uri.parse("market://details?id=$pkg")
+                                }
+                            )
+                        } catch (_: Exception) {
+                            Toast.makeText(this, "App not installed", Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        Toast.makeText(this, "App not installed", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            UHLog.throwable("nav", "intent parse failed: $url", e)
+        }
+    }
+
+    private fun askOpenExternal(url: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Open in another app?")
+            .setMessage(url)
+            .setPositiveButton("Open") { _, _ ->
+                try {
+                    startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                } catch (_: Exception) {
+                    Toast.makeText(this, "No app can handle this link", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Stay", null)
+            .show()
+    }
+
+    private fun askOpenExternalIntent(intent: Intent) {
+        AlertDialog.Builder(this)
+            .setTitle("Open in another app?")
+            .setMessage(intent.data?.toString() ?: "External app link")
+            .setPositiveButton("Open") { _, _ ->
+                try {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(intent)
+                } catch (_: Exception) {
+                    Toast.makeText(this, "Failed to open app", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Stay", null)
+            .show()
     }
 }
