@@ -3,6 +3,7 @@ package app.harvester.companion
 import android.content.Context
 import android.net.Uri
 import android.webkit.WebView
+import androidx.webkit.ScriptHandler
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import java.io.File
@@ -11,7 +12,7 @@ import java.util.zip.ZipInputStream
 
 object UserscriptManager {
 
-    private val handlers = WeakHashMap<WebView, MutableList<WebViewCompat.ScriptHandler>>()
+    private val handlers = WeakHashMap<WebView, MutableList<ScriptHandler>>()
 
     data class Script(
         val name: String,
@@ -113,19 +114,25 @@ object UserscriptManager {
 
     private fun installFromZipBytes(ctx: Context, bytes: ByteArray): Boolean {
         return try {
+            var extractedName: String? = null
+            var extractedBody: String? = null
             ZipInputStream(bytes.inputStream()).use { zip ->
                 var entry = zip.nextEntry
-                while (entry != null) {
+                while (entry != null && extractedBody == null) {
                     val n = entry.name.lowercase()
                     if (n.endsWith(".user.js") || n.endsWith(".js")) {
-                        val body = zip.bufferedReader().use { it.readText() }
-                        val parsed = parse(File(entry.name).nameWithoutExtension, body)
-                        return install(ctx, parsed.name, body)
+                        extractedName = File(entry.name).nameWithoutExtension
+                        extractedBody = zip.bufferedReader().use { it.readText() }
                     }
                     entry = zip.nextEntry
                 }
             }
-            false
+            val n = extractedName
+            val b = extractedBody
+            if (n != null && b != null) {
+                val parsed = parse(n, b)
+                install(ctx, parsed.name, b)
+            } else false
         } catch (_: Exception) { false }
     }
 
@@ -143,7 +150,7 @@ object UserscriptManager {
             UHLog.w("userscript", "DOCUMENT_START_SCRIPT unsupported — falling back")
             return
         }
-        val list = mutableListOf<WebViewCompat.ScriptHandler>()
+        val list = mutableListOf<ScriptHandler>()
         try {
             list.add(WebViewCompat.addDocumentStartJavaScript(view, BRIDGE_BOOT, setOf("*")))
         } catch (_: Exception) {}
@@ -187,7 +194,8 @@ object UserscriptManager {
     }
 
     private fun clearDocumentStart(view: WebView) {
-        handlers.remove(view)?.forEach { h ->
+        val prior = handlers.remove(view) ?: return
+        for (h in prior) {
             try { WebViewCompat.removeDocumentStartJavaScript(view, h) } catch (_: Exception) {}
         }
     }
