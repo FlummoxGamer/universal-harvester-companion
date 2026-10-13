@@ -214,10 +214,15 @@ object UHLog {
         write("net", 'V', "SCHEME $raw → $action", true)
     }
 
-    fun netPopupOpen(parentUrl: String, userGesture: Boolean, isDialog: Boolean) {
-        if (!verbose) return
-        write("net", 'V', "POPUP open parent=$parentUrl user=$userGesture dialog=$isDialog", true)
-    }
+fun netPopupOpen(parentUrl: String, userGesture: Boolean, isDialog: Boolean) {
+    if (!verbose) return
+    write("net", 'V', "POPUP open parent=$parentUrl user=$userGesture dialog=$isDialog", true)
+}
+
+fun netPopupCreated(id: Long) {
+    if (!verbose) return
+    write("net", 'V', "POPUP created id=$id", true)
+}
 
     fun netPopupLoad(url: String) {
         if (!verbose) return
