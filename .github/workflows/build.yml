@@ -36,10 +36,6 @@ jobs:
 
       - name: Build debug APKs
         working-directory: src
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: gradle assembleDebug --no-daemon --no-configuration-cache
       
       - name: Read version
