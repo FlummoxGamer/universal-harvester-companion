@@ -38,6 +38,11 @@ class SettingsActivity : AppCompatActivity() {
         UpdateChecker.resumePendingInstallIfPossible(this)
     }
 
+    override fun onPause() {
+        super.onPause()
+        UHLog.onActivityPause(this)
+    }
+
     private fun confirmClear() {
         val builder = AlertDialog.Builder(this)
         builder.setTitle("Clear all state?")
