@@ -11,6 +11,10 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.CopyOnWriteArrayList
 
+enum class LogLevel(val priority: Int) {
+    VERBOSE(0), DEBUG(1), INFO(2), WARN(3), ERROR(4), NONE(5)
+}
+
 object UHLog {
 
     private const val TAG = "UHCompanion"
@@ -27,7 +31,7 @@ object UHLog {
     private var pending = 0
     private var appContext: Context? = null
     private var initialised = false
-    @Volatile private var verbose = true
+    private var currentLevel = LogLevel.INFO // Default: only INFO, WARN, ERROR
 
     @Volatile var externalPath: String = ""
 
@@ -42,7 +46,7 @@ object UHLog {
             if (initialised) return
             initialised = true
             appContext = ctx.applicationContext
-            verbose = DebugPrefs.verboseLogging(ctx)
+            currentLevel = DebugPrefs.logLevel(ctx)
             installCrashHandler()
             try { writer?.close() } catch (_: Exception) {}
             writer = null
@@ -61,7 +65,6 @@ object UHLog {
         d("boot", "Harvester ${BuildConfig.VERSION_NAME} (code ${BuildConfig.VERSION_CODE})")
         d("boot", "Android ${Build.VERSION.RELEASE} · SDK ${Build.VERSION.SDK_INT}")
         d("boot", "Device ${Build.MANUFACTURER} ${Build.MODEL}")
-        d("boot", "ABI ${Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"}")
     }
 
     private fun archiveAndCleanup(dir: File, current: File) {
@@ -84,11 +87,9 @@ object UHLog {
     fun addListener(fn: (String) -> Unit) { listeners.add(fn) }
     fun removeListener(fn: (String) -> Unit) { listeners.remove(fn) }
 
-    fun isVerbose(): Boolean = verbose
-
-    fun setVerbose(on: Boolean) {
-        verbose = on
-        appContext?.let { DebugPrefs.setVerboseLogging(it, on) }
+    fun setLevel(level: LogLevel) {
+        currentLevel = level
+        appContext?.let { DebugPrefs.setLogLevel(it, level) }
     }
 
     private fun sanitize(s: String): String {
@@ -101,8 +102,10 @@ object UHLog {
         return out
     }
 
-    private fun write(tag: String, level: Char, msg: String, force: Boolean = false) {
-        if (!force && !verbose) return
+    private fun shouldLog(level: LogLevel): Boolean = level.priority >= currentLevel.priority
+
+    private fun write(tag: String, level: Char, msg: String, logLevel: LogLevel) {
+        if (!shouldLog(logLevel)) return
         val clean = sanitize(msg)
         val line = "${timeFormat.format(Date())} $level [$tag] $clean"
         synchronized(lock) {
@@ -132,15 +135,16 @@ object UHLog {
         try { Log.d(TAG, line) } catch (_: Exception) {}
     }
 
-    fun d(tag: String, msg: String) = write(tag, 'D', msg)
-    fun v(tag: String, msg: String) = write(tag, 'V', msg)
-    fun w(tag: String, msg: String) = write(tag, 'W', msg)
-    fun e(tag: String, msg: String) = write(tag, 'E', msg)
-    fun section(title: String) = write("---", 'S', "───── $title ─────")
+    fun v(tag: String, msg: String) = write(tag, 'V', msg, LogLevel.VERBOSE)
+    fun d(tag: String, msg: String) = write(tag, 'D', msg, LogLevel.DEBUG)
+    fun i(tag: String, msg: String) = write(tag, 'I', msg, LogLevel.INFO)
+    fun w(tag: String, msg: String) = write(tag, 'W', msg, LogLevel.WARN)
+    fun e(tag: String, msg: String) = write(tag, 'E', msg, LogLevel.ERROR)
+    fun section(title: String) = write("---", 'S', "───── $title ─────", LogLevel.INFO)
 
     fun throwable(tag: String, msg: String, t: Throwable) {
-        write(tag, 'E', "$msg: ${t.javaClass.simpleName}: ${t.message}")
-        t.stackTrace.take(25).forEach { write(tag, 'E', "  at $it") }
+        write(tag, 'E', "$msg: ${t.javaClass.simpleName}: ${t.message}", LogLevel.ERROR)
+        t.stackTrace.take(25).forEach { write(tag, 'E', "  at $it", LogLevel.ERROR) }
     }
 
     fun snapshot(): String = synchronized(lock) {
