@@ -20,7 +20,8 @@ object UHLog {
     private const val TAG = "UHCompanion"
     private const val MAX_LINES = 3000
     private const val FLUSH_EVERY = 20
-    private const val RETENTION_MS = 24L * 60L * 60L * 1000L
+    private const val MAX_FILE_BYTES = 2_000_000L
+    private const val RETENTION_MS = 7L * 24L * 60L * 60L * 1000L
 
     private val buffer = ArrayDeque<String>(MAX_LINES)
     private val lock = Any()
@@ -31,7 +32,7 @@ object UHLog {
     private var pending = 0
     private var appContext: Context? = null
     private var initialised = false
-    private var currentLevel = LogLevel.INFO // Default: only INFO, WARN, ERROR
+    @Volatile private var verbose = true
 
     @Volatile var externalPath: String = ""
 
@@ -46,7 +47,6 @@ object UHLog {
             if (initialised) return
             initialised = true
             appContext = ctx.applicationContext
-            currentLevel = DebugPrefs.logLevel(ctx)
             installCrashHandler()
             try { writer?.close() } catch (_: Exception) {}
             writer = null
@@ -56,9 +56,32 @@ object UHLog {
                 val dir = ext ?: ctx.filesDir
                 dir.mkdirs()
                 val current = File(dir, "uh_log.txt")
-                archiveAndCleanup(dir, current)
+
+                // Archive only by size, never on process restart. This preserves
+                // crash logs across the OS restarting the app after a fatal error.
+                if (current.exists() && current.length() > MAX_FILE_BYTES) {
+                    val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                    current.renameTo(File(dir, "uh_log_$ts.txt"))
+                }
+
+                // Prune archives older than retention.
+                val cutoff = System.currentTimeMillis() - RETENTION_MS
+                dir.listFiles { f ->
+                    f.name.startsWith("uh_log_") && f.name.endsWith(".txt")
+                }?.forEach { f ->
+                    if (f.lastModified() < cutoff) {
+                        try { f.delete() } catch (_: Exception) {}
+                    }
+                }
+
                 writer = BufferedWriter(FileWriter(current, true))
                 externalPath = current.absolutePath
+
+                // Reload tail of existing file into the in-memory buffer so the
+                // live view shows continuity across process restarts.
+                if (current.exists() && current.length() > 0L) {
+                    current.readLines().takeLast(MAX_LINES / 2).forEach { buffer.addLast(it) }
+                }
             } catch (_: Exception) {}
         }
         section("BOOT")
@@ -67,30 +90,12 @@ object UHLog {
         d("boot", "Device ${Build.MANUFACTURER} ${Build.MODEL}")
     }
 
-    private fun archiveAndCleanup(dir: File, current: File) {
-        try {
-            if (current.exists() && current.length() > 0L) {
-                val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                current.renameTo(File(dir, "uh_log_$ts.txt"))
-            }
-            val cutoff = System.currentTimeMillis() - RETENTION_MS
-            dir.listFiles { f ->
-                f.name.startsWith("uh_log_") && f.name.endsWith(".txt")
-            }?.forEach { f ->
-                if (f.lastModified() < cutoff) {
-                    try { f.delete() } catch (_: Exception) {}
-                }
-            }
-        } catch (_: Exception) {}
-    }
-
     fun addListener(fn: (String) -> Unit) { listeners.add(fn) }
     fun removeListener(fn: (String) -> Unit) { listeners.remove(fn) }
 
-    fun setLevel(level: LogLevel) {
-        currentLevel = level
-        appContext?.let { DebugPrefs.setLogLevel(it, level) }
-    }
+    fun isVerbose(): Boolean = verbose
+
+    fun setVerbose(on: Boolean) { verbose = on }
 
     private fun sanitize(s: String): String {
         var out = s
@@ -102,10 +107,8 @@ object UHLog {
         return out
     }
 
-    private fun shouldLog(level: LogLevel): Boolean = level.priority >= currentLevel.priority
-
-    private fun write(tag: String, level: Char, msg: String, logLevel: LogLevel) {
-        if (!shouldLog(logLevel)) return
+    private fun write(tag: String, level: Char, msg: String, force: Boolean = false) {
+        if (!force && !verbose && level == 'V') return
         val clean = sanitize(msg)
         val line = "${timeFormat.format(Date())} $level [$tag] $clean"
         synchronized(lock) {
@@ -135,16 +138,15 @@ object UHLog {
         try { Log.d(TAG, line) } catch (_: Exception) {}
     }
 
-    fun v(tag: String, msg: String) = write(tag, 'V', msg, LogLevel.VERBOSE)
-    fun d(tag: String, msg: String) = write(tag, 'D', msg, LogLevel.DEBUG)
-    fun i(tag: String, msg: String) = write(tag, 'I', msg, LogLevel.INFO)
-    fun w(tag: String, msg: String) = write(tag, 'W', msg, LogLevel.WARN)
-    fun e(tag: String, msg: String) = write(tag, 'E', msg, LogLevel.ERROR)
-    fun section(title: String) = write("---", 'S', "───── $title ─────", LogLevel.INFO)
+    fun d(tag: String, msg: String) = write(tag, 'D', msg)
+    fun v(tag: String, msg: String) = write(tag, 'V', msg)
+    fun w(tag: String, msg: String) = write(tag, 'W', msg)
+    fun e(tag: String, msg: String) = write(tag, 'E', msg)
+    fun section(title: String) = write("---", 'S', "───── $title ─────")
 
     fun throwable(tag: String, msg: String, t: Throwable) {
-        write(tag, 'E', "$msg: ${t.javaClass.simpleName}: ${t.message}", LogLevel.ERROR)
-        t.stackTrace.take(25).forEach { write(tag, 'E', "  at $it", LogLevel.ERROR) }
+        write(tag, 'E', "$msg: ${t.javaClass.simpleName}: ${t.message}")
+        t.stackTrace.take(25).forEach { write(tag, 'E', "  at $it") }
     }
 
     fun snapshot(): String = synchronized(lock) {
