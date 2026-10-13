@@ -18,11 +18,10 @@ class SettingsActivity : AppCompatActivity() {
 
         binding.versionLabel.text = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
 
-        // Switch reflects verbose level: ON = VERBOSE, OFF = INFO
-        binding.switchVerbose.isChecked = DebugPrefs.logLevel(this) == LogLevel.VERBOSE
+        binding.switchVerbose.isChecked = DebugPrefs.verboseLogging(this)
         binding.switchVerbose.setOnCheckedChangeListener { _, checked ->
-            val level = if (checked) LogLevel.VERBOSE else LogLevel.INFO
-            UHLog.setLevel(level)
+            DebugPrefs.setVerboseLogging(this, checked)
+            UHLog.setVerbose(checked)
         }
 
         binding.btnLogs.setOnClickListener {
@@ -36,9 +35,7 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-       // If user just came back from granting "Install unknown apps",
-       // resume the pending install automatically.
-       UpdateChecker.resumePendingInstallIfPossible(this)
+        UpdateChecker.resumePendingInstallIfPossible(this)
     }
 
     private fun confirmClear() {
