@@ -46,8 +46,24 @@ android {
         }
     }
 
+    signingConfigs {
+        create("shared") {
+            val ks = file("../uh-debug.jks")
+            if (ks.exists()) {
+                storeFile = ks
+                storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "uhdebug123"
+                keyAlias = System.getenv("KEY_ALIAS") ?: "uhdebug"
+                keyPassword = System.getenv("KEY_PASSWORD") ?: "uhdebug123"
+           }
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("shared")
+        }
         release {
+            signingConfig = signingConfigs.getByName("shared")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
