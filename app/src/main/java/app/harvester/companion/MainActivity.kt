@@ -613,6 +613,7 @@ override fun onResume() {
 override fun onPause() {
     super.onPause()
     tabs.saveAll()
+    UHLog.onActivityPause(this)
 }
 
     override fun onDestroy() {
