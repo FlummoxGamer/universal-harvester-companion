@@ -194,10 +194,10 @@ object UserscriptManager {
     }
 
     private fun clearDocumentStart(view: WebView) {
-        val prior = handlers.remove(view) ?: return
-        for (h in prior) {
-            try { WebViewCompat.removeDocumentStartJavaScript(view, h) } catch (_: Exception) {}
-        }
+       val prior = handlers.remove(view) ?: return
+       for (h in prior) {
+            try { h.remove() } catch (_: Exception) {}
+       }
     }
 
     private val hookCache = mutableMapOf<String, String>()
