@@ -286,24 +286,31 @@ override fun onPageFinished(v: WebView, url: String) {
                 tabs.updateUrl(id, url, title)
             }
 
-            override fun onCreateWindow(
-                v: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message
-            ): Boolean {
-                val id = tabs.openBlankTab()
-                val newView = tabs.acquireView(id) ?: return false
+override fun onCreateWindow(
+    v: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message
+): Boolean {
+    val id = tabs.openBlankTab()
+    val newView = tabs.acquireView(id) ?: return false
 
-                if (newView.getTag(R.id.webContainer) == null) {
-                    installClients(newView)
-                    newView.setTag(R.id.webContainer, true)
-                }
+    if (newView.getTag(R.id.webContainer) == null) {
+        installClients(newView)
+        newView.setTag(R.id.webContainer, true)
+    }
 
-                val transport = resultMsg.obj as WebView.WebViewTransport
-                transport.webView = newView
-                resultMsg.sendToTarget()
+    binding.webContainer.removeAllViews()
+    (newView.parent as? ViewGroup)?.removeView(newView)
+    binding.webContainer.addView(newView)
+    binding.webContainer.visibility = View.VISIBLE
+    binding.homeScreen.visibility = View.GONE
+    currentView = newView
+    tabs.drainPendingDestroy()
 
-                attachCurrent()
-                return true
-            }
+    val transport = resultMsg.obj as WebView.WebViewTransport
+    transport.webView = newView
+    resultMsg.sendToTarget()
+
+    return true
+}
 
             override fun onPermissionRequest(request: PermissionRequest) {
                 request.deny()
