@@ -172,12 +172,13 @@ class MainActivity : AppCompatActivity() {
         tabs.drainPendingDestroy()
     }
 
-    private fun updateHomeVisibility() {
-        val url = currentView?.url
-        val isBlank = url.isNullOrBlank() || url == "about:blank"
-        binding.homeScreen.visibility = if (isBlank) View.VISIBLE else View.GONE
-        binding.webContainer.visibility = if (isBlank) View.GONE else View.VISIBLE
-    }
+private fun updateHomeVisibility() {
+    val id = tabs.currentId()
+    val url = tabs.list().firstOrNull { it.id == id }?.url
+    val isBlank = url.isNullOrBlank() || url == "about:blank"
+    binding.homeScreen.visibility = if (isBlank) View.VISIBLE else View.GONE
+    binding.webContainer.visibility = if (isBlank) View.GONE else View.VISIBLE
+}
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun installClients(view: WebView) {
@@ -231,10 +232,13 @@ class MainActivity : AppCompatActivity() {
                 updateHomeVisibility()
             }
 
-            override fun onPageFinished(v: WebView, url: String) {
-                UHLog.d("web", "finish ${url.take(140)}")
-                if (v === currentView) updateUi()
-            }
+override fun onPageFinished(v: WebView, url: String) {
+    UHLog.d("web", "finish ${url.take(140)}")
+    if (v === currentView) {
+        tabs.updateUrl(tabs.currentId(), url, null)
+        updateUi()
+    }
+}
 
             override fun doUpdateVisitedHistory(v: WebView, url: String?, isReload: Boolean) {
                 tabs.setNav(v, v.canGoBack(), v.canGoForward())
