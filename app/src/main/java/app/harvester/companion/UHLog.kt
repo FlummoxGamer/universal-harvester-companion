@@ -17,7 +17,6 @@ object UHLog {
     private const val TAG = "UHCompanion"
     private const val MAX_LINES = 3000
     private const val FLUSH_EVERY = 20
-    private const val MAX_NET_BYTES = 2_000_000L
     private const val KEEP_SESSIONS = 10
     private const val RESUME_WINDOW_MS = 60L * 1000L
 
@@ -50,7 +49,10 @@ object UHLog {
 
     fun init(ctx: Context) {
         synchronized(lock) {
-            if (initialised) return
+            if (initialised) {
+                if (writer == null) reopenWriters(ctx)
+                return
+            }
             initialised = true
             appContext = ctx.applicationContext
             verbose = DebugPrefs.verboseLogging(ctx)
@@ -62,10 +64,7 @@ object UHLog {
             val lastPause = prefs.getLong(KEY_LAST_PAUSE, 0L)
             val now = System.currentTimeMillis()
 
-            val resume = prevActive &&
-                    prevId != null &&
-                    (now - lastPause) < RESUME_WINDOW_MS
-
+            val resume = prevActive && prevId != null && (now - lastPause) < RESUME_WINDOW_MS
             sessionId = if (resume) prevId!! else newSessionId(now)
             prefs.edit()
                 .putString(KEY_SESSION_ID, sessionId)
@@ -73,34 +72,33 @@ object UHLog {
                 .putLong(KEY_LAST_PAUSE, now)
                 .apply()
 
-            try {
-                val ext = ctx.getExternalFilesDir(null)
-                val dir = ext ?: ctx.filesDir
-                dir.mkdirs()
-
-                val diag = File(dir, "uh_log_$sessionId.txt")
-                val net = File(dir, "uh_net_$sessionId.txt")
-
-                writer?.close(); writer = null
-                netWriter?.close(); netWriter = null
-                buffer.clear()
-
-                writer = BufferedWriter(FileWriter(diag, true))
-                netWriter = BufferedWriter(FileWriter(net, true))
-                externalPath = diag.absolutePath
-                netPath = net.absolutePath
-
-                if (resume && diag.exists() && diag.length() > 0L) {
-                    diag.readLines().takeLast(MAX_LINES / 2).forEach { buffer.addLast(it) }
-                }
-            } catch (_: Exception) {}
+            reopenWriters(ctx)
         }
 
         section("BOOT")
         d("boot", "Harvester ${BuildConfig.VERSION_NAME} (code ${BuildConfig.VERSION_CODE})")
         d("boot", "Android ${android.os.Build.VERSION.RELEASE} · SDK ${android.os.Build.VERSION.SDK_INT}")
         d("boot", "Device ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
-        d("boot", "session=$sessionId resume=${sessionId.isNotEmpty()}")
+        d("boot", "session=$sessionId")
+    }
+
+    private fun reopenWriters(ctx: Context) {
+        try {
+            val ext = ctx.getExternalFilesDir(null)
+            val root = ext ?: ctx.filesDir
+            val folder = File(root, "sess_$sessionId").apply { mkdirs() }
+            val diag = File(folder, "log.txt")
+            val net = File(folder, "net.txt")
+
+            writer?.close(); writer = null
+            netWriter?.close(); netWriter = null
+            buffer.clear()
+
+            writer = BufferedWriter(FileWriter(diag, true))
+            netWriter = BufferedWriter(FileWriter(net, true))
+            externalPath = diag.absolutePath
+            netPath = net.absolutePath
+        } catch (_: Exception) {}
     }
 
     private fun newSessionId(now: Long): String =
@@ -132,18 +130,16 @@ object UHLog {
 
     private fun pruneOldSessions(ctx: Context) {
         val ext = ctx.getExternalFilesDir(null) ?: ctx.filesDir
-        val all = ext.listFiles { f -> f.name.startsWith("uh_log_") && f.name.endsWith(".txt") }
+        val all = ext.listFiles { f -> f.isDirectory && f.name.startsWith("sess_") }
             ?.sortedByDescending { it.lastModified() } ?: return
         all.drop(KEEP_SESSIONS).forEach {
-            val stamp = it.name.removePrefix("uh_log_").removeSuffix(".txt")
-            try { it.delete() } catch (_: Exception) {}
-            try { File(ext, "uh_net_$stamp.txt").delete() } catch (_: Exception) {}
+            try { it.deleteRecursively() } catch (_: Exception) {}
         }
     }
 
     fun mirrorToPublic(ctx: Context) {
-        copyToPublic(ctx, externalPath, "uh_log_${sessionId}.txt")
-        copyToPublic(ctx, netPath, "uh_net_${sessionId}.txt")
+        copyToPublic(ctx, externalPath, "log.txt")
+        copyToPublic(ctx, netPath, "net.txt")
     }
 
     private fun copyToPublic(ctx: Context, srcPath: String, filename: String) {
@@ -154,7 +150,7 @@ object UHLog {
             val bytes = src.readBytes()
             val resolver = ctx.contentResolver
             val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
-            val relPath = "Download/Harvester/"
+            val relPath = "Download/Harvester/sess_$sessionId/"
             try {
                 resolver.delete(
                     collection,
@@ -173,9 +169,7 @@ object UHLog {
             val uri = resolver.insert(collection, values) ?: return
             resolver.openOutputStream(uri)?.use { os -> os.write(bytes) }
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                val done = ContentValues().apply {
-                    put(MediaStore.MediaColumns.IS_PENDING, 0)
-                }
+                val done = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
                 resolver.update(uri, done, null, null)
             }
         } catch (_: Exception) {}
@@ -189,6 +183,67 @@ object UHLog {
     fun setVerbose(on: Boolean) {
         verbose = on
         appContext?.let { DebugPrefs.setVerboseLogging(it, on) }
+    }
+
+    fun netNav(method: String, url: String, referer: String?, hasCookie: Boolean, hasAuth: Boolean) {
+        if (!verbose) return
+        val sb = StringBuilder()
+        sb.append("NAV ").append(method).append(' ').append(url)
+        if (!referer.isNullOrBlank()) sb.append("\n  ref=").append(referer)
+        if (hasCookie) sb.append("\n  cookie=<present>")
+        if (hasAuth) sb.append("\n  auth=<present>")
+        write("net", 'V', sb.toString(), true)
+    }
+
+    fun netPost(url: String, contentType: String?, contentLength: Long) {
+        if (!verbose) return
+        val sb = StringBuilder()
+        sb.append("POST ").append(url)
+        if (!contentType.isNullOrBlank()) sb.append("\n  ct=").append(contentType)
+        if (contentLength >= 0) sb.append("\n  cl=").append(contentLength)
+        write("net", 'V', sb.toString(), true)
+    }
+
+    fun netApi(method: String, url: String) {
+        if (!verbose) return
+        write("net", 'V', "API $method $url", true)
+    }
+
+    fun netScheme(raw: String, action: String) {
+        if (!verbose) return
+        write("net", 'V', "SCHEME $raw → $action", true)
+    }
+
+    fun netPopupOpen(parentUrl: String, userGesture: Boolean, isDialog: Boolean) {
+        if (!verbose) return
+        write("net", 'V', "POPUP open parent=$parentUrl user=$userGesture dialog=$isDialog", true)
+    }
+
+    fun netPopupLoad(url: String) {
+        if (!verbose) return
+        write("net", 'V', "POPUP load $url", true)
+    }
+
+    fun netExtDialog(url: String) {
+        if (!verbose) return
+        write("net", 'V', "EXT dialog $url", true)
+    }
+
+    fun netExtOpen(url: String) {
+        if (!verbose) return
+        write("net", 'V', "EXT open $url", true)
+    }
+
+    fun netExtStay(url: String) {
+        if (!verbose) return
+        write("net", 'V', "EXT stay $url", true)
+    }
+
+    fun net3p(pageUrl: String, hosts: Collection<String>) {
+        if (!verbose) return
+        if (hosts.isEmpty()) return
+        val sorted = hosts.toSortedSet().joinToString(" ")
+        write("net", 'V', "3P $pageUrl: $sorted", true)
     }
 
     private fun sanitize(s: String): String {
@@ -210,7 +265,9 @@ object UHLog {
             try {
                 val target = if (isNet) netWriter else writer
                 target?.appendLine(line)
-                if (!isNet) {
+                if (isNet) {
+                    netWriter?.flush()
+                } else {
                     pending++
                     if (pending >= FLUSH_EVERY) { writer?.flush(); pending = 0 }
                 }
@@ -263,6 +320,9 @@ object UHLog {
                 val f = File(externalPath)
                 f.delete()
                 writer = BufferedWriter(FileWriter(f, true))
+                val nf = File(netPath)
+                nf.delete()
+                netWriter = BufferedWriter(FileWriter(nf, true))
             } catch (_: Exception) {}
         }
     }
@@ -282,8 +342,6 @@ object UHLog {
                     cause.stackTrace.take(20).forEach { writeAlways("crash", 'E', "  at $it") }
                     cause = cause.cause
                 }
-                // Mirror immediately so the fatal block survives even if the
-                // process is torn down before the next onPause.
                 appContext?.let { mirrorToPublic(it) }
             } catch (_: Exception) {}
             prev?.uncaughtException(t, e)
