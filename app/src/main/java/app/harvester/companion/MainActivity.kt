@@ -277,13 +277,16 @@ class MainActivity : AppCompatActivity() {
                 v: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message
             ): Boolean {
                 val id = tabs.openBlankTab()
-                tabs.acquireView(id)
-                attachCurrent()
-                val newView = tabs.currentView() ?: return false
-                val transport = resultMsg.obj as WebView.WebViewTransport
-                transport.webView = newView
-                resultMsg.sendToTarget()
-                return true
+                val newView = tabs.acquireView(id) ?: return false
+     
+               // WebView requires the popup WebView to have NO parent when
+               // assigned to the transport. Attach it only after sendToTarget.
+               val transport = resultMsg.obj as WebView.WebViewTransport
+               transport.webView = newView
+               resultMsg.sendToTarget()
+
+               attachCurrent()
+               return true
             }
 
             override fun onPermissionRequest(request: PermissionRequest) {
