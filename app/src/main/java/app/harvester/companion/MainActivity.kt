@@ -605,10 +605,15 @@ class MainActivity : AppCompatActivity() {
         updateUi()
     }
 
-    override fun onPause() {
-        super.onPause()
-        tabs.saveAll()
-    }
+override fun onResume() {
+    super.onResume()
+    UpdateChecker.resumePendingInstallIfPossible(this)
+}
+
+override fun onPause() {
+    super.onPause()
+    tabs.saveAll()
+}
 
     override fun onDestroy() {
         tabs.saveAll()
