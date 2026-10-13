@@ -141,9 +141,14 @@ class LogsActivity : AppCompatActivity() {
     }
 
     override fun onStop() {
-        super.onStop()
-        liveListener?.let { UHLog.removeListener(it) }
-        liveListener = null
+    super.onStop()
+    liveListener?.let { UHLog.removeListener(it) }
+    liveListener = null
+}
+
+    override fun onPause() {
+        super.onPause()
+        UHLog.onActivityPause(this)
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
