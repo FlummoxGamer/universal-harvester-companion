@@ -20,8 +20,11 @@ class TabDb(ctx: Context) : SQLiteOpenHelper(ctx, "uh_tabs.db", null, 2) {
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS tabs")
-        onCreate(db)
+        if (oldVersion < 2) {
+            try {
+                db.execSQL("ALTER TABLE tabs ADD COLUMN state BLOB")
+            } catch (_: Exception) {}
+        }
     }
 
     @Synchronized
