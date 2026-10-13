@@ -232,10 +232,9 @@ override fun shouldOverrideUrlLoading(
     if (scheme == "about" || scheme == "data" || scheme == "blob" ||
         scheme == "file" || scheme == "javascript") return false
 
-    // Custom scheme (whatsapp://, market://, tg://, upi://, etc.)
-    askOpenExternal(url)
-    return true
-}
+// Custom scheme (whatsapp://, market://, tg://, upi://, etc.)
+askOpenExternal(v, url)
+return true
 
             override fun onPageStarted(v: WebView, url: String, favicon: Bitmap?) {
                 UHLog.d("web", "start ${url.take(140)}")
@@ -521,69 +520,114 @@ override fun shouldOverrideUrlLoading(
         super.onDestroy()
     }
 
-    private fun handleIntentUrl(url: String) {
-        try {
-            val intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
-            val resolved = packageManager.queryIntentActivities(intent, 0)
-            if (resolved.isNotEmpty()) {
-                askOpenExternalIntent(intent)
+private fun handleIntentUrl(url: String) {
+    try {
+        val intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
+
+        // If this intent wraps a plain web URL, load it in our WebView.
+        // Only fall through to the dialog for genuine external schemes.
+        val dataScheme = intent.data?.scheme ?: ""
+        val schemeExtra = intent.scheme ?: ""
+
+        val isWeb =
+            dataScheme == "http" || dataScheme == "https" ||
+            schemeExtra == "http" || schemeExtra == "https"
+
+        if (isWeb) {
+            val target = intent.data?.toString()
+            if (!target.isNullOrBlank()) {
+                currentView?.loadUrl(target)
+                return
+            }
+        }
+
+        // Genuine external app intent (market://, whatsapp://, etc.)
+        val resolved = packageManager.queryIntentActivities(intent, 0)
+        if (resolved.isNotEmpty()) {
+            askOpenExternalIntent(intent, currentView)
+        } else {
+            val fallback = intent.getStringExtra("browser_fallback_url")
+            if (!fallback.isNullOrBlank()) {
+                currentView?.loadUrl(fallback)
             } else {
-                val fallback = intent.getStringExtra("browser_fallback_url")
-                if (!fallback.isNullOrBlank()) {
-                    currentView?.loadUrl(fallback)
-                } else {
-                    val pkg = intent.`package`
-                    if (!pkg.isNullOrBlank()) {
-                        try {
-                            startActivity(
-                                Intent(Intent.ACTION_VIEW).apply {
-                                    data = Uri.parse("market://details?id=$pkg")
-                                }
-                            )
-                        } catch (_: Exception) {
-                            Toast.makeText(this, "App not installed", Toast.LENGTH_SHORT).show()
-                        }
-                    } else {
+                val pkg = intent.`package`
+                if (!pkg.isNullOrBlank()) {
+                    try {
+                        startActivity(
+                            Intent(Intent.ACTION_VIEW).apply {
+                                data = Uri.parse("market://details?id=$pkg")
+                            }
+                        )
+                    } catch (_: Exception) {
                         Toast.makeText(this, "App not installed", Toast.LENGTH_SHORT).show()
                     }
+                } else {
+                    Toast.makeText(this, "App not installed", Toast.LENGTH_SHORT).show()
                 }
             }
-        } catch (e: Exception) {
-            UHLog.throwable("nav", "intent parse failed: $url", e)
         }
+    } catch (e: Exception) {
+        UHLog.throwable("nav", "intent parse failed: $url", e)
     }
+}
 
-    private fun askOpenExternal(url: String) {
-        AlertDialog.Builder(this)
-            .setTitle("Open in another app?")
-            .setMessage(url)
-            .setPositiveButton("Open") { _, _ ->
-                try {
-                    startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                } catch (_: Exception) {
-                    Toast.makeText(this, "No app can handle this link", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton("Stay", null)
-            .show()
-    }
+private fun askOpenExternal(view: WebView, url: String) {
+    // If this WebView is still on about:blank, it is a fresh popup
+    // created by onCreateWindow. Closing it after the dialog is the
+    // only way to avoid leaving an empty tab behind.
+    val isFreshPopup = view.url.isNullOrBlank() || view.url == "about:blank"
 
-    private fun askOpenExternalIntent(intent: Intent) {
-        AlertDialog.Builder(this)
-            .setTitle("Open in another app?")
-            .setMessage(intent.data?.toString() ?: "External app link")
-            .setPositiveButton("Open") { _, _ ->
-                try {
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    startActivity(intent)
-                } catch (_: Exception) {
-                    Toast.makeText(this, "Failed to open app", Toast.LENGTH_SHORT).show()
-                }
+    AlertDialog.Builder(this)
+        .setTitle("Open in another app?")
+        .setMessage(url)
+        .setPositiveButton("Open") { _, _ ->
+            try {
+                startActivity(
+                    Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            } catch (_: Exception) {
+                Toast.makeText(this, "No app can handle this link", Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton("Stay", null)
-            .show()
+            if (isFreshPopup) closeBlankPopup(view)
+        }
+        .setNegativeButton("Stay") { _, _ ->
+            if (isFreshPopup) closeBlankPopup(view)
+        }
+        .show()
+}
+
+private fun closeBlankPopup(view: WebView) {
+    // Find the tab id for this WebView and close it.
+    val id = tabs.list().firstOrNull { it.id == tabs.currentId() }?.id ?: return
+    if (id <= 0L) return
+    tabs.close(id)
+    // Fall back to any remaining tab.
+    val remaining = tabs.list()
+    if (remaining.isNotEmpty()) {
+        tabs.acquireView(remaining.first().id)
+        attachCurrent()
     }
+    updateUi()
+}
+
+private fun askOpenExternalIntent(intent: Intent, view: WebView?) {
+    val isFreshPopup = view?.url.isNullOrBlank() || view?.url == "about:blank"
+    AlertDialog.Builder(this)
+        .setTitle("Open in another app?")
+        .setMessage(intent.data?.toString() ?: "External app link")
+        .setPositiveButton("Open") { _, _ ->
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(intent)
+            } catch (_: Exception) {
+                Toast.makeText(this, "Failed to open app", Toast.LENGTH_SHORT).show()
+            }
+            if (isFreshPopup) view?.let { closeBlankPopup(it) }
+        }
+        .setNegativeButton("Stay") { _, _ ->
+            if (isFreshPopup) view?.let { closeBlankPopup(it) }
+        }
+        .show()
+}
 }
