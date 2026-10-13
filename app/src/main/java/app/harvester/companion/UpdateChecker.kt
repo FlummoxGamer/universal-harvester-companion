@@ -138,36 +138,31 @@ object UpdateChecker {
         }
     }
 
-    private fun installApk(activity: Activity, apk: File) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            if (!activity.packageManager.canRequestPackageInstalls()) {
-                AlertDialog.Builder(activity)
-                    .setTitle("Permission needed")
-                    .setMessage("Allow this app to install unknown apps, then tap Install again.")
-                    .setPositiveButton("Open settings") { _, _ ->
-                        val i = Intent(
-                            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                            Uri.parse("package:${activity.packageName}")
-                        )
-                        activity.startActivity(i)
-                    }
-                    .setNegativeButton("Cancel", null)
-                    .show()
-                return
-            }
+private fun installApk(activity: Activity, apk: File) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (!activity.packageManager.canRequestPackageInstalls()) {
+            AlertDialog.Builder(activity)
+                .setTitle("Permission needed")
+                .setMessage("Allow this app to install unknown apps, then tap Install again.")
+                .setPositiveButton("Open settings") { _, _ ->
+                    val i = Intent(
+                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:${activity.packageName}")
+                    )
+                    activity.startActivity(i)
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+            return
         }
-        val uri = FileProvider.getUriForFile(
-            activity,
-            "${activity.packageName}.fileprovider",
-            apk
-        )
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        activity.startActivity(intent)
     }
+
+    val intent = Intent(activity, UpdateInstallActivity::class.java).apply {
+        putExtra(UpdateInstallActivity.EXTRA_APK_PATH, apk.absolutePath)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    activity.startActivity(intent)
+}
 
     private data class Manifest(
         val versionCode: Int,
