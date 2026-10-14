@@ -60,7 +60,7 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:background="@color/surface_2"
-        android:gravity="top or start"
+        android:gravity="top|start"
         android:inputType="textMultiLine|textNoSuggestions"
         android:padding="10dp"
         android:scrollbars="vertical"
