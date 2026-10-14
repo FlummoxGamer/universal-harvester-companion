@@ -20,7 +20,7 @@ import java.net.URL
 object UpdateChecker {
 
     private const val MANIFEST_URL =
-        "https://raw.githubusercontent.com/FlummoxGamer/universal-harvester-companion/builds/version.json"
+    "https://gh-proxy.com/https://raw.githubusercontent.com/FlummoxGamer/universal-harvester-companion/builds/version.json"
 
     fun checkAndPrompt(activity: Activity) {
         UHLog.section("UPDATE")
