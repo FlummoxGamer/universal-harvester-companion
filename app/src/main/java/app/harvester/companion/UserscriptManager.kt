@@ -178,6 +178,7 @@ object UserscriptManager {
     }
 
     fun injectOnPageFinished(ctx: Context, view: WebView, url: String) {
+        if (isBadUrl(url)) return
         val scripts = loadScripts(ctx)
         for (script in scripts) {
             if (!UserscriptStore.isEnabled(ctx, script.name)) continue
@@ -193,11 +194,22 @@ object UserscriptManager {
         }
     }
 
+    private fun isBadUrl(url: String): Boolean {
+        if (url.isBlank()) return true
+        if (url == "about:blank") return true
+        if (url.startsWith("chrome-error://")) return true
+        if (url.startsWith("chrome://")) return true
+        if (url.startsWith("data:")) return true
+        if (url.startsWith("blob:")) return true
+        if (url.startsWith("javascript:")) return true
+        return false
+    }
+
     private fun clearDocumentStart(view: WebView) {
-       val prior = handlers.remove(view) ?: return
-       for (h in prior) {
+        val prior = handlers.remove(view) ?: return
+        for (h in prior) {
             try { h.remove() } catch (_: Exception) {}
-       }
+        }
     }
 
     private val hookCache = mutableMapOf<String, String>()
@@ -225,6 +237,51 @@ object UserscriptManager {
 })();
 """
 
+    private const val SYSTEM_SHIM = """
+(function(){
+  if (window.System && window.System.register) return;
+  var regs = {};
+  function execMod(name) {
+    var m = regs[name];
+    if (!m || m.__done) return m ? m.exports : {};
+    m.__done = true;
+    try {
+      var deps = (m.deps || []).map(function(d){ return execMod(d); });
+      var setterFns = m.setters || [];
+      setterFns.forEach(function(s, i){ try{ if(typeof s==='function') s(deps[i]||{}); }catch(e){} });
+      if (m.execute) m.execute();
+    } catch(e) {
+      if (window.UH_BRIDGE && window.UH_BRIDGE.report) window.UH_BRIDGE.report(location.href, 'system_exec_err', String((e && e.message) || e));
+    }
+    return m.exports;
+  }
+  var S = {
+    register: function(name, deps, fn) {
+      if (typeof deps === 'function') { fn = deps; deps = []; }
+      regs[name] = { deps: deps, setters: [], execute: null, exports: {}, __done: false };
+      try {
+        var mod = regs[name];
+        var r = fn(function(v){ mod.exports = v; }, {
+          id: name,
+          import: function(d){ return Promise.resolve(execMod(d)); }
+        });
+        if (r) {
+          if (r.setters) mod.setters = r.setters;
+          if (r.execute) mod.execute = r.execute;
+        }
+        execMod(name);
+      } catch(e) {
+        if (window.UH_BRIDGE && window.UH_BRIDGE.report) window.UH_BRIDGE.report(location.href, 'system_register_err', String((e && e.message) || e));
+      }
+    },
+    import: function(name) { return Promise.resolve(execMod(name)); },
+    config: function() {},
+    _registry: regs
+  };
+  window.System = S;
+})();
+"""
+
     private fun buildWrapper(script: Script): String {
         val patsJson = script.patterns.joinToString(",") {
             "\"" + it.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
@@ -242,6 +299,7 @@ object UserscriptManager {
             "while(pi<p.length&&p[pi]==='*')pi++;return pi===p.length}" +
             "var ok=false;for(var i=0;i<pats.length;i++){try{if(gm(pats[i],u)){ok=true;break}}catch(e){}}" +
             "if(!ok)return;" +
+            SYSTEM_SHIM +
             "try{"
         val postamble =
             "}catch(e){" +
