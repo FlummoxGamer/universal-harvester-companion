@@ -301,8 +301,6 @@ private fun setupBackDispatcher() {
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun installClients(view: WebView) {
-        UserscriptManager.registerDocumentStart(view, this)
-
         view.webViewClient = object : WebViewClient() {
 
             override fun shouldInterceptRequest(
@@ -376,17 +374,20 @@ private fun setupBackDispatcher() {
                 return true
             }
 
-            override fun onPageStarted(v: WebView, url: String, favicon: Bitmap?) {
-                UHLog.d("web", "start ${url.take(140)}")
-                val id = tabs.idForView(v)
-                if (id > 0L) tabs.updateUrl(id, url, null)
-                clear3p(v)
-                if (v === currentView) {
-                    binding.urlText.text = if (url == "about:blank") "" else url
-                }
-                if (id in popupTabs) UHLog.netPopupLoad(url)
-                if (v === currentView) updateHomeVisibility()
-            }
+override fun onPageStarted(v: WebView, url: String, favicon: Bitmap?) {
+    UHLog.d("web", "start ${url.take(140)}")
+    val id = tabs.idForView(v)
+    if (id > 0L) tabs.updateUrl(id, url, null)
+    clear3p(v)
+    if (v === currentView) {
+        binding.urlText.text = if (url == "about:blank") "" else url
+    }
+    if (id in popupTabs) UHLog.netPopupLoad(url)
+    if (url != "about:blank" && !url.startsWith("chrome-error://")) {
+        UserscriptManager.injectOnPageStart(v, this@MainActivity, url)
+    }
+    if (v === currentView) updateHomeVisibility()
+}
 
 override fun onPageFinished(v: WebView, url: String) {
     UHLog.d("web", "finish ${url.take(140)}")
