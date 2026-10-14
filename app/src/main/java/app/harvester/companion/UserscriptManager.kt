@@ -33,6 +33,7 @@ object UserscriptManager {
         val runAt: String,
         val body: String,
         val usesSystemjs: Boolean,
+        val noFrames: Boolean,
         val fileSize: Long
     )
 
@@ -61,6 +62,7 @@ object UserscriptManager {
         var homepage = ""
         var icon = ""
         var runAt = "document-start"
+        var noFrames = false
         val patterns = mutableListOf<String>()
         val excludes = mutableListOf<String>()
         val grants = mutableListOf<String>()
@@ -74,7 +76,7 @@ object UserscriptManager {
             val t = line.trim()
             if (t.contains("==/UserScript==")) break
             when {
-                t.startsWith("// @name") -> displayName = t.substringAfter("@name").trim()
+                t.startsWith("// @name") -> if (displayName == name || displayName.isBlank()) displayName = t.substringAfter("@name").trim()
                 t.startsWith("// @namespace") -> namespace = t.substringAfter("@namespace").trim()
                 t.startsWith("// @description") -> description = t.substringAfter("@description").trim()
                 t.startsWith("// @version") -> version = t.substringAfter("@version").trim()
@@ -90,6 +92,7 @@ object UserscriptManager {
                 t.startsWith("// @grant") -> grants.add(t.substringAfter("@grant").trim())
                 t.startsWith("// @connect") -> connects.add(t.substringAfter("@connect").trim())
                 t.startsWith("// @require") -> requires.add(t.substringAfter("@require").trim())
+                t.startsWith("// @noframes") -> noFrames = true
                 t.startsWith("// @resource") -> {
                     val rest = t.substringAfter("@resource").trim()
                     val parts = rest.split(Regex("\\s+"), 2)
@@ -99,26 +102,14 @@ object UserscriptManager {
         }
         if (patterns.isEmpty()) patterns.add("*")
 
-        val usesSystemjs = body.contains("System.register") && !grants.contains("none")
+        val usesSystemjs = body.contains("System.register")
 
         return Script(
-            name = name,
-            displayName = displayName,
-            namespace = namespace,
-            description = description,
-            version = version,
-            author = author,
-            homepage = homepage,
-            icon = icon,
-            patterns = patterns,
-            excludes = excludes,
-            grants = grants,
-            connects = connects,
-            requires = requires,
-            resources = resources,
-            runAt = runAt,
-            body = body,
-            usesSystemjs = usesSystemjs,
+            name = name, displayName = displayName, namespace = namespace,
+            description = description, version = version, author = author,
+            homepage = homepage, icon = icon, patterns = patterns, excludes = excludes,
+            grants = grants, connects = connects, requires = requires, resources = resources,
+            runAt = runAt, body = body, usesSystemjs = usesSystemjs, noFrames = noFrames,
             fileSize = fileSize
         )
     }
@@ -148,8 +139,7 @@ object UserscriptManager {
                 if (conn.responseCode in 200..299) {
                     val body = conn.inputStream.bufferedReader().use { it.readText() }
                     val parsed = parse("script_" + System.currentTimeMillis(), body)
-                    val ok = install(ctx, parsed.name, body)
-                    callback(ok)
+                    callback(install(ctx, parsed.name, body))
                 } else callback(false)
                 conn.disconnect()
             } catch (e: Exception) {
@@ -191,11 +181,9 @@ object UserscriptManager {
                     entry = zip.nextEntry
                 }
             }
-            val nn = n
-            val bb = b
-            if (nn != null && bb != null) {
-                val parsed = parse(nn, bb)
-                install(ctx, parsed.name, bb)
+            if (n != null && b != null) {
+                val parsed = parse(n!!, b!!)
+                install(ctx, parsed.name, b!!)
             } else false
         } catch (_: Exception) { false }
     }
@@ -204,11 +192,15 @@ object UserscriptManager {
         return try {
             File(File(ctx.filesDir, "scripts"), "$name.js").delete().also {
                 UserscriptStore.forget(ctx, name)
+                MenuCommandStore.clearScript(name)
             }
         } catch (_: Exception) { false }
     }
 
-    fun saveEdited(ctx: Context, name: String, body: String): Boolean = install(ctx, name, body)
+    fun saveEdited(ctx: Context, name: String, body: String): Boolean {
+        MenuCommandStore.clearScript(name)
+        return install(ctx, name, body)
+    }
 
     fun registerDocumentStart(view: WebView, ctx: Context) {
         clearDocumentStart(view)
@@ -237,7 +229,7 @@ object UserscriptManager {
             if (wrapped.isBlank()) continue
             try {
                 list.add(WebViewCompat.addDocumentStartJavaScript(view, wrapped, setOf("*")))
-                UHLog.d("userscript", "registered ${script.name} sysjs=${script.usesSystemjs} grants=${script.grants.size} connects=${script.connects.size}")
+                UHLog.d("userscript", "registered ${script.name} sysjs=${script.usesSystemjs} grants=${script.grants.size}")
             } catch (e: Exception) {
                 UHLog.throwable("userscript", "register ${script.name} failed", e)
             }
@@ -256,18 +248,13 @@ object UserscriptManager {
             if (matchesPatterns(script.excludes, url)) continue
             val wrapped = buildWrapper(ctx, script)
             if (wrapped.isBlank()) continue
-            view.evaluateJavascript(wrapped) { result ->
-                if (result != null && result.contains("error", true)) {
-                    UHLog.w("userscript", "eval ${script.name}: ${result.take(200)}")
-                }
-            }
+            view.evaluateJavascript(wrapped, null)
             UHLog.d("userscript", "injected ${script.name} (${script.runAt}) into $url")
         }
     }
 
     private fun isBadUrl(url: String): Boolean {
-        if (url.isBlank()) return true
-        if (url == "about:blank") return true
+        if (url.isBlank() || url == "about:blank") return true
         if (url.startsWith("chrome-error://")) return true
         if (url.startsWith("chrome://")) return true
         if (url.startsWith("data:")) return true
@@ -278,16 +265,12 @@ object UserscriptManager {
 
     private fun clearDocumentStart(view: WebView) {
         val prior = handlers.remove(view) ?: return
-        for (h in prior) {
-            try { h.remove() } catch (_: Exception) {}
-        }
+        for (h in prior) { try { h.remove() } catch (_: Exception) {} }
     }
 
     private fun loadAsset(ctx: Context, path: String): String {
         synchronized(hookCache) { hookCache[path]?.let { return it } }
-        val body = try {
-            ctx.assets.open(path).bufferedReader().use { it.readText() }
-        } catch (_: Exception) { "" }
+        val body = try { ctx.assets.open(path).bufferedReader().use { it.readText() } } catch (_: Exception) { "" }
         if (body.isNotBlank()) synchronized(hookCache) { hookCache[path] = body }
         return body
     }
@@ -302,189 +285,327 @@ object UserscriptManager {
   if (!B) return;
 
   window.unsafeWindow = window;
-
-  window.GM_info = {
-    script: { name: '', namespace: '', version: '' },
-    scriptHandler: 'Harvester',
-    version: '1.0',
-    platform: { browserName: 'Android WebView' }
-  };
-
-  window.GM_getValue = function(k, d) {
-    var v = B.GM_getValue(String(k), d == null ? null : JSON.stringify(d));
-    if (v == null) return d;
-    try { return JSON.parse(v); } catch(e) { return v; }
-  };
-  window.GM_setValue = function(k, v) {
-    B.GM_setValue(String(k), JSON.stringify(v));
-  };
-  window.GM_deleteValue = function(k) { B.GM_deleteValue(String(k)); };
-  window.GM_listValues = function() { return JSON.parse(B.GM_listValues()); };
-
-  window.GM_addValueChangeListener = function(name, cb) {
-    var id = B.GM_addValueChangeListener(String(name));
-    window.__uh_vcl[id] = cb;
-    return id;
-  };
-  window.GM_removeValueChangeListener = function(id) {
-    delete window.__uh_vcl[id];
-    B.GM_removeValueChangeListener(String(id));
-  };
-  window.__uh_vcl = window.__uh_vcl || {};
-  window.__uh_fire_vcl = function(id, name, oldV, newV, remote) {
-    var cb = window.__uh_vcl[id];
-    if (cb) try { cb(name, oldV, newV, remote); } catch(e) {}
-  };
-
   window.__uh_xhr = window.__uh_xhr || {};
-  window.GM_xmlhttpRequest = function(details) {
-    var id = 'xhr_' + Math.random().toString(36).slice(2);
-    var rec = { onload: details.onload, onerror: details.onerror,
-                onprogress: details.onprogress, onabort: details.onabort,
-                abort: function(){ B.GM_xhrAbort(id); } };
-    window.__uh_xhr[id] = rec;
-    try {
-      B.GM_xmlhttpRequest(
-        id,
-        String(details.method || 'GET'),
-        String(details.url),
-        details.headers ? JSON.stringify(details.headers) : '',
-        details.data != null ? String(details.data) : '',
-        details.responseType ? String(details.responseType) : '',
-        details.timeout ? String(details.timeout) : '0'
-      );
-    } catch(e) {
-      if (rec.onerror) try { rec.onerror({ error: String(e) }); } catch(_){}
-    }
-    return rec;
-  };
-  window.__uh_xhr_done = function(id, status, responseText, responseHeaders, finalUrl) {
-    var rec = window.__uh_xhr[id];
-    if (!rec) return;
-    delete window.__uh_xhr[id];
-    if (rec.onload) try {
-      rec.onload({
-        readyState: 4, status: status, statusText: String(status),
-        responseText: responseText, response: responseText,
-        responseHeaders: responseHeaders, finalUrl: finalUrl
-      });
-    } catch(e) {}
-  };
-  window.__uh_xhr_error = function(id, error) {
-    var rec = window.__uh_xhr[id];
-    if (!rec) return;
-    delete window.__uh_xhr[id];
-    if (rec.onerror) try { rec.onerror({ error: error, readyState: 4, status: 0 }); } catch(e) {}
-  };
-
-  window.GM_download = function(details) {
-    var url = typeof details === 'string' ? details : details.url;
-    var name = typeof details === 'object' && details.name ? details.name : null;
-    B.GM_download(String(url), name ? String(name) : '');
-  };
-
-  window.GM_openInTab = function(url, options) {
-    var active = !(options && options.active === false);
-    B.GM_openInTab(String(url), active);
-  };
-
-  window.GM_setClipboard = function(text, type) {
-    B.GM_setClipboard(String(text));
-  };
-
-  window.GM_notification = function(details, ondone) {
-    var title = typeof details === 'string' ? details : (details.title || '');
-    var text = typeof details === 'object' ? (details.text || details.body || '') : '';
-    B.GM_notification(String(title), String(text));
-  };
-
+  window.__uh_vcl = window.__uh_vcl || {};
   window.__uh_menu = window.__uh_menu || {};
-  window.GM_registerMenuCommand = function(name, fn, accessKey) {
-    var id = 'menu_' + Math.random().toString(36).slice(2);
-    window.__uh_menu[id] = fn;
-    B.GM_registerMenuCommand(String(name), id, accessKey ? String(accessKey) : '');
-    return id;
+
+  window.__uh_gm = function(scriptName) {
+    var sn = scriptName;
+    var wrap = {
+      GM_getValue: function(k, d) {
+        var v = B.GM_getValueNs(sn, String(k));
+        if (v == null || v === '') return d;
+        try { return JSON.parse(v); } catch(e) { return v; }
+      },
+      GM_setValue: function(k, v) { B.GM_setValueNs(sn, String(k), JSON.stringify(v)); },
+      GM_deleteValue: function(k) { B.GM_deleteValueNs(sn, String(k)); },
+      GM_listValues: function() { return JSON.parse(B.GM_listValuesNs(sn)); },
+      GM_addValueChangeListener: function(k, cb) {
+        var id = B.GM_addValueChangeListenerNs(sn, String(k));
+        window.__uh_vcl[id] = cb;
+        return id;
+      },
+      GM_removeValueChangeListener: function(id) {
+        delete window.__uh_vcl[id];
+        B.GM_removeValueChangeListener(String(id));
+      },
+      GM_xmlhttpRequest: function(d) {
+        var id = 'xhr_' + Math.random().toString(36).slice(2);
+        window.__uh_xhr[id] = d;
+        try {
+          B.GM_xmlhttpRequest(
+            sn, id,
+            String(d.method || 'GET'),
+            String(d.url),
+            d.headers ? JSON.stringify(d.headers) : '',
+            d.data != null ? String(d.data) : '',
+            d.responseType ? String(d.responseType) : '',
+            d.timeout ? String(d.timeout) : '0',
+            d.user ? String(d.user) : '',
+            d.password ? String(d.password) : ''
+          );
+        } catch(e) { if (d.onerror) try{d.onerror({error:String(e)})}catch(_){} }
+        return { abort: function(){ B.GM_xhrAbort(id); } };
+      },
+      GM_download: function(d) {
+        var url = typeof d === 'string' ? d : d.url;
+        var name = typeof d === 'object' && d.name ? d.name : '';
+        B.GM_download(sn, String(url), String(name));
+      },
+      GM_openInTab: function(url, opts) {
+        var active = !(opts && opts.active === false);
+        B.GM_openInTab(sn, String(url), active);
+      },
+      GM_setClipboard: function(t) { B.GM_setClipboard(String(t)); },
+      GM_notification: function(d) {
+        var title = typeof d === 'string' ? d : (d.title || '');
+        var text = typeof d === 'object' ? (d.text || d.body || '') : '';
+        B.GM_notification(sn, String(title), String(text));
+      },
+      GM_registerMenuCommand: function(name, fn) {
+        var id = 'menu_' + Math.random().toString(36).slice(2);
+        window.__uh_menu[id] = fn;
+        B.GM_registerMenuCommand(sn, String(name), id, '');
+        return id;
+      },
+      GM_unregisterMenuCommand: function(id) {
+        delete window.__uh_menu[id];
+        B.GM_unregisterMenuCommand(sn, String(id));
+      },
+      GM_addStyle: function(css) {
+        var s = document.createElement('style');
+        s.textContent = String(css);
+        (document.head || document.documentElement).appendChild(s);
+        return s;
+      },
+      GM_addElement: function(parent, tag, attrs) {
+        var el = document.createElement(tag);
+        if (attrs) for (var k in attrs) {
+          if (k === 'textContent') el.textContent = attrs[k];
+          else if (k === 'innerHTML') el.innerHTML = attrs[k];
+          else el.setAttribute(k, attrs[k]);
+        }
+        var p = typeof parent === 'string' ? document.querySelector(parent) : parent;
+        (p || document.body || document.documentElement).appendChild(el);
+        return el;
+      },
+      GM_cookie: {
+        list: function(details, cb) {
+          var url = (details && details.url) || location.href;
+          var raw = B.GM_cookieGet(url);
+          var arr = [];
+          try { arr = JSON.parse(raw); } catch(e) {}
+          if (cb) cb(arr);
+          return Promise.resolve(arr);
+        },
+        set: function(details, cb) {
+          var url = (details && details.url) || location.href;
+          B.GM_cookieSet(url, String(details.name), String(details.value));
+          if (cb) cb();
+          return Promise.resolve();
+        },
+        delete: function(details, cb) {
+          var url = (details && details.url) || location.href;
+          B.GM_cookieDelete(url, String(details.name));
+          if (cb) cb();
+          return Promise.resolve();
+        }
+      },
+      GM_getResourceText: function(name) { return B.GM_getResourceText(sn, String(name)); },
+      GM_getResourceURL: function(name) { return B.GM_getResourceURL(sn, String(name)); },
+      GM_log: function(m) { B.GM_log(String(m)); }
+    };
+    // async GM.* namespace
+    var async = {
+      getValue: function(k, d) { return Promise.resolve(wrap.GM_getValue(k, d)); },
+      setValue: function(k, v) { wrap.GM_setValue(k, v); return Promise.resolve(); },
+      deleteValue: function(k) { wrap.GM_deleteValue(k); return Promise.resolve(); },
+      listValues: function() { return Promise.resolve(wrap.GM_listValues()); },
+      xmlHttpRequest: function(d) {
+        return new Promise(function(resolve, reject) {
+          var orig = Object.assign({}, d);
+          orig.onload = function(r) { resolve(r); };
+          orig.onerror = function(e) { reject(e); };
+          wrap.GM_xmlhttpRequest(orig);
+        });
+      },
+      addValueChangeListener: function(k, cb) { return wrap.GM_addValueChangeListener(k, cb); },
+      removeValueChangeListener: function(id) { wrap.GM_removeValueChangeListener(id); },
+      registerMenuCommand: function(n, f) { return wrap.GM_registerMenuCommand(n, f); },
+      unregisterMenuCommand: function(id) { wrap.GM_unregisterMenuCommand(id); },
+      setClipboard: function(t) { wrap.GM_setClipboard(t); return Promise.resolve(); },
+      download: function(d) { wrap.GM_download(d); return Promise.resolve(); },
+      openInTab: function(u, o) { wrap.GM_openInTab(u, o); return Promise.resolve(); },
+      notification: function(d) { wrap.GM_notification(d); return Promise.resolve(); },
+      cookie: wrap.GM_cookie,
+      getResourceText: function(n) { return Promise.resolve(wrap.GM_getResourceText(n)); },
+      getResourceURL: function(n) { return Promise.resolve(wrap.GM_getResourceURL(n)); },
+      info: null // set per script
+    };
+    return { wrap: wrap, async: async };
   };
-  window.GM_unregisterMenuCommand = function(id) {
-    delete window.__uh_menu[id];
-    B.GM_unregisterMenuCommand(String(id));
+
+  window.__uh_xhr_done = function(id, status, responseText, responseHeaders, finalUrl) {
+    var d = window.__uh_xhr[id];
+    if (!d) return;
+    delete window.__uh_xhr[id];
+    var resp = responseText;
+    if (d.responseType === 'json') try { resp = JSON.parse(responseText); } catch(e) {}
+    if (d.onload) try { d.onload({
+      readyState: 4, status: status, statusText: String(status),
+      responseText: responseText, response: resp,
+      responseHeaders: responseHeaders, finalUrl: finalUrl
+    }); } catch(e) {}
   };
+
+  window.__uh_xhr_error = function(id, error) {
+    var d = window.__uh_xhr[id];
+    if (!d) return;
+    delete window.__uh_xhr[id];
+    if (d.onerror) try { d.onerror({ error: error, readyState: 4, status: 0 }); } catch(e) {}
+  };
+
+  window.__uh_fire_vcl = function(id, key, oldV, newV, remote) {
+    var cb = window.__uh_vcl[id];
+    if (cb) try { cb(key, oldV, newV, remote); } catch(e) {}
+  };
+
   window.__uh_runMenuCommand = function(id) {
     var fn = window.__uh_menu[id];
     if (fn) try { fn(); } catch(e) {}
   };
-
-  window.GM_addStyle = function(css) {
-    var s = document.createElement('style');
-    s.textContent = String(css);
-    (document.head || document.documentElement).appendChild(s);
-    return s;
-  };
-
-  window.GM_addElement = function(parent, tag, attrs) {
-    var el = document.createElement(tag);
-    if (attrs) { for (var k in attrs) {
-      if (k === 'textContent') el.textContent = attrs[k];
-      else if (k === 'innerHTML') el.innerHTML = attrs[k];
-      else el.setAttribute(k, attrs[k]);
-    }}
-    var p = typeof parent === 'string' ? document.querySelector(parent) : parent;
-    (p || document.body || document.documentElement).appendChild(el);
-    return el;
-  };
-
-  window.GM_log = function(m) { B.GM_log(String(m)); };
 })();
 """
 
     private fun buildWrapper(ctx: Context, script: Script): String {
-        if (script.grants.contains("none") && !script.usesSystemjs) {
-            // plain script — no bridge needed
-            val patsJson = script.patterns.joinToString(",") {
-                "\"" + it.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
-            }
-            return "(function(){var u=location.href;var pats=[$patsJson];" +
-                "function gm(p,u){var pi=0,ui=0,s=-1,m=0;while(ui<u.length){" +
-                "if(pi<p.length&&p[pi]===u[ui]){pi++;ui++}" +
-                "else if(pi<p.length&&p[pi]==='*'){s=pi++;m=ui}" +
-                "else if(s>=0){pi=s+1;ui=++m}else return false}" +
-                "while(pi<p.length&&p[pi]==='*')pi++;return pi===p.length}" +
-                "var ok=false;for(var i=0;i<pats.length;i++){try{if(gm(pats[i],u)){ok=true;break}}catch(e){}}" +
-                "if(!ok)return;\n" + script.body + "\n})();"
-        }
-
         val patsJson = script.patterns.joinToString(",") {
             "\"" + it.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
         }
-        val excludesJson = script.excludes.joinToString(",") {
+        val exclJson = script.excludes.joinToString(",") {
             "\"" + it.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
         }
-        val preamble =
-            "(function(){try{" +
-            "var u=location.href;" +
-            "var pats=[$patsJson];var exs=[$excludesJson];" +
-            "function gm(p,u){var pi=0,ui=0,s=-1,m=0;" +
-            "while(ui<u.length){" +
-            "if(pi<p.length&&p[pi]===u[ui]){pi++;ui++}" +
-            "else if(pi<p.length&&p[pi]==='*'){s=pi++;m=ui}" +
-            "else if(s>=0){pi=s+1;ui=++m}" +
-            "else return false}" +
-            "while(pi<p.length&&p[pi]==='*')pi++;return pi===p.length}" +
-            "var ok=false;for(var i=0;i<pats.length;i++){try{if(gm(pats[i],u)){ok=true;break}}catch(e){}}" +
-            "if(!ok)return;" +
-            "for(var j=0;j<exs.length;j++){try{if(gm(exs[j],u))return}catch(e){}}" +
-            "try{"
 
-        val systemjsPrelude = if (script.usesSystemjs) loadAsset(ctx, "hooks/system.min.js") else ""
+        val grantNames = listOf(
+            "GM_getValue","GM_setValue","GM_deleteValue","GM_listValues",
+            "GM_addValueChangeListener","GM_removeValueChangeListener",
+            "GM_xmlhttpRequest","GM_download","GM_openInTab","GM_setClipboard",
+            "GM_notification","GM_registerMenuCommand","GM_unregisterMenuCommand",
+            "GM_addStyle","GM_addElement","GM_cookie",
+            "GM_getResourceText","GM_getResourceURL","GM_log"
+        ).joinToString(",") { "\"$it\"" }
+
+        val scriptMetaJson = buildScriptMetaJson(script)
+
+        val preamble = """
+(function(){try{
+var u=location.href;
+var pats=[$patsJson];var exs=[$exclJson];
+function gm(p,u){var pi=0,ui=0,s=-1,m=0;while(ui<u.length){
+if(pi<p.length&&p[pi]===u[ui]){pi++;ui++}
+else if(pi<p.length&&p[pi]==='*'){s=pi++;m=ui}
+else if(s>=0){pi=s+1;ui=++m}
+else return false}
+while(pi<p.length&&p[pi]==='*')pi++;return pi===p.length}
+var ok=false;for(var i=0;i<pats.length;i++){try{if(gm(pats[i],u)){ok=true;break}}catch(e){}}
+if(!ok)return;
+for(var j=0;j<exs.length;j++){try{if(gm(exs[j],u))return}catch(e){}}
+
+var __s = $scriptMetaJson;
+var __ns = __s.name;
+var __bundle = window.__uh_gm(__ns);
+var GM_getValue=__bundle.wrap.GM_getValue;
+var GM_setValue=__bundle.wrap.GM_setValue;
+var GM_deleteValue=__bundle.wrap.GM_deleteValue;
+var GM_listValues=__bundle.wrap.GM_listValues;
+var GM_addValueChangeListener=__bundle.wrap.GM_addValueChangeListener;
+var GM_removeValueChangeListener=__bundle.wrap.GM_removeValueChangeListener;
+var GM_xmlhttpRequest=__bundle.wrap.GM_xmlhttpRequest;
+var GM_download=__bundle.wrap.GM_download;
+var GM_openInTab=__bundle.wrap.GM_openInTab;
+var GM_setClipboard=__bundle.wrap.GM_setClipboard;
+var GM_notification=__bundle.wrap.GM_notification;
+var GM_registerMenuCommand=__bundle.wrap.GM_registerMenuCommand;
+var GM_unregisterMenuCommand=__bundle.wrap.GM_unregisterMenuCommand;
+var GM_addStyle=__bundle.wrap.GM_addStyle;
+var GM_addElement=__bundle.wrap.GM_addElement;
+var GM_cookie=__bundle.wrap.GM_cookie;
+var GM_getResourceText=__bundle.wrap.GM_getResourceText;
+var GM_getResourceURL=__bundle.wrap.GM_getResourceURL;
+var GM_log=__bundle.wrap.GM_log;
+
+var unsafeWindow=window;
+var GM_info={
+  script: __s,
+  scriptHandler: "Violentmonkey",
+  version: "2.49.0",
+  platform: { browserName: "Chrome", browserVersion: "153", os: "Android", osVersion: "10", arch: "arm64" }
+};
+
+window.GM_info=GM_info;
+window.unsafeWindow=window;
+
+// register-tracking for SystemJS auto-kick
+if (window.System && window.System.register) {
+  if (!window.__uh_sys_registered) window.__uh_sys_registered = {};
+  if (!window.__uh_sys_patched) {
+    window.__uh_sys_patched = true;
+    var __orig = window.System.register;
+    window.System.register = function(name, deps, fn) {
+      if (typeof name !== 'string') { fn = deps; deps = name; name = '__anon_' + Date.now(); }
+      window.__uh_sys_registered[name] = true;
+      return __orig.call(this, name, deps, fn);
+    };
+  }
+}
+
+try{
+"""
+        val postamble = """
+}catch(e){
+  if(window.UH_BRIDGE&&window.UH_BRIDGE.report)window.UH_BRIDGE.report(u,'userscript_err',String((e&&e.message)||e));
+}
+// kick SystemJS modules that weren't auto-imported
+if (window.System && window.System.import && window.__uh_sys_registered) {
+  var keys = Object.keys(window.__uh_sys_registered);
+  for (var k=0;k<keys.length;k++) {
+    var name=keys[k];
+    try { window.System.import(name).catch(function(e){
+      if(window.UH_BRIDGE&&window.UH_BRIDGE.report)window.UH_BRIDGE.report(u,'system_import_err_'+name,String((e&&e.message)||e));
+    }); } catch(e) {}
+  }
+}
+}catch(e){
+  if(window.UH_BRIDGE&&window.UH_BRIDGE.report)window.UH_BRIDGE.report(location.href,'wrapper_err',String((e&&e.message)||e));
+}})();
+"""
+
         val requirePrelude = buildRequirePrelude(script)
+        return preamble + requirePrelude + "\n" + script.body + "\n" + postamble
+    }
 
-        val postamble =
-            "}catch(e){" +
-            "if(window.UH_BRIDGE&&window.UH_BRIDGE.report)window.UH_BRIDGE.report(u,'userscript_err',String((e&&e.message)||e));" +
-            "}" +
-            "}catch(e){if(window.UH_BRIDGE&&window.UH_BRIDGE.report)window.UH_BRIDGE.report(location.href,'wrapper_err',String((e&&e.message)||e))}})();"
+    private fun buildScriptMetaJson(script: Script): String {
+        val sb = StringBuilder()
+        sb.append("{")
+        sb.append("\"name\":").append(jsonStr(script.name)).append(",")
+        sb.append("\"displayName\":").append(jsonStr(script.displayName)).append(",")
+        sb.append("\"namespace\":").append(jsonStr(script.namespace)).append(",")
+        sb.append("\"description\":").append(jsonStr(script.description)).append(",")
+        sb.append("\"version\":").append(jsonStr(script.version)).append(",")
+        sb.append("\"author\":").append(jsonStr(script.author)).append(",")
+        sb.append("\"homepage\":").append(jsonStr(script.homepage)).append(",")
+        sb.append("\"icon\":").append(jsonStr(script.icon)).append(",")
+        sb.append("\"runAt\":").append(jsonStr(script.runAt)).append(",")
+        sb.append("\"matches\":[").append(script.patterns.joinToString(",") { jsonStr(it) }).append("],")
+        sb.append("\"grants\":[").append(script.grants.joinToString(",") { jsonStr(it) }).append("],")
+        sb.append("\"connects\":[").append(script.connects.joinToString(",") { jsonStr(it) }).append("],")
+        sb.append("\"resources\":{")
+        var first = true
+        for ((k, v) in script.resources) {
+            if (!first) sb.append(",")
+            first = false
+            sb.append(jsonStr(k)).append(":").append(jsonStr(v))
+        }
+        sb.append("}")
+        sb.append("}")
+        return sb.toString()
+    }
 
-        return preamble + systemjsPrelude + "\n" + requirePrelude + "\n" + script.body + "\n" + postamble
+    private fun jsonStr(s: String): String {
+        val sb = StringBuilder("\"")
+        for (c in s) {
+            when (c) {
+                '\\' -> sb.append("\\\\")
+                '"' -> sb.append("\\\"")
+                '\n' -> sb.append("\\n")
+                '\r' -> sb.append("\\r")
+                '\t' -> sb.append("\\t")
+                '\u2028' -> sb.append("\\u2028")
+                '\u2029' -> sb.append("\\u2029")
+                else -> if (c.code < 0x20) sb.append("\\u%04x".format(c.code)) else sb.append(c)
+            }
+        }
+        sb.append("\"")
+        return sb.toString()
     }
 
     private fun buildRequirePrelude(script: Script): String {
@@ -494,8 +615,7 @@ object UserscriptManager {
             val safeUrl = url.replace("\\", "\\\\").replace("\"", "\\\"")
             sb.append("try{var __uh_req=new XMLHttpRequest();__uh_req.open('GET','")
             sb.append(safeUrl)
-            sb.append("',false);__uh_req.send();if(__uh_req.responseText){")
-            sb.append("(0,eval)(__uh_req.responseText);}}catch(e){}\n")
+            sb.append("',false);__uh_req.send();if(__uh_req.responseText){(0,eval)(__uh_req.responseText);}}catch(e){}\n")
         }
         return sb.toString()
     }
