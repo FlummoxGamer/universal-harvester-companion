@@ -94,8 +94,9 @@ object UpdateChecker {
             conn.connectTimeout = 15000
             conn.readTimeout = 15000
             conn.requestMethod = "GET"
+            conn.setRequestProperty("User-Agent", "Harvester-Updater/1.0 (Android)")
             conn.connect()
-            if (conn.responseCode !in 200..299) return null
+            if (conn.responseCode !in 200..299) throw Exception("HTTP ${conn.responseCode}")
             val body = conn.inputStream.bufferedReader().use { it.readText() }
             conn.disconnect()
             val o = JSONObject(body)
