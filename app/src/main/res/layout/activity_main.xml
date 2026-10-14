@@ -60,45 +60,45 @@
     <LinearLayout
         android:id="@+id/bottomBar"
         android:layout_width="0dp"
-        android:layout_height="56dp"
+        android:layout_height="60dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:background="@color/surface_2"
-        android:paddingStart="4dp"
-        android:paddingEnd="4dp"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
         <ImageButton
-            android:id="@+id/btnBack"
+            android:id="@+id/btnScriptMenu"
             android:layout_width="40dp"
             android:layout_height="40dp"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_back"
+            android:src="@drawable/ic_extension_rounded"
             android:scaleType="centerInside"
-            android:contentDescription="Back" />
+            android:contentDescription="Scripts" />
 
         <ImageButton
-            android:id="@+id/btnForward"
+            android:id="@+id/btnShield"
             android:layout_width="40dp"
             android:layout_height="40dp"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_forward"
+            android:src="@drawable/ic_shield"
             android:scaleType="centerInside"
-            android:contentDescription="Forward" />
+            android:contentDescription="Privacy" />
 
         <LinearLayout
             android:id="@+id/urlBar"
             android:layout_width="0dp"
-            android:layout_height="40dp"
+            android:layout_height="42dp"
             android:layout_weight="1"
             android:layout_marginStart="4dp"
             android:layout_marginEnd="4dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:background="@color/surface"
-            android:paddingStart="10dp"
+            android:paddingStart="12dp"
             android:paddingEnd="10dp"
             android:clickable="true"
             android:focusable="true">
