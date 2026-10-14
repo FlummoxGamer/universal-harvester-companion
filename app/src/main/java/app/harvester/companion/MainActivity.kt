@@ -36,7 +36,8 @@ class MainActivity : AppCompatActivity() {
     private val popupTabs = mutableSetOf<Long>()
     private val page3p = mutableMapOf<Long, MutableSet<String>>()
     private val recentUrls = LinkedHashMap<String, Long>()
-
+    private var lastBackPress = 0L
+    private var downloadSheet: BottomSheetDialog? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -47,6 +48,10 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         tabs = TabManager.get(this)
+
+        DownloadStore.ensureInstalled(this)
+        DownloadStore.listener = { runOnUiThread { refreshDownloadSheet() } }
+        MenuCommandStore.listener = { runOnUiThread { refreshScriptMenuIcon() } }
 
         setupHomeGrid()
         setupBottomBar()
@@ -74,72 +79,59 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupBottomBar() {
-        binding.btnBack.setOnClickListener {
-            currentView?.let { if (it.canGoBack()) it.goBack() }
-        }
-        binding.btnForward.setOnClickListener {
-            currentView?.let { if (it.canGoForward()) it.goForward() }
-        }
         binding.urlBar.setOnClickListener { openUrlDialog() }
         binding.btnMenu.setOnClickListener { showMenu() }
         binding.tabCount.setOnClickListener { openTabGrid() }
+        binding.btnScriptMenu.setOnClickListener { showScriptMenuSheet() }
+        binding.btnShield.setOnClickListener {
+            startActivity(Intent(this, PrivacyGuardActivity::class.java))
+        }
     }
 
-private var lastBackPress = 0L
+    private fun setupBackDispatcher() {
+        onBackPressedDispatcher.addCallback(this) {
+            val v = currentView
+            val id = if (v != null) tabs.idForView(v) else -1L
 
-private fun setupBackDispatcher() {
-    onBackPressedDispatcher.addCallback(this) {
-        val v = currentView
-        val id = if (v != null) tabs.idForView(v) else -1L
-
-        // 1. Popup tab? Close it.
-        if (v != null && id in popupTabs) {
-            closeBlankPopup(v)
-            return@addCallback
-        }
-
-        // 2. WebView history?
-        if (v != null && v.canGoBack()) {
-            v.goBack()
-            return@addCallback
-        }
-
-        // 3. Current page is a real site — return to home instead of exiting.
-        val url = v?.url
-        val isOnSite = !url.isNullOrBlank() && url != "about:blank" &&
-            !url.startsWith("chrome-error://")
-        if (isOnSite) {
-            tabs.openNew("about:blank")
-            attachCurrent()
-            updateUi()
-            return@addCallback
-        }
-
-        // 4. More than one tab?
-        val all = tabs.list()
-        if (all.size > 1) {
-            val closeId = tabs.currentId()
-            popupTabs.remove(closeId)
-            tabs.close(closeId)
-            val remaining = tabs.list()
-            if (remaining.isNotEmpty()) {
-                tabs.acquireView(remaining.first().id)
+            if (v != null && id in popupTabs) {
+                closeBlankPopup(v)
+                return@addCallback
+            }
+            if (v != null && v.canGoBack()) {
+                v.goBack()
+                return@addCallback
+            }
+            val url = v?.url
+            val isOnSite = !url.isNullOrBlank() && url != "about:blank" &&
+                !url.startsWith("chrome-error://")
+            if (isOnSite) {
+                tabs.openNew("about:blank")
                 attachCurrent()
                 updateUi()
+                return@addCallback
             }
-            return@addCallback
-        }
-
-        // 5. Already on home, last tab. Double-press to exit.
-        val now = System.currentTimeMillis()
-        if (now - lastBackPress < 2000L) {
-            finish()
-        } else {
-            lastBackPress = now
-            Toast.makeText(this@MainActivity, "Press back again to exit", Toast.LENGTH_SHORT).show()
+            val all = tabs.list()
+            if (all.size > 1) {
+                val closeId = tabs.currentId()
+                popupTabs.remove(closeId)
+                tabs.close(closeId)
+                val remaining = tabs.list()
+                if (remaining.isNotEmpty()) {
+                    tabs.acquireView(remaining.first().id)
+                    attachCurrent()
+                    updateUi()
+                }
+                return@addCallback
+            }
+            val now = System.currentTimeMillis()
+            if (now - lastBackPress < 2000L) {
+                finish()
+            } else {
+                lastBackPress = now
+                Toast.makeText(this@MainActivity, "Press back again to exit", Toast.LENGTH_SHORT).show()
+            }
         }
     }
-}
 
     private fun showAddShortcutDialog() {
         val input = EditText(this).apply {
@@ -160,11 +152,7 @@ private fun setupBackDispatcher() {
                 val name = try {
                     java.net.URI(fixedUrl).host?.removePrefix("www.") ?: fixedUrl
                 } catch (_: Exception) { fixedUrl }
-                val s = Shortcut(
-                    name = name,
-                    url = fixedUrl,
-                    iconUrl = ShortcutStore.iconUrlFor(fixedUrl)
-                )
+                val s = Shortcut(name, fixedUrl, ShortcutStore.iconUrlFor(fixedUrl))
                 ShortcutStore.add(this, s)
                 shortcutAdapter.submit(ShortcutStore.list(this))
             }
@@ -278,9 +266,7 @@ private fun setupBackDispatcher() {
         if (host == viewHost) return
         val id = tabs.idForView(v)
         if (id <= 0L) return
-        synchronized(page3p) {
-            page3p.getOrPut(id) { mutableSetOf() }.add(host)
-        }
+        synchronized(page3p) { page3p.getOrPut(id) { mutableSetOf() }.add(host) }
     }
 
     private fun flush3p(v: WebView, pageUrl: String) {
@@ -374,39 +360,34 @@ private fun setupBackDispatcher() {
                 return true
             }
 
-override fun onPageStarted(v: WebView, url: String, favicon: Bitmap?) {
-    UHLog.d("web", "start ${url.take(140)}")
-    val id = tabs.idForView(v)
-    if (id > 0L) tabs.updateUrl(id, url, null)
-    clear3p(v)
-    if (v === currentView) {
-        binding.urlText.text = if (url == "about:blank") "" else url
-    }
-    if (id in popupTabs) UHLog.netPopupLoad(url)
-    if (url != "about:blank" && !url.startsWith("chrome-error://")) {
-        UserscriptManager.injectOnPageStart(v, this@MainActivity, url)
-    }
-    if (v === currentView) updateHomeVisibility()
-}
+            override fun onPageStarted(v: WebView, url: String, favicon: Bitmap?) {
+                UHLog.d("web", "start ${url.take(140)}")
+                val id = tabs.idForView(v)
+                if (id > 0L) tabs.updateUrl(id, url, null)
+                clear3p(v)
+                if (v === currentView) {
+                    binding.urlText.text = if (url == "about:blank") "" else url
+                }
+                if (id in popupTabs) UHLog.netPopupLoad(url)
+                if (url != "about:blank" && !url.startsWith("chrome-error://")) {
+                    UserscriptManager.injectOnPageStart(v, this@MainActivity, url)
+                }
+                if (v === currentView) updateHomeVisibility()
+            }
 
-override fun onPageFinished(v: WebView, url: String) {
-    UHLog.d("web", "finish ${url.take(140)}")
-    val id = tabs.idForView(v)
-    if (id > 0L) tabs.updateUrl(id, url, null)
-    flush3p(v, url)
-    if (url != "about:blank") {
-        UserscriptManager.injectOnPageFinished(this@MainActivity, v, url)
-        v.postDelayed({ refreshUserMenuFab() }, 500)
-    }
-    if (v === currentView) updateUi()
-}
+            override fun onPageFinished(v: WebView, url: String) {
+                UHLog.d("web", "finish ${url.take(140)}")
+                val id = tabs.idForView(v)
+                if (id > 0L) tabs.updateUrl(id, url, null)
+                flush3p(v, url)
+                if (url != "about:blank") {
+                    UserscriptManager.injectOnPageFinished(this@MainActivity, v, url)
+                }
+                if (v === currentView) updateUi()
+            }
 
             override fun doUpdateVisitedHistory(v: WebView, url: String?, isReload: Boolean) {
                 tabs.setNav(v, v.canGoBack(), v.canGoForward())
-                if (v === currentView) {
-                    binding.btnBack.isEnabled = v.canGoBack()
-                    binding.btnForward.isEnabled = v.canGoForward()
-                }
             }
 
             override fun onReceivedError(
@@ -492,10 +473,109 @@ override fun onPageFinished(v: WebView, url: String) {
         val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
         binding.urlText.text = if (url == "about:blank") "" else url
         binding.urlIcon.visibility = if (url.startsWith("https")) View.VISIBLE else View.INVISIBLE
-        binding.btnBack.isEnabled = currentView?.canGoBack() ?: false
-        binding.btnForward.isEnabled = currentView?.canGoForward() ?: false
         binding.tabCount.text = tabs.list().size.toString()
+        refreshScriptMenuIcon()
         updateHomeVisibility()
+    }
+
+    private fun refreshScriptMenuIcon() {
+        // icon always visible per user spec
+        binding.btnScriptMenu.visibility = View.VISIBLE
+    }
+
+    private fun matchingScriptsForPage(url: String): List<UserscriptManager.Script> {
+        if (url.isBlank() || url == "about:blank") return emptyList()
+        return UserscriptManager.loadScripts(this).filter { s ->
+            UserscriptStore.isEnabled(this, s.name) && matchesAny(s, url)
+        }
+    }
+
+    private fun matchesAny(script: UserscriptManager.Script, url: String): Boolean {
+        for (p in script.patterns) if (globMatch(p, url)) return true
+        return false
+    }
+
+    private fun globMatch(pattern: String, url: String): Boolean {
+        var pi = 0; var ui = 0; var star = -1; var mark = 0
+        while (ui < url.length) {
+            when {
+                pi < pattern.length && pattern[pi] == url[ui] -> { pi++; ui++ }
+                pi < pattern.length && pattern[pi] == '*' -> { star = pi++; mark = ui }
+                star >= 0 -> { pi = star + 1; ui = ++mark }
+                else -> return false
+            }
+        }
+        while (pi < pattern.length && pattern[pi] == '*') pi++
+        return pi == pattern.length
+    }
+
+    private fun showScriptMenuSheet() {
+        val url = currentView?.url ?: ""
+        val host = try { java.net.URI(url).host ?: url } catch (_: Exception) { url.ifBlank { "No page" } }
+        val scripts = matchingScriptsForPage(url)
+
+        val sheet = BottomSheetDialog(this)
+        val v = layoutInflater.inflate(R.layout.dialog_script_menu, null)
+        sheet.setContentView(v)
+
+        v.findViewById<android.widget.TextView>(R.id.scriptMenuDomain)?.text = host
+        val list = v.findViewById<android.widget.LinearLayout>(R.id.scriptMenuList)
+
+        if (scripts.isEmpty()) {
+            val empty = android.widget.TextView(this).apply {
+                text = "No scripts match this page.\nInstall or enable scripts from Manage all scripts."
+                setTextColor(0xFF8A96A8.toInt())
+                textSize = 12f
+                setPadding(0, 20, 0, 20)
+            }
+            list.addView(empty)
+        } else {
+            for (script in scripts) {
+                val row = layoutInflater.inflate(R.layout.item_script_menu_script, list, false)
+                row.findViewById<android.widget.TextView>(R.id.smsName).text =
+                    script.displayName.ifBlank { script.name }
+                val sw = row.findViewById<android.widget.Switch>(R.id.smsEnabled)
+                sw.isChecked = true
+                sw.setOnCheckedChangeListener { _, checked ->
+                    UserscriptStore.setEnabled(this, script.name, checked)
+                    if (!checked) row.findViewById<View>(R.id.smsCommands).visibility = View.GONE
+                    else row.findViewById<View>(R.id.smsCommands).visibility = View.VISIBLE
+                }
+
+                val cmds = row.findViewById<android.widget.LinearLayout>(R.id.smsCommands)
+                val scriptCommands = MenuCommandStore.forScript(script.name)
+                if (scriptCommands.isEmpty()) {
+                    val empty = android.widget.TextView(this).apply {
+                        text = "No menu commands registered"
+                        setTextColor(0xFF8A96A8.toInt())
+                        textSize = 11f
+                        setPadding(0, 4, 0, 4)
+                    }
+                    cmds.addView(empty)
+                } else {
+                    for (cmd in scriptCommands) {
+                        val cv = layoutInflater.inflate(R.layout.item_script_menu_command, cmds, false)
+                        cv.findViewById<android.widget.TextView>(R.id.smcLabel).text = cmd.name
+                        cv.setOnClickListener {
+                            currentView?.evaluateJavascript(
+                                "try{window.__uh_runMenuCommand('${cmd.id}')}catch(e){}",
+                                null
+                            )
+                            sheet.dismiss()
+                        }
+                        cmds.addView(cv)
+                    }
+                }
+                list.addView(row)
+            }
+        }
+
+        v.findViewById<android.widget.Button>(R.id.scriptMenuAll)?.setOnClickListener {
+            sheet.dismiss()
+            startActivity(Intent(this, ScriptsActivity::class.java))
+        }
+
+        sheet.show()
     }
 
     private fun openTabGrid() {
@@ -558,47 +638,165 @@ override fun onPageFinished(v: WebView, url: String) {
         val v = layoutInflater.inflate(R.layout.dialog_main_menu, null)
         sheet.setContentView(v)
 
-        v.findViewById<View>(R.id.btnNewTab)?.setOnClickListener {
-            tabs.openNew("about:blank")
-            attachCurrent()
-            updateUi()
+        v.findViewById<View>(R.id.menuFavorites)?.setOnClickListener {
             sheet.dismiss()
+            toast("Favorites coming soon")
         }
-        v.findViewById<View>(R.id.btnReload)?.setOnClickListener {
-            currentView?.reload()
+        v.findViewById<View>(R.id.menuHistory)?.setOnClickListener {
             sheet.dismiss()
+            toast("History coming soon")
         }
-
-        v.findViewById<View>(R.id.btnTools)?.setOnClickListener {
+        v.findViewById<View>(R.id.menuDownloads)?.setOnClickListener {
             sheet.dismiss()
-            startActivity(Intent(this, ToolsActivity::class.java))
+            openSystemDownloads()
         }
-        v.findViewById<View>(R.id.btnScripts)?.setOnClickListener {
+        v.findViewById<View>(R.id.menuPlaylist)?.setOnClickListener {
             sheet.dismiss()
-            startActivity(Intent(this, ScriptsActivity::class.java))
+            toast("Playlist coming soon")
         }
-        v.findViewById<View>(R.id.btnSettings)?.setOnClickListener {
+        v.findViewById<View>(R.id.menuSettings)?.setOnClickListener {
             sheet.dismiss()
             startActivity(Intent(this, SettingsActivity::class.java))
         }
-        v.findViewById<View>(R.id.btnLogs)?.setOnClickListener {
+        v.findViewById<View>(R.id.menuTranslate)?.setOnClickListener {
+            sheet.dismiss()
+            openGoogleTranslate()
+        }
+        v.findViewById<View>(R.id.menuFindPage)?.setOnClickListener {
+            sheet.dismiss()
+            showFindOnPageDialog()
+        }
+        v.findViewById<View>(R.id.menuMobileSite)?.setOnClickListener {
+            sheet.dismiss()
+            toast("Requesting mobile site...")
+            currentView?.reload()
+        }
+        v.findViewById<View>(R.id.menuAddHome)?.setOnClickListener {
+            sheet.dismiss()
+            toast("Add to Home Screen coming soon")
+        }
+        v.findViewById<View>(R.id.menuDevTools)?.setOnClickListener {
+            sheet.dismiss()
+            openDevTools()
+        }
+        v.findViewById<View>(R.id.menuNewTab)?.setOnClickListener {
+            sheet.dismiss()
+            tabs.openNew("about:blank")
+            attachCurrent()
+            updateUi()
+        }
+        v.findViewById<View>(R.id.menuReload)?.setOnClickListener {
+            sheet.dismiss()
+            currentView?.reload()
+        }
+        v.findViewById<View>(R.id.menuScripts)?.setOnClickListener {
+            sheet.dismiss()
+            startActivity(Intent(this, ScriptsActivity::class.java))
+        }
+        v.findViewById<View>(R.id.menuTools)?.setOnClickListener {
+            sheet.dismiss()
+            startActivity(Intent(this, ToolsActivity::class.java))
+        }
+        v.findViewById<View>(R.id.menuLogs)?.setOnClickListener {
             sheet.dismiss()
             startActivity(Intent(this, LogsActivity::class.java))
         }
         sheet.show()
     }
 
+    private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
+
+    private fun openSystemDownloads() {
+        try {
+            startActivity(Intent(android.app.DownloadManager.ACTION_VIEW_DOWNLOADS))
+        } catch (_: Exception) {
+            toast("Downloads unavailable")
+        }
+    }
+
+    private fun openGoogleTranslate() {
+        val url = currentView?.url ?: return
+        val target = "https://translate.google.com/translate?sl=auto&tl=en&u=" +
+            java.net.URLEncoder.encode(url, "UTF-8")
+        currentView?.loadUrl(target)
+    }
+
+    private fun showFindOnPageDialog() {
+        val input = EditText(this).apply {
+            setHint("Find on page")
+            setSingleLine()
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Find on Page")
+            .setView(input)
+            .setPositiveButton("Find") { _, _ ->
+                val q = input.text.toString()
+                if (q.isNotBlank()) {
+                    currentView?.findAllAsync(q)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun openDevTools() {
+        // Chromium WebView exposes devtools via chrome://inspect on desktop.
+        // Placeholder: show a small info dialog.
+        AlertDialog.Builder(this)
+            .setTitle("Developer Tools")
+            .setMessage("Attach Chrome DevTools from a desktop machine via chrome://inspect while the device is connected over ADB.")
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    private fun refreshDownloadSheet() {
+        val active = DownloadStore.active()
+        if (active.isEmpty()) {
+            downloadSheet?.dismiss()
+            downloadSheet = null
+            return
+        }
+        if (downloadSheet == null) {
+            val sheet = BottomSheetDialog(this)
+            val v = layoutInflater.inflate(R.layout.dialog_downloads, null)
+            sheet.setContentView(v)
+            sheet.setOnDismissListener { downloadSheet = null }
+            downloadSheet = sheet
+            sheet.show()
+        }
+        downloadSheet?.findViewById<android.widget.LinearLayout>(R.id.dlList)?.let { rebuildDownloadList(it) }
+    }
+
+    private fun rebuildDownloadList(container: android.widget.LinearLayout) {
+        container.removeAllViews()
+        val items = DownloadStore.active()
+        if (items.isEmpty()) {
+            downloadSheet?.dismiss()
+            downloadSheet = null
+            return
+        }
+        for (d in items) {
+            val row = layoutInflater.inflate(R.layout.item_download, container, false)
+            row.findViewById<android.widget.TextView>(R.id.dlName).text = d.filename
+            val pb = row.findViewById<android.widget.ProgressBar>(R.id.dlProgress)
+            pb.isIndeterminate = d.total <= 0
+            if (d.total > 0) {
+                pb.max = 100
+                pb.progress = ((d.done * 100) / d.total).toInt()
+            }
+            val pct = if (d.total > 0) "${(d.done * 100) / d.total}%" else "…"
+            row.findViewById<android.widget.TextView>(R.id.dlPct).text = pct
+            container.addView(row)
+        }
+    }
 
     private fun handleIntentUrl(url: String) {
         try {
             val intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
-
             val dataScheme = intent.data?.scheme ?: ""
             val schemeExtra = intent.scheme ?: ""
-            val isWeb =
-                dataScheme == "http" || dataScheme == "https" ||
+            val isWeb = dataScheme == "http" || dataScheme == "https" ||
                 schemeExtra == "http" || schemeExtra == "https"
-
             if (isWeb) {
                 val target = intent.data?.toString()
                 if (!target.isNullOrBlank()) {
@@ -607,7 +805,6 @@ override fun onPageFinished(v: WebView, url: String) {
                     return
                 }
             }
-
             val resolved = packageManager.queryIntentActivities(intent, 0)
             if (resolved.isNotEmpty()) {
                 UHLog.netScheme(url, "external")
@@ -622,17 +819,13 @@ override fun onPageFinished(v: WebView, url: String) {
                     if (!pkg.isNullOrBlank()) {
                         UHLog.netScheme(url, "market→$pkg")
                         try {
-                            startActivity(
-                                Intent(Intent.ACTION_VIEW).apply {
-                                    data = Uri.parse("market://details?id=$pkg")
-                                }
-                            )
-                        } catch (_: Exception) {
-                            Toast.makeText(this, "App not installed", Toast.LENGTH_SHORT).show()
-                        }
+                            startActivity(Intent(Intent.ACTION_VIEW).apply {
+                                data = Uri.parse("market://details?id=$pkg")
+                            })
+                        } catch (_: Exception) { toast("App not installed") }
                     } else {
                         UHLog.netScheme(url, "unresolved")
-                        Toast.makeText(this, "App not installed", Toast.LENGTH_SHORT).show()
+                        toast("App not installed")
                     }
                 }
             }
@@ -644,20 +837,15 @@ override fun onPageFinished(v: WebView, url: String) {
     private fun askOpenExternal(view: WebView, url: String) {
         val isFreshPopup = view.url.isNullOrBlank() || view.url == "about:blank"
         UHLog.netExtDialog(url)
-
         AlertDialog.Builder(this)
             .setTitle("Open in another app?")
             .setMessage(url)
             .setPositiveButton("Open") { _, _ ->
                 UHLog.netExtOpen(url)
                 try {
-                    startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                } catch (_: Exception) {
-                    Toast.makeText(this, "No app can handle this link", Toast.LENGTH_SHORT).show()
-                }
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                } catch (_: Exception) { toast("No app can handle this link") }
                 if (isFreshPopup) closeBlankPopup(view)
             }
             .setNegativeButton("Stay") { _, _ ->
@@ -671,7 +859,6 @@ override fun onPageFinished(v: WebView, url: String) {
         val isFreshPopup = view?.url.isNullOrBlank() || view?.url == "about:blank"
         val urlString = intent.data?.toString() ?: "External app link"
         UHLog.netExtDialog(urlString)
-
         AlertDialog.Builder(this)
             .setTitle("Open in another app?")
             .setMessage(urlString)
@@ -680,9 +867,7 @@ override fun onPageFinished(v: WebView, url: String) {
                 try {
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     startActivity(intent)
-                } catch (_: Exception) {
-                    Toast.makeText(this, "Failed to open app", Toast.LENGTH_SHORT).show()
-                }
+                } catch (_: Exception) { toast("Failed to open app") }
                 if (isFreshPopup) view?.let { closeBlankPopup(it) }
             }
             .setNegativeButton("Stay") { _, _ ->
@@ -698,11 +883,8 @@ override fun onPageFinished(v: WebView, url: String) {
         popupTabs.remove(id)
         tabs.close(id)
         val remaining = tabs.list()
-        if (remaining.isEmpty()) {
-            tabs.openNew("about:blank")
-        } else {
-            tabs.acquireView(remaining.first().id)
-        }
+        if (remaining.isEmpty()) tabs.openNew("about:blank")
+        else tabs.acquireView(remaining.first().id)
         attachCurrent()
         updateUi()
     }
@@ -721,77 +903,29 @@ override fun onPageFinished(v: WebView, url: String) {
         updateUi()
     }
 
-    private var userMenuFab: android.widget.ImageButton? = null
-
-private fun refreshUserMenuFab() {
-    val commands = MenuCommandStore.all()
-    if (commands.isEmpty()) {
-        userMenuFab?.visibility = View.GONE
-        return
-    }
-    if (userMenuFab == null) {
-        val size = (44 * resources.displayMetrics.density).toInt()
-        val margin = (16 * resources.displayMetrics.density).toInt()
-        val lp = android.widget.FrameLayout.LayoutParams(size, size).apply {
-            gravity = android.view.Gravity.BOTTOM or android.view.Gravity.END
-            bottomMargin = margin
-            rightMargin = margin
-        }
-        val fab = android.widget.ImageButton(this).apply {
-            layoutParams = lp
-            setImageResource(R.drawable.ic_menu)
-            background = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.OVAL
-                setColor(0xFF22D3EE.toInt())
+    override fun onResume() {
+        super.onResume()
+        UpdateChecker.resumePendingInstallIfPossible(this)
+        if (UserscriptStore.consumeDirty(this)) {
+            val v = currentView
+            val u = v?.url
+            if (v != null && !u.isNullOrBlank()) {
+                UserscriptManager.injectOnPageStart(v, this, u)
             }
-            setColorFilter(0xFF0B0F14.toInt())
-            scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
-            setPadding(24, 24, 24, 24)
-            setOnClickListener { showUserMenuCommands() }
         }
-        (binding.root as? android.view.ViewGroup)?.addView(fab)
-        userMenuFab = fab
+        refreshScriptMenuIcon()
     }
-    userMenuFab?.visibility = View.VISIBLE
-}
 
-private fun showUserMenuCommands() {
-    val commands = MenuCommandStore.all()
-    if (commands.isEmpty()) return
-    val names = commands.map { it.name }.toTypedArray()
-    AlertDialog.Builder(this)
-        .setTitle("Userscript commands")
-        .setItems(names) { _, which ->
-            val cmd = commands[which]
-            currentView?.evaluateJavascript(
-                "try{window.__uh_runMenuCommand('${cmd.id}')}catch(e){}",
-                null
-            )
-        }
-        .show()
-}
-
-override fun onResume() {
-    super.onResume()
-    UpdateChecker.resumePendingInstallIfPossible(this)
-    MenuCommandStore.listener = { runOnUiThread { refreshUserMenuFab() } }
-if (UserscriptStore.consumeDirty(this)) {
-    val v = currentView
-    val u = v?.url
-    if (v != null && !u.isNullOrBlank()) {
-        UserscriptManager.injectOnPageStart(v, this, u)
+    override fun onPause() {
+        super.onPause()
+        tabs.saveAll()
+        UHLog.onActivityPause(this)
     }
-}
-}
-override fun onPause() {
-    super.onPause()
-    MenuCommandStore.listener = null
-    tabs.saveAll()
-    UHLog.onActivityPause(this)
-}
 
     override fun onDestroy() {
         tabs.saveAll()
+        DownloadStore.clearListeners()
+        MenuCommandStore.listener = null
         super.onDestroy()
     }
 }
