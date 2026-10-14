@@ -34,6 +34,14 @@ jobs:
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > uh-debug.jks
           ls -la uh-debug.jks
 
+      - name: Fetch SystemJS asset
+        working-directory: src
+        run: |
+          mkdir -p app/src/main/assets/hooks
+          curl -fsSL -o app/src/main/assets/hooks/system.min.js \
+            https://cdn.jsdelivr.net/npm/systemjs@6.15.1/dist/system.min.js
+          ls -la app/src/main/assets/hooks/
+
       - name: Build debug APKs
         working-directory: src
         run: gradle assembleDebug --no-daemon --no-configuration-cache
