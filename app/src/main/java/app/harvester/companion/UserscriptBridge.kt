@@ -15,91 +15,115 @@ import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
-class UserscriptBridge(
-    private val ctx: Context,
-    private val viewProvider: () -> WebView?
-) {
+class UserscriptBridge(private val ctx: Context) {
+
+    @Volatile private var view: WebView? = null
+    fun attach(v: WebView) { view = v }
+    private fun v() = view
 
     private val prefs = ctx.getSharedPreferences("uh_gm", Context.MODE_PRIVATE)
     private val vclId = AtomicLong(1L)
-    private val vcl = ConcurrentHashMap<String, MutableList<String>>()  // name -> list of listener ids
+    private val vcl = ConcurrentHashMap<String, MutableList<Listener>>()
     private val xhrAborts = ConcurrentHashMap<String, HttpURLConnection>()
 
-    @JavascriptInterface
-    fun GM_getValue(key: String, defaultValue: String?): String? =
-        prefs.getString(key, defaultValue)
+    private data class Listener(val id: String, val script: String, val key: String)
+
+    private fun nsKey(script: String, key: String) = "$script::$key"
+
+    init {
+        // Cross-process/thread value change dispatch
+        prefs.registerOnSharedPreferenceChangeListener { p, k ->
+            val parts = k.split("::", limit = 2)
+            if (parts.size != 2) return@registerOnSharedPreferenceChangeListener
+            val script = parts[0]; val userKey = parts[1]
+            val oldV = null
+            val newV = p.getString(k, null)
+            fireVcl(script, userKey, oldV, newV)
+        }
+    }
+
+    private fun fireVcl(script: String, key: String, oldV: String?, newV: String?) {
+        val w = v() ?: return
+        val matching = vcl.values.flatten().filter { it.script == script && it.key == key }
+        if (matching.isEmpty()) return
+        val oldJs = oldV ?: "null"
+        val newJs = newV ?: "null"
+        val sb = StringBuilder()
+        for (l in matching) {
+            sb.append("try{window.__uh_fire_vcl('").append(l.id).append("','")
+                .append(escapeJs(key)).append("',")
+                .append(oldJs).append(",").append(newJs).append(",false)}catch(e){}")
+        }
+        w.post { w.evaluateJavascript(sb.toString(), null) }
+    }
+
+    // --- Storage (namespaced per script) ---
 
     @JavascriptInterface
-    fun GM_setValue(key: String, value: String) {
-        val old = prefs.getString(key, null)
-        prefs.edit().putString(key, value).apply()
-        // fire listeners
-        val ids = vcl[key] ?: return
-        val view = viewProvider() ?: return
-        val oldJson = if (old == null) "null" else old
-        val newJson = value
-        val js = StringBuilder()
-        for (id in ids) {
-            js.append("try{window.__uh_fire_vcl('").append(id).append("','")
-                .append(escapeJs(key)).append("',")
-                .append(oldJson).append(",").append(newJson).append(",false)}catch(e){}")
-        }
-        view.post { view.evaluateJavascript(js.toString(), null) }
+    fun GM_getValueNs(script: String, key: String): String? =
+        prefs.getString(nsKey(script, key), null)
+
+    @JavascriptInterface
+    fun GM_setValueNs(script: String, key: String, value: String) {
+        prefs.edit().putString(nsKey(script, key), value).apply()
     }
 
     @JavascriptInterface
-    fun GM_deleteValue(key: String) {
-        val old = prefs.getString(key, null)
-        prefs.edit().remove(key).apply()
-        val ids = vcl[key] ?: return
-        val view = viewProvider() ?: return
-        val oldJson = if (old == null) "null" else old
-        val js = StringBuilder()
-        for (id in ids) {
-            js.append("try{window.__uh_fire_vcl('").append(id).append("','")
-                .append(escapeJs(key)).append("',")
-                .append(oldJson).append(",null,false)}catch(e){}")
-        }
-        view.post { view.evaluateJavascript(js.toString(), null) }
+    fun GM_deleteValueNs(script: String, key: String) {
+        prefs.edit().remove(nsKey(script, key)).apply()
     }
 
     @JavascriptInterface
-    fun GM_listValues(): String {
+    fun GM_listValuesNs(script: String): String {
         val out = JSONObject()
-        for ((k, v) in prefs.all) out.put(k, v?.toString() ?: "")
+        val prefix = "$script::"
+        for ((k, v) in prefs.all) {
+            if (k.startsWith(prefix)) out.put(k.substring(prefix.length), v?.toString() ?: "")
+        }
         return out.toString()
     }
 
     @JavascriptInterface
-    fun GM_addValueChangeListener(name: String): String {
+    fun GM_keysForScript(script: String): String {
+        val arr = org.json.JSONArray()
+        val prefix = "$script::"
+        for (k in prefs.all.keys) {
+            if (k.startsWith(prefix)) arr.put(k.substring(prefix.length))
+        }
+        return arr.toString()
+    }
+
+    @JavascriptInterface
+    fun GM_addValueChangeListenerNs(script: String, key: String): String {
         val id = "vcl_" + vclId.incrementAndGet()
-        vcl.getOrPut(name) { mutableListOf() }.add(id)
+        vcl.computeIfAbsent(script) { mutableListOf() }.add(Listener(id, script, key))
         return id
     }
 
     @JavascriptInterface
     fun GM_removeValueChangeListener(id: String) {
-        for (list in vcl.values) list.remove(id)
+        for (list in vcl.values) list.removeAll { it.id == id }
     }
+
+    // --- XHR ---
 
     @JavascriptInterface
     fun GM_xmlhttpRequest(
-        id: String, method: String, url: String,
-        headersJson: String, body: String, responseType: String, timeoutStr: String
+        script: String, id: String, method: String, url: String,
+        headersJson: String, body: String, responseType: String,
+        timeoutStr: String, user: String, password: String
     ) {
         Thread {
             try {
                 val conn = URL(url).openConnection() as HttpURLConnection
                 conn.requestMethod = method
                 conn.connectTimeout = 20000
-                conn.readTimeout = 20000
+                conn.readTimeout = timeoutStr.toIntOrNull()?.takeIf { it > 0 } ?: 20000
                 conn.instanceFollowRedirects = true
 
                 try {
                     val hdrs = if (headersJson.isBlank()) JSONObject() else JSONObject(headersJson)
-                    for (k in hdrs.keys()) {
-                        conn.setRequestProperty(k, hdrs.optString(k))
-                    }
+                    for (k in hdrs.keys()) conn.setRequestProperty(k, hdrs.optString(k))
                 } catch (_: Exception) {}
 
                 val cookie = try { CookieManager.getInstance().getCookie(url) } catch (_: Exception) { null }
@@ -111,7 +135,7 @@ class UserscriptBridge(
                         "Mozilla/5.0 (Linux; Android 10; RMX1801) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/153.0.8010.57 Mobile Safari/537.36")
                 }
 
-                if (body.isNotBlank() && (method == "POST" || method == "PUT" || method == "PATCH")) {
+                if (body.isNotBlank() && method in listOf("POST", "PUT", "PATCH", "DELETE")) {
                     conn.doOutput = true
                     conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
                 }
@@ -124,23 +148,23 @@ class UserscriptBridge(
                 val respHeaders = StringBuilder()
                 for ((k, values) in conn.headerFields) {
                     if (k == null) continue
-                    for (v in values) respHeaders.append(k).append(": ").append(v).append("\r\n")
+                    for (vv in values) respHeaders.append(k).append(": ").append(vv).append("\r\n")
                 }
                 val finalUrl = conn.url.toString()
-
                 xhrAborts.remove(id)
                 conn.disconnect()
 
-                val view = viewProvider() ?: return@Thread
+                val payload = buildPayload(responseType, text)
+                val w = v() ?: return@Thread
                 val js = "try{window.__uh_xhr_done('" + id + "'," + status + "," +
-                    jsString(text) + "," + jsString(respHeaders.toString()) + "," +
+                    jsString(payload) + "," + jsString(respHeaders.toString()) + "," +
                     jsString(finalUrl) + ")}catch(e){}"
-                view.post { view.evaluateJavascript(js, null) }
+                w.post { w.evaluateJavascript(js, null) }
             } catch (e: Exception) {
                 xhrAborts.remove(id)
-                val view = viewProvider() ?: return@Thread
+                val w = v() ?: return@Thread
                 val js = "try{window.__uh_xhr_error('" + id + "'," + jsString(e.message ?: "error") + ")}catch(e){}"
-                view.post { view.evaluateJavascript(js, null) }
+                w.post { w.evaluateJavascript(js, null) }
             }
         }.start()
     }
@@ -150,18 +174,34 @@ class UserscriptBridge(
         xhrAborts.remove(id)?.disconnect()
     }
 
+    private fun buildPayload(responseType: String, text: String): String {
+        return when (responseType.lowercase()) {
+            "json" -> text
+            "arraybuffer", "blob" -> {
+                val b64 = android.util.Base64.encodeToString(text.toByteArray(Charsets.ISO_8859_1), android.util.Base64.NO_WRAP)
+                "b64:" + b64
+            }
+            "document" -> text
+            else -> text
+        }
+    }
+
+    // --- Downloads / tabs / clipboard / notifications ---
+
     @JavascriptInterface
-    fun GM_download(url: String, name: String) {
+    fun GM_download(script: String, url: String, name: String) {
         DownloadHelper.saveFromUrl(ctx, url, null)
     }
 
     @JavascriptInterface
-    fun GM_openInTab(url: String, active: Boolean) {
-        val intent = android.content.Intent(ctx, MainActivity::class.java).apply {
-            data = android.net.Uri.parse(url)
-            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        ctx.startActivity(intent)
+    fun GM_openInTab(script: String, url: String, active: Boolean) {
+        try {
+            val intent = android.content.Intent(ctx, MainActivity::class.java).apply {
+                data = android.net.Uri.parse(url)
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            ctx.startActivity(intent)
+        } catch (_: Exception) {}
     }
 
     @JavascriptInterface
@@ -173,7 +213,7 @@ class UserscriptBridge(
     }
 
     @JavascriptInterface
-    fun GM_notification(title: String, text: String) {
+    fun GM_notification(script: String, title: String, text: String) {
         try {
             val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             val chId = "uh_userscript"
@@ -195,14 +235,58 @@ class UserscriptBridge(
     }
 
     @JavascriptInterface
-    fun GM_registerMenuCommand(name: String, id: String, accessKey: String) {
-        MenuCommandStore.register(id, name, accessKey)
+    fun GM_registerMenuCommand(script: String, name: String, id: String, accessKey: String) {
+        MenuCommandStore.register(script, id, name, accessKey)
     }
 
     @JavascriptInterface
-    fun GM_unregisterMenuCommand(id: String) {
-        MenuCommandStore.unregister(id)
+    fun GM_unregisterMenuCommand(script: String, id: String) {
+        MenuCommandStore.unregister(script, id)
     }
+
+    // --- Cookies ---
+
+    @JavascriptInterface
+    fun GM_cookieGet(url: String): String {
+        return try {
+            val c = CookieManager.getInstance().getCookie(url) ?: ""
+            val arr = org.json.JSONArray()
+            if (c.isNotBlank()) {
+                for (pair in c.split(";")) {
+                    val kv = pair.trim().split("=", limit = 2)
+                    if (kv.size == 2) {
+                        val o = JSONObject()
+                        o.put("name", kv[0])
+                        o.put("value", kv[1])
+                        arr.put(o)
+                    }
+                }
+            }
+            arr.toString()
+        } catch (_: Exception) { "[]" }
+    }
+
+    @JavascriptInterface
+    fun GM_cookieSet(url: String, name: String, value: String) {
+        try { CookieManager.getInstance().setCookie(url, "$name=$value") } catch (_: Exception) {}
+    }
+
+    @JavascriptInterface
+    fun GM_cookieDelete(url: String, name: String) {
+        try { CookieManager.getInstance().setCookie(url, "$name=; Max-Age=0") } catch (_: Exception) {}
+    }
+
+    // --- Resources ---
+
+    @JavascriptInterface
+    fun GM_getResourceText(script: String, name: String): String? =
+        ResourceStore.getText(ctx, script, name)
+
+    @JavascriptInterface
+    fun GM_getResourceURL(script: String, name: String): String? =
+        ResourceStore.getUrl(ctx, script, name)
+
+    // --- Misc ---
 
     @JavascriptInterface
     fun GM_log(message: String) {
@@ -211,10 +295,7 @@ class UserscriptBridge(
 
     @JavascriptInterface
     fun captureWasm(base64: String) {
-        SessionRecorder.record("wasm_blob") {
-            put("base64", base64)
-            put("size", base64.length)
-        }
+        SessionRecorder.record("wasm_blob") { put("base64", base64); put("size", base64.length) }
     }
 
     @JavascriptInterface
@@ -255,7 +336,5 @@ class UserscriptBridge(
         return sb.toString()
     }
 
-    private fun escapeJs(s: String): String {
-        return s.replace("\\", "\\\\").replace("'", "\\'")
-    }
+    private fun escapeJs(s: String) = s.replace("\\", "\\\\").replace("'", "\\'")
 }
