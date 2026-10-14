@@ -92,19 +92,30 @@ private fun setupBackDispatcher() {
         val v = currentView
         val id = if (v != null) tabs.idForView(v) else -1L
 
-        // 1. Popup tab? Close it and return to previous tab.
+        // 1. Popup tab? Close it.
         if (v != null && id in popupTabs) {
             closeBlankPopup(v)
             return@addCallback
         }
 
-        // 2. Can we go back in this WebView's history?
+        // 2. WebView history?
         if (v != null && v.canGoBack()) {
             v.goBack()
             return@addCallback
         }
 
-        // 3. More than one tab? Close current and switch.
+        // 3. Current page is a real site — return to home instead of exiting.
+        val url = v?.url
+        val isOnSite = !url.isNullOrBlank() && url != "about:blank" &&
+            !url.startsWith("chrome-error://")
+        if (isOnSite) {
+            tabs.openNew("about:blank")
+            attachCurrent()
+            updateUi()
+            return@addCallback
+        }
+
+        // 4. More than one tab?
         val all = tabs.list()
         if (all.size > 1) {
             val closeId = tabs.currentId()
@@ -119,7 +130,7 @@ private fun setupBackDispatcher() {
             return@addCallback
         }
 
-        // 4. Last tab, no history. Double-press to exit.
+        // 5. Already on home, last tab. Double-press to exit.
         val now = System.currentTimeMillis()
         if (now - lastBackPress < 2000L) {
             finish()
@@ -384,6 +395,7 @@ override fun onPageFinished(v: WebView, url: String) {
     flush3p(v, url)
     if (url != "about:blank") {
         UserscriptManager.injectOnPageFinished(this@MainActivity, v, url)
+        v.postDelayed({ refreshUserMenuFab() }, 500)
     }
     if (v === currentView) updateUi()
 }
@@ -708,7 +720,57 @@ override fun onPageFinished(v: WebView, url: String) {
         updateUi()
     }
 
-    override fun onResume() {
+    private var userMenuFab: android.widget.ImageButton? = null
+
+private fun refreshUserMenuFab() {
+    val commands = MenuCommandStore.all()
+    if (commands.isEmpty()) {
+        userMenuFab?.visibility = View.GONE
+        return
+    }
+    if (userMenuFab == null) {
+        val size = (44 * resources.displayMetrics.density).toInt()
+        val margin = (16 * resources.displayMetrics.density).toInt()
+        val lp = android.widget.FrameLayout.LayoutParams(size, size).apply {
+            gravity = android.view.Gravity.BOTTOM or android.view.Gravity.END
+            bottomMargin = margin
+            rightMargin = margin
+        }
+        val fab = android.widget.ImageButton(this).apply {
+            layoutParams = lp
+            setImageResource(R.drawable.ic_menu)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(0xFF22D3EE.toInt())
+            }
+            setColorFilter(0xFF0B0F14.toInt())
+            scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
+            setPadding(24, 24, 24, 24)
+            setOnClickListener { showUserMenuCommands() }
+        }
+        (binding.root as? android.view.ViewGroup)?.addView(fab)
+        userMenuFab = fab
+    }
+    userMenuFab?.visibility = View.VISIBLE
+}
+
+private fun showUserMenuCommands() {
+    val commands = MenuCommandStore.all()
+    if (commands.isEmpty()) return
+    val names = commands.map { it.name }.toTypedArray()
+    AlertDialog.Builder(this)
+        .setTitle("Userscript commands")
+        .setItems(names) { _, which ->
+            val cmd = commands[which]
+            currentView?.evaluateJavascript(
+                "try{window.__uh_runMenuCommand('${cmd.id}')}catch(e){}",
+                null
+            )
+        }
+        .show()
+}
+
+override fun onResume() {
     super.onResume()
     UpdateChecker.resumePendingInstallIfPossible(this)
     if (UserscriptStore.consumeDirty(this)) {
