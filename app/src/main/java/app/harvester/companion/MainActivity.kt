@@ -773,6 +773,7 @@ private fun showUserMenuCommands() {
 override fun onResume() {
     super.onResume()
     UpdateChecker.resumePendingInstallIfPossible(this)
+    MenuCommandStore.listener = { runOnUiThread { refreshUserMenuFab() } }
     if (UserscriptStore.consumeDirty(this)) {
         tabs.list().forEach { _ ->
             // re-register on every alive view
@@ -781,11 +782,12 @@ override fun onResume() {
         if (v != null) UserscriptManager.registerDocumentStart(v, this)
     }
     }
-    override fun onPause() {
-        super.onPause()
-        tabs.saveAll()
-        UHLog.onActivityPause(this)
-    }
+override fun onPause() {
+    super.onPause()
+    MenuCommandStore.listener = null
+    tabs.saveAll()
+    UHLog.onActivityPause(this)
+}
 
     override fun onDestroy() {
         tabs.saveAll()
