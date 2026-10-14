@@ -102,11 +102,35 @@ object SessionRecorder {
             root.put("events", arr)
         } catch (_: Exception) {}
 
-        val subfolder = "${DownloadHelper.HARVESTER_DIR}/sess_$idSnapshot"
-        val ok = DownloadHelper.saveTextToDownloads(ctx, "session.json", root.toString(2), subfolder)
-        UHLog.d(TAG, "saved events=${evs.size} filtered=$filtered duped=$duped ok=$ok")
-        return if (ok) "session.json" else null
-    }
+    val subfolder = "${DownloadHelper.HARVESTER_DIR}/sess_$idSnapshot"
+    val filename = nextFilename(ctx, subfolder)
+    val ok = DownloadHelper.saveTextToDownloads(ctx, filename, root.toString(2), subfolder)
+    UHLog.d(TAG, "saved events=${evs.size} filtered=$filtered duped=$duped file=$filename ok=$ok")
+    return if (ok) filename else null
+}
+
+private fun nextFilename(ctx: Context, subfolder: String): String {
+    val existing = mutableSetOf<String>()
+    try {
+        val resolver = ctx.contentResolver
+        val cursor = resolver.query(
+            android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+            arrayOf(android.provider.MediaStore.MediaColumns.DISPLAY_NAME),
+            "${android.provider.MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?",
+            arrayOf("Download/$subfolder/%"),
+            null
+        )
+        cursor?.use {
+            while (it.moveToNext()) {
+                it.getString(0)?.let { n -> existing.add(n) }
+            }
+        }
+    } catch (_: Exception) {}
+    if ("session.json" !in existing) return "session.json"
+    var i = 2
+    while ("session_$i.json" in existing) i++
+    return "session_$i.json"
+}
 
     fun record(type: String, payload: JSONObject) {
         if (!active) return
