@@ -30,17 +30,19 @@ class UserscriptBridge(private val ctx: Context) {
 
     private fun nsKey(script: String, key: String) = "$script::$key"
 
-    init {
-        // Cross-process/thread value change dispatch
-        prefs.registerOnSharedPreferenceChangeListener { p, k ->
-            val parts = k.split("::", limit = 2)
-            if (parts.size != 2) return@registerOnSharedPreferenceChangeListener
-            val script = parts[0]; val userKey = parts[1]
-            val oldV = null
-            val newV = p.getString(k, null)
-            fireVcl(script, userKey, oldV, newV)
+init {
+    prefs.registerOnSharedPreferenceChangeListener(
+        android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, k ->
+            val key = k ?: return@OnSharedPreferenceChangeListener
+            val parts = key.split("::", limit = 2)
+            if (parts.size != 2) return@OnSharedPreferenceChangeListener
+            val script = parts[0]
+            val userKey = parts[1]
+            val newV = p?.getString(key, null)
+            fireVcl(script, userKey, null, newV)
         }
-    }
+    )
+}
 
     private fun fireVcl(script: String, key: String, oldV: String?, newV: String?) {
         val w = v() ?: return
