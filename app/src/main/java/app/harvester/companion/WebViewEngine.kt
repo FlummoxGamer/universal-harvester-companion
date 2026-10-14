@@ -10,6 +10,8 @@ import android.webkit.WebView
 
 object WebViewEngine {
 
+    @Volatile private var lastView: java.lang.ref.WeakReference<WebView>? = null
+
     @SuppressLint("SetJavaScriptEnabled")
     fun create(ctx: Context): WebView {
         // WebView must be created with a themed Activity context.
@@ -43,7 +45,10 @@ object WebViewEngine {
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(view, true)
         } catch (_: Throwable) {}
-        view.addJavascriptInterface(UserscriptBridge(ctx), "UH_BRIDGE")
+        view.addJavascriptInterface(UserscriptBridge(ctx) {
+            lastView?.get()
+        }, "UH_BRIDGE")
+        lastView = java.lang.ref.WeakReference(view)
         return view
     }
 }
