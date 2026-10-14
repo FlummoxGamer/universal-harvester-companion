@@ -1,13 +1,11 @@
 package app.harvester.companion
 
-import android.app.Activity
-import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.Switch
@@ -24,7 +22,6 @@ class ScriptsActivity : AppCompatActivity() {
     private lateinit var adapter: ScriptAdapter
     private lateinit var emptyView: TextView
     private lateinit var list: RecyclerView
-    private var pendingName: String? = null
 
     private val filePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         uri?.let {
@@ -44,10 +41,11 @@ class ScriptsActivity : AppCompatActivity() {
         list = findViewById(R.id.scriptList)
         emptyView = findViewById(R.id.emptyLabel)
         adapter = ScriptAdapter(
-            onToggle = { name, enabled ->
-                UserscriptStore.setEnabled(this, name, enabled)
-            },
-            onDelete = { name -> confirmDelete(name) }
+            onToggle = { name, enabled -> UserscriptStore.setEnabled(this, name, enabled) },
+            onDelete = { name -> confirmDelete(name) },
+            onEdit = { name -> openEditor(name) },
+            onInfo = { script -> showInfo(script) },
+            onOpenHomepage = { url -> try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {} }
         )
         list.layoutManager = LinearLayoutManager(this)
         list.adapter = adapter
@@ -65,18 +63,72 @@ class ScriptsActivity : AppCompatActivity() {
 
     private fun reload() {
         val scripts = UserscriptManager.loadScripts(this)
-        adapter.submit(scripts.map {
+        adapter.submit(scripts.map { s ->
             ScriptAdapter.Row(
-                it.name,
-                it.displayName,
-                it.description,
-                it.version,
-                it.runAt,
-                UserscriptStore.isEnabled(this, it.name)
+                name = s.name,
+                displayName = s.displayName,
+                description = s.description,
+                version = s.version,
+                author = s.author,
+                homepage = s.homepage,
+                runAt = s.runAt,
+                patterns = s.patterns,
+                grants = s.grants,
+                connects = s.connects,
+                requires = s.requires,
+                usesSystemjs = s.usesSystemjs,
+                fileSize = s.fileSize,
+                enabled = UserscriptStore.isEnabled(this, s.name)
             )
         })
         emptyView.visibility = if (scripts.isEmpty()) View.VISIBLE else View.GONE
         list.visibility = if (scripts.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    private fun openEditor(name: String) {
+        val intent = Intent(this, ScriptEditorActivity::class.java)
+        intent.putExtra("name", name)
+        startActivity(intent)
+    }
+
+    private fun showInfo(row: ScriptAdapter.Row) {
+        val sb = StringBuilder()
+        if (row.version.isNotBlank()) sb.append("Version: ").append(row.version).append("\n")
+        if (row.author.isNotBlank()) sb.append("Author: ").append(row.author).append("\n")
+        sb.append("Run at: ").append(row.runAt).append("\n")
+        sb.append("Size: ").append(formatSize(row.fileSize)).append("\n")
+        sb.append("SystemJS: ").append(if (row.usesSystemjs) "yes" else "no").append("\n")
+        if (row.patterns.isNotEmpty()) {
+            sb.append("\nMatches:\n")
+            row.patterns.take(10).forEach { sb.append("  ").append(it).append("\n") }
+            if (row.patterns.size > 10) sb.append("  …").append(row.patterns.size - 10).append(" more\n")
+        }
+        if (row.grants.isNotEmpty()) {
+            sb.append("\nGrants:\n")
+            row.grants.take(15).forEach { sb.append("  ").append(it).append("\n") }
+            if (row.grants.size > 15) sb.append("  …").append(row.grants.size - 15).append(" more\n")
+        }
+        if (row.connects.isNotEmpty()) {
+            sb.append("\nConnect:\n")
+            row.connects.take(10).forEach { sb.append("  ").append(it).append("\n") }
+        }
+        if (row.requires.isNotEmpty()) {
+            sb.append("\nRequires: ").append(row.requires.size).append(" external script(s)\n")
+        }
+        if (row.description.isNotBlank()) {
+            sb.append("\n").append(row.description)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(row.displayName.ifBlank { row.name })
+            .setMessage(sb.toString())
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    private fun formatSize(b: Long): String = when {
+        b < 1024 -> "$b B"
+        b < 1024 * 1024 -> "%.1f KB".format(b / 1024.0)
+        else -> "%.1f MB".format(b / (1024.0 * 1024.0))
     }
 
     private fun confirmDelete(name: String) {
@@ -157,7 +209,10 @@ class ScriptsActivity : AppCompatActivity() {
 
     class ScriptAdapter(
         private val onToggle: (String, Boolean) -> Unit,
-        private val onDelete: (String) -> Unit
+        private val onDelete: (String) -> Unit,
+        private val onEdit: (String) -> Unit,
+        private val onInfo: (Row) -> Unit,
+        private val onOpenHomepage: (String) -> Unit
     ) : RecyclerView.Adapter<ScriptAdapter.VH>() {
 
         data class Row(
@@ -165,7 +220,15 @@ class ScriptsActivity : AppCompatActivity() {
             val displayName: String,
             val description: String,
             val version: String,
+            val author: String,
+            val homepage: String,
             val runAt: String,
+            val patterns: List<String>,
+            val grants: List<String>,
+            val connects: List<String>,
+            val requires: List<String>,
+            val usesSystemjs: Boolean,
+            val fileSize: Long,
             var enabled: Boolean
         )
 
@@ -174,7 +237,11 @@ class ScriptsActivity : AppCompatActivity() {
         class VH(v: View) : RecyclerView.ViewHolder(v) {
             val title: TextView = v.findViewById(R.id.scriptTitle)
             val sub: TextView = v.findViewById(R.id.scriptSub)
+            val patterns: TextView = v.findViewById(R.id.scriptPatterns)
             val sw: Switch = v.findViewById(R.id.scriptSwitch)
+            val edit: ImageView = v.findViewById(R.id.scriptEdit)
+            val info: ImageView = v.findViewById(R.id.scriptInfo)
+            val home: ImageView = v.findViewById(R.id.scriptHome)
             val del: ImageView = v.findViewById(R.id.scriptDelete)
         }
 
@@ -187,18 +254,32 @@ class ScriptsActivity : AppCompatActivity() {
         override fun onBindViewHolder(h: VH, position: Int) {
             val r = rows[position]
             h.title.text = r.displayName.ifBlank { r.name }
-            val meta = buildString {
-                if (r.version.isNotBlank()) append("v").append(r.version).append(" · ")
-                append(r.runAt)
-                if (r.description.isNotBlank()) append("\n").append(r.description)
+            val meta = StringBuilder()
+            if (r.version.isNotBlank()) meta.append("v").append(r.version)
+            if (r.author.isNotBlank()) {
+                if (meta.isNotEmpty()) meta.append(" · ")
+                meta.append("by ").append(r.author)
             }
-            h.sub.text = meta
+            if (meta.isNotEmpty()) meta.append(" · ")
+            meta.append(r.runAt)
+            if (r.description.isNotBlank()) meta.append("\n").append(r.description)
+            h.sub.text = meta.toString()
+
+            val pats = if (r.patterns.size <= 2) r.patterns.joinToString(" ")
+                       else r.patterns.take(2).joinToString(" ") + " +${r.patterns.size - 2}"
+            h.patterns.text = pats
+
             h.sw.setOnCheckedChangeListener(null)
             h.sw.isChecked = r.enabled
             h.sw.setOnCheckedChangeListener { _, checked ->
                 r.enabled = checked
                 onToggle(r.name, checked)
             }
+
+            h.edit.setOnClickListener { onEdit(r.name) }
+            h.info.setOnClickListener { onInfo(r) }
+            h.home.visibility = if (r.homepage.isNotBlank()) View.VISIBLE else View.GONE
+            h.home.setOnClickListener { if (r.homepage.isNotBlank()) onOpenHomepage(r.homepage) }
             h.del.setOnClickListener { onDelete(r.name) }
         }
 
