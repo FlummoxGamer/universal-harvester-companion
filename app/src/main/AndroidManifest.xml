@@ -53,6 +53,11 @@
             android:windowSoftInputMode="adjustResize" />
 
         <activity
+            android:name=".PrivacyGuardActivity"
+            android:exported="false"
+            android:label="Privacy Guard" />
+
+        <activity
             android:name=".SettingsActivity"
             android:exported="false"
             android:label="@string/settings_title" />
