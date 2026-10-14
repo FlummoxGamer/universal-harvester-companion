@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp">
+
+        <TextView
+            android:id="@+id/editorTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textColor="@color/text"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnReload"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="4dp"
+            android:text="Reload"
+            android:backgroundTint="@color/surface"
+            android:textColor="@color/accent"
+            android:minHeight="0dp" />
+
+        <Button
+            android:id="@+id/btnCancel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="4dp"
+            android:text="Cancel"
+            android:backgroundTint="@color/surface"
+            android:textColor="@color/accent"
+            android:minHeight="0dp" />
+
+        <Button
+            android:id="@+id/btnSave"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Save"
+            android:backgroundTint="@color/accent_strong"
+            android:textColor="@color/bg"
+            android:minHeight="0dp" />
+    </LinearLayout>
+
+    <EditText
+        android:id="@+id/editorBody"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@color/surface_2"
+        android:gravity="top or start"
+        android:inputType="textMultiLine|textNoSuggestions"
+        android:padding="10dp"
+        android:scrollbars="vertical"
+        android:fontFamily="monospace"
+        android:textColor="@color/text"
+        android:textSize="11sp"
+        android:textColorHint="@color/subtext" />
+</LinearLayout>
