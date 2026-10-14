@@ -11,8 +11,8 @@ android {
         applicationId = "app.harvester.companion"
         minSdk = 29
         targetSdk = 36
-        versionCode = 18
-        versionName = "2.1.6"
+        versionCode = 19
+        versionName = "2.1.7"
     }
 
     buildFeatures {
