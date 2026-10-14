@@ -99,12 +99,50 @@ class MainActivity : AppCompatActivity() {
         binding.tabCount.setOnClickListener { openTabGrid() }
     }
 
-    private fun setupBackDispatcher() {
-        onBackPressedDispatcher.addCallback(this) {
-            val v = currentView
-            if (v != null && v.canGoBack()) v.goBack() else finish()
+private var lastBackPress = 0L
+
+private fun setupBackDispatcher() {
+    onBackPressedDispatcher.addCallback(this) {
+        val v = currentView
+        val id = if (v != null) tabs.idForView(v) else -1L
+
+        // 1. Popup tab? Close it and return to previous tab.
+        if (v != null && id in popupTabs) {
+            closeBlankPopup(v)
+            return@addCallback
+        }
+
+        // 2. Can we go back in this WebView's history?
+        if (v != null && v.canGoBack()) {
+            v.goBack()
+            return@addCallback
+        }
+
+        // 3. More than one tab? Close current and switch.
+        val all = tabs.list()
+        if (all.size > 1) {
+            val closeId = tabs.currentId()
+            popupTabs.remove(closeId)
+            tabs.close(closeId)
+            val remaining = tabs.list()
+            if (remaining.isNotEmpty()) {
+                tabs.acquireView(remaining.first().id)
+                attachCurrent()
+                updateUi()
+            }
+            return@addCallback
+        }
+
+        // 4. Last tab, no history. Double-press to exit.
+        val now = System.currentTimeMillis()
+        if (now - lastBackPress < 2000L) {
+            finish()
+        } else {
+            lastBackPress = now
+            Toast.makeText(this@MainActivity, "Press back again to exit", Toast.LENGTH_SHORT).show()
         }
     }
+}
 
     private fun showAddShortcutDialog() {
         val input = EditText(this).apply {
@@ -531,10 +569,7 @@ override fun onPageFinished(v: WebView, url: String) {
             currentView?.reload()
             sheet.dismiss()
         }
-        v.findViewById<View>(R.id.btnInstallScript)?.setOnClickListener {
-            sheet.dismiss()
-            promptInstallUserscript()
-        }
+
         v.findViewById<View>(R.id.btnTools)?.setOnClickListener {
             sheet.dismiss()
             startActivity(Intent(this, ToolsActivity::class.java))
