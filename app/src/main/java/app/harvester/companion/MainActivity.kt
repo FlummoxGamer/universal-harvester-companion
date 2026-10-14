@@ -775,14 +775,14 @@ override fun onResume() {
     super.onResume()
     UpdateChecker.resumePendingInstallIfPossible(this)
     MenuCommandStore.listener = { runOnUiThread { refreshUserMenuFab() } }
-    if (UserscriptStore.consumeDirty(this)) {
-        tabs.list().forEach { _ ->
-            // re-register on every alive view
-        }
-        val v = currentView
-        if (v != null) UserscriptManager.registerDocumentStart(v, this)
+if (UserscriptStore.consumeDirty(this)) {
+    val v = currentView
+    val u = v?.url
+    if (v != null && !u.isNullOrBlank()) {
+        UserscriptManager.injectOnPageStart(v, this, u)
     }
-    }
+}
+}
 override fun onPause() {
     super.onPause()
     MenuCommandStore.listener = null
