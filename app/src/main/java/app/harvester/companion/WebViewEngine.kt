@@ -10,12 +10,8 @@ import android.webkit.WebView
 
 object WebViewEngine {
 
-    @Volatile private var lastView: java.lang.ref.WeakReference<WebView>? = null
-
     @SuppressLint("SetJavaScriptEnabled")
     fun create(ctx: Context): WebView {
-        // WebView must be created with a themed Activity context.
-        // Application context crashes on some OPPO ColorOS builds.
         val themed = ContextThemeWrapper(ctx, R.style.Theme_UHCompanion)
         val view = WebView(themed)
         view.layoutParams = ViewGroup.LayoutParams(
@@ -45,10 +41,9 @@ object WebViewEngine {
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(view, true)
         } catch (_: Throwable) {}
-        view.addJavascriptInterface(UserscriptBridge(ctx) {
-            lastView?.get()
-        }, "UH_BRIDGE")
-        lastView = java.lang.ref.WeakReference(view)
+        val bridge = UserscriptBridge(ctx)
+        view.addJavascriptInterface(bridge, "UH_BRIDGE")
+        bridge.attach(view)
         return view
     }
 }
