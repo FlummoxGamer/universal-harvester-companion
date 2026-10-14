@@ -289,10 +289,7 @@ object UserscriptManager {
         }.start()
     }
 
-    // Kotlin raw string for the shared bridge. All $ escaped as ${'$'} so Kotlin
-    // does not try to interpolate JS template syntax.
-    private val BRIDGE_BOOT: String
-        get() = """
+    private const val BRIDGE_BOOT = """
 (function(){
   if (window.__uh_bridge_ready) return;
   window.__uh_bridge_ready = true;
@@ -303,6 +300,22 @@ object UserscriptManager {
   window.__uh_xhr = window.__uh_xhr || {};
   window.__uh_vcl = window.__uh_vcl || {};
   window.__uh_menu = window.__uh_menu || {};
+
+  // --- START OF VITE / BUNDLER ENVIRONMENT SHIM ---
+  if (!document.currentScript) {
+    try {
+      var dummyScript = document.createElement('script');
+      dummyScript.src = window.location.href.split('#')[0].split('?')[0];
+      Object.defineProperty(document, 'currentScript', {
+        get: function() {
+          if (document.readyState === 'loading') return dummyScript;
+          return null;
+        },
+        configurable: true
+      });
+    } catch(e) { /* silent */ }
+  }
+  // --- END OF VITE / BUNDLER ENVIRONMENT SHIM ---
 
   window.__uh_gm = function(scriptName) {
     var sn = scriptName;
