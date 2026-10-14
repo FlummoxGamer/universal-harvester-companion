@@ -3,16 +3,11 @@ package app.harvester.companion
 import android.content.Context
 import android.net.Uri
 import android.webkit.WebView
-import androidx.webkit.ScriptHandler
-import androidx.webkit.WebViewCompat
-import androidx.webkit.WebViewFeature
 import java.io.File
-import java.util.WeakHashMap
 import java.util.zip.ZipInputStream
 
 object UserscriptManager {
 
-    private val handlers = WeakHashMap<WebView, MutableList<ScriptHandler>>()
     private val hookCache = mutableMapOf<String, String>()
 
     data class Script(
@@ -114,15 +109,85 @@ object UserscriptManager {
         )
     }
 
-    fun install(ctx: Context, name: String, body: String): Boolean {
-        return try {
-            val dir = File(ctx.filesDir, "scripts").apply { mkdirs() }
-            val safe = name.replace(Regex("""[^a-zA-Z0-9_\-]"""), "_").take(80)
-            File(dir, "$safe.js").writeText(body)
-            UserscriptStore.markDirty(ctx)
-            true
-        } catch (_: Exception) { false }
+fun install(ctx: Context, name: String, body: String): Boolean {
+    return try {
+        val dir = File(ctx.filesDir, "scripts").apply { mkdirs() }
+        val safe = name.replace(Regex("""[^a-zA-Z0-9_\-]"""), "_").take(80)
+        File(dir, "$safe.js").writeText(body)
+        // fetch and cache @require bodies
+        try {
+            val parsed = parse(name, body)
+            cacheRequires(ctx, parsed)
+        } catch (_: Exception) {}
+        UserscriptStore.markDirty(ctx)
+        true
+    } catch (_: Exception) { false }
+}
+
+private fun requiresDir(ctx: Context, scriptName: String): File {
+    val safe = scriptName.replace(Regex("""[^a-zA-Z0-9_\-]"""), "_").take(80)
+    return File(ctx.filesDir, "requires/$safe").apply { mkdirs() }
+}
+
+private fun cacheRequires(ctx: Context, script: Script) {
+    val dir = requiresDir(ctx, script.name)
+    // wipe old cache
+    try { dir.listFiles()?.forEach { it.delete() } } catch (_: Exception) {}
+    var idx = 0
+    for (url in script.requires) {
+        val target = File(dir, "req_${idx.toString().padStart(3, '0')}.js")
+        try {
+            if (url.startsWith("data:")) {
+                val body = decodeDataUrl(url) ?: continue
+                target.writeText(body)
+            } else {
+                val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                conn.connectTimeout = 20000
+                conn.readTimeout = 20000
+                conn.connect()
+                if (conn.responseCode in 200..299) {
+                    conn.inputStream.use { input ->
+                        target.outputStream().use { input.copyTo(it) }
+                    }
+                }
+                conn.disconnect()
+            }
+            UHLog.d("userscript", "require cached ${script.name}[$idx] ${target.length()}B")
+        } catch (e: Exception) {
+            UHLog.throwable("userscript", "require fetch failed idx=$idx url=$url", e)
+        }
+        idx++
     }
+}
+
+private fun decodeDataUrl(url: String): String? {
+    return try {
+        val comma = url.indexOf(',')
+        if (comma < 0) return null
+        val meta = url.substring(5, comma)
+        val data = url.substring(comma + 1)
+        if (meta.contains("base64", ignoreCase = true)) {
+            String(android.util.Base64.decode(data, android.util.Base64.DEFAULT), Charsets.UTF_8)
+        } else {
+            java.net.URLDecoder.decode(data, "UTF-8")
+        }
+    } catch (_: Exception) { null }
+}
+
+private fun loadCachedRequires(ctx: Context, script: Script): String {
+    val dir = requiresDir(ctx, script.name)
+    val files = dir.listFiles { f -> f.isFile && f.name.startsWith("req_") }
+        ?.sortedBy { it.name } ?: return ""
+    val sb = StringBuilder()
+    for (f in files) {
+        try {
+            sb.append("\n/* uh-require: ").append(f.name).append(" */\n")
+            sb.append(f.readText())
+            sb.append("\n")
+        } catch (_: Exception) {}
+    }
+    return sb.toString()
+}
 
     fun installFromText(ctx: Context, body: String): Boolean {
         val parsed = parse("script_" + System.currentTimeMillis(), body)
@@ -204,42 +269,34 @@ object UserscriptManager {
         return install(ctx, name, body)
     }
 
-    fun registerDocumentStart(view: WebView, ctx: Context) {
-        clearDocumentStart(view)
-        if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            UHLog.w("userscript", "DOCUMENT_START_SCRIPT unsupported")
-            return
-        }
-        val list = mutableListOf<ScriptHandler>()
-        try {
-            list.add(WebViewCompat.addDocumentStartJavaScript(view, BRIDGE_BOOT, setOf("*")))
-        } catch (_: Exception) {}
+fun injectOnPageStart(view: WebView, ctx: Context, url: String) {
+    if (isBadUrl(url)) return
+    try { view.evaluateJavascript(BRIDGE_BOOT, null) } catch (_: Exception) {}
 
-        val enabled = SessionRecorder.ALL_CATEGORIES.filter { SessionRecorder.isEnabled(it) }
-        for (hook in enabled) {
-            val body = loadHook(ctx, hook)
-            if (body.isNotBlank()) {
-                try { list.add(WebViewCompat.addDocumentStartJavaScript(view, body, setOf("*"))) } catch (_: Exception) {}
-            }
+    val enabled = SessionRecorder.ALL_CATEGORIES.filter { SessionRecorder.isEnabled(it) }
+    for (hook in enabled) {
+        val body = loadHook(ctx, hook)
+        if (body.isNotBlank()) {
+            try { view.evaluateJavascript(body, null) } catch (_: Exception) {}
         }
-
-        val scripts = loadScripts(ctx)
-        for (script in scripts) {
-            if (!UserscriptStore.isEnabled(ctx, script.name)) continue
-            if (script.runAt != "document-start") continue
-            val wrapped = buildWrapper(ctx, script)
-            if (wrapped.isBlank()) continue
-            try {
-                list.add(WebViewCompat.addDocumentStartJavaScript(view, wrapped, setOf("*")))
-                prefetchResources(ctx, script)
-                UHLog.d("userscript", "registered ${script.name} sysjs=${script.usesSystemjs} grants=${script.grants.size}")
-            } catch (e: Exception) {
-                UHLog.throwable("userscript", "register ${script.name} failed", e)
-            }
-        }
-        handlers[view] = list
-        UHLog.d("userscript", "registered ${list.size} document-start scripts")
     }
+
+    val scripts = loadScripts(ctx)
+    for (script in scripts) {
+        if (!UserscriptStore.isEnabled(ctx, script.name)) continue
+        if (script.runAt != "document-start") continue
+        if (!matchesPatterns(script.patterns, url)) continue
+        if (matchesPatterns(script.excludes, url)) continue
+        val wrapped = buildWrapper(ctx, script)
+        if (wrapped.isBlank()) continue
+        try {
+            view.evaluateJavascript(wrapped, null)
+            UHLog.d("userscript", "injected ${script.name} (start) sysjs=${script.usesSystemjs} grants=${script.grants.size} reqs=${script.requires.size}")
+        } catch (e: Exception) {
+            UHLog.throwable("userscript", "inject ${script.name} failed", e)
+        }
+    }
+}
 
     fun injectOnPageFinished(ctx: Context, view: WebView, url: String) {
         if (isBadUrl(url)) return
@@ -264,11 +321,6 @@ object UserscriptManager {
         if (url.startsWith("blob:")) return true
         if (url.startsWith("javascript:")) return true
         return false
-    }
-
-    private fun clearDocumentStart(view: WebView) {
-        val prior = handlers.remove(view) ?: return
-        for (h in prior) { try { h.remove() } catch (_: Exception) {} }
     }
 
     private fun loadAsset(ctx: Context, path: String): String {
@@ -583,10 +635,9 @@ object UserscriptManager {
             append("})();\n")
         }
 
-        val requirePrelude = buildRequirePrelude(script)
-        return preamble + requirePrelude + "\n" + script.body + "\n" + postamble
+        val requirePrelude = loadCachedRequires(ctx, script)
+        return preamble + "\n" + requirePrelude + "\n" + script.body + "\n" + postamble
     }
-
     private fun buildScriptMetaJson(script: Script): String {
         val sb = StringBuilder()
         sb.append("{")
@@ -628,18 +679,6 @@ object UserscriptManager {
             }
         }
         sb.append("\"")
-        return sb.toString()
-    }
-
-    private fun buildRequirePrelude(script: Script): String {
-        if (script.requires.isEmpty()) return ""
-        val sb = StringBuilder()
-        for (url in script.requires) {
-            val safeUrl = url.replace("\\", "\\\\").replace("\"", "\\\"")
-            sb.append("try{var __uh_req=new XMLHttpRequest();__uh_req.open('GET','")
-            sb.append(safeUrl)
-            sb.append("',false);__uh_req.send();if(__uh_req.responseText){(0,eval)(__uh_req.responseText);}}catch(e){}\n")
-        }
         return sb.toString()
     }
 
