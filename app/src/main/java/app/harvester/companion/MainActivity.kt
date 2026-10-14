@@ -1,8 +1,6 @@
 package app.harvester.companion
 
 import android.annotation.SuppressLint
-import android.content.ClipboardManager
-import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
@@ -21,19 +19,12 @@ import android.webkit.WebViewClient
 import android.widget.EditText
 import android.widget.Toast
 import androidx.activity.addCallback
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.GridLayoutManager
 import app.harvester.companion.databinding.ActivityMainBinding
 import com.google.android.material.bottomsheet.BottomSheetDialog
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 
 class MainActivity : AppCompatActivity() {
 
@@ -46,11 +37,6 @@ class MainActivity : AppCompatActivity() {
     private val page3p = mutableMapOf<Long, MutableSet<String>>()
     private val recentUrls = LinkedHashMap<String, Long>()
 
-    private val filePickerLauncher = registerForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let { installScriptFromUri(it) }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -589,104 +575,6 @@ override fun onPageFinished(v: WebView, url: String) {
         sheet.show()
     }
 
-    private fun promptInstallUserscript() {
-        val options = arrayOf("From URL", "From Clipboard", "From Local File")
-        AlertDialog.Builder(this)
-            .setTitle("Install userscript")
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> showUrlInstallDialog()
-                    1 -> installFromClipboard()
-                    2 -> filePickerLauncher.launch("*/*")
-                }
-            }
-            .show()
-    }
-
-    private fun showUrlInstallDialog() {
-        val input = EditText(this).apply {
-            setHint("https://example.com/script.user.js")
-            setTextColor(0xFFE6EDF5.toInt())
-            setHintTextColor(0xFF8296AD.toInt())
-            setPadding(32, 32, 32, 32)
-            setSingleLine()
-            inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI
-        }
-        AlertDialog.Builder(this)
-            .setTitle("Install from URL")
-            .setView(input)
-            .setPositiveButton("Install") { _, _ ->
-                val url = input.text.toString().trim()
-                if (url.isNotBlank()) downloadAndInstallScript(url)
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun installFromClipboard() {
-        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = cm.primaryClip
-        if (clip != null && clip.itemCount > 0) {
-            val text = clip.getItemAt(0).text.toString()
-            if (text.contains("@match") || text.contains("==UserScript==")) {
-                val name = "script_" + System.currentTimeMillis()
-                if (UserscriptManager.install(this, name, text)) {
-                    Toast.makeText(this, "Installed from clipboard", Toast.LENGTH_SHORT).show()
-                }
-            } else {
-                Toast.makeText(this, "Clipboard is not a userscript", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    private fun installScriptFromUri(uri: Uri) {
-        try {
-            val content = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-            if (content != null) {
-                val name = "script_" + System.currentTimeMillis()
-                if (UserscriptManager.install(this, name, content)) {
-                    Toast.makeText(this, "Script installed", Toast.LENGTH_SHORT).show()
-                }
-            }
-        } catch (e: Exception) {
-            Toast.makeText(this, "Failed to read file", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun downloadAndInstallScript(url: String) {
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val conn = URL(url).openConnection() as HttpURLConnection
-                conn.connectTimeout = 15000
-                conn.readTimeout = 15000
-                conn.connect()
-                if (conn.responseCode in 200..299) {
-                    val body = conn.inputStream.bufferedReader().use { it.readText() }
-                    val name = "script_" + System.currentTimeMillis()
-                    val ok = UserscriptManager.install(this@MainActivity, name, body)
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(
-                            this@MainActivity,
-                            if (ok) "Script installed" else "Install failed",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                } else {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(
-                            this@MainActivity,
-                            "HTTP ${conn.responseCode}",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
 
     private fun handleIntentUrl(url: String) {
         try {
