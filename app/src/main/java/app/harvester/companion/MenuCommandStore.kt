@@ -4,22 +4,33 @@ import java.util.concurrent.CopyOnWriteArrayList
 
 object MenuCommandStore {
 
-    data class Command(val id: String, val name: String, val accessKey: String)
+    data class Command(val script: String, val id: String, val name: String, val accessKey: String)
 
     private val list = CopyOnWriteArrayList<Command>()
 
-    fun register(id: String, name: String, accessKey: String) {
-        list.removeAll { it.id == id }
-        list.add(Command(id, name, accessKey))
+    @Volatile var listener: (() -> Unit)? = null
+
+    fun register(script: String, id: String, name: String, accessKey: String) {
+        list.removeAll { it.script == script && it.id == id }
+        list.add(Command(script, id, name, accessKey))
+        listener?.invoke()
     }
 
-    fun unregister(id: String) {
-        list.removeAll { it.id == id }
+    fun unregister(script: String, id: String) {
+        list.removeAll { it.script == script && it.id == id }
+        listener?.invoke()
     }
 
-    fun clear() { list.clear() }
+    fun clearScript(script: String) {
+        list.removeAll { it.script == script }
+        listener?.invoke()
+    }
+
+    fun clear() { list.clear(); listener?.invoke() }
 
     fun all(): List<Command> = list.toList()
+
+    fun forScript(script: String): List<Command> = list.filter { it.script == script }
 
     fun isEmpty(): Boolean = list.isEmpty()
 }
