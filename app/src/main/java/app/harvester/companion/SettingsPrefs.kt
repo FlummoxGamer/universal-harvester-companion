@@ -39,4 +39,5 @@ object SettingsPrefs {
     const val K_ADV_DEAMP = "adv_deamp"
     const val K_ADV_GPC = "adv_gpc"
     const val K_ADV_SECURE_DNS = "adv_secure_dns"
+    const val K_ADDRESS_BAR_POSITION = "address_bar_position" // 0 top, 1 bottom (default)
 }
