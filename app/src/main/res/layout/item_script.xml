@@ -69,6 +69,7 @@
             android:layout_height="36dp"
             android:padding="8dp"
             android:src="@drawable/ic_edit"
+            android:tint="@color/subtext"
             android:scaleType="centerInside"
             android:contentDescription="Edit" />
 
@@ -78,6 +79,7 @@
             android:layout_height="36dp"
             android:padding="8dp"
             android:src="@drawable/ic_info"
+            android:tint="@color/subtext"
             android:scaleType="centerInside"
             android:contentDescription="Info" />
 
@@ -87,6 +89,7 @@
             android:layout_height="36dp"
             android:padding="8dp"
             android:src="@drawable/ic_link"
+            android:tint="@color/subtext"
             android:scaleType="centerInside"
             android:contentDescription="Homepage" />
 
@@ -96,6 +99,7 @@
             android:layout_height="36dp"
             android:padding="8dp"
             android:src="@drawable/ic_close"
+            android:tint="@color/subtext"
             android:scaleType="centerInside"
             android:contentDescription="Delete" />
     </LinearLayout>
