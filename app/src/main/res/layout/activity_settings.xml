@@ -1,97 +1,163 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bg"
-    android:padding="20dp">
+    android:background="@color/bg">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:paddingTop="20dp"
+        android:paddingBottom="20dp">
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
             android:text="Settings"
             android:textColor="@color/text"
             android:textSize="26sp"
             android:textStyle="bold" />
 
         <TextView
-            android:id="@+id/versionLabel"
+            android:id="@+id/settingsVersionLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
             android:layout_marginTop="4dp"
+            android:text=""
             android:textColor="@color/subtext"
-            android:textSize="12sp"
-            android:text="" />
+            android:textSize="12sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            android:layout_marginTop="20dp"
+            android:text="GENERAL"
+            android:textColor="@color/subtext"
+            android:textSize="12sp" />
 
         <LinearLayout
-            android:id="@+id/rowVerbose"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:background="@color/surface"
-            android:padding="16dp">
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Verbose logging"
-                    android:textColor="@color/text"
-                    android:textSize="15sp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="Writes network and capture events to uh_log.txt"
-                    android:textColor="@color/subtext"
-                    android:textSize="11sp" />
-            </LinearLayout>
-
-            <Switch
-                android:id="@+id/switchVerbose"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content" />
-        </LinearLayout>
-
-        <Button
-            android:id="@+id/btnLogs"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="View logs"
-            android:backgroundTint="@color/surface"
-            android:textColor="@color/accent" />
-
-        <Button
-            android:id="@+id/btnAppUpdate"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="Check for app update"
-            android:backgroundTint="@color/accent_strong"
-            android:textColor="@color/bg" />
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp"
+            android:orientation="vertical"
+            android:background="@color/surface">
 
-        <Button
-            android:id="@+id/btnClearState"
+            <LinearLayout android:id="@+id/settingsSearchEngine" style="@style/UhSettingsRow">
+                <ImageView style="@style/UhSettingsIcon" android:src="@drawable/ic_search" />
+                <TextView style="@style/UhSettingsLabel" android:text="Search Engine" />
+                <ImageView style="@style/UhSettingsChevron" />
+            </LinearLayout>
+
+            <LinearLayout android:id="@+id/settingsAppearance" style="@style/UhSettingsRow">
+                <ImageView style="@style/UhSettingsIcon" android:src="@drawable/ic_search" />
+                <TextView style="@style/UhSettingsLabel" android:text="Appearance" />
+                <ImageView style="@style/UhSettingsChevron" />
+            </LinearLayout>
+
+            <LinearLayout android:id="@+id/settingsScripts" style="@style/UhSettingsRow">
+                <ImageView style="@style/UhSettingsIcon" android:src="@drawable/ic_extension_rounded" />
+                <TextView style="@style/UhSettingsLabel" android:text="Extensions" />
+                <ImageView style="@style/UhSettingsChevron" />
+            </LinearLayout>
+
+            <LinearLayout android:id="@+id/settingsVideo" style="@style/UhSettingsRow">
+                <ImageView style="@style/UhSettingsIcon" android:src="@drawable/ic_playlist" />
+                <TextView style="@style/UhSettingsLabel" android:text="Video Options" />
+                <ImageView style="@style/UhSettingsChevron" />
+            </LinearLayout>
+
+            <LinearLayout android:id="@+id/settingsDownloads" style="@style/UhSettingsRow">
+                <ImageView style="@style/UhSettingsIcon" android:src="@drawable/ic_downloads" />
+                <TextView style="@style/UhSettingsLabel" android:text="Download Settings" />
+                <ImageView style="@style/UhSettingsChevron" />
+            </LinearLayout>
+
+            <LinearLayout android:id="@+id/settingsAccessibility" style="@style/UhSettingsRow">
+                <ImageView style="@style/UhSettingsIcon" android:src="@drawable/ic_info" />
+                <TextView style="@style/UhSettingsLabel" android:text="Accessibility" />
+                <ImageView style="@style/UhSettingsChevron" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            android:layout_marginTop="20dp"
+            android:text="PRIVACY &amp; SECURITY"
+            android:textColor="@color/subtext"
+            android:textSize="12sp" />
+
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="32dp"
-            android:text="Clear all state"
-            android:backgroundTint="@color/red"
-            android:textColor="@color/bg" />
+            android:layout_marginTop="8dp"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp"
+            android:orientation="vertical"
+            android:background="@color/surface">
 
+            <LinearLayout android:id="@+id/settingsPrivacyGuard" style="@style/UhSettingsRow">
+                <ImageView style="@style/UhSettingsIcon" android:src="@drawable/ic_lock" />
+                <TextView style="@style/UhSettingsLabel" android:text="Privacy Guard" />
+                <ImageView style="@style/UhSettingsChevron" />
+            </LinearLayout>
+
+            <LinearLayout android:id="@+id/settingsLockAccess" style="@style/UhSettingsRow">
+                <ImageView style="@style/UhSettingsIcon" android:src="@drawable/ic_lock" />
+                <TextView style="@style/UhSettingsLabel" android:text="Lock Access" />
+                <ImageView style="@style/UhSettingsChevron" />
+            </LinearLayout>
+
+            <LinearLayout android:id="@+id/settingsManageData" style="@style/UhSettingsRow">
+                <ImageView style="@style/UhSettingsIcon" android:src="@drawable/ic_info" />
+                <TextView style="@style/UhSettingsLabel" android:text="Manage Personal Data" />
+                <ImageView style="@style/UhSettingsChevron" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            android:layout_marginTop="20dp"
+            android:text="ABOUT"
+            android:textColor="@color/subtext"
+            android:textSize="12sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp"
+            android:orientation="vertical"
+            android:background="@color/surface">
+
+            <LinearLayout android:id="@+id/settingsVersion" style="@style/UhSettingsRow">
+                <ImageView style="@style/UhSettingsIcon" android:src="@drawable/ic_info" />
+                <TextView style="@style/UhSettingsLabel" android:text="Version" />
+                <ImageView style="@style/UhSettingsChevron" />
+            </LinearLayout>
+
+            <LinearLayout android:id="@+id/settingsUpdate" style="@style/UhSettingsRow">
+                <ImageView style="@style/UhSettingsIcon" android:src="@drawable/ic_reload" />
+                <TextView style="@style/UhSettingsLabel" android:text="Check for update" />
+                <ImageView style="@style/UhSettingsChevron" />
+            </LinearLayout>
+
+            <LinearLayout android:id="@+id/settingsLogs" style="@style/UhSettingsRow">
+                <ImageView style="@style/UhSettingsIcon" android:src="@drawable/ic_tabs" />
+                <TextView style="@style/UhSettingsLabel" android:text="Logs" />
+                <ImageView style="@style/UhSettingsChevron" />
+            </LinearLayout>
+        </LinearLayout>
     </LinearLayout>
 </ScrollView>
