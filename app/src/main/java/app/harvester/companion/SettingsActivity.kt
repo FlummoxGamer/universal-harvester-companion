@@ -4,7 +4,6 @@ import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.app.AppCompatDelegate
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -14,8 +13,6 @@ class SettingsActivity : AppCompatActivity() {
 
         findViewById<android.widget.TextView>(R.id.settingsVersionLabel)?.text =
             "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
-
-        findViewById<android.view.View>(R.id.settingsSearchEngine).setOnClickListener {
 
         findViewById<android.view.View>(R.id.settingsSearchEngine).setOnClickListener {
             startActivity(Intent(this, SearchEngineActivity::class.java))
@@ -46,9 +43,11 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         findViewById<android.view.View>(R.id.settingsVersion).setOnClickListener {
-            Toast.makeText(this,
+            Toast.makeText(
+                this,
                 "Harvester ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                Toast.LENGTH_LONG).show()
+                Toast.LENGTH_LONG
+            ).show()
         }
         findViewById<android.view.View>(R.id.settingsUpdate).setOnClickListener {
             UpdateChecker.checkAndPrompt(this)
