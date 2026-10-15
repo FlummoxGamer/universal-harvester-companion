@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.DOWNLOAD_WITHOUT_NOTIFICATION" />
 
     <application
         android:name=".UHApp"
@@ -53,24 +54,54 @@
             android:windowSoftInputMode="adjustResize" />
 
         <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="Settings" />
+
+        <activity
+            android:name=".SearchEngineActivity"
+            android:exported="false"
+            android:label="Search Engine" />
+
+        <activity
+            android:name=".AppearanceActivity"
+            android:exported="false"
+            android:label="Appearance" />
+
+        <activity
+            android:name=".VideoOptionsActivity"
+            android:exported="false"
+            android:label="Video Options" />
+
+        <activity
+            android:name=".DownloadSettingsActivity"
+            android:exported="false"
+            android:label="Download Settings" />
+
+        <activity
+            android:name=".AccessibilityActivity"
+            android:exported="false"
+            android:label="Accessibility" />
+
+        <activity
             android:name=".PrivacyGuardActivity"
             android:exported="false"
             android:label="Privacy Guard" />
 
         <activity
-            android:name=".SettingsActivity"
+            android:name=".ManageDataActivity"
             android:exported="false"
-            android:label="@string/settings_title" />
+            android:label="Manage Data" />
+
+        <activity
+            android:name=".DownloadsActivity"
+            android:exported="false"
+            android:label="Downloads" />
 
         <activity
             android:name=".LogsActivity"
             android:exported="false"
             android:label="Logs" />
-        
-        <activity
-            android:name=".DownloadsActivity"
-            android:exported="false"
-            android:label="Downloads" />
 
         <service
             android:name=".SessionService"
