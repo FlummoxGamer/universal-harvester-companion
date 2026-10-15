@@ -572,8 +572,10 @@ override fun onPageFinished(v: WebView, url: String) {
     flush3p(v, url)
     if (url != "about:blank") {
         UserscriptManager.injectOnPageFinished(this@MainActivity, v, url)
-        val title = tabs.list().firstOrNull { it.id == id }?.title ?: ""
-        HistoryStore.get(this@MainActivity).record(url, title)
+        val entity = tabs.list().firstOrNull { it.id == id }
+        if (entity?.incognito != true) {
+            HistoryStore.get(this@MainActivity).record(url, entity?.title ?: "")
+        }
     }
     if (v === currentView) updateUi()
 }
@@ -599,16 +601,17 @@ override fun onPageFinished(v: WebView, url: String) {
                 binding.loadingBar.progress = newProgress
             }
 
-            override fun onReceivedTitle(v: WebView, title: String?) {
-                if (title.isNullOrBlank()) return
-                val id = tabs.idForView(v)
-                if (id <= 0L) return
-                val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
-                tabs.updateUrl(id, url, title)
-                if (url.isNotBlank() && url != "about:blank") {
-                    HistoryStore.get(this@MainActivity).record(url, title)
-                }
-            }
+override fun onReceivedTitle(v: WebView, title: String?) {
+    if (title.isNullOrBlank()) return
+    val id = tabs.idForView(v)
+    if (id <= 0L) return
+    val entity = tabs.list().firstOrNull { it.id == id }
+    val url = entity?.url ?: ""
+    tabs.updateUrl(id, url, title)
+    if (entity?.incognito != true && url.isNotBlank() && url != "about:blank") {
+        HistoryStore.get(this@MainActivity).record(url, title)
+    }
+}
 
             override fun onCreateWindow(v: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
                 val parentId = tabs.idForView(v)
@@ -987,7 +990,6 @@ private fun openTabGrid() {
         tabs.saveAll()
         UHLog.onActivityPause(this)
     }
-
     override fun onDestroy() {
         tabs.saveAll()
         DownloadStore.clearListeners()
