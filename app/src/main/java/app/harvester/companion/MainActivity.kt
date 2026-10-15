@@ -455,6 +455,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+private fun switchTab(id: Long) {
+    tabs.saveCurrentState()
+    tabs.acquireView(id)
+    attachCurrent()
+    val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
+    binding.urlText.text = if (url == "about:blank") "" else url
+    updateUi()
+}
+
 private fun updateUi() {
     prunePopupTabs()
     val id = tabs.currentId()
