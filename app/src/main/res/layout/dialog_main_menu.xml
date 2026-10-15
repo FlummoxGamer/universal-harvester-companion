@@ -187,7 +187,7 @@
         <ImageView
             android:layout_width="22dp"
             android:layout_height="22dp"
-            android:src="@drawable/ic_settings"
+            android:src="@drawable/ic_tools"
             app:tint="@color/subtext" />
         <TextView
             android:layout_width="0dp"
@@ -232,5 +232,71 @@
             android:layout_height="18dp"
             android:src="@drawable/ic_forward"
             app:tint="@color/subtext" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:layout_marginTop="10dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/surface"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp">
+
+        <ImageButton
+            android:id="@+id/menuBottomHome"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_home"
+            android:tint="@color/subtext"
+            android:scaleType="centerInside"
+            android:contentDescription="Home" />
+
+        <ImageButton
+            android:id="@+id/menuBottomFavorite"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_heart_plus"
+            android:tint="@color/subtext"
+            android:scaleType="centerInside"
+            android:contentDescription="Add favorite" />
+
+        <ImageButton
+            android:id="@+id/menuBottomClose"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_power"
+            android:tint="@color/subtext"
+            android:scaleType="centerInside"
+            android:contentDescription="Quit" />
+
+        <ImageButton
+            android:id="@+id/menuBottomScripts"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_extension_rounded"
+            android:tint="@color/subtext"
+            android:scaleType="centerInside"
+            android:contentDescription="Scripts" />
+
+        <ImageButton
+            android:id="@+id/menuBottomReload"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_reload"
+            android:tint="@color/subtext"
+            android:scaleType="centerInside"
+            android:contentDescription="Reload" />
     </LinearLayout>
 </LinearLayout>
