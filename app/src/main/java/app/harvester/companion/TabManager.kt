@@ -27,17 +27,16 @@ class TabManager private constructor(private val ctx: Context) {
     private val lock = Any()
     private var currentId: Long = -1L
 
-    fun openNew(url: String, incognito: Boolean = false, groupId: Long = 0L): Long {
-        synchronized(lock) {
-            val id = db.insert(url, incognito, groupId)
-            val view = WebViewEngine.create(ctx)
-            alive[id] = Slot(view, incognito)
-            currentId = id
-            if (url.isNotBlank() && url != "about:blank") view.loadUrl(url)
-            return id
-        }
+fun openNew(url: String, incognito: Boolean = false, groupId: Long = 0L): Long {
+    synchronized(lock) {
+        val id = db.insert(url, incognito, groupId)
+        val view = WebViewEngine.create(ctx, incognito)
+        alive[id] = Slot(view, incognito)
+        currentId = id
+        if (url.isNotBlank() && url != "about:blank") view.loadUrl(url)
+        return id
     }
-
+}
     fun openBlankTab(incognito: Boolean = false, groupId: Long = 0L): Long =
         openNew("about:blank", incognito, groupId)
 
@@ -46,7 +45,7 @@ class TabManager private constructor(private val ctx: Context) {
             alive[id]?.let { currentId = id; return it.view }
             val entity = db.list().firstOrNull { it.id == id }
             val incognito = entity?.incognito ?: false
-            val view = WebViewEngine.create(ctx)
+            val view = WebViewEngine.create(ctx, incognito)
             alive[id] = Slot(view, incognito)
             currentId = id
             val restored = restoreState(id, view)
