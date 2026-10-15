@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingBottom="24dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp">
+
+            <ImageButton
+                android:id="@+id/advBack"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_back"
+                android:tint="@color/text"
+                android:scaleType="centerInside" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="Advanced"
+                android:textColor="@color/text"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp"
+            android:orientation="vertical"
+            android:background="@color/surface">
+
+            <LinearLayout style="@style/UhSettingsRow">
+                <TextView style="@style/UhSettingsLabel" android:layout_marginStart="0dp" android:text="Safe Browsing" />
+                <Switch android:id="@+id/advSafeBrowsing" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/UhSettingsRow">
+                <TextView style="@style/UhSettingsLabel" android:layout_marginStart="0dp" android:text="Do Not Track" />
+                <Switch android:id="@+id/advDnt" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/UhSettingsRow">
+                <TextView style="@style/UhSettingsLabel" android:layout_marginStart="0dp" android:text="Auto De-AMP" />
+                <Switch android:id="@+id/advDeamp" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/UhSettingsRow">
+                <TextView style="@style/UhSettingsLabel" android:layout_marginStart="0dp" android:text="Global Privacy Control" />
+                <Switch android:id="@+id/advGpc" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/UhSettingsRow">
+                <TextView style="@style/UhSettingsLabel" android:layout_marginStart="0dp" android:text="Secure DNS" />
+                <Switch android:id="@+id/advSecureDns" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+            </LinearLayout>
+
+            <LinearLayout android:id="@+id/advWebRtc" style="@style/UhSettingsRow">
+                <TextView style="@style/UhSettingsLabel" android:layout_marginStart="0dp" android:text="WebRTC IP Protection" />
+                <ImageView style="@style/UhSettingsChevron" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>
