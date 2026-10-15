@@ -7,6 +7,7 @@ import android.content.Intent
 class UHApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        ThemePrefs.applyCurrent(this)
         UHLog.init(this)
         SessionRecorder.init(this)
         try {
