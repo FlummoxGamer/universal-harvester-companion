@@ -122,16 +122,6 @@
                 android:max="100"
                 android:visibility="gone" />
 
-            <ImageButton
-                android:id="@+id/btnVoice"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@drawable/ic_mic"
-                android:tint="@color/subtext"
-                android:scaleType="centerInside"
-                android:contentDescription="Voice search" />
-
             <TextView
                 android:id="@+id/tabCount"
                 android:layout_width="wrap_content"
