@@ -84,6 +84,11 @@
             android:label="Accessibility" />
 
         <activity
+            android:name=".CustomizeAddressBarActivity"
+            android:exported="false"
+            android:label="Customize Address Bar" />
+
+        <activity
             android:name=".PrivacyGuardActivity"
             android:exported="false"
             android:label="Privacy Guard" />
