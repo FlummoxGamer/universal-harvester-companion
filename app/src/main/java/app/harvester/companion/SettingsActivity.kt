@@ -32,6 +32,9 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<android.view.View>(R.id.settingsAccessibility).setOnClickListener {
             startActivity(Intent(this, AccessibilityActivity::class.java))
         }
+        findViewById<android.view.View>(R.id.settingsCustomizeAddressBar).setOnClickListener {
+            startActivity(Intent(this, CustomizeAddressBarActivity::class.java))
+        }
         findViewById<android.view.View>(R.id.settingsPrivacyGuard).setOnClickListener {
             startActivity(Intent(this, PrivacyGuardActivity::class.java))
         }
