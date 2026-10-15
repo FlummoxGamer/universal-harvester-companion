@@ -504,7 +504,13 @@ fun injectOnPageStart(view: WebView, ctx: Context, url: String) {
     return { wrap: wrap, async: async };
   };
 
-  window.__uh_xhr_done = function(id, status, responseText, responseHeaders, finalUrl) {
+window.__uh_xhr_progress = function(id, loaded, total) {
+  var d = window.__uh_xhr[id];
+  if (!d) return;
+  if (d.onprogress) try { d.onprogress({ readyState: 3, loaded: loaded, total: total, lengthComputable: total > 0 }); } catch(e) {}
+};
+
+window.__uh_xhr_done = function(id, status, responseText, responseHeaders, finalUrl) {
     var d = window.__uh_xhr[id];
     if (!d) return;
     delete window.__uh_xhr[id];
