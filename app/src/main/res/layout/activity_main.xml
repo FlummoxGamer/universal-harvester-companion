@@ -38,7 +38,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Universal Harvester"
-            android:textColor="@color/accent"
+            android:textColor="@color/text"
             android:textSize="34sp"
             android:textStyle="bold"
             android:layout_marginBottom="36dp" />
@@ -63,7 +63,7 @@
         android:layout_height="60dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:background="@color/surface_2"
+        android:background="@color/bg"
         android:paddingStart="6dp"
         android:paddingEnd="6dp"
         app:layout_constraintBottom_toBottomOf="parent"
@@ -77,29 +77,21 @@
             android:background="?attr/selectableItemBackgroundBorderless"
             android:src="@drawable/ic_extension_rounded"
             android:scaleType="centerInside"
+            android:tint="@color/subtext"
             android:contentDescription="Scripts" />
-
-        <ImageButton
-            android:id="@+id/btnShield"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_shield"
-            android:scaleType="centerInside"
-            android:contentDescription="Privacy" />
 
         <LinearLayout
             android:id="@+id/urlBar"
             android:layout_width="0dp"
-            android:layout_height="42dp"
+            android:layout_height="44dp"
             android:layout_weight="1"
-            android:layout_marginStart="4dp"
-            android:layout_marginEnd="4dp"
+            android:layout_marginStart="2dp"
+            android:layout_marginEnd="2dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:background="@color/surface"
-            android:paddingStart="12dp"
-            android:paddingEnd="10dp"
+            android:paddingStart="14dp"
+            android:paddingEnd="6dp"
             android:clickable="true"
             android:focusable="true">
 
@@ -108,7 +100,8 @@
                 android:layout_width="14dp"
                 android:layout_height="14dp"
                 android:src="@drawable/ic_lock"
-                android:layout_marginEnd="6dp" />
+                android:tint="@color/subtext"
+                android:layout_marginEnd="8dp" />
 
             <TextView
                 android:id="@+id/urlText"
@@ -117,8 +110,9 @@
                 android:layout_weight="1"
                 android:maxLines="1"
                 android:ellipsize="end"
-                android:textColor="@color/text"
-                android:textSize="13sp" />
+                android:text="Search or type URL"
+                android:textColor="@color/subtext"
+                android:textSize="14sp" />
 
             <ProgressBar
                 android:id="@+id/pageProgress"
@@ -127,20 +121,30 @@
                 android:layout_height="2dp"
                 android:max="100"
                 android:visibility="gone" />
-        </LinearLayout>
 
-        <TextView
-            android:id="@+id/tabCount"
-            android:layout_width="wrap_content"
-            android:layout_height="32dp"
-            android:minWidth="32dp"
-            android:gravity="center"
-            android:background="@color/surface"
-            android:textColor="@color/text"
-            android:textSize="12sp"
-            android:paddingStart="6dp"
-            android:paddingEnd="6dp"
-            android:text="1" />
+            <ImageButton
+                android:id="@+id/btnVoice"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_mic"
+                android:tint="@color/subtext"
+                android:scaleType="centerInside"
+                android:contentDescription="Voice search" />
+
+            <TextView
+                android:id="@+id/tabCount"
+                android:layout_width="wrap_content"
+                android:layout_height="28dp"
+                android:minWidth="28dp"
+                android:gravity="center"
+                android:background="@color/surface_3"
+                android:textColor="@color/text"
+                android:textSize="12sp"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:text="1" />
+        </LinearLayout>
 
         <ImageButton
             android:id="@+id/btnMenu"
@@ -148,6 +152,7 @@
             android:layout_height="40dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:src="@drawable/ic_menu"
+            android:tint="@color/subtext"
             android:scaleType="centerInside"
             android:contentDescription="Menu" />
     </LinearLayout>
