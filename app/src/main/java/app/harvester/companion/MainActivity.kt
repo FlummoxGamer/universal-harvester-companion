@@ -339,6 +339,69 @@ private fun exitEditMode() {
         }
     }
 
+    private fun pickOrCreateGroup() {
+    val groups = TabGroupStore.list(this)
+    if (groups.isEmpty()) {
+        showAddGroupDialog()
+        return
+    }
+    val names = groups.map { it.name }.toMutableList()
+    names.add("+ New group")
+    AlertDialog.Builder(this)
+        .setTitle("Add tab to group")
+        .setItems(names.toTypedArray()) { _, which ->
+            if (which == groups.size) {
+                showAddGroupDialog()
+            } else {
+                val g = groups[which]
+                tabs.updateGroup(tabs.currentId(), g.id)
+                Toast.makeText(this, "Added to ${g.name}", Toast.LENGTH_SHORT).show()
+                updateUi()
+            }
+        }
+        .show()
+}
+
+private fun showAddGroupDialog() {
+    val view = layoutInflater.inflate(R.layout.dialog_create_group, null)
+    val input = view.findViewById<EditText>(R.id.groupNameInput)
+    val dialog = AlertDialog.Builder(this)
+        .setView(view)
+        .setCancelable(true)
+        .create()
+
+    view.findViewById<android.view.View>(R.id.groupCancel)?.setOnClickListener {
+        dialog.dismiss()
+    }
+    view.findViewById<android.view.View>(R.id.groupCreate)?.setOnClickListener {
+        val name = input.text.toString().trim().ifBlank { "Group" }
+        TabGroupStore.create(this, name)
+        Toast.makeText(this, "Group '$name' created", Toast.LENGTH_SHORT).show()
+        dialog.dismiss()
+    }
+    dialog.show()
+}
+    
+    private fun showAddGroupDialog() {
+    val view = layoutInflater.inflate(R.layout.dialog_create_group, null)
+    val input = view.findViewById<EditText>(R.id.groupNameInput)
+    val dialog = AlertDialog.Builder(this)
+        .setView(view)
+        .setCancelable(true)
+        .create()
+
+    view.findViewById<android.view.View>(R.id.groupCancel)?.setOnClickListener {
+        dialog.dismiss()
+    }
+    view.findViewById<android.view.View>(R.id.groupCreate)?.setOnClickListener {
+        val name = input.text.toString().trim().ifBlank { "Group" }
+        TabGroupStore.create(this, name)
+        Toast.makeText(this, "Group '$name' created", Toast.LENGTH_SHORT).show()
+        dialog.dismiss()
+    }
+    dialog.show()
+}
+
     private fun showAddShortcutDialog() { showShortcutEditor(null) }
 
     private fun showShortcutEditor(existing: Shortcut?) {
@@ -833,7 +896,12 @@ private fun openTabGrid() {
             sheet.dismiss(); startActivity(Intent(this, ToolsActivity::class.java))
         }
         v.findViewById<View>(R.id.menuLogs)?.setOnClickListener {
-            sheet.dismiss(); startActivity(Intent(this, LogsActivity::class.java))
+            sheet.dismiss()
+            startActivity(Intent(this, LogsActivity::class.java))
+        }
+        v.findViewById<View>(R.id.menuAddToGroup)?.setOnClickListener {
+            sheet.dismiss()
+            pickOrCreateGroup()
         }
         v.findViewById<View>(R.id.menuBottomHome)?.setOnClickListener {
             sheet.dismiss()
