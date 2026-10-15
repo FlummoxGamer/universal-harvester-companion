@@ -11,7 +11,7 @@ import android.webkit.WebView
 object WebViewEngine {
 
     @SuppressLint("SetJavaScriptEnabled")
-    fun create(ctx: Context): WebView {
+    fun create(ctx: Context, incognito: Boolean = false): WebView {
         val themed = ContextThemeWrapper(ctx, R.style.Theme_UHCompanion)
         val view = WebView(themed)
         view.layoutParams = ViewGroup.LayoutParams(
@@ -20,13 +20,13 @@ object WebViewEngine {
         )
         view.settings.apply {
             javaScriptEnabled = true
-            domStorageEnabled = true
-            databaseEnabled = true
+            domStorageEnabled = !incognito
+            databaseEnabled = !incognito
             allowFileAccess = false
             allowContentAccess = false
             mediaPlaybackRequiresUserGesture = false
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-            cacheMode = WebSettings.LOAD_DEFAULT
+            cacheMode = if (incognito) WebSettings.LOAD_NO_CACHE else WebSettings.LOAD_DEFAULT
             setSupportMultipleWindows(true)
             javaScriptCanOpenWindowsAutomatically = true
             useWideViewPort = true
@@ -38,8 +38,10 @@ object WebViewEngine {
             if (ua != null) userAgentString = ua.replace("; wv", "")
         }
         try {
-            CookieManager.getInstance().setAcceptCookie(true)
-            CookieManager.getInstance().setAcceptThirdPartyCookies(view, true)
+            if (!incognito) {
+                CookieManager.getInstance().setAcceptCookie(true)
+                CookieManager.getInstance().setAcceptThirdPartyCookies(view, true)
+            }
         } catch (_: Throwable) {}
         val bridge = UserscriptBridge(ctx)
         view.addJavascriptInterface(bridge, "UH_BRIDGE")
