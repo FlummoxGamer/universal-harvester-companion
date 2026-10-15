@@ -51,8 +51,7 @@ class MainActivity : AppCompatActivity() {
 
         DownloadStore.ensureInstalled(this)
         DownloadStore.listener = { runOnUiThread { refreshDownloadSheet() } }
-        MenuCommandStore.listener = { runOnUiThread { refreshScriptMenuIcon() } }
-
+        
         setupHomeGrid()
         setupBottomBar()
         setupBackDispatcher()
@@ -83,9 +82,7 @@ class MainActivity : AppCompatActivity() {
         binding.btnMenu.setOnClickListener { showMenu() }
         binding.tabCount.setOnClickListener { openTabGrid() }
         binding.btnScriptMenu.setOnClickListener { showScriptMenuSheet() }
-        binding.btnShield.setOnClickListener {
-            startActivity(Intent(this, PrivacyGuardActivity::class.java))
-        }
+        
     }
 
     private fun setupBackDispatcher() {
@@ -458,30 +455,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun switchTab(id: Long) {
-        tabs.saveCurrentState()
-        tabs.acquireView(id)
-        attachCurrent()
-        val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
-        binding.urlText.text = if (url == "about:blank") "" else url
-        updateUi()
-    }
-
-    private fun updateUi() {
-        prunePopupTabs()
-        val id = tabs.currentId()
-        val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
-        binding.urlText.text = if (url == "about:blank") "" else url
-        binding.urlIcon.visibility = if (url.startsWith("https")) View.VISIBLE else View.INVISIBLE
-        binding.tabCount.text = tabs.list().size.toString()
-        refreshScriptMenuIcon()
-        updateHomeVisibility()
-    }
-
-    private fun refreshScriptMenuIcon() {
-        // icon always visible per user spec
-        binding.btnScriptMenu.visibility = View.VISIBLE
-    }
+private fun updateUi() {
+    prunePopupTabs()
+    val id = tabs.currentId()
+    val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
+    val isEmpty = url.isBlank() || url == "about:blank"
+    binding.urlText.text = if (isEmpty) "Search or type URL" else url
+    binding.urlText.setTextColor(if (isEmpty) 0x8A96A8.toInt() else 0xFFE6E9EE.toInt())
+    binding.urlIcon.setImageResource(
+        if (url.startsWith("https")) R.drawable.ic_lock else R.drawable.ic_lock_open
+    )
+    binding.tabCount.text = tabs.list().size.toString()
+    binding.btnScriptMenu.visibility = View.VISIBLE
+    updateHomeVisibility()
+}
 
     private fun matchingScriptsForPage(url: String): List<UserscriptManager.Script> {
         if (url.isBlank() || url == "about:blank") return emptyList()
@@ -633,76 +620,45 @@ class MainActivity : AppCompatActivity() {
         return SearchEnginePrefs.getSearchUrl(this, t)
     }
 
-    private fun showMenu() {
-        val sheet = BottomSheetDialog(this)
-        val v = layoutInflater.inflate(R.layout.dialog_main_menu, null)
-        sheet.setContentView(v)
+private fun showMenu() {
+    val sheet = BottomSheetDialog(this)
+    val v = layoutInflater.inflate(R.layout.dialog_main_menu, null)
+    sheet.setContentView(v)
 
-        v.findViewById<View>(R.id.menuFavorites)?.setOnClickListener {
-            sheet.dismiss()
-            toast("Favorites coming soon")
-        }
-        v.findViewById<View>(R.id.menuHistory)?.setOnClickListener {
-            sheet.dismiss()
-            toast("History coming soon")
-        }
-        v.findViewById<View>(R.id.menuDownloads)?.setOnClickListener {
-            sheet.dismiss()
-            openSystemDownloads()
-        }
-        v.findViewById<View>(R.id.menuPlaylist)?.setOnClickListener {
-            sheet.dismiss()
-            toast("Playlist coming soon")
-        }
-        v.findViewById<View>(R.id.menuSettings)?.setOnClickListener {
-            sheet.dismiss()
-            startActivity(Intent(this, SettingsActivity::class.java))
-        }
-        v.findViewById<View>(R.id.menuTranslate)?.setOnClickListener {
-            sheet.dismiss()
-            openGoogleTranslate()
-        }
-        v.findViewById<View>(R.id.menuFindPage)?.setOnClickListener {
-            sheet.dismiss()
-            showFindOnPageDialog()
-        }
-        v.findViewById<View>(R.id.menuMobileSite)?.setOnClickListener {
-            sheet.dismiss()
-            toast("Requesting mobile site...")
-            currentView?.reload()
-        }
-        v.findViewById<View>(R.id.menuAddHome)?.setOnClickListener {
-            sheet.dismiss()
-            toast("Add to Home Screen coming soon")
-        }
-        v.findViewById<View>(R.id.menuDevTools)?.setOnClickListener {
-            sheet.dismiss()
-            openDevTools()
-        }
-        v.findViewById<View>(R.id.menuNewTab)?.setOnClickListener {
-            sheet.dismiss()
-            tabs.openNew("about:blank")
-            attachCurrent()
-            updateUi()
-        }
-        v.findViewById<View>(R.id.menuReload)?.setOnClickListener {
-            sheet.dismiss()
-            currentView?.reload()
-        }
-        v.findViewById<View>(R.id.menuScripts)?.setOnClickListener {
-            sheet.dismiss()
-            startActivity(Intent(this, ScriptsActivity::class.java))
-        }
-        v.findViewById<View>(R.id.menuTools)?.setOnClickListener {
-            sheet.dismiss()
-            startActivity(Intent(this, ToolsActivity::class.java))
-        }
-        v.findViewById<View>(R.id.menuLogs)?.setOnClickListener {
-            sheet.dismiss()
-            startActivity(Intent(this, LogsActivity::class.java))
-        }
-        sheet.show()
+    v.findViewById<View>(R.id.menuFavorites)?.setOnClickListener {
+        sheet.dismiss()
+        toast("Favorites coming soon")
     }
+    v.findViewById<View>(R.id.menuHistory)?.setOnClickListener {
+        sheet.dismiss()
+        toast("History coming soon")
+    }
+    v.findViewById<View>(R.id.menuDownloads)?.setOnClickListener {
+        sheet.dismiss()
+        openSystemDownloads()
+    }
+    v.findViewById<View>(R.id.menuPlaylist)?.setOnClickListener {
+        sheet.dismiss()
+        toast("Playlist coming soon")
+    }
+    v.findViewById<View>(R.id.menuSettings)?.setOnClickListener {
+        sheet.dismiss()
+        startActivity(Intent(this, SettingsActivity::class.java))
+    }
+    v.findViewById<View>(R.id.menuScripts)?.setOnClickListener {
+        sheet.dismiss()
+        startActivity(Intent(this, ScriptsActivity::class.java))
+    }
+    v.findViewById<View>(R.id.menuTools)?.setOnClickListener {
+        sheet.dismiss()
+        startActivity(Intent(this, ToolsActivity::class.java))
+    }
+    v.findViewById<View>(R.id.menuLogs)?.setOnClickListener {
+        sheet.dismiss()
+        startActivity(Intent(this, LogsActivity::class.java))
+    }
+    sheet.show()
+}
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
 
@@ -903,18 +859,19 @@ class MainActivity : AppCompatActivity() {
         updateUi()
     }
 
-    override fun onResume() {
-        super.onResume()
-        UpdateChecker.resumePendingInstallIfPossible(this)
-        if (UserscriptStore.consumeDirty(this)) {
-            val v = currentView
-            val u = v?.url
-            if (v != null && !u.isNullOrBlank()) {
-                UserscriptManager.injectOnPageStart(v, this, u)
-            }
+override fun onResume() {
+    super.onResume()
+    UpdateChecker.resumePendingInstallIfPossible(this)
+    MenuCommandStore.listener = { runOnUiThread { updateUi() } }
+    if (UserscriptStore.consumeDirty(this)) {
+        val v = currentView
+        val u = v?.url
+        if (v != null && !u.isNullOrBlank()) {
+            UserscriptManager.injectOnPageStart(v, this, u)
         }
-        refreshScriptMenuIcon()
     }
+    updateUi()
+}
 
     override fun onPause() {
         super.onPause()
@@ -922,10 +879,9 @@ class MainActivity : AppCompatActivity() {
         UHLog.onActivityPause(this)
     }
 
-    override fun onDestroy() {
-        tabs.saveAll()
-        DownloadStore.clearListeners()
-        MenuCommandStore.listener = null
-        super.onDestroy()
-    }
+override fun onDestroy() {
+    tabs.saveAll()
+    DownloadStore.clearListeners()
+    super.onDestroy()
+}
 }
