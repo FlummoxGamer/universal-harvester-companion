@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
@@ -9,44 +10,107 @@
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="48dp"
         android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingBottom="12dp">
+        android:gravity="center_vertical">
 
-        <TextView
+        <ImageButton
+            android:id="@+id/btnTabSearch"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_search"
+            android:tint="@color/text"
+            android:scaleType="centerInside"
+            android:contentDescription="Search" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:minWidth="48dp"
+            android:gravity="center"
+            android:background="@color/surface_2"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp">
+            <TextView
+                android:id="@+id/tabGridTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0"
+                android:textColor="@color/text"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <Space
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Tabs"
-            android:textColor="@color/text"
-            android:textSize="20sp"
-            android:textStyle="bold" />
+            android:layout_height="1dp"
+            android:layout_weight="1" />
 
-        <Button
-            android:id="@+id/btnNewTab"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="+ New"
-            android:backgroundTint="@color/accent_strong"
-            android:textColor="@color/bg"
-            android:minHeight="0dp" />
+        <ImageButton
+            android:id="@+id/btnTabPrivate"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_incognito"
+            android:tint="@color/text"
+            android:scaleType="centerInside"
+            android:contentDescription="Private" />
 
-        <Button
-            android:id="@+id/btnCloseAll"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:text="Close all"
-            android:backgroundTint="@color/red"
-            android:textColor="@color/bg"
-            android:minHeight="0dp" />
+        <ImageButton
+            android:id="@+id/btnTabGridToggle"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_grid_view"
+            android:tint="@color/text"
+            android:scaleType="centerInside"
+            android:contentDescription="View" />
+
+        <ImageButton
+            android:id="@+id/btnTabMenu"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_menu"
+            android:tint="@color/text"
+            android:scaleType="centerInside"
+            android:contentDescription="Menu" />
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/tabGrid"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1" />
+        android:layout_weight="1"
+        android:layout_marginTop="8dp" />
 
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <ImageButton
+            android:id="@+id/btnNewTab"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_add"
+            android:tint="@color/text"
+            android:scaleType="centerInside"
+            android:contentDescription="New tab" />
+
+        <ImageButton
+            android:id="@+id/btnCloseAll"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_close"
+            android:tint="@color/text"
+            android:scaleType="centerInside"
+            android:contentDescription="Close all" />
+    </LinearLayout>
 </LinearLayout>
