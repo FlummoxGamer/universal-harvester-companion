@@ -79,12 +79,18 @@
                 <ImageView style="@style/UhSettingsChevron" />
             </LinearLayout>
 
-            <LinearLayout android:id="@+id/settingsAccessibility" style="@style/UhSettingsRow">
-                <ImageView style="@style/UhSettingsIcon" android:src="@drawable/ic_info" />
-                <TextView style="@style/UhSettingsLabel" android:text="Accessibility" />
-                <ImageView style="@style/UhSettingsChevron" />
-            </LinearLayout>
-        </LinearLayout>
+           <LinearLayout android:id="@+id/settingsAccessibility" style="@style/UhSettingsRow">
+              <ImageView style="@style/UhSettingsIcon" android:src="@drawable/ic_info" />
+              <TextView style="@style/UhSettingsLabel" android:text="Accessibility" />
+              <ImageView style="@style/UhSettingsChevron" />
+          </LinearLayout>
+
+          <LinearLayout android:id="@+id/settingsCustomizeAddressBar" style="@style/UhSettingsRow">
+             <ImageView style="@style/UhSettingsIcon" android:src="@drawable/ic_search" />
+             <TextView style="@style/UhSettingsLabel" android:text="Customize Address Bar" />
+             <ImageView style="@style/UhSettingsChevron" />
+         </LinearLayout>
+     </LinearLayout>
 
         <TextView
             android:layout_width="wrap_content"
