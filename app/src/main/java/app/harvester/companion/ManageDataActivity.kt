@@ -10,6 +10,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import java.io.File
 
 class ManageDataActivity : AppCompatActivity() {
@@ -40,17 +41,15 @@ class ManageDataActivity : AppCompatActivity() {
                 toast("Script storage cleared")
             } catch (_: Exception) { toast("Failed") }
         }
-        addAction(c, "Clear all captured session files") {
-            confirmClearSessions()
-        }
+        addAction(c, "Clear all captured session files") { confirmClearSessions() }
     }
 
     private fun addAction(parent: LinearLayout, label: String, action: () -> Unit) {
         val btn = Button(this).apply {
             text = label
             isAllCaps = false
-            setTextColor(0xFFE6E9EE.toInt())
-            setBackgroundColor(0xFF171B21.toInt())
+            setTextColor(ContextCompat.getColor(this@ManageDataActivity, R.color.text))
+            setBackgroundColor(ContextCompat.getColor(this@ManageDataActivity, R.color.surface))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
