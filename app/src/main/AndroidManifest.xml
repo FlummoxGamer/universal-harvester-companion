@@ -94,6 +94,11 @@
             android:label="Privacy Guard" />
 
         <activity
+            android:name=".AdvancedActivity"
+            android:exported="false"
+            android:label="Advanced" />
+        
+        <activity
             android:name=".ManageDataActivity"
             android:exported="false"
             android:label="Manage Data" />
