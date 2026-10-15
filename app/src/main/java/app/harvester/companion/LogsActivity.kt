@@ -37,18 +37,27 @@ class LogsActivity : AppCompatActivity() {
         logView.movementMethod = ScrollingMovementMethod()
         logView.setTextIsSelectable(true)
 
-        findViewById<ImageButton>(R.id.logsBack).setOnClickListener { finish() }
-        findViewById<Button>(R.id.logsRefresh).setOnClickListener { refresh() }
-        findViewById<Button>(R.id.logsSave).setOnClickListener { save() }
-        findViewById<Button>(R.id.logsCopy).setOnClickListener { copy() }
-        findViewById<Button>(R.id.logsClear).setOnClickListener {
-            UHLog.clear()
-            refresh()
-        }
-
+    findViewById<ImageButton>(R.id.logsBack).setOnClickListener { finish() }
+    findViewById<Button>(R.id.logsRefresh).setOnClickListener { refresh() }
+    findViewById<Button>(R.id.logsSave).setOnClickListener { save() }
+    findViewById<Button>(R.id.logsCopy).setOnClickListener { copy() }
+    findViewById<Button>(R.id.logsClear).setOnClickListener {
+        UHLog.clear()
         refresh()
     }
 
+    val verboseToggle = findViewById<android.widget.Switch>(R.id.logsVerbose)
+    verboseToggle.isChecked = DebugPrefs.verboseLogging(this)
+    verboseToggle.setOnCheckedChangeListener { _, checked ->
+        DebugPrefs.setVerboseLogging(this, checked)
+        UHLog.setVerbose(checked)
+        Toast.makeText(this,
+            if (checked) "Verbose on" else "Verbose off",
+            Toast.LENGTH_SHORT).show()
+    }
+
+    refresh()
+    }
     private fun refresh() {
         logView.text = UHLog.snapshot()
         val bytes = UHLog.fileSize()
