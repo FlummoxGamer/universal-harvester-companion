@@ -38,30 +38,40 @@ object DownloadsQuery {
             2 -> "${MediaStore.Downloads.DISPLAY_NAME} ASC"
             else -> "${MediaStore.Downloads.DATE_ADDED} DESC"
         }
-        try {
-            ctx.contentResolver.query(collection, projection, null, null, order)?.use { c ->
-                while (c.moveToNext() && out.size < 500) {
-                    val id = c.getLong(0)
-                    val display = c.getString(1) ?: ""
-                    val title = c.getString(2) ?: display
-                    val size = c.getLong(3)
-                    val dateSec = c.getLong(4)
-                    val mime = c.getString(5) ?: "*/*"
-                    out.add(
-                        Item(
-                            id = id,
-                            title = title,
-                            filename = display,
-                            sizeText = humanSize(size),
-                            dateText = humanDate(dateSec),
-                            mime = mime
-                        )
+    try {
+        ctx.contentResolver.query(collection, projection, null, null, order)?.use { c ->
+            while (c.moveToNext() && out.size < 500) {
+                val id = c.getLong(0)
+                val display = c.getString(1) ?: ""
+                if (isInternalFile(display)) continue
+                val title = c.getString(2) ?: display
+                val size = c.getLong(3)
+                val dateSec = c.getLong(4)
+                val mime = c.getString(5) ?: "*/*"
+                out.add(
+                    Item(
+                        id = id,
+                        title = title,
+                        filename = display,
+                        sizeText = humanSize(size),
+                        dateText = humanDate(dateSec),
+                        mime = mime
                     )
-                }
+                )
             }
-        } catch (_: Exception) {}
-        return out
-    }
+        }
+    } catch (_: Exception) {}
+    return out
+}
+
+private fun isInternalFile(name: String): Boolean {
+    val n = name.lowercase()
+    if (n.startsWith("uh_log_")) return true
+    if (n.startsWith("uh_net_")) return true
+    if (n == "log" || n == "net") return true
+    if (n == "log.txt" || n == "net.txt" || n == "session.json") return true
+    return false
+}
 
     fun uriFor(id: Long): Uri =
         Uri.withAppendedPath(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id.toString())
