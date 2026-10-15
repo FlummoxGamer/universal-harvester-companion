@@ -108,27 +108,29 @@ fun openNew(url: String, incognito: Boolean = false, groupId: Long = 0L): Long {
     }
 
     fun closeAllIncognito() {
-        synchronized(lock) {
-            val incognitoIds = db.list().filter { it.incognito }.map { it.id }
-            for (id in incognitoIds) {
-                val slot = alive.remove(id) ?: continue
-                pendingDestroy.add(slot.view)
-                db.delete(id)
-            }
-            if (currentId in incognitoIds) {
-                currentId = db.list().firstOrNull()?.id ?: -1L
-            }
+    synchronized(lock) {
+        val incognitoIds = db.list().filter { it.incognito }.map { it.id }
+        for (id in incognitoIds) {
+            val slot = alive.remove(id) ?: continue
+            pendingDestroy.add(slot.view)
+            db.delete(id)
         }
-        // Clear cookie jar and storage since incognito is closed
-        try {
-            val cookieManager = android.webkit.CookieManager.getInstance()
-            if (incognitoCleared()) {
-                cookieManager.removeAllCookies(null)
-                cookieManager.flush()
-            }
-        } catch (_: Exception) {}
+        if (currentId in incognitoIds) {
+            currentId = db.list().firstOrNull()?.id ?: -1L
+        }
     }
-
+    // Clear all session data: cookies, cache, storage
+    try {
+        val cookieManager = android.webkit.CookieManager.getInstance()
+        cookieManager.removeAllCookies(null)
+        cookieManager.flush()
+        android.webkit.WebStorage.getInstance().deleteAllData()
+        android.webkit.WebViewDatabase.getInstance(ctx).clearUsernamePassword()
+        android.webkit.WebViewDatabase.getInstance(ctx).clearHttpAuthUsernamePassword()
+        android.webkit.WebViewDatabase.getInstance(ctx).clearFormData()
+    } catch (_: Exception) {}
+    }
+    
     private fun incognitoCleared(): Boolean = listIncognito().isEmpty()
 
     fun evictForMemory(keepCount: Int) {
