@@ -732,18 +732,18 @@ private fun populateScriptSheet(list: LinearLayout, sheet: BottomSheetDialog) {
     }
 }
 
-    private fun openTabGrid() {
-        TabGridDialog(this, tabs,
-            onSwitch = { id -> switchTab(id) },
-            onNew = { tabs.openNew("about:blank"); attachCurrent(); updateUi() }
-        ).apply {
-            setOnDismissListener {
-                val live = tabs.currentView()
-                if (live != null && live !== currentView) { attachCurrent(); updateUi() }
-                else updateUi()
-            }
-        }.show()
-    }
+private fun openTabGrid() {
+    TabGridDialog(this, tabs,
+        onSwitch = { id -> switchTab(id) },
+        onNew = { attachCurrent(); updateUi() }
+    ).apply {
+        setOnDismissListener {
+            val live = tabs.currentView()
+            if (live != null && live !== currentView) { attachCurrent(); updateUi() }
+            else updateUi()
+        }
+    }.show()
+}
 
     private fun normalize(input: String): String {
         val t = input.trim()
