@@ -1,35 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:background="@color/surface_2"
-    android:paddingTop="10dp"
-    android:paddingBottom="20dp"
-    android:paddingStart="12dp"
-    android:paddingEnd="12dp">
-
-    <View
-        android:layout_width="36dp"
-        android:layout_height="4dp"
-        android:layout_gravity="center_horizontal"
-        android:background="@color/subtext"
-        android:layout_marginBottom="14dp" />
+    android:maxHeight="560dp"
+    android:background="@color/surface_2">
 
     <LinearLayout
-        android:id="@+id/engineList"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:background="@color/surface" />
+        android:paddingTop="10dp"
+        android:paddingBottom="20dp"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp">
 
-    <Button
-        android:id="@+id/engineAddCustom"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
-        android:text="Add custom search engine"
-        android:backgroundTint="@color/surface"
-        android:textColor="@color/accent"
-        android:textAllCaps="false" />
-</LinearLayout>
+        <View
+            android:layout_width="36dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center_horizontal"
+            android:background="@color/subtext"
+            android:layout_marginBottom="14dp" />
+
+        <LinearLayout
+            android:id="@+id/engineList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@color/surface" />
+
+        <Button
+            android:id="@+id/engineAddCustom"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="Add custom search engine"
+            android:backgroundTint="@color/surface"
+            android:textColor="@color/accent"
+            android:textAllCaps="false" />
+    </LinearLayout>
+</ScrollView>
