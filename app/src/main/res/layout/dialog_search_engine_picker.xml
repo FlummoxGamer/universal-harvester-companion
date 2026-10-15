@@ -1,25 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:maxHeight="560dp"
-    android:background="@color/surface_2">
+    android:background="@color/surface_2"
+    android:paddingTop="10dp"
+    android:paddingBottom="20dp"
+    android:paddingStart="12dp"
+    android:paddingEnd="12dp">
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:paddingTop="10dp"
-        android:paddingBottom="20dp"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp">
+    <View
+        android:id="@+id/pickerHandle"
+        android:layout_width="36dp"
+        android:layout_height="4dp"
+        android:background="@color/subtext"
+        android:layout_marginBottom="14dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
 
-        <View
-            android:layout_width="36dp"
-            android:layout_height="4dp"
-            android:layout_gravity="center_horizontal"
-            android:background="@color/subtext"
-            android:layout_marginBottom="14dp" />
+    <ScrollView
+        android:id="@+id/engineScroll"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintHeight_max="520dp"
+        app:layout_constraintHeight_default="wrap"
+        app:layout_constraintTop_toBottomOf="@id/pickerHandle"
+        app:layout_constraintBottom_toTopOf="@id/engineAddCustom"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
 
         <LinearLayout
             android:id="@+id/engineList"
@@ -27,15 +37,19 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:background="@color/surface" />
+    </ScrollView>
 
-        <Button
-            android:id="@+id/engineAddCustom"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:text="Add custom search engine"
-            android:backgroundTint="@color/surface"
-            android:textColor="@color/accent"
-            android:textAllCaps="false" />
-    </LinearLayout>
-</ScrollView>
+    <Button
+        android:id="@+id/engineAddCustom"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:text="Add custom search engine"
+        android:backgroundTint="@color/surface"
+        android:textColor="@color/accent"
+        android:textAllCaps="false"
+        app:layout_constraintTop_toBottomOf="@id/engineScroll"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent" />
+</androidx.constraintlayout.widget.ConstraintLayout>
