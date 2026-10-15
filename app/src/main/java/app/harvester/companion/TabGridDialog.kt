@@ -55,14 +55,26 @@ class TabGridDialog(
         )
         grid.adapter = adapter
 
-        findViewById<Button>(R.id.btnNewTab).setOnClickListener {
+        findViewById<android.widget.TextView>(R.id.tabGridTitle)?.text =
+            manager.list().size.toString()
+
+        findViewById<android.view.View>(R.id.btnNewTab).setOnClickListener {
             dismiss()
             onNew()
         }
-        findViewById<Button>(R.id.btnCloseAll).setOnClickListener {
+        findViewById<android.view.View>(R.id.btnCloseAll).setOnClickListener {
             manager.closeAll()
             dismiss()
             onNew()
+        }
+        findViewById<android.view.View>(R.id.btnTabSearch)?.setOnClickListener {
+            dismiss()
+        }
+        findViewById<android.view.View>(R.id.btnTabPrivate)?.setOnClickListener {
+            dismiss()
+        }
+        findViewById<android.view.View>(R.id.btnTabMenu)?.setOnClickListener {
+            dismiss()
         }
     }
 
