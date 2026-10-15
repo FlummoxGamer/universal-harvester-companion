@@ -42,6 +42,12 @@ object ShortcutStore {
         ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
             .edit().putString(KEY, arr.toString()).apply()
     }
+    fun shortNameFor(targetUrl: String): String {
+        val host = try { java.net.URI(targetUrl).host } catch (_: Exception) { null }
+            ?: return targetUrl
+        val clean = host.removePrefix("www.")
+        return clean.substringBefore('.')
+    }
 
     fun add(ctx: Context, s: Shortcut) {
         val current = list(ctx)
