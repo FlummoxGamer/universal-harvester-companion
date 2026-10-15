@@ -3,8 +3,11 @@ package app.harvester.companion
 import android.os.Bundle
 import android.view.View
 import android.widget.LinearLayout
+import android.widget.RadioButton
 import android.widget.Switch
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 
 class DownloadSettingsActivity : AppCompatActivity() {
 
@@ -12,13 +15,13 @@ class DownloadSettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings_simple)
 
-        findViewById<android.widget.TextView>(R.id.simpleTitle).text = "Download Settings"
+        findViewById<TextView>(R.id.simpleTitle).text = "Download Settings"
         findViewById<View>(R.id.simpleBack).setOnClickListener { finish() }
 
         val c = findViewById<LinearLayout>(R.id.simpleContent)
 
         val askRow = layoutInflater.inflate(R.layout.item_tool_category, c, false)
-        askRow.findViewById<android.widget.TextView>(R.id.rowLabel).text = "Ask Before Downloading"
+        askRow.findViewById<TextView>(R.id.rowLabel).text = "Ask Before Downloading"
         val askSw = askRow.findViewById<Switch>(R.id.rowSwitch)
         askSw.isChecked = SettingsPrefs.getBool(this, SettingsPrefs.K_ASK_DL, true)
         askSw.setOnCheckedChangeListener { _, b ->
@@ -26,9 +29,9 @@ class DownloadSettingsActivity : AppCompatActivity() {
         }
         c.addView(askRow)
 
-        val title = android.widget.TextView(this).apply {
+        val title = TextView(this).apply {
             text = "DOWNLOAD LOCATION"
-            setTextColor(0xFF8A96A8.toInt())
+            setTextColor(ContextCompat.getColor(this@DownloadSettingsActivity, R.color.subtext))
             textSize = 12f
             setPadding(16, 32, 16, 8)
         }
@@ -37,10 +40,11 @@ class DownloadSettingsActivity : AppCompatActivity() {
         val opts = listOf("Data Vault", "Public Storage", "External Downloader")
         val current = SettingsPrefs.getInt(this, SettingsPrefs.K_DL_LOCATION, 1)
         for ((i, name) in opts.withIndex()) {
-            val row = android.widget.LinearLayout(this).apply {
+            val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = android.view.Gravity.CENTER_VERTICAL
-                setBackgroundColor(0xFF171B21.toInt())
+                setBackgroundColor(ContextCompat.getColor(
+                    this@DownloadSettingsActivity, R.color.surface))
                 setPadding(32, 32, 32, 32)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
@@ -52,13 +56,17 @@ class DownloadSettingsActivity : AppCompatActivity() {
                     recreate()
                 }
             }
-            val radio = android.widget.RadioButton(this).apply {
+            val radio = RadioButton(this).apply {
                 isChecked = (i == current)
                 isClickable = false
+                buttonTintList = android.content.res.ColorStateList.valueOf(
+                    ContextCompat.getColor(this@DownloadSettingsActivity, R.color.accent)
+                )
             }
-            val label = android.widget.TextView(this).apply {
+            val label = TextView(this).apply {
                 text = name
-                setTextColor(0xFFE6E9EE.toInt())
+                setTextColor(ContextCompat.getColor(
+                    this@DownloadSettingsActivity, R.color.text))
                 textSize = 15f
                 setPadding(24, 0, 0, 0)
             }
