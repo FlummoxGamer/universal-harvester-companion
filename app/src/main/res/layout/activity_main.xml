@@ -53,6 +53,26 @@
             android:layout_weight="1.4" />
     </LinearLayout>
 
+    <FrameLayout
+        android:id="@+id/suggestionsPanel"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:background="@color/bg"
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/loadingBar"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/suggestionsList"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:paddingTop="4dp"
+            android:paddingBottom="20dp"
+            android:clipToPadding="false" />
+    </FrameLayout>
+
     <ProgressBar
         android:id="@+id/loadingBar"
         style="?android:attr/progressBarStyleHorizontal"
