@@ -109,67 +109,92 @@ init {
 
     // --- XHR ---
 
-    @JavascriptInterface
-    fun GM_xmlhttpRequest(
-        script: String, id: String, method: String, url: String,
-        headersJson: String, body: String, responseType: String,
-        timeoutStr: String, user: String, password: String
-    ) {
-        Thread {
+@JavascriptInterface
+fun GM_xmlhttpRequest(
+    script: String, id: String, method: String, url: String,
+    headersJson: String, body: String, responseType: String,
+    timeoutStr: String, user: String, password: String
+) {
+    Thread {
+        try {
+            val conn = URL(url).openConnection() as HttpURLConnection
+            conn.requestMethod = method
+            conn.connectTimeout = 20000
+            conn.readTimeout = timeoutStr.toIntOrNull()?.takeIf { it > 0 } ?: 20000
+            conn.instanceFollowRedirects = true
+
             try {
-                val conn = URL(url).openConnection() as HttpURLConnection
-                conn.requestMethod = method
-                conn.connectTimeout = 20000
-                conn.readTimeout = timeoutStr.toIntOrNull()?.takeIf { it > 0 } ?: 20000
-                conn.instanceFollowRedirects = true
+                val hdrs = if (headersJson.isBlank()) JSONObject() else JSONObject(headersJson)
+                for (k in hdrs.keys()) conn.setRequestProperty(k, hdrs.optString(k))
+            } catch (_: Exception) {}
 
-                try {
-                    val hdrs = if (headersJson.isBlank()) JSONObject() else JSONObject(headersJson)
-                    for (k in hdrs.keys()) conn.setRequestProperty(k, hdrs.optString(k))
-                } catch (_: Exception) {}
-
-                val cookie = try { CookieManager.getInstance().getCookie(url) } catch (_: Exception) { null }
-                if (!cookie.isNullOrBlank() && conn.getRequestProperty("Cookie") == null) {
-                    conn.setRequestProperty("Cookie", cookie)
-                }
-                if (conn.getRequestProperty("User-Agent") == null) {
-                    conn.setRequestProperty("User-Agent",
-                        "Mozilla/5.0 (Linux; Android 10; RMX1801) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/153.0.8010.57 Mobile Safari/537.36")
-                }
-
-                if (body.isNotBlank() && method in listOf("POST", "PUT", "PATCH", "DELETE")) {
-                    conn.doOutput = true
-                    conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-                }
-
-                xhrAborts[id] = conn
-
-                val status = conn.responseCode
-                val stream = if (status in 200..299) conn.inputStream else conn.errorStream
-                val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
-                val respHeaders = StringBuilder()
-                for ((k, values) in conn.headerFields) {
-                    if (k == null) continue
-                    for (vv in values) respHeaders.append(k).append(": ").append(vv).append("\r\n")
-                }
-                val finalUrl = conn.url.toString()
-                xhrAborts.remove(id)
-                conn.disconnect()
-
-                val payload = buildPayload(responseType, text)
-                val w = v() ?: return@Thread
-                val js = "try{window.__uh_xhr_done('" + id + "'," + status + "," +
-                    jsString(payload) + "," + jsString(respHeaders.toString()) + "," +
-                    jsString(finalUrl) + ")}catch(e){}"
-                w.post { w.evaluateJavascript(js, null) }
-            } catch (e: Exception) {
-                xhrAborts.remove(id)
-                val w = v() ?: return@Thread
-                val js = "try{window.__uh_xhr_error('" + id + "'," + jsString(e.message ?: "error") + ")}catch(e){}"
-                w.post { w.evaluateJavascript(js, null) }
+            val cookie = try { CookieManager.getInstance().getCookie(url) } catch (_: Exception) { null }
+            if (!cookie.isNullOrBlank() && conn.getRequestProperty("Cookie") == null) {
+                conn.setRequestProperty("Cookie", cookie)
             }
-        }.start()
-    }
+            if (conn.getRequestProperty("User-Agent") == null) {
+                conn.setRequestProperty("User-Agent",
+                    "Mozilla/5.0 (Linux; Android 10; RMX1801) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/153.0.8010.57 Mobile Safari/537.36")
+            }
+
+            if (body.isNotBlank() && method in listOf("POST", "PUT", "PATCH", "DELETE")) {
+                conn.doOutput = true
+                conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            }
+
+            xhrAborts[id] = conn
+
+            val status = conn.responseCode
+            val stream = if (status in 200..299) conn.inputStream else conn.errorStream
+            val totalLen = conn.contentLengthLong
+            val sb = StringBuilder()
+            if (stream != null) {
+                val buf = ByteArray(16 * 1024)
+                var read = 0L
+                var lastFire = 0L
+                var n: Int
+                while (true) {
+                    n = stream.read(buf)
+                    if (n < 0) break
+                    sb.append(String(buf, 0, n, Charsets.UTF_8))
+                    read += n
+                    val now = System.currentTimeMillis()
+                    if (now - lastFire > 200L) {
+                        lastFire = now
+                        val w = v()
+                        if (w != null && totalLen > 0) {
+                            val js = "try{window.__uh_xhr_progress('" + id + "'," +
+                                read + "," + totalLen + ")}catch(e){}"
+                            w.post { w.evaluateJavascript(js, null) }
+                        }
+                    }
+                }
+            }
+            val text = sb.toString()
+
+            val respHeaders = StringBuilder()
+            for ((k, values) in conn.headerFields) {
+                if (k == null) continue
+                for (vv in values) respHeaders.append(k).append(": ").append(vv).append("\r\n")
+            }
+            val finalUrl = conn.url.toString()
+            xhrAborts.remove(id)
+            conn.disconnect()
+
+            val payload = buildPayload(responseType, text)
+            val w = v() ?: return@Thread
+            val js = "try{window.__uh_xhr_done('" + id + "'," + status + "," +
+                jsString(payload) + "," + jsString(respHeaders.toString()) + "," +
+                jsString(finalUrl) + ")}catch(e){}"
+            w.post { w.evaluateJavascript(js, null) }
+        } catch (e: Exception) {
+            xhrAborts.remove(id)
+            val w = v() ?: return@Thread
+            val js = "try{window.__uh_xhr_error('" + id + "'," + jsString(e.message ?: "error") + ")}catch(e){}"
+            w.post { w.evaluateJavascript(js, null) }
+        }
+    }.start()
+}
 
     @JavascriptInterface
     fun GM_xhrAbort(id: String) {
