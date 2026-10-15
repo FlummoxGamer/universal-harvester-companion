@@ -34,17 +34,24 @@
                 android:tint="@color/accent" />
 
             <TextView
-                android:id="@+id/scriptMenuDomain"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginStart="10dp"
-                android:text=""
+                android:text="Scripts"
                 android:textColor="@color/text"
-                android:textSize="14sp"
-                android:textStyle="bold"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/scriptMenuDomain"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:maxLines="1"
-                android:ellipsize="middle" />
+                android:ellipsize="middle"
+                android:text=""
+                android:textColor="@color/subtext"
+                android:textSize="11sp" />
         </LinearLayout>
 
         <LinearLayout
