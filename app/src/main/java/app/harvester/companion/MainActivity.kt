@@ -29,6 +29,8 @@ import androidx.activity.addCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.constraintlayout.widget.ConstraintSet
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import app.harvester.companion.databinding.ActivityMainBinding
 import com.google.android.material.bottomsheet.BottomSheetDialog
@@ -67,12 +69,12 @@ class MainActivity : AppCompatActivity() {
         setupHomeGrid()
         setupBottomBar()
         setupBackDispatcher()
-        applyAddressBarPosition()
 
         val existing = tabs.list()
         if (existing.isEmpty()) tabs.openNew("about:blank")
         else tabs.acquireView(existing.first().id)
         attachCurrent()
+        applyAddressBarPosition()
         UHLog.d("main", "onCreate complete")
     }
 
@@ -154,40 +156,41 @@ class MainActivity : AppCompatActivity() {
 
     private fun applyAddressBarPosition() {
         val position = SettingsPrefs.getInt(this, SettingsPrefs.K_ADDRESS_BAR_POSITION, 1)
-        val bar = binding.bottomBar
-        val barParams = bar.layoutParams as ConstraintLayout.LayoutParams
-        val wc = binding.webContainer
-        val wcParams = wc.layoutParams as ConstraintLayout.LayoutParams
-        val hs = binding.homeScreen
-        val hsParams = hs.layoutParams as ConstraintLayout.LayoutParams
-        val lb = binding.loadingBar
-        val lbParams = lb.layoutParams as ConstraintLayout.LayoutParams
+        val root = binding.root as ConstraintLayout
+        val cs = ConstraintSet()
+        cs.clone(root)
+
+        val barId = binding.bottomBar.id
+        val lbId = binding.loadingBar.id
+        val wcId = binding.webContainer.id
+        val hsId = binding.homeScreen.id
+        val parent = ConstraintSet.PARENT_ID
+
+        cs.clear(barId, ConstraintSet.TOP)
+        cs.clear(barId, ConstraintSet.BOTTOM)
+        cs.clear(lbId, ConstraintSet.TOP)
+        cs.clear(lbId, ConstraintSet.BOTTOM)
+        cs.clear(wcId, ConstraintSet.TOP)
+        cs.clear(wcId, ConstraintSet.BOTTOM)
+        cs.clear(hsId, ConstraintSet.TOP)
+        cs.clear(hsId, ConstraintSet.BOTTOM)
 
         if (position == 0) {
-            // Top
-            barParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-            barParams.bottomToBottom = ConstraintLayout.LayoutParams.UNSET
-            lbParams.topToBottom = R.id.bottomBar
-            lbParams.bottomToTop = ConstraintLayout.LayoutParams.UNSET
-            wcParams.topToTop = R.id.loadingBar
-            wcParams.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-            hsParams.topToTop = R.id.loadingBar
-            hsParams.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+            cs.connect(barId, ConstraintSet.TOP, parent, ConstraintSet.TOP)
+            cs.connect(lbId, ConstraintSet.TOP, barId, ConstraintSet.BOTTOM)
+            cs.connect(wcId, ConstraintSet.TOP, lbId, ConstraintSet.BOTTOM)
+            cs.connect(wcId, ConstraintSet.BOTTOM, parent, ConstraintSet.BOTTOM)
+            cs.connect(hsId, ConstraintSet.TOP, lbId, ConstraintSet.BOTTOM)
+            cs.connect(hsId, ConstraintSet.BOTTOM, parent, ConstraintSet.BOTTOM)
         } else {
-            // Bottom (default)
-            barParams.topToTop = ConstraintLayout.LayoutParams.UNSET
-            barParams.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-            lbParams.topToBottom = ConstraintLayout.LayoutParams.UNSET
-            lbParams.bottomToTop = R.id.bottomBar
-            wcParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-            wcParams.bottomToBottom = R.id.loadingBar
-            hsParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-            hsParams.bottomToBottom = R.id.loadingBar
+            cs.connect(barId, ConstraintSet.BOTTOM, parent, ConstraintSet.BOTTOM)
+            cs.connect(lbId, ConstraintSet.BOTTOM, barId, ConstraintSet.TOP)
+            cs.connect(wcId, ConstraintSet.TOP, parent, ConstraintSet.TOP)
+            cs.connect(wcId, ConstraintSet.BOTTOM, lbId, ConstraintSet.TOP)
+            cs.connect(hsId, ConstraintSet.TOP, parent, ConstraintSet.TOP)
+            cs.connect(hsId, ConstraintSet.BOTTOM, lbId, ConstraintSet.TOP)
         }
-        bar.layoutParams = barParams
-        lb.layoutParams = lbParams
-        wc.layoutParams = wcParams
-        hs.layoutParams = hsParams
+        cs.applyTo(root)
     }
 
     private fun enterEditMode() {
@@ -228,7 +231,7 @@ class MainActivity : AppCompatActivity() {
             row.findViewById<View>(R.id.engineCheck).visibility =
                 if (entry.id == current) View.VISIBLE else View.INVISIBLE
             val iconView = row.findViewById<ImageView>(R.id.engineIcon)
-            loadEngineIcon(iconView, entry.iconUrl)
+            loadIconInto(iconView, entry.iconUrl, R.drawable.ic_search)
             row.setOnClickListener {
                 SearchEnginePrefs.setEngine(this, entry.id)
                 sheet.dismiss()
@@ -246,12 +249,15 @@ class MainActivity : AppCompatActivity() {
         sheet.show()
     }
 
-    private fun loadEngineIcon(view: ImageView, url: String) {
+    private fun loadIconInto(view: ImageView, url: String, fallbackRes: Int) {
         Thread {
             val bmp = try {
                 URL(url).openStream().use { BitmapFactory.decodeStream(it) }
             } catch (_: Exception) { null }
-            if (bmp != null) runOnUiThread { view.setImageBitmap(bmp) }
+            runOnUiThread {
+                if (bmp != null) view.setImageBitmap(bmp)
+                else view.setImageResource(fallbackRes)
+            }
         }.start()
     }
 
@@ -263,27 +269,23 @@ class MainActivity : AppCompatActivity() {
         if (isBlank) {
             binding.searchEngineIcon.visibility = View.VISIBLE
             binding.searchEngineIcon.isClickable = true
-            if (currentEngineId != entry.id || engineIconCache == null) {
+            if (currentEngineId != entry.id) {
                 currentEngineId = entry.id
-                Thread {
-                    val bmp = try {
-                        URL(entry.iconUrl).openStream().use { BitmapFactory.decodeStream(it) }
-                    } catch (_: Exception) { null }
-                    if (bmp != null) {
-                        engineIconCache = bmp
-                        runOnUiThread { binding.searchEngineIcon.setImageBitmap(bmp) }
-                    } else {
-                        runOnUiThread { binding.searchEngineIcon.setImageResource(R.drawable.ic_search) }
-                    }
-                }.start()
-            } else {
+                engineIconCache = null
+                binding.searchEngineIcon.setImageResource(R.drawable.ic_search)
+                loadIconInto(binding.searchEngineIcon, entry.iconUrl, R.drawable.ic_search)
+            } else if (engineIconCache != null) {
                 binding.searchEngineIcon.setImageBitmap(engineIconCache)
             }
         } else if (url.startsWith("https")) {
             binding.searchEngineIcon.setImageResource(R.drawable.ic_lock)
+            binding.searchEngineIcon.setColorFilter(
+                ContextCompat.getColor(this, R.color.accent))
             binding.searchEngineIcon.isClickable = false
         } else {
             binding.searchEngineIcon.setImageResource(R.drawable.ic_lock_open)
+            binding.searchEngineIcon.setColorFilter(
+                ContextCompat.getColor(this, R.color.red))
             binding.searchEngineIcon.isClickable = false
         }
     }
@@ -293,10 +295,14 @@ class MainActivity : AppCompatActivity() {
     private fun showShortcutEditor(existing: Shortcut?) {
         val urlInput = EditText(this).apply {
             setHint("https://example.com"); setSingleLine()
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text))
+            setHintTextColor(ContextCompat.getColor(this@MainActivity, R.color.subtext))
             if (existing != null) setText(existing.url)
         }
         val nameInput = EditText(this).apply {
             setHint("Name (optional)"); setSingleLine()
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text))
+            setHintTextColor(ContextCompat.getColor(this@MainActivity, R.color.subtext))
             if (existing != null) setText(existing.name)
         }
         val wrap = LinearLayout(this).apply {
@@ -497,6 +503,10 @@ class MainActivity : AppCompatActivity() {
                 clear3p(v)
                 if (v === currentView) {
                     binding.urlText.text = if (url == "about:blank") "Search or type URL" else url
+                    binding.urlText.setTextColor(
+                        ContextCompat.getColor(this@MainActivity,
+                            if (url == "about:blank") R.color.subtext else R.color.text)
+                    )
                     updateSearchEngineIcon()
                 }
                 if (id in popupTabs) UHLog.netPopupLoad(url)
@@ -590,7 +600,8 @@ class MainActivity : AppCompatActivity() {
         if (binding.urlEdit.visibility != View.VISIBLE) {
             binding.urlText.text = if (isEmpty) "Search or type URL" else url
             binding.urlText.setTextColor(
-                if (isEmpty) 0x8A96A8.toInt() else 0xFFE6E9EE.toInt()
+                ContextCompat.getColor(this,
+                    if (isEmpty) R.color.subtext else R.color.text)
             )
         }
         binding.tabCount.text = tabs.list().size.toString()
@@ -627,7 +638,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun showScriptMenuSheet() {
         val url = currentView?.url ?: ""
-        val host = try { java.net.URI(url).host ?: url } catch (_: Exception) { url.ifBlank { "No page" } }
         val scripts = matchingScriptsForPage(url)
 
         val sheet = BottomSheetDialog(this)
@@ -635,13 +645,12 @@ class MainActivity : AppCompatActivity() {
         sheet.setContentView(v)
         sheet.behavior.isDraggable = false
 
-        v.findViewById<android.widget.TextView>(R.id.scriptMenuDomain)?.text = host
         val list = v.findViewById<LinearLayout>(R.id.scriptMenuList)
 
         if (scripts.isEmpty()) {
             val empty = android.widget.TextView(this).apply {
                 text = "No scripts match this page."
-                setTextColor(0xFF8A96A8.toInt())
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.subtext))
                 textSize = 12f
                 setPadding(0, 20, 0, 20)
             }
@@ -663,7 +672,7 @@ class MainActivity : AppCompatActivity() {
                 if (scriptCommands.isEmpty()) {
                     val empty = android.widget.TextView(this).apply {
                         text = "No menu commands registered"
-                        setTextColor(0xFF8A96A8.toInt())
+                        setTextColor(ContextCompat.getColor(this@MainActivity, R.color.subtext))
                         textSize = 11f
                         setPadding(0, 4, 0, 4)
                     }
@@ -875,6 +884,8 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         UpdateChecker.resumePendingInstallIfPossible(this)
         applyAddressBarPosition()
+        currentView?.onResume()
+        currentView?.resumeTimers()
         if (UserscriptStore.consumeDirty(this)) {
             val v = currentView
             val u = v?.url
@@ -885,6 +896,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        currentView?.onPause()
+        currentView?.pauseTimers()
         tabs.saveAll()
         UHLog.onActivityPause(this)
     }
