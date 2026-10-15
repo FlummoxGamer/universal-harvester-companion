@@ -35,32 +35,34 @@ object SearchEnginePrefs {
         prefs(ctx).edit().putString(KEY_ENGINE, id).apply()
     }
 
+    private fun ddgIcon(host: String) = "https://icons.duckduckgo.com/ip3/$host.ico"
+
     fun all(ctx: Context): List<Entry> {
         val out = mutableListOf<Entry>()
 
         out.add(Entry(ENGINE_BRAVE, "Brave", "search.brave.com",
             "https://search.brave.com/search?q=%s",
-            "https://search.brave.com/favicon.ico", false))
+            ddgIcon("search.brave.com"), false))
 
         out.add(Entry(ENGINE_GOOGLE, "Google", "google.com",
             "https://www.google.com/search?q=%s",
-            "https://www.google.com/favicon.ico", false))
+            ddgIcon("google.com"), false))
 
         out.add(Entry(ENGINE_BING, "Bing", "bing.com",
             "https://www.bing.com/search?q=%s",
-            "https://www.bing.com/favicon.ico", false))
+            ddgIcon("bing.com"), false))
 
         out.add(Entry(ENGINE_YAHOO, "Yahoo", "yahoo.com",
             "https://search.yahoo.com/search?p=%s",
-            "https://search.yahoo.com/favicon.ico", false))
+            ddgIcon("yahoo.com"), false))
 
         out.add(Entry(ENGINE_DUCKDUCKGO, "DuckDuckGo", "duckduckgo.com",
             "https://duckduckgo.com/?q=%s",
-            "https://duckduckgo.com/favicon.ico", false))
+            ddgIcon("duckduckgo.com"), false))
 
         out.add(Entry(ENGINE_YANDEX, "Yandex", "yandex.com",
             "https://yandex.com/search/?text=%s",
-            "https://yandex.com/favicon.ico", false))
+            ddgIcon("yandex.com"), false))
 
         out.addAll(listCustom(ctx))
         return out
@@ -73,13 +75,14 @@ object SearchEnginePrefs {
             val out = mutableListOf<Entry>()
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
+                val host = o.getString("host")
                 out.add(
                     Entry(
                         id = o.getString("id"),
                         name = o.getString("name"),
-                        host = o.getString("host"),
+                        host = host,
                         searchUrl = o.getString("searchUrl"),
-                        iconUrl = o.optString("iconUrl", "https://icons.duckduckgo.com/ip3/${o.getString("host")}.ico"),
+                        iconUrl = ddgIcon(host),
                         isCustom = true
                     )
                 )
@@ -90,8 +93,8 @@ object SearchEnginePrefs {
 
     fun currentEntry(ctx: Context): Entry {
         val id = getEngine(ctx)
-        return all(ctx).firstOrNull { it.id == id }
-            ?: all(ctx).first()
+        val list = all(ctx)
+        return list.firstOrNull { it.id == id } ?: list.first()
     }
 
     fun addCustom(ctx: Context, name: String, url: String): Boolean {
@@ -112,8 +115,7 @@ object SearchEnginePrefs {
         val id = "custom_" + System.currentTimeMillis()
         val current = listCustom(ctx).toMutableList()
         current.add(
-            Entry(id, finalName, host, searchUrl,
-                "https://icons.duckduckgo.com/ip3/$host.ico", true)
+            Entry(id, finalName, host, searchUrl, ddgIcon(host), true)
         )
         saveCustom(ctx, current)
         return true
@@ -132,7 +134,6 @@ object SearchEnginePrefs {
             o.put("name", c.name)
             o.put("host", c.host)
             o.put("searchUrl", c.searchUrl)
-            o.put("iconUrl", c.iconUrl)
             arr.put(o)
         }
         prefs(ctx).edit().putString(KEY_CUSTOM, arr.toString()).apply()
@@ -149,8 +150,5 @@ object SearchEnginePrefs {
     }
 
     fun getLabel(ctx: Context): String = currentEntry(ctx).name
-    fun getHomeUrl(ctx: Context): String {
-        val entry = currentEntry(ctx)
-        return "https://${entry.host}"
-    }
+    fun getHomeUrl(ctx: Context): String = "https://${currentEntry(ctx).host}"
 }
