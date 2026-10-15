@@ -7,6 +7,7 @@ import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 
 class AccessibilityActivity : AppCompatActivity() {
 
@@ -20,8 +21,9 @@ class AccessibilityActivity : AppCompatActivity() {
         val c = findViewById<LinearLayout>(R.id.simpleContent)
 
         val scaleLabel = TextView(this).apply {
-            text = "Text scaling: ${SettingsPrefs.getInt(this@AccessibilityActivity, SettingsPrefs.K_TEXT_SCALE, 100)}%"
-            setTextColor(0xFFE6E9EE.toInt())
+            val cur = SettingsPrefs.getInt(this@AccessibilityActivity, SettingsPrefs.K_TEXT_SCALE, 100)
+            text = "Text scaling: $cur%"
+            setTextColor(ContextCompat.getColor(this@AccessibilityActivity, R.color.text))
             textSize = 14f
             setPadding(16, 16, 16, 8)
         }
