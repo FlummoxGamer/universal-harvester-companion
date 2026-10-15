@@ -51,6 +51,7 @@ class MainActivity : AppCompatActivity() {
     private var downloadSheet: BottomSheetDialog? = null
     private var engineIconCache: Bitmap? = null
     private var currentEngineId: String = ""
+    private lateinit var suggestionsAdapter: SuggestionAdapter
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,8 +67,9 @@ class MainActivity : AppCompatActivity() {
         DownloadStore.listener = { runOnUiThread { refreshDownloadSheet() } }
         MenuCommandStore.listener = { runOnUiThread { updateUi() } }
 
-        setupHomeGrid()
+        setupHomeGrid()   
         setupBottomBar()
+        setupSuggestions()
         setupBackDispatcher()
 
         val existing = tabs.list()
@@ -88,6 +90,46 @@ class MainActivity : AppCompatActivity() {
         binding.shortcutsGrid.adapter = shortcutAdapter
         shortcutAdapter.submit(ShortcutStore.list(this))
     }
+
+    private fun setupSuggestions() {
+    suggestionsAdapter = SuggestionAdapter(
+        onClick = { url ->
+            currentView?.loadUrl(url)
+            exitEditMode()
+            updateHomeVisibility()
+        },
+        onEdit = { url ->
+            binding.urlEdit.setText(url)
+            binding.urlEdit.setSelection(binding.urlEdit.text.length)
+        },
+        onCopy = { url ->
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("URL", url))
+            Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show()
+        },
+        onDelete = { id -> HistoryStore.get(this).delete(id); refreshSuggestions() }
+    )
+    binding.suggestionsList.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this)
+    binding.suggestionsList.adapter = suggestionsAdapter
+}
+
+private fun refreshSuggestions() {
+    val query = binding.urlEdit.text.toString()
+    val entries = HistoryStore.get(this).search(query)
+    suggestionsAdapter.submit(entries)
+}
+
+private fun showSuggestionsPanel() {
+    binding.suggestionsPanel.visibility = View.VISIBLE
+    binding.webContainer.visibility = View.GONE
+    refreshSuggestions()
+}
+
+private fun hideSuggestionsPanel() {
+    binding.suggestionsPanel.visibility = View.GONE
+    binding.webContainer.visibility =
+        if (binding.homeScreen.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+}
 
     private fun setupBottomBar() {
         binding.urlText.setOnClickListener { enterEditMode() }
@@ -193,28 +235,35 @@ class MainActivity : AppCompatActivity() {
         cs.applyTo(root)
     }
 
-    private fun enterEditMode() {
-        val url = currentView?.url ?: ""
-        binding.urlEdit.setText(if (url == "about:blank") "" else url)
-        binding.urlEdit.setSelection(binding.urlEdit.text.length)
-        binding.urlText.visibility = View.GONE
-        binding.urlEdit.visibility = View.VISIBLE
-        binding.urlEdit.requestFocus()
-        binding.urlEdit.post {
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.showSoftInput(binding.urlEdit, InputMethodManager.SHOW_IMPLICIT)
-        }
-    }
-
-    private fun exitEditMode() {
-        binding.urlEdit.setText("")
-        binding.urlEdit.visibility = View.GONE
-        binding.urlText.visibility = View.VISIBLE
+private fun enterEditMode() {
+    val url = currentView?.url ?: ""
+    binding.urlEdit.setText(if (url == "about:blank") "" else url)
+    binding.urlEdit.setSelection(binding.urlEdit.text.length)
+    binding.urlText.visibility = View.GONE
+    binding.urlEdit.visibility = View.VISIBLE
+    binding.urlEdit.addTextChangedListener(object : android.text.TextWatcher {
+        override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) { refreshSuggestions() }
+        override fun afterTextChanged(s: android.text.Editable?) {}
+    })
+    binding.urlEdit.requestFocus()
+    showSuggestionsPanel()
+    binding.urlEdit.post {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-        imm.hideSoftInputFromWindow(binding.urlEdit.windowToken, 0)
-        binding.urlEdit.clearFocus()
-        updateUi()
+        imm.showSoftInput(binding.urlEdit, InputMethodManager.SHOW_IMPLICIT)
     }
+}
+
+private fun exitEditMode() {
+    binding.urlEdit.setText("")
+    binding.urlEdit.visibility = View.GONE
+    binding.urlText.visibility = View.VISIBLE
+    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+    imm.hideSoftInputFromWindow(binding.urlEdit.windowToken, 0)
+    binding.urlEdit.clearFocus()
+    hideSuggestionsPanel()
+    updateUi()
+}
 
     private fun showSearchEnginePicker() {
         val sheet = BottomSheetDialog(this)
@@ -516,16 +565,29 @@ class MainActivity : AppCompatActivity() {
                 if (v === currentView) updateHomeVisibility()
             }
 
-            override fun onPageFinished(v: WebView, url: String) {
-                UHLog.d("web", "finish ${url.take(140)}")
-                val id = tabs.idForView(v)
-                if (id > 0L) tabs.updateUrl(id, url, null)
-                flush3p(v, url)
-                if (url != "about:blank") {
-                    UserscriptManager.injectOnPageFinished(this@MainActivity, v, url)
-                }
-                if (v === currentView) updateUi()
-            }
+override fun onPageFinished(v: WebView, url: String) {
+    UHLog.d("web", "finish ${url.take(140)}")
+    val id = tabs.idForView(v)
+    if (id > 0L) tabs.updateUrl(id, url, null)
+    flush3p(v, url)
+    if (url != "about:blank") {
+        UserscriptManager.injectOnPageFinished(this@MainActivity, v, url)
+        val title = tabs.list().firstOrNull { it.id == id }?.title ?: ""
+        HistoryStore.get(this@MainActivity).record(url, title)
+    }
+    if (v === currentView) updateUi()
+}
+
+override fun onReceivedTitle(v: WebView, title: String?) {
+    if (title.isNullOrBlank()) return
+    val id = tabs.idForView(v)
+    if (id <= 0L) return
+    val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
+    tabs.updateUrl(id, url, title)
+    if (url.isNotBlank() && url != "about:blank") {
+        HistoryStore.get(this@MainActivity).record(url, title)
+    }
+}
 
             override fun doUpdateVisitedHistory(v: WebView, url: String?, isReload: Boolean) {
                 tabs.setNav(v, v.canGoBack(), v.canGoForward())
@@ -546,14 +608,6 @@ class MainActivity : AppCompatActivity() {
                 binding.loadingBar.visibility =
                     if (newProgress in 1..99) View.VISIBLE else View.GONE
                 binding.loadingBar.progress = newProgress
-            }
-
-            override fun onReceivedTitle(v: WebView, title: String?) {
-                if (title.isNullOrBlank()) return
-                val id = tabs.idForView(v)
-                if (id <= 0L) return
-                val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
-                tabs.updateUrl(id, url, title)
             }
 
             override fun onCreateWindow(v: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
