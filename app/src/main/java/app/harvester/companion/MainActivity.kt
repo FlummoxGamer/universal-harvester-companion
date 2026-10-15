@@ -1,13 +1,18 @@
 package app.harvester.companion
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.os.Message
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.webkit.PermissionRequest
 import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
@@ -17,14 +22,18 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.EditText
+import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.recyclerview.widget.GridLayoutManager
 import app.harvester.companion.databinding.ActivityMainBinding
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import org.json.JSONObject
+import java.net.URL
 
 class MainActivity : AppCompatActivity() {
 
@@ -38,6 +47,8 @@ class MainActivity : AppCompatActivity() {
     private val recentUrls = LinkedHashMap<String, Long>()
     private var lastBackPress = 0L
     private var downloadSheet: BottomSheetDialog? = null
+    private var engineIconCache: Bitmap? = null
+    private var currentEngineId: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,17 +62,16 @@ class MainActivity : AppCompatActivity() {
 
         DownloadStore.ensureInstalled(this)
         DownloadStore.listener = { runOnUiThread { refreshDownloadSheet() } }
-        
+        MenuCommandStore.listener = { runOnUiThread { updateUi() } }
+
         setupHomeGrid()
         setupBottomBar()
         setupBackDispatcher()
+        applyAddressBarPosition()
 
         val existing = tabs.list()
-        if (existing.isEmpty()) {
-            tabs.openNew("about:blank")
-        } else {
-            tabs.acquireView(existing.first().id)
-        }
+        if (existing.isEmpty()) tabs.openNew("about:blank")
+        else tabs.acquireView(existing.first().id)
         attachCurrent()
         UHLog.d("main", "onCreate complete")
     }
@@ -78,34 +88,48 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupBottomBar() {
-        binding.urlBar.setOnClickListener { openUrlDialog() }
+        binding.urlText.setOnClickListener { enterEditMode() }
+        binding.urlEdit.setOnEditorActionListener { _, actionId, event ->
+            if (actionId == EditorInfo.IME_ACTION_GO ||
+                (event != null && event.keyCode == KeyEvent.KEYCODE_ENTER)) {
+                val target = normalize(binding.urlEdit.text.toString().trim())
+                if (target.isNotBlank()) {
+                    currentView?.loadUrl(target)
+                    exitEditMode()
+                    updateHomeVisibility()
+                }
+                true
+            } else false
+        }
+        binding.urlEdit.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) exitEditMode()
+        }
+        binding.searchEngineIcon.setOnClickListener {
+            if (currentView?.url.isNullOrBlank() || currentView?.url == "about:blank") {
+                showSearchEnginePicker()
+            }
+        }
         binding.btnMenu.setOnClickListener { showMenu() }
         binding.tabCount.setOnClickListener { openTabGrid() }
         binding.btnScriptMenu.setOnClickListener { showScriptMenuSheet() }
-        
     }
 
     private fun setupBackDispatcher() {
         onBackPressedDispatcher.addCallback(this) {
+            if (binding.urlEdit.visibility == View.VISIBLE) {
+                exitEditMode()
+                return@addCallback
+            }
             val v = currentView
             val id = if (v != null) tabs.idForView(v) else -1L
-
-            if (v != null && id in popupTabs) {
-                closeBlankPopup(v)
-                return@addCallback
-            }
-            if (v != null && v.canGoBack()) {
-                v.goBack()
-                return@addCallback
-            }
+            if (v != null && id in popupTabs) { closeBlankPopup(v); return@addCallback }
+            if (v != null && v.canGoBack()) { v.goBack(); return@addCallback }
             val url = v?.url
             val isOnSite = !url.isNullOrBlank() && url != "about:blank" &&
                 !url.startsWith("chrome-error://")
             if (isOnSite) {
                 tabs.openNew("about:blank")
-                attachCurrent()
-                updateUi()
-                return@addCallback
+                attachCurrent(); updateUi(); return@addCallback
             }
             val all = tabs.list()
             if (all.size > 1) {
@@ -115,88 +139,207 @@ class MainActivity : AppCompatActivity() {
                 val remaining = tabs.list()
                 if (remaining.isNotEmpty()) {
                     tabs.acquireView(remaining.first().id)
-                    attachCurrent()
-                    updateUi()
+                    attachCurrent(); updateUi()
                 }
                 return@addCallback
             }
             val now = System.currentTimeMillis()
-            if (now - lastBackPress < 2000L) {
-                finish()
-            } else {
+            if (now - lastBackPress < 2000L) finish()
+            else {
                 lastBackPress = now
                 Toast.makeText(this@MainActivity, "Press back again to exit", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-private fun showAddShortcutDialog() {
-    showShortcutEditor(null)
-}
+    private fun applyAddressBarPosition() {
+        val position = SettingsPrefs.getInt(this, SettingsPrefs.K_ADDRESS_BAR_POSITION, 1)
+        val bar = binding.bottomBar
+        val barParams = bar.layoutParams as ConstraintLayout.LayoutParams
+        val wc = binding.webContainer
+        val wcParams = wc.layoutParams as ConstraintLayout.LayoutParams
+        val hs = binding.homeScreen
+        val hsParams = hs.layoutParams as ConstraintLayout.LayoutParams
+        val lb = binding.loadingBar
+        val lbParams = lb.layoutParams as ConstraintLayout.LayoutParams
 
-private fun showShortcutEditor(existing: Shortcut?) {
-    val urlInput = EditText(this).apply {
-        setHint("https://example.com")
-        setTextColor(0xFFE6EDF5.toInt())
-        setHintTextColor(0xFF8296AD.toInt())
-        setPadding(32, 32, 32, 32)
-        setSingleLine()
-        inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI
-        if (existing != null) setText(existing.url)
-    }
-    val nameInput = EditText(this).apply {
-        setHint("Name (optional)")
-        setTextColor(0xFFE6EDF5.toInt())
-        setHintTextColor(0xFF8296AD.toInt())
-        setPadding(32, 32, 32, 32)
-        setSingleLine()
-        inputType = android.text.InputType.TYPE_CLASS_TEXT
-        if (existing != null) setText(existing.name)
-    }
-    val wrap = android.widget.LinearLayout(this).apply {
-        orientation = android.widget.LinearLayout.VERTICAL
-        setPadding(32, 16, 32, 16)
-        addView(urlInput)
-        addView(nameInput)
-    }
-    AlertDialog.Builder(this)
-        .setTitle(if (existing == null) "Add shortcut" else "Edit shortcut")
-        .setView(wrap)
-        .setPositiveButton(if (existing == null) "Add" else "Save") { _, _ ->
-            val raw = urlInput.text.toString().trim()
-            if (raw.isBlank()) return@setPositiveButton
-            val fixedUrl = if (raw.startsWith("http")) raw else "https://$raw"
-            val manualName = nameInput.text.toString().trim()
-            val name = if (manualName.isNotBlank()) manualName
-                else ShortcutStore.shortNameFor(fixedUrl)
-            if (existing != null) ShortcutStore.remove(this, existing.url)
-            ShortcutStore.add(this, Shortcut(name, fixedUrl, ShortcutStore.iconUrlFor(fixedUrl)))
-            shortcutAdapter.submit(ShortcutStore.list(this))
+        if (position == 0) {
+            // Top
+            barParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+            barParams.bottomToBottom = ConstraintLayout.LayoutParams.UNSET
+            lbParams.topToBottom = R.id.bottomBar
+            lbParams.bottomToTop = ConstraintLayout.LayoutParams.UNSET
+            wcParams.topToTop = R.id.loadingBar
+            wcParams.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+            hsParams.topToTop = R.id.loadingBar
+            hsParams.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+        } else {
+            // Bottom (default)
+            barParams.topToTop = ConstraintLayout.LayoutParams.UNSET
+            barParams.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+            lbParams.topToBottom = ConstraintLayout.LayoutParams.UNSET
+            lbParams.bottomToTop = R.id.bottomBar
+            wcParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+            wcParams.bottomToBottom = R.id.loadingBar
+            hsParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+            hsParams.bottomToBottom = R.id.loadingBar
         }
-        .setNegativeButton("Cancel", null)
-        .show()
-}
+        bar.layoutParams = barParams
+        lb.layoutParams = lbParams
+        wc.layoutParams = wcParams
+        hs.layoutParams = hsParams
+    }
 
-private fun confirmRemoveShortcut(s: Shortcut) {
-    AlertDialog.Builder(this)
-        .setTitle(s.name)
-        .setItems(arrayOf("Edit", "Remove")) { _, which ->
-            when (which) {
-                0 -> showShortcutEditor(s)
-                1 -> ShortcutStore.remove(this, s.url).also {
-                    shortcutAdapter.submit(ShortcutStore.list(this))
+    private fun enterEditMode() {
+        val url = currentView?.url ?: ""
+        binding.urlEdit.setText(if (url == "about:blank") "" else url)
+        binding.urlEdit.setSelection(binding.urlEdit.text.length)
+        binding.urlText.visibility = View.GONE
+        binding.urlEdit.visibility = View.VISIBLE
+        binding.urlEdit.requestFocus()
+        binding.urlEdit.post {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(binding.urlEdit, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    private fun exitEditMode() {
+        binding.urlEdit.setText("")
+        binding.urlEdit.visibility = View.GONE
+        binding.urlText.visibility = View.VISIBLE
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.hideSoftInputFromWindow(binding.urlEdit.windowToken, 0)
+        binding.urlEdit.clearFocus()
+        updateUi()
+    }
+
+    private fun showSearchEnginePicker() {
+        val sheet = BottomSheetDialog(this)
+        val v = layoutInflater.inflate(R.layout.dialog_search_engine_picker, null)
+        sheet.setContentView(v)
+        sheet.behavior.isDraggable = false
+
+        val list = v.findViewById<LinearLayout>(R.id.engineList)
+        val current = SearchEnginePrefs.getEngine(this)
+        for (entry in SearchEnginePrefs.all(this)) {
+            val row = layoutInflater.inflate(R.layout.item_search_engine_picker, list, false)
+            row.findViewById<android.widget.TextView>(R.id.engineName).text = entry.name
+            row.findViewById<android.widget.TextView>(R.id.engineHost).text = entry.host
+            row.findViewById<View>(R.id.engineCheck).visibility =
+                if (entry.id == current) View.VISIBLE else View.INVISIBLE
+            val iconView = row.findViewById<ImageView>(R.id.engineIcon)
+            loadEngineIcon(iconView, entry.iconUrl)
+            row.setOnClickListener {
+                SearchEnginePrefs.setEngine(this, entry.id)
+                sheet.dismiss()
+                updateSearchEngineIcon()
+                Toast.makeText(this, entry.name, Toast.LENGTH_SHORT).show()
+            }
+            list.addView(row)
+        }
+
+        v.findViewById<android.widget.Button>(R.id.engineAddCustom).setOnClickListener {
+            sheet.dismiss()
+            startActivity(Intent(this, SearchEngineActivity::class.java))
+        }
+
+        sheet.show()
+    }
+
+    private fun loadEngineIcon(view: ImageView, url: String) {
+        Thread {
+            val bmp = try {
+                URL(url).openStream().use { BitmapFactory.decodeStream(it) }
+            } catch (_: Exception) { null }
+            if (bmp != null) runOnUiThread { view.setImageBitmap(bmp) }
+        }.start()
+    }
+
+    private fun updateSearchEngineIcon() {
+        val entry = SearchEnginePrefs.currentEntry(this)
+        val url = currentView?.url ?: ""
+        val isBlank = url.isBlank() || url == "about:blank"
+
+        if (isBlank) {
+            binding.searchEngineIcon.visibility = View.VISIBLE
+            binding.searchEngineIcon.isClickable = true
+            if (currentEngineId != entry.id || engineIconCache == null) {
+                currentEngineId = entry.id
+                Thread {
+                    val bmp = try {
+                        URL(entry.iconUrl).openStream().use { BitmapFactory.decodeStream(it) }
+                    } catch (_: Exception) { null }
+                    if (bmp != null) {
+                        engineIconCache = bmp
+                        runOnUiThread { binding.searchEngineIcon.setImageBitmap(bmp) }
+                    } else {
+                        runOnUiThread { binding.searchEngineIcon.setImageResource(R.drawable.ic_search) }
+                    }
+                }.start()
+            } else {
+                binding.searchEngineIcon.setImageBitmap(engineIconCache)
+            }
+        } else if (url.startsWith("https")) {
+            binding.searchEngineIcon.setImageResource(R.drawable.ic_lock)
+            binding.searchEngineIcon.isClickable = false
+        } else {
+            binding.searchEngineIcon.setImageResource(R.drawable.ic_lock_open)
+            binding.searchEngineIcon.isClickable = false
+        }
+    }
+
+    private fun showAddShortcutDialog() { showShortcutEditor(null) }
+
+    private fun showShortcutEditor(existing: Shortcut?) {
+        val urlInput = EditText(this).apply {
+            setHint("https://example.com"); setSingleLine()
+            if (existing != null) setText(existing.url)
+        }
+        val nameInput = EditText(this).apply {
+            setHint("Name (optional)"); setSingleLine()
+            if (existing != null) setText(existing.name)
+        }
+        val wrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 16, 40, 16)
+            addView(urlInput); addView(nameInput)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(if (existing == null) "Add shortcut" else "Edit shortcut")
+            .setView(wrap)
+            .setPositiveButton(if (existing == null) "Add" else "Save") { _, _ ->
+                val raw = urlInput.text.toString().trim()
+                if (raw.isBlank()) return@setPositiveButton
+                val fixed = if (raw.startsWith("http")) raw else "https://$raw"
+                val manual = nameInput.text.toString().trim()
+                val name = if (manual.isNotBlank()) manual else ShortcutStore.shortNameFor(fixed)
+                if (existing != null) ShortcutStore.remove(this, existing.url)
+                ShortcutStore.add(this, Shortcut(name, fixed, ShortcutStore.iconUrlFor(fixed)))
+                shortcutAdapter.submit(ShortcutStore.list(this))
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun confirmRemoveShortcut(s: Shortcut) {
+        AlertDialog.Builder(this)
+            .setTitle(s.name)
+            .setItems(arrayOf("Edit", "Remove")) { _, which ->
+                when (which) {
+                    0 -> showShortcutEditor(s)
+                    1 -> {
+                        ShortcutStore.remove(this, s.url)
+                        shortcutAdapter.submit(ShortcutStore.list(this))
+                    }
                 }
             }
-        }
-        .show()
-}
+            .show()
+    }
 
     private fun loadUrlFromHome(url: String) {
         var view = currentView
         if (view == null || view.url == "about:blank") {
-            tabs.openNew(url)
-            attachCurrent()
-            view = currentView
+            tabs.openNew(url); attachCurrent(); view = currentView
         }
         view?.loadUrl(url)
         updateHomeVisibility()
@@ -204,15 +347,11 @@ private fun confirmRemoveShortcut(s: Shortcut) {
 
     private fun attachCurrent() {
         val view = tabs.currentView() ?: return
-        if (view === currentView) {
-            updateHomeVisibility()
-            return
-        }
+        if (view === currentView) { updateHomeVisibility(); return }
         binding.webContainer.removeAllViews()
         (view.parent as? ViewGroup)?.removeView(view)
         binding.webContainer.addView(view)
         currentView = view
-
         if (view.getTag(R.id.webContainer) == null) {
             installClients(view)
             view.setTag(R.id.webContainer, true)
@@ -242,15 +381,10 @@ private fun confirmRemoveShortcut(s: Shortcut) {
     private fun isStaticAsset(url: String, headers: Map<String, String>?): Boolean {
         val accept = headers?.entries?.firstOrNull { it.key.equals("Accept", true) }?.value ?: ""
         if (accept.contains("image/") || accept.contains("text/css") ||
-            accept.contains("font/") || accept.contains("video/") || accept.contains("audio/")) {
-            return true
-        }
+            accept.contains("font/") || accept.contains("video/") || accept.contains("audio/")) return true
         val path = url.substringBefore('?').substringBefore('#').lowercase()
-        val exts = listOf(
-            ".js", ".mjs", ".css", ".map",
-            ".woff", ".woff2", ".ttf", ".otf", ".eot",
-            ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".avif", ".ico", ".bmp"
-        )
+        val exts = listOf(".js",".mjs",".css",".map",".woff",".woff2",".ttf",".otf",".eot",
+            ".png",".jpg",".jpeg",".webp",".gif",".svg",".avif",".ico",".bmp")
         return exts.any { path.endsWith(it) }
     }
 
@@ -270,9 +404,7 @@ private fun confirmRemoveShortcut(s: Shortcut) {
         val now = System.currentTimeMillis()
         synchronized(recentUrls) {
             val it = recentUrls.entries.iterator()
-            while (it.hasNext()) {
-                if (now - it.next().value > 2000L) it.remove()
-            }
+            while (it.hasNext()) if (now - it.next().value > 2000L) it.remove()
             val last = recentUrls[key]
             recentUrls[key] = now
             return !(last != null && now - last < 1000L)
@@ -292,10 +424,7 @@ private fun confirmRemoveShortcut(s: Shortcut) {
     private fun flush3p(v: WebView, pageUrl: String) {
         val id = tabs.idForView(v)
         if (id <= 0L) return
-        val hosts = synchronized(page3p) {
-            val set = page3p.remove(id) ?: return
-            set.toList()
-        }
+        val hosts = synchronized(page3p) { page3p.remove(id)?.toList() } ?: return
         if (hosts.isNotEmpty()) UHLog.net3p(pageUrl, hosts)
     }
 
@@ -308,29 +437,21 @@ private fun confirmRemoveShortcut(s: Shortcut) {
     @SuppressLint("SetJavaScriptEnabled")
     private fun installClients(view: WebView) {
         view.webViewClient = object : WebViewClient() {
-
-            override fun shouldInterceptRequest(
-                v: WebView, request: WebResourceRequest
-            ): WebResourceResponse? {
+            override fun shouldInterceptRequest(v: WebView, request: WebResourceRequest): WebResourceResponse? {
                 try {
                     val url = request.url.toString()
                     val method = request.method ?: "GET"
                     val headers = request.requestHeaders
-
                     if (request.isForMainFrame && url.isNotBlank() && url != "about:blank") {
                         val id = tabs.idForView(v)
-                        if (id > 0L) {
-                            tabs.updateUrl(id, url, null)
-                            if (v === currentView) v.post { updateHomeVisibility() }
-                        }
+                        if (id > 0L) tabs.updateUrl(id, url, null)
                         val ref = headers?.entries?.firstOrNull { it.key.equals("Referer", true) }?.value
                         val hasCookie = headers?.keys?.any { it.equals("Cookie", true) } == true
                         val hasAuth = headers?.keys?.any { it.equals("Authorization", true) } == true
                         UHLog.netNav(method, url, ref, hasCookie, hasAuth)
                         if (SessionRecorder.isActive() && SessionRecorder.isEnabled("header")) {
                             SessionRecorder.record("header") {
-                                put("url", url)
-                                put("method", method)
+                                put("url", url); put("method", method)
                                 val h = JSONObject()
                                 for ((k, value) in headers ?: emptyMap()) h.put(k, value)
                                 put("headers", h)
@@ -338,16 +459,12 @@ private fun confirmRemoveShortcut(s: Shortcut) {
                         }
                         return null
                     }
-
                     if (isStaticAsset(url, headers)) return null
                     if (isBeaconHost(url)) return null
                     if (!recordUrlOnce(url)) return null
-
                     val accept = headers?.entries?.firstOrNull { it.key.equals("Accept", true) }?.value ?: ""
-                    val isApi = accept.contains("json", true)
-                            || url.contains("/api/")
-                            || headers?.keys?.any { it.equals("X-Requested-With", true) } == true
-
+                    val isApi = accept.contains("json", true) || url.contains("/api/") ||
+                        headers?.keys?.any { it.equals("X-Requested-With", true) } == true
                     when {
                         method == "POST" -> {
                             val ct = headers?.entries?.firstOrNull { it.key.equals("Content-Type", true) }?.value
@@ -361,20 +478,13 @@ private fun confirmRemoveShortcut(s: Shortcut) {
                 return null
             }
 
-            override fun shouldOverrideUrlLoading(
-                v: WebView, request: WebResourceRequest
-            ): Boolean {
+            override fun shouldOverrideUrlLoading(v: WebView, request: WebResourceRequest): Boolean {
                 val url = request.url.toString()
                 val scheme = request.url.scheme ?: ""
-
-                if (scheme == "intent") {
-                    handleIntentUrl(url)
-                    return true
-                }
+                if (scheme == "intent") { handleIntentUrl(url); return true }
                 if (scheme == "http" || scheme == "https") return false
                 if (scheme == "about" || scheme == "data" || scheme == "blob" ||
                     scheme == "file" || scheme == "javascript") return false
-
                 UHLog.netScheme(url, "dialog")
                 askOpenExternal(v, url)
                 return true
@@ -386,7 +496,8 @@ private fun confirmRemoveShortcut(s: Shortcut) {
                 if (id > 0L) tabs.updateUrl(id, url, null)
                 clear3p(v)
                 if (v === currentView) {
-                    binding.urlText.text = if (url == "about:blank") "" else url
+                    binding.urlText.text = if (url == "about:blank") "Search or type URL" else url
+                    updateSearchEngineIcon()
                 }
                 if (id in popupTabs) UHLog.netPopupLoad(url)
                 if (url != "about:blank" && !url.startsWith("chrome-error://")) {
@@ -410,17 +521,11 @@ private fun confirmRemoveShortcut(s: Shortcut) {
                 tabs.setNav(v, v.canGoBack(), v.canGoForward())
             }
 
-            override fun onReceivedError(
-                v: WebView, request: WebResourceRequest, error: WebResourceError
-            ) {
-                if (request.isForMainFrame) {
-                    UHLog.w("web", "error ${error.errorCode} ${request.url}")
-                }
+            override fun onReceivedError(v: WebView, request: WebResourceRequest, error: WebResourceError) {
+                if (request.isForMainFrame) UHLog.w("web", "error ${error.errorCode} ${request.url}")
             }
 
-            override fun onReceivedSslError(
-                v: WebView, handler: SslErrorHandler, error: android.net.http.SslError
-            ) {
+            override fun onReceivedSslError(v: WebView, handler: SslErrorHandler, error: android.net.http.SslError) {
                 handler.cancel()
             }
         }
@@ -428,8 +533,9 @@ private fun confirmRemoveShortcut(s: Shortcut) {
         view.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(v: WebView, newProgress: Int) {
                 if (v !== currentView) return
-                binding.pageProgress.visibility = if (newProgress in 1..99) View.VISIBLE else View.GONE
-                binding.pageProgress.progress = newProgress
+                binding.loadingBar.visibility =
+                    if (newProgress in 1..99) View.VISIBLE else View.GONE
+                binding.loadingBar.progress = newProgress
             }
 
             override fun onReceivedTitle(v: WebView, title: String?) {
@@ -440,67 +546,58 @@ private fun confirmRemoveShortcut(s: Shortcut) {
                 tabs.updateUrl(id, url, title)
             }
 
-            override fun onCreateWindow(
-                v: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message
-            ): Boolean {
+            override fun onCreateWindow(v: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
                 val parentId = tabs.idForView(v)
                 val parentUrl = tabs.list().firstOrNull { it.id == parentId }?.url ?: v.url ?: ""
                 UHLog.netPopupOpen(parentUrl, isUserGesture, isDialog)
-
                 val id = tabs.openBlankTab()
                 val newView = tabs.acquireView(id) ?: return false
                 popupTabs.add(id)
                 UHLog.netPopupCreated(id)
-
                 if (newView.getTag(R.id.webContainer) == null) {
                     installClients(newView)
                     newView.setTag(R.id.webContainer, true)
                 }
-
                 binding.webContainer.removeAllViews()
                 (newView.parent as? ViewGroup)?.removeView(newView)
                 binding.webContainer.addView(newView)
                 binding.webContainer.visibility = View.VISIBLE
                 binding.homeScreen.visibility = View.GONE
                 currentView = newView
-
                 val transport = resultMsg.obj as WebView.WebViewTransport
                 transport.webView = newView
                 resultMsg.sendToTarget()
-
                 updateUi()
                 return true
             }
 
-            override fun onPermissionRequest(request: PermissionRequest) {
-                request.deny()
-            }
+            override fun onPermissionRequest(request: PermissionRequest) { request.deny() }
         }
     }
 
-private fun switchTab(id: Long) {
-    tabs.saveCurrentState()
-    tabs.acquireView(id)
-    attachCurrent()
-    val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
-    binding.urlText.text = if (url == "about:blank") "" else url
-    updateUi()
-}
+    private fun switchTab(id: Long) {
+        tabs.saveCurrentState()
+        tabs.acquireView(id)
+        attachCurrent()
+        updateUi()
+    }
 
-private fun updateUi() {
-    prunePopupTabs()
-    val id = tabs.currentId()
-    val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
-    val isEmpty = url.isBlank() || url == "about:blank"
-    binding.urlText.text = if (isEmpty) "Search or type URL" else url
-    binding.urlText.setTextColor(if (isEmpty) 0x8A96A8.toInt() else 0xFFE6E9EE.toInt())
-    binding.urlIcon.setImageResource(
-        if (url.startsWith("https")) R.drawable.ic_lock else R.drawable.ic_lock_open
-    )
-    binding.tabCount.text = tabs.list().size.toString()
-    binding.btnScriptMenu.visibility = View.VISIBLE
-    updateHomeVisibility()
-}
+    private fun updateUi() {
+        prunePopupTabs()
+        val id = tabs.currentId()
+        val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
+        val isEmpty = url.isBlank() || url == "about:blank"
+        if (binding.urlEdit.visibility != View.VISIBLE) {
+            binding.urlText.text = if (isEmpty) "Search or type URL" else url
+            binding.urlText.setTextColor(
+                if (isEmpty) 0x8A96A8.toInt() else 0xFFE6E9EE.toInt()
+            )
+        }
+        binding.tabCount.text = tabs.list().size.toString()
+        binding.btnScriptMenu.visibility = View.VISIBLE
+        updateSearchEngineIcon()
+        updateHomeVisibility()
+    }
 
     private fun matchingScriptsForPage(url: String): List<UserscriptManager.Script> {
         if (url.isBlank() || url == "about:blank") return emptyList()
@@ -539,11 +636,11 @@ private fun updateUi() {
         sheet.behavior.isDraggable = false
 
         v.findViewById<android.widget.TextView>(R.id.scriptMenuDomain)?.text = host
-        val list = v.findViewById<android.widget.LinearLayout>(R.id.scriptMenuList)
+        val list = v.findViewById<LinearLayout>(R.id.scriptMenuList)
 
         if (scripts.isEmpty()) {
             val empty = android.widget.TextView(this).apply {
-                text = "No scripts match this page.\nInstall or enable scripts from Manage all scripts."
+                text = "No scripts match this page."
                 setTextColor(0xFF8A96A8.toInt())
                 textSize = 12f
                 setPadding(0, 20, 0, 20)
@@ -558,11 +655,10 @@ private fun updateUi() {
                 sw.isChecked = true
                 sw.setOnCheckedChangeListener { _, checked ->
                     UserscriptStore.setEnabled(this, script.name, checked)
-                    if (!checked) row.findViewById<View>(R.id.smsCommands).visibility = View.GONE
-                    else row.findViewById<View>(R.id.smsCommands).visibility = View.VISIBLE
+                    row.findViewById<View>(R.id.smsCommands).visibility =
+                        if (checked) View.VISIBLE else View.GONE
                 }
-
-                val cmds = row.findViewById<android.widget.LinearLayout>(R.id.smsCommands)
+                val cmds = row.findViewById<LinearLayout>(R.id.smsCommands)
                 val scriptCommands = MenuCommandStore.forScript(script.name)
                 if (scriptCommands.isEmpty()) {
                     val empty = android.widget.TextView(this).apply {
@@ -578,9 +674,7 @@ private fun updateUi() {
                         cv.findViewById<android.widget.TextView>(R.id.smcLabel).text = cmd.name
                         cv.setOnClickListener {
                             currentView?.evaluateJavascript(
-                                "try{window.__uh_runMenuCommand('${cmd.id}')}catch(e){}",
-                                null
-                            )
+                                "try{window.__uh_runMenuCommand('${cmd.id}')}catch(e){}", null)
                             sheet.dismiss()
                         }
                         cmds.addView(cv)
@@ -594,54 +688,20 @@ private fun updateUi() {
             sheet.dismiss()
             startActivity(Intent(this, ScriptsActivity::class.java))
         }
-
         sheet.show()
     }
 
     private fun openTabGrid() {
-        TabGridDialog(
-            this, tabs,
+        TabGridDialog(this, tabs,
             onSwitch = { id -> switchTab(id) },
-            onNew = {
-                tabs.openNew("about:blank")
-                attachCurrent()
-                updateUi()
-            }
+            onNew = { tabs.openNew("about:blank"); attachCurrent(); updateUi() }
         ).apply {
             setOnDismissListener {
                 val live = tabs.currentView()
-                if (live != null && live !== currentView) {
-                    attachCurrent()
-                    updateUi()
-                } else {
-                    updateUi()
-                }
+                if (live != null && live !== currentView) { attachCurrent(); updateUi() }
+                else updateUi()
             }
         }.show()
-    }
-
-    private fun openUrlDialog() {
-        val input = EditText(this).apply {
-            setText("")
-            setTextColor(0xFFE6EDF5.toInt())
-            setHint("Search or type URL")
-            setHintTextColor(0xFF8296AD.toInt())
-            setPadding(32, 32, 32, 32)
-            setSingleLine()
-            inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI
-        }
-        AlertDialog.Builder(this)
-            .setTitle("Go to")
-            .setView(input)
-            .setPositiveButton("Go") { _, _ ->
-                val target = normalize(input.text.toString().trim())
-                if (target.isNotBlank()) {
-                    currentView?.loadUrl(target)
-                    updateHomeVisibility()
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
     }
 
     private fun normalize(input: String): String {
@@ -653,122 +713,51 @@ private fun updateUi() {
         return SearchEnginePrefs.getSearchUrl(this, t)
     }
 
-private fun showMenu() {
-    val sheet = BottomSheetDialog(this)
-    val v = layoutInflater.inflate(R.layout.dialog_main_menu, null)
-    sheet.setContentView(v)
-    sheet.behavior.isDraggable = false
+    private fun showMenu() {
+        val sheet = BottomSheetDialog(this)
+        val v = layoutInflater.inflate(R.layout.dialog_main_menu, null)
+        sheet.setContentView(v)
 
-    v.findViewById<View>(R.id.menuFavorites)?.setOnClickListener {
-        sheet.dismiss()
-        toast("Favorites coming soon")
-    }
-    v.findViewById<View>(R.id.menuHistory)?.setOnClickListener {
-        sheet.dismiss()
-        toast("History coming soon")
-    }
-    v.findViewById<View>(R.id.menuDownloads)?.setOnClickListener {
-        sheet.dismiss()
-        startActivity(Intent(this, DownloadsActivity::class.java))
-    }
-    v.findViewById<View>(R.id.menuPlaylist)?.setOnClickListener {
-        sheet.dismiss()
-        toast("Playlist coming soon")
-    }
-    v.findViewById<View>(R.id.menuSettings)?.setOnClickListener {
-        sheet.dismiss()
-        startActivity(Intent(this, SettingsActivity::class.java))
-    }
-    v.findViewById<View>(R.id.menuScripts)?.setOnClickListener {
-        sheet.dismiss()
-        startActivity(Intent(this, ScriptsActivity::class.java))
-    }
-    v.findViewById<View>(R.id.menuTools)?.setOnClickListener {
-        sheet.dismiss()
-        startActivity(Intent(this, ToolsActivity::class.java))
-    }
+        v.findViewById<View>(R.id.menuFavorites)?.setOnClickListener { sheet.dismiss(); toast("Favorites coming soon") }
+        v.findViewById<View>(R.id.menuHistory)?.setOnClickListener { sheet.dismiss(); toast("History coming soon") }
+        v.findViewById<View>(R.id.menuDownloads)?.setOnClickListener {
+            sheet.dismiss()
+            startActivity(Intent(this, DownloadsActivity::class.java))
+        }
+        v.findViewById<View>(R.id.menuPlaylist)?.setOnClickListener { sheet.dismiss(); toast("Playlist coming soon") }
+        v.findViewById<View>(R.id.menuSettings)?.setOnClickListener {
+            sheet.dismiss(); startActivity(Intent(this, SettingsActivity::class.java))
+        }
+        v.findViewById<View>(R.id.menuScripts)?.setOnClickListener {
+            sheet.dismiss(); startActivity(Intent(this, ScriptsActivity::class.java))
+        }
+        v.findViewById<View>(R.id.menuTools)?.setOnClickListener {
+            sheet.dismiss(); startActivity(Intent(this, ToolsActivity::class.java))
+        }
         v.findViewById<View>(R.id.menuLogs)?.setOnClickListener {
-        sheet.dismiss()
-        startActivity(Intent(this, LogsActivity::class.java))
+            sheet.dismiss(); startActivity(Intent(this, LogsActivity::class.java))
+        }
+        v.findViewById<View>(R.id.menuBottomHome)?.setOnClickListener {
+            sheet.dismiss()
+            tabs.openNew("about:blank"); attachCurrent(); updateUi()
+        }
+        v.findViewById<View>(R.id.menuBottomFavorite)?.setOnClickListener { sheet.dismiss(); toast("Favorites coming soon") }
+        v.findViewById<View>(R.id.menuBottomClose)?.setOnClickListener { sheet.dismiss(); finish() }
+        v.findViewById<View>(R.id.menuBottomScripts)?.setOnClickListener {
+            sheet.dismiss(); startActivity(Intent(this, ScriptsActivity::class.java))
+        }
+        v.findViewById<View>(R.id.menuBottomReload)?.setOnClickListener {
+            sheet.dismiss(); currentView?.reload()
+        }
+        sheet.behavior.isDraggable = false
+        sheet.show()
     }
-    v.findViewById<View>(R.id.menuBottomHome)?.setOnClickListener {
-        sheet.dismiss()
-        tabs.openNew("about:blank")
-        attachCurrent()
-        updateUi()
-    }
-    v.findViewById<View>(R.id.menuBottomFavorite)?.setOnClickListener {
-        sheet.dismiss()
-        toast("Favorites coming soon")
-    }
-    v.findViewById<View>(R.id.menuBottomClose)?.setOnClickListener {
-        sheet.dismiss()
-        finish()
-    }
-    v.findViewById<View>(R.id.menuBottomScripts)?.setOnClickListener {
-        sheet.dismiss()
-        startActivity(Intent(this, ScriptsActivity::class.java))
-    }
-    v.findViewById<View>(R.id.menuBottomReload)?.setOnClickListener {
-        sheet.dismiss()
-        currentView?.reload()
-    }
-    sheet.behavior.isDraggable = false
-    sheet.show()
-}
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
 
-    private fun openSystemDownloads() {
-        try {
-            startActivity(Intent(android.app.DownloadManager.ACTION_VIEW_DOWNLOADS))
-        } catch (_: Exception) {
-            toast("Downloads unavailable")
-        }
-    }
-
-    private fun openGoogleTranslate() {
-        val url = currentView?.url ?: return
-        val target = "https://translate.google.com/translate?sl=auto&tl=en&u=" +
-            java.net.URLEncoder.encode(url, "UTF-8")
-        currentView?.loadUrl(target)
-    }
-
-    private fun showFindOnPageDialog() {
-        val input = EditText(this).apply {
-            setHint("Find on page")
-            setSingleLine()
-        }
-        AlertDialog.Builder(this)
-            .setTitle("Find on Page")
-            .setView(input)
-            .setPositiveButton("Find") { _, _ ->
-                val q = input.text.toString()
-                if (q.isNotBlank()) {
-                    currentView?.findAllAsync(q)
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun openDevTools() {
-        // Chromium WebView exposes devtools via chrome://inspect on desktop.
-        // Placeholder: show a small info dialog.
-        AlertDialog.Builder(this)
-            .setTitle("Developer Tools")
-            .setMessage("Attach Chrome DevTools from a desktop machine via chrome://inspect while the device is connected over ADB.")
-            .setPositiveButton("OK", null)
-            .show()
-    }
-
     private fun refreshDownloadSheet() {
         val active = DownloadStore.active()
-        if (active.isEmpty()) {
-            downloadSheet?.dismiss()
-            downloadSheet = null
-            return
-        }
+        if (active.isEmpty()) { downloadSheet?.dismiss(); downloadSheet = null; return }
         if (downloadSheet == null) {
             val sheet = BottomSheetDialog(this)
             val v = layoutInflater.inflate(R.layout.dialog_downloads, null)
@@ -777,28 +766,21 @@ private fun showMenu() {
             downloadSheet = sheet
             sheet.show()
         }
-        downloadSheet?.findViewById<android.widget.LinearLayout>(R.id.dlList)?.let { rebuildDownloadList(it) }
+        downloadSheet?.findViewById<LinearLayout>(R.id.dlList)?.let { rebuildDownloadList(it) }
     }
 
-    private fun rebuildDownloadList(container: android.widget.LinearLayout) {
+    private fun rebuildDownloadList(container: LinearLayout) {
         container.removeAllViews()
         val items = DownloadStore.active()
-        if (items.isEmpty()) {
-            downloadSheet?.dismiss()
-            downloadSheet = null
-            return
-        }
+        if (items.isEmpty()) { downloadSheet?.dismiss(); downloadSheet = null; return }
         for (d in items) {
             val row = layoutInflater.inflate(R.layout.item_download, container, false)
             row.findViewById<android.widget.TextView>(R.id.dlName).text = d.filename
             val pb = row.findViewById<android.widget.ProgressBar>(R.id.dlProgress)
             pb.isIndeterminate = d.total <= 0
-            if (d.total > 0) {
-                pb.max = 100
-                pb.progress = ((d.done * 100) / d.total).toInt()
-            }
-            val pct = if (d.total > 0) "${(d.done * 100) / d.total}%" else "…"
-            row.findViewById<android.widget.TextView>(R.id.dlPct).text = pct
+            if (d.total > 0) { pb.max = 100; pb.progress = ((d.done * 100) / d.total).toInt() }
+            row.findViewById<android.widget.TextView>(R.id.dlPct).text =
+                if (d.total > 0) "${(d.done * 100) / d.total}%" else "…"
             container.addView(row)
         }
     }
@@ -812,80 +794,59 @@ private fun showMenu() {
                 schemeExtra == "http" || schemeExtra == "https"
             if (isWeb) {
                 val target = intent.data?.toString()
-                if (!target.isNullOrBlank()) {
-                    UHLog.netScheme(url, "unwrapped→$target")
-                    currentView?.loadUrl(target)
-                    return
-                }
+                if (!target.isNullOrBlank()) { UHLog.netScheme(url, "unwrapped→$target"); currentView?.loadUrl(target); return }
             }
             val resolved = packageManager.queryIntentActivities(intent, 0)
-            if (resolved.isNotEmpty()) {
-                UHLog.netScheme(url, "external")
-                askOpenExternalIntent(intent, currentView)
-            } else {
+            if (resolved.isNotEmpty()) { UHLog.netScheme(url, "external"); askOpenExternalIntent(intent, currentView) }
+            else {
                 val fallback = intent.getStringExtra("browser_fallback_url")
-                if (!fallback.isNullOrBlank()) {
-                    UHLog.netScheme(url, "fallback→$fallback")
-                    currentView?.loadUrl(fallback)
-                } else {
+                if (!fallback.isNullOrBlank()) { UHLog.netScheme(url, "fallback→$fallback"); currentView?.loadUrl(fallback) }
+                else {
                     val pkg = intent.`package`
                     if (!pkg.isNullOrBlank()) {
                         UHLog.netScheme(url, "market→$pkg")
-                        try {
-                            startActivity(Intent(Intent.ACTION_VIEW).apply {
-                                data = Uri.parse("market://details?id=$pkg")
-                            })
-                        } catch (_: Exception) { toast("App not installed") }
-                    } else {
-                        UHLog.netScheme(url, "unresolved")
-                        toast("App not installed")
-                    }
+                        try { startActivity(Intent(Intent.ACTION_VIEW).apply {
+                            data = Uri.parse("market://details?id=$pkg") }) }
+                        catch (_: Exception) { toast("App not installed") }
+                    } else { UHLog.netScheme(url, "unresolved"); toast("App not installed") }
                 }
             }
-        } catch (e: Exception) {
-            UHLog.throwable("nav", "intent parse failed: $url", e)
-        }
+        } catch (e: Exception) { UHLog.throwable("nav", "intent parse failed: $url", e) }
     }
 
     private fun askOpenExternal(view: WebView, url: String) {
-        val isFreshPopup = view.url.isNullOrBlank() || view.url == "about:blank"
+        val isFresh = view.url.isNullOrBlank() || view.url == "about:blank"
         UHLog.netExtDialog(url)
         AlertDialog.Builder(this)
-            .setTitle("Open in another app?")
-            .setMessage(url)
+            .setTitle("Open in another app?").setMessage(url)
             .setPositiveButton("Open") { _, _ ->
                 UHLog.netExtOpen(url)
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                } catch (_: Exception) { toast("No app can handle this link") }
-                if (isFreshPopup) closeBlankPopup(view)
+                try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                catch (_: Exception) { toast("No app can handle this link") }
+                if (isFresh) closeBlankPopup(view)
             }
             .setNegativeButton("Stay") { _, _ ->
                 UHLog.netExtStay(url)
-                if (isFreshPopup) closeBlankPopup(view)
+                if (isFresh) closeBlankPopup(view)
             }
             .show()
     }
 
     private fun askOpenExternalIntent(intent: Intent, view: WebView?) {
-        val isFreshPopup = view?.url.isNullOrBlank() || view?.url == "about:blank"
+        val isFresh = view?.url.isNullOrBlank() || view?.url == "about:blank"
         val urlString = intent.data?.toString() ?: "External app link"
         UHLog.netExtDialog(urlString)
         AlertDialog.Builder(this)
-            .setTitle("Open in another app?")
-            .setMessage(urlString)
+            .setTitle("Open in another app?").setMessage(urlString)
             .setPositiveButton("Open") { _, _ ->
                 UHLog.netExtOpen(urlString)
-                try {
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    startActivity(intent)
-                } catch (_: Exception) { toast("Failed to open app") }
-                if (isFreshPopup) view?.let { closeBlankPopup(it) }
+                try { intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); startActivity(intent) }
+                catch (_: Exception) { toast("Failed to open app") }
+                if (isFresh) view?.let { closeBlankPopup(it) }
             }
             .setNegativeButton("Stay") { _, _ ->
                 UHLog.netExtStay(urlString)
-                if (isFreshPopup) view?.let { closeBlankPopup(it) }
+                if (isFresh) view?.let { closeBlankPopup(it) }
             }
             .show()
     }
@@ -898,37 +859,29 @@ private fun showMenu() {
         val remaining = tabs.list()
         if (remaining.isEmpty()) tabs.openNew("about:blank")
         else tabs.acquireView(remaining.first().id)
-        attachCurrent()
-        updateUi()
+        attachCurrent(); updateUi()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         val incoming = intent.data?.toString() ?: return
-        val alreadyOpen = tabs.list().firstOrNull { it.url == incoming }
-        if (alreadyOpen != null) {
-            switchTab(alreadyOpen.id)
-            return
-        }
-        tabs.openNew(incoming)
-        attachCurrent()
-        updateUi()
+        val already = tabs.list().firstOrNull { it.url == incoming }
+        if (already != null) { switchTab(already.id); return }
+        tabs.openNew(incoming); attachCurrent(); updateUi()
     }
 
-override fun onResume() {
-    super.onResume()
-    UpdateChecker.resumePendingInstallIfPossible(this)
-    MenuCommandStore.listener = { runOnUiThread { updateUi() } }
-    if (UserscriptStore.consumeDirty(this)) {
-        val v = currentView
-        val u = v?.url
-        if (v != null && !u.isNullOrBlank()) {
-            UserscriptManager.injectOnPageStart(v, this, u)
+    override fun onResume() {
+        super.onResume()
+        UpdateChecker.resumePendingInstallIfPossible(this)
+        applyAddressBarPosition()
+        if (UserscriptStore.consumeDirty(this)) {
+            val v = currentView
+            val u = v?.url
+            if (v != null && !u.isNullOrBlank()) UserscriptManager.injectOnPageStart(v, this, u)
         }
+        updateUi()
     }
-    updateUi()
-}
 
     override fun onPause() {
         super.onPause()
@@ -936,9 +889,10 @@ override fun onResume() {
         UHLog.onActivityPause(this)
     }
 
-override fun onDestroy() {
-    tabs.saveAll()
-    DownloadStore.clearListeners()
-    super.onDestroy()
-}
+    override fun onDestroy() {
+        tabs.saveAll()
+        DownloadStore.clearListeners()
+        MenuCommandStore.listener = null
+        super.onDestroy()
+    }
 }
