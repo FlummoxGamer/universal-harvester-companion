@@ -578,17 +578,6 @@ override fun onPageFinished(v: WebView, url: String) {
     if (v === currentView) updateUi()
 }
 
-override fun onReceivedTitle(v: WebView, title: String?) {
-    if (title.isNullOrBlank()) return
-    val id = tabs.idForView(v)
-    if (id <= 0L) return
-    val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
-    tabs.updateUrl(id, url, title)
-    if (url.isNotBlank() && url != "about:blank") {
-        HistoryStore.get(this@MainActivity).record(url, title)
-    }
-}
-
             override fun doUpdateVisitedHistory(v: WebView, url: String?, isReload: Boolean) {
                 tabs.setNav(v, v.canGoBack(), v.canGoForward())
             }
@@ -608,6 +597,17 @@ override fun onReceivedTitle(v: WebView, title: String?) {
                 binding.loadingBar.visibility =
                     if (newProgress in 1..99) View.VISIBLE else View.GONE
                 binding.loadingBar.progress = newProgress
+            }
+
+            override fun onReceivedTitle(v: WebView, title: String?) {
+                if (title.isNullOrBlank()) return
+                val id = tabs.idForView(v)
+                if (id <= 0L) return
+                val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
+                tabs.updateUrl(id, url, title)
+                if (url.isNotBlank() && url != "about:blank") {
+                    HistoryStore.get(this@MainActivity).record(url, title)
+                }
             }
 
             override fun onCreateWindow(v: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
