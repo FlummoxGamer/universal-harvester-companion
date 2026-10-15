@@ -636,69 +636,101 @@ class MainActivity : AppCompatActivity() {
         return pi == pattern.length
     }
 
-    private fun showScriptMenuSheet() {
-        val url = currentView?.url ?: ""
-        val scripts = matchingScriptsForPage(url)
+private fun showScriptMenuSheet() {
+    val sheet = BottomSheetDialog(this)
+    val v = layoutInflater.inflate(R.layout.dialog_script_menu, null)
+    sheet.setContentView(v)
+    sheet.behavior.isDraggable = false
 
-        val sheet = BottomSheetDialog(this)
-        val v = layoutInflater.inflate(R.layout.dialog_script_menu, null)
-        sheet.setContentView(v)
-        sheet.behavior.isDraggable = false
+    val list = v.findViewById<LinearLayout>(R.id.scriptMenuList)
+    populateScriptSheet(list, sheet)
 
-        val list = v.findViewById<LinearLayout>(R.id.scriptMenuList)
-
-        if (scripts.isEmpty()) {
-            val empty = android.widget.TextView(this).apply {
-                text = "No scripts match this page."
-                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.subtext))
-                textSize = 12f
-                setPadding(0, 20, 0, 20)
-            }
-            list.addView(empty)
-        } else {
-            for (script in scripts) {
-                val row = layoutInflater.inflate(R.layout.item_script_menu_script, list, false)
-                row.findViewById<android.widget.TextView>(R.id.smsName).text =
-                    script.displayName.ifBlank { script.name }
-                val sw = row.findViewById<android.widget.Switch>(R.id.smsEnabled)
-                sw.isChecked = true
-                sw.setOnCheckedChangeListener { _, checked ->
-                    UserscriptStore.setEnabled(this, script.name, checked)
-                    row.findViewById<View>(R.id.smsCommands).visibility =
-                        if (checked) View.VISIBLE else View.GONE
-                }
-                val cmds = row.findViewById<LinearLayout>(R.id.smsCommands)
-                val scriptCommands = MenuCommandStore.forScript(script.name)
-                if (scriptCommands.isEmpty()) {
-                    val empty = android.widget.TextView(this).apply {
-                        text = "No menu commands registered"
-                        setTextColor(ContextCompat.getColor(this@MainActivity, R.color.subtext))
-                        textSize = 11f
-                        setPadding(0, 4, 0, 4)
-                    }
-                    cmds.addView(empty)
-                } else {
-                    for (cmd in scriptCommands) {
-                        val cv = layoutInflater.inflate(R.layout.item_script_menu_command, cmds, false)
-                        cv.findViewById<android.widget.TextView>(R.id.smcLabel).text = cmd.name
-                        cv.setOnClickListener {
-                            currentView?.evaluateJavascript(
-                                "try{window.__uh_runMenuCommand('${cmd.id}')}catch(e){}", null)
-                            sheet.dismiss()
-                        }
-                        cmds.addView(cv)
-                    }
-                }
-                list.addView(row)
-            }
-        }
-
-        v.findViewById<android.widget.Button>(R.id.scriptMenuAll)?.setOnClickListener {
-            sheet.dismiss()
-            startActivity(Intent(this, ScriptsActivity::class.java))
-        }
-        sheet.show()
+    v.findViewById<android.widget.Button>(R.id.scriptMenuAll)?.setOnClickListener {
+        sheet.dismiss()
+        startActivity(Intent(this, ScriptsActivity::class.java))
     }
+    sheet.show()
+}
+
+private fun populateScriptSheet(list: LinearLayout, sheet: BottomSheetDialog) {
+    list.removeAllViews()
+    val url = currentView?.url ?: ""
+    val allScripts = UserscriptManager.loadScripts(this)
+        .filter { UserscriptStore.isEnabled(this, it.name) }
+
+    if (allScripts.isEmpty()) {
+        val empty = android.widget.TextView(this).apply {
+            text = "No scripts installed."
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.subtext))
+            textSize = 12f
+            setPadding(0, 20, 0, 20)
+        }
+        list.addView(empty)
+        return
+    }
+
+    val matching = allScripts.filter { matchesAny(it, url) }
+    val nonMatching = allScripts.filter { !matchesAny(it, url) }
+    val ordered = matching + nonMatching
+
+    for (script in ordered) {
+        val isActive = script in matching
+        val row = layoutInflater.inflate(R.layout.item_script_menu_script, list, false)
+
+        row.findViewById<android.widget.TextView>(R.id.smsName).text =
+            script.displayName.ifBlank { script.name }
+
+        val badge = row.findViewById<android.widget.TextView>(R.id.smsActiveBadge)
+        badge.visibility = if (isActive) View.VISIBLE else View.GONE
+
+        val sw = row.findViewById<android.widget.Switch>(R.id.smsEnabled)
+        sw.isChecked = true
+        sw.setOnCheckedChangeListener { _, checked ->
+            UserscriptStore.setEnabled(this, script.name, checked)
+            if (!checked) sheet.dismiss()
+        }
+
+        val cmds = row.findViewById<LinearLayout>(R.id.smsCommands)
+        val arrow = row.findViewById<ImageView>(R.id.smsExpand)
+        val scriptCommands = MenuCommandStore.forScript(script.name)
+
+        if (scriptCommands.isEmpty()) {
+            val empty = android.widget.TextView(this).apply {
+                text = "No menu commands yet"
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.subtext))
+                textSize = 11f
+                setPadding(12, 4, 12, 8)
+            }
+            cmds.addView(empty)
+        } else {
+            for (cmd in scriptCommands) {
+                val cv = layoutInflater.inflate(R.layout.item_script_menu_command, cmds, false)
+                cv.findViewById<android.widget.TextView>(R.id.smcLabel).text = cmd.name
+                cv.setOnClickListener {
+                    currentView?.evaluateJavascript(
+                        "try{window.__uh_runMenuCommand('${cmd.id}')}catch(e){}", null)
+                    // give script time to update its commands, then rebuild
+                    list.postDelayed({
+                        populateScriptSheet(list, sheet)
+                    }, 400)
+                }
+                cmds.addView(cv)
+            }
+        }
+
+        arrow.setOnClickListener {
+            if (cmds.visibility == View.VISIBLE) {
+                cmds.visibility = View.GONE
+                arrow.animate().rotation(90f).setDuration(150).start()
+            } else {
+                cmds.visibility = View.VISIBLE
+                arrow.animate().rotation(-90f).setDuration(150).start()
+            }
+        }
+
+        list.addView(row)
+    }
+}
 
     private fun openTabGrid() {
         TabGridDialog(this, tabs,
