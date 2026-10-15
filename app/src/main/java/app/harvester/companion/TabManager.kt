@@ -9,7 +9,6 @@ class TabManager private constructor(private val ctx: Context) {
 
     companion object {
         @Volatile private var INSTANCE: TabManager? = null
-
         fun get(ctx: Context): TabManager {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: TabManager(ctx.applicationContext).also { INSTANCE = it }
@@ -17,7 +16,7 @@ class TabManager private constructor(private val ctx: Context) {
         }
     }
 
-    private class Slot(val view: WebView) {
+    private class Slot(val view: WebView, val incognito: Boolean) {
         var canGoBack: Boolean = false
         var canGoForward: Boolean = false
     }
@@ -28,53 +27,52 @@ class TabManager private constructor(private val ctx: Context) {
     private val lock = Any()
     private var currentId: Long = -1L
 
-    fun openNew(url: String): Long {
+    fun openNew(url: String, incognito: Boolean = false, groupId: Long = 0L): Long {
         synchronized(lock) {
-            val id = db.insert(url)
+            val id = db.insert(url, incognito, groupId)
             val view = WebViewEngine.create(ctx)
-            alive[id] = Slot(view)
+            alive[id] = Slot(view, incognito)
             currentId = id
             if (url.isNotBlank() && url != "about:blank") view.loadUrl(url)
             return id
         }
     }
 
-    fun openBlankTab(): Long {
-        synchronized(lock) {
-            val id = db.insert("about:blank")
-            val view = WebViewEngine.create(ctx)
-            alive[id] = Slot(view)
-            currentId = id
-            return id
-        }
-    }
+    fun openBlankTab(incognito: Boolean = false, groupId: Long = 0L): Long =
+        openNew("about:blank", incognito, groupId)
 
     fun acquireView(id: Long): WebView? {
         synchronized(lock) {
             alive[id]?.let { currentId = id; return it.view }
+            val entity = db.list().firstOrNull { it.id == id }
+            val incognito = entity?.incognito ?: false
             val view = WebViewEngine.create(ctx)
-            alive[id] = Slot(view)
+            alive[id] = Slot(view, incognito)
             currentId = id
             val restored = restoreState(id, view)
             if (!restored) {
-                val fallback = db.list().firstOrNull { it.id == id }?.url
-                if (!fallback.isNullOrBlank() && fallback != "about:blank") {
-                    view.loadUrl(fallback)
-                }
+                val fallback = entity?.url
+                if (!fallback.isNullOrBlank() && fallback != "about:blank") view.loadUrl(fallback)
             }
             return view
         }
     }
 
     fun currentId(): Long = synchronized(lock) { currentId }
-
     fun currentView(): WebView? = synchronized(lock) { alive[currentId]?.view }
+    fun currentIsIncognito(): Boolean = synchronized(lock) { alive[currentId]?.incognito ?: false }
 
     fun idForView(view: WebView): Long = synchronized(lock) {
         alive.entries.firstOrNull { it.value.view === view }?.key ?: -1L
     }
 
     fun list(): List<TabEntity> = db.list()
+    fun listNormal(): List<TabEntity> = db.list().filter { !it.incognito }
+    fun listIncognito(): List<TabEntity> = db.list().filter { it.incognito }
+    fun listByGroup(groupId: Long): List<TabEntity> = db.list().filter { it.groupId == groupId }
+    fun listUngrouped(): List<TabEntity> = db.list().filter { it.groupId == 0L }
+
+    fun hasIncognito(): Boolean = listIncognito().isNotEmpty()
 
     fun updateUrl(id: Long, url: String, title: String?) = db.update(id, url, title)
 
@@ -84,14 +82,6 @@ class TabManager private constructor(private val ctx: Context) {
             slot.canGoBack = back
             slot.canGoForward = forward
         }
-    }
-
-    fun canGoBack(view: WebView): Boolean = synchronized(lock) {
-        alive.entries.firstOrNull { it.value.view === view }?.value?.canGoBack ?: false
-    }
-
-    fun canGoForward(view: WebView): Boolean = synchronized(lock) {
-        alive.entries.firstOrNull { it.value.view === view }?.value?.canGoForward ?: false
     }
 
     fun close(id: Long) {
@@ -117,6 +107,30 @@ class TabManager private constructor(private val ctx: Context) {
             currentId = -1L
         }
     }
+
+    fun closeAllIncognito() {
+        synchronized(lock) {
+            val incognitoIds = db.list().filter { it.incognito }.map { it.id }
+            for (id in incognitoIds) {
+                val slot = alive.remove(id) ?: continue
+                pendingDestroy.add(slot.view)
+                db.delete(id)
+            }
+            if (currentId in incognitoIds) {
+                currentId = db.list().firstOrNull()?.id ?: -1L
+            }
+        }
+        // Clear cookie jar and storage since incognito is closed
+        try {
+            val cookieManager = android.webkit.CookieManager.getInstance()
+            if (incognitoCleared()) {
+                cookieManager.removeAllCookies(null)
+                cookieManager.flush()
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun incognitoCleared(): Boolean = listIncognito().isEmpty()
 
     fun evictForMemory(keepCount: Int) {
         val victims: List<Long>
@@ -157,13 +171,17 @@ class TabManager private constructor(private val ctx: Context) {
     fun saveCurrentState() {
         synchronized(lock) {
             val slot = alive[currentId] ?: return
+            if (slot.incognito) return  // don't persist incognito
             saveState(currentId, slot.view)
         }
     }
 
     fun saveAll() {
         synchronized(lock) {
-            for ((id, slot) in alive) saveState(id, slot.view)
+            for ((id, slot) in alive) {
+                if (slot.incognito) continue
+                saveState(id, slot.view)
+            }
         }
     }
 
