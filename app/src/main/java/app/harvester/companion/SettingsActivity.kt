@@ -12,6 +12,11 @@ class SettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
 
+        findViewById<android.widget.TextView>(R.id.settingsVersionLabel)?.text =
+            "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
+
+        findViewById<android.view.View>(R.id.settingsSearchEngine).setOnClickListener {
+
         findViewById<android.view.View>(R.id.settingsSearchEngine).setOnClickListener {
             startActivity(Intent(this, SearchEngineActivity::class.java))
         }
