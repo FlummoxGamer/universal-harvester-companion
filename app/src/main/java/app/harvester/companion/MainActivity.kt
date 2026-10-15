@@ -130,43 +130,66 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showAddShortcutDialog() {
-        val input = EditText(this).apply {
-            setHint("https://example.com")
-            setTextColor(0xFFE6EDF5.toInt())
-            setHintTextColor(0xFF8296AD.toInt())
-            setPadding(32, 32, 32, 32)
-            setSingleLine()
-            inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI
-        }
-        AlertDialog.Builder(this)
-            .setTitle("Add shortcut")
-            .setView(input)
-            .setPositiveButton("Add") { _, _ ->
-                val raw = input.text.toString().trim()
-                if (raw.isBlank()) return@setPositiveButton
-                val fixedUrl = if (raw.startsWith("http")) raw else "https://$raw"
-                val name = try {
-                    java.net.URI(fixedUrl).host?.removePrefix("www.") ?: fixedUrl
-                } catch (_: Exception) { fixedUrl }
-                val s = Shortcut(name, fixedUrl, ShortcutStore.iconUrlFor(fixedUrl))
-                ShortcutStore.add(this, s)
-                shortcutAdapter.submit(ShortcutStore.list(this))
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
+private fun showAddShortcutDialog() {
+    showShortcutEditor(null)
+}
 
-    private fun confirmRemoveShortcut(s: Shortcut) {
-        AlertDialog.Builder(this)
-            .setTitle("Remove ${s.name}?")
-            .setPositiveButton("Remove") { _, _ ->
-                ShortcutStore.remove(this, s.url)
-                shortcutAdapter.submit(ShortcutStore.list(this))
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+private fun showShortcutEditor(existing: Shortcut?) {
+    val urlInput = EditText(this).apply {
+        setHint("https://example.com")
+        setTextColor(0xFFE6EDF5.toInt())
+        setHintTextColor(0xFF8296AD.toInt())
+        setPadding(32, 32, 32, 32)
+        setSingleLine()
+        inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI
+        if (existing != null) setText(existing.url)
     }
+    val nameInput = EditText(this).apply {
+        setHint("Name (optional)")
+        setTextColor(0xFFE6EDF5.toInt())
+        setHintTextColor(0xFF8296AD.toInt())
+        setPadding(32, 32, 32, 32)
+        setSingleLine()
+        inputType = android.text.InputType.TYPE_CLASS_TEXT
+        if (existing != null) setText(existing.name)
+    }
+    val wrap = android.widget.LinearLayout(this).apply {
+        orientation = android.widget.LinearLayout.VERTICAL
+        setPadding(32, 16, 32, 16)
+        addView(urlInput)
+        addView(nameInput)
+    }
+    AlertDialog.Builder(this)
+        .setTitle(if (existing == null) "Add shortcut" else "Edit shortcut")
+        .setView(wrap)
+        .setPositiveButton(if (existing == null) "Add" else "Save") { _, _ ->
+            val raw = urlInput.text.toString().trim()
+            if (raw.isBlank()) return@setPositiveButton
+            val fixedUrl = if (raw.startsWith("http")) raw else "https://$raw"
+            val manualName = nameInput.text.toString().trim()
+            val name = if (manualName.isNotBlank()) manualName
+                else ShortcutStore.shortNameFor(fixedUrl)
+            if (existing != null) ShortcutStore.remove(this, existing.url)
+            ShortcutStore.add(this, Shortcut(name, fixedUrl, ShortcutStore.iconUrlFor(fixedUrl)))
+            shortcutAdapter.submit(ShortcutStore.list(this))
+        }
+        .setNegativeButton("Cancel", null)
+        .show()
+}
+
+private fun confirmRemoveShortcut(s: Shortcut) {
+    AlertDialog.Builder(this)
+        .setTitle(s.name)
+        .setItems(arrayOf("Edit", "Remove")) { _, which ->
+            when (which) {
+                0 -> showShortcutEditor(s)
+                1 -> ShortcutStore.remove(this, s.url).also {
+                    shortcutAdapter.submit(ShortcutStore.list(this))
+                }
+            }
+        }
+        .show()
+}
 
     private fun loadUrlFromHome(url: String) {
         var view = currentView
@@ -514,7 +537,6 @@ private fun updateUi() {
         val v = layoutInflater.inflate(R.layout.dialog_script_menu, null)
         sheet.setContentView(v)
         sheet.behavior.isDraggable = false
-        sheet.behavior.isHideable = false
 
         v.findViewById<android.widget.TextView>(R.id.scriptMenuDomain)?.text = host
         val list = v.findViewById<android.widget.LinearLayout>(R.id.scriptMenuList)
@@ -647,7 +669,7 @@ private fun showMenu() {
     }
     v.findViewById<View>(R.id.menuDownloads)?.setOnClickListener {
         sheet.dismiss()
-        openSystemDownloads()
+        startActivity(Intent(this, DownloadsActivity::class.java))
     }
     v.findViewById<View>(R.id.menuPlaylist)?.setOnClickListener {
         sheet.dismiss()
@@ -665,10 +687,33 @@ private fun showMenu() {
         sheet.dismiss()
         startActivity(Intent(this, ToolsActivity::class.java))
     }
-    v.findViewById<View>(R.id.menuLogs)?.setOnClickListener {
+        v.findViewById<View>(R.id.menuLogs)?.setOnClickListener {
         sheet.dismiss()
         startActivity(Intent(this, LogsActivity::class.java))
     }
+    v.findViewById<View>(R.id.menuBottomHome)?.setOnClickListener {
+        sheet.dismiss()
+        tabs.openNew("about:blank")
+        attachCurrent()
+        updateUi()
+    }
+    v.findViewById<View>(R.id.menuBottomFavorite)?.setOnClickListener {
+        sheet.dismiss()
+        toast("Favorites coming soon")
+    }
+    v.findViewById<View>(R.id.menuBottomClose)?.setOnClickListener {
+        sheet.dismiss()
+        finish()
+    }
+    v.findViewById<View>(R.id.menuBottomScripts)?.setOnClickListener {
+        sheet.dismiss()
+        startActivity(Intent(this, ScriptsActivity::class.java))
+    }
+    v.findViewById<View>(R.id.menuBottomReload)?.setOnClickListener {
+        sheet.dismiss()
+        currentView?.reload()
+    }
+    sheet.behavior.isDraggable = false
     sheet.show()
 }
 
