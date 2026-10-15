@@ -513,6 +513,8 @@ private fun updateUi() {
         val sheet = BottomSheetDialog(this)
         val v = layoutInflater.inflate(R.layout.dialog_script_menu, null)
         sheet.setContentView(v)
+        sheet.behavior.isDraggable = false
+        sheet.behavior.isHideable = false
 
         v.findViewById<android.widget.TextView>(R.id.scriptMenuDomain)?.text = host
         val list = v.findViewById<android.widget.LinearLayout>(R.id.scriptMenuList)
@@ -633,6 +635,7 @@ private fun showMenu() {
     val sheet = BottomSheetDialog(this)
     val v = layoutInflater.inflate(R.layout.dialog_main_menu, null)
     sheet.setContentView(v)
+    sheet.behavior.isDraggable = false
 
     v.findViewById<View>(R.id.menuFavorites)?.setOnClickListener {
         sheet.dismiss()
