@@ -7,6 +7,8 @@ import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebSettings
 import android.webkit.WebView
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 
 object WebViewEngine {
 
@@ -43,9 +45,24 @@ object WebViewEngine {
                 CookieManager.getInstance().setAcceptThirdPartyCookies(view, true)
             }
         } catch (_: Throwable) {}
+        try {
+            val dark = ThemePrefs.getMode(ctx) == ThemePrefs.MODE_DARK ||
+                (ThemePrefs.getMode(ctx) == ThemePrefs.MODE_SYSTEM && isSystemDark(ctx)) ||
+                SettingsPrefs.getBool(ctx, SettingsPrefs.K_ENHANCE_DARK, false)
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+                WebSettingsCompat.setAlgorithmicDarkeningAllowed(view.settings, dark)
+            }
+        } catch (_: Throwable) {}
         val bridge = UserscriptBridge(ctx)
         view.addJavascriptInterface(bridge, "UH_BRIDGE")
         bridge.attach(view)
         return view
+    }
+    private fun isSystemDark(ctx: Context): Boolean {
+    return try {
+        (ctx.resources.configuration.uiMode and
+            android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+    } catch (_: Exception) { false }
     }
 }
