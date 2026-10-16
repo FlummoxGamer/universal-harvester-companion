@@ -70,14 +70,20 @@ class TabDb(ctx: Context) : SQLiteOpenHelper(ctx, "uh_tabs.db", null, 3) {
         return out
     }
 
-    @Synchronized
-    fun update(id: Long, url: String, title: String?) {
-        val cv = ContentValues().apply {
-            put("url", url)
-            if (!title.isNullOrBlank()) put("title", title)
-        }
-        writableDatabase.update("tabs", cv, "id=?", arrayOf(id.toString()))
+@Synchronized
+fun update(id: Long, url: String, title: String?) {
+    val cv = ContentValues().apply {
+        put("url", url)
+        if (!title.isNullOrBlank()) put("title", title)
     }
+    writableDatabase.update("tabs", cv, "id=?", arrayOf(id.toString()))
+}
+
+@Synchronized
+fun updateGroup(id: Long, groupId: Long) {
+    val cv = ContentValues().apply { put("group_id", groupId) }
+    writableDatabase.update("tabs", cv, "id=?", arrayOf(id.toString()))
+}
 
     @Synchronized
     fun saveState(id: Long, bytes: ByteArray) {
