@@ -109,6 +109,11 @@
             android:label="Downloads" />
 
         <activity
+            android:name=".HistoryActivity"
+            android:exported="false"
+            android:label="History" />
+
+        <activity
             android:name=".LogsActivity"
             android:exported="false"
             android:label="Logs" />
