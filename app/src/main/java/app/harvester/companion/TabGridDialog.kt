@@ -81,16 +81,35 @@ class TabGridDialog(
         }
     }
 
-    private fun refresh() {
-        val tabs = currentTabs()
-        adapter?.update(tabs, manager.currentId())
-        findViewById<TextView>(R.id.tabGridCount).text = tabs.size.toString()
-        if (mode == MODE_INCOGNITO) {
-            findViewById<ImageButton>(R.id.tabsIncognito).setColorFilter(0xFF22D3EE.toInt())
-        } else {
-            findViewById<ImageButton>(R.id.tabsIncognito).clearColorFilter()
-        }
+private fun refresh() {
+    val tabs = currentTabs()
+    adapter?.update(tabs, manager.currentId())
+    findViewById<TextView>(R.id.tabGridCount).text = tabs.size.toString()
+    if (mode == MODE_INCOGNITO) {
+        findViewById<ImageButton>(R.id.tabsIncognito).setColorFilter(0xFF22D3EE.toInt())
+    } else {
+        findViewById<ImageButton>(R.id.tabsIncognito).clearColorFilter()
     }
+    val strip = findViewById<LinearLayout>(R.id.tabStrip)
+    if (mode == MODE_GROUPS && filterGroupId != 0L) {
+        strip.visibility = View.VISIBLE
+        strip.removeAllViews()
+        for (t in tabs) {
+            val chip = android.widget.TextView(context).apply {
+                text = t.title.ifBlank { "New Tab" }.take(20)
+                setTextColor(
+                    if (t.id == manager.currentId()) 0xFF22D3EE.toInt() else 0xFF8A96A8.toInt()
+                )
+                textSize = 12f
+                setPadding(24, 12, 24, 12)
+                setOnClickListener { onSwitch(t.id) }
+            }
+            strip.addView(chip)
+        }
+    } else {
+        strip.visibility = View.GONE
+    }
+}
 
     private fun toggleIncognito() {
         if (mode == MODE_INCOGNITO) {
@@ -107,23 +126,45 @@ class TabGridDialog(
         refresh()
     }
 
-    private fun closeOne(id: Long) {
-        manager.close(id)
-        val remaining = currentTabs()
-        if (remaining.isEmpty()) {
-            if (mode == MODE_INCOGNITO) {
-                manager.closeAllIncognito()
-                mode = MODE_NORMAL
-                refresh()
-                if (currentTabs().isEmpty()) { dismiss(); onNew() }
-            } else {
-                dismiss()
-                onNew()
-            }
-        } else {
-            refresh()
+private fun closeOne(id: Long) {
+    // If closing a grouped tab and only one remains, ask about deleting the group
+    val entity = manager.list().firstOrNull { it.id == id }
+    if (entity != null && entity.groupId != 0L) {
+        val remainingInGroup = manager.listByGroup(entity.groupId).size
+        if (remainingInGroup <= 1) {
+            val group = TabGroupStore.byId(context, entity.groupId)
+            AlertDialog.Builder(context)
+                .setTitle("Close last tab in group?")
+                .setMessage("Delete group \"${group?.name ?: "unnamed"}\" as well?")
+                .setPositiveButton("Delete group") { _, _ ->
+                    TabGroupStore.delete(context, entity.groupId)
+                    manager.close(id)
+                    refresh()
+                }
+                .setNegativeButton("Keep group") { _, _ ->
+                    manager.close(id)
+                    refresh()
+                }
+                .show()
+            return
         }
     }
+    manager.close(id)
+    val remaining = currentTabs()
+    if (remaining.isEmpty()) {
+        if (mode == MODE_INCOGNITO) {
+            manager.closeAllIncognito()
+            mode = MODE_NORMAL
+            refresh()
+            if (currentTabs().isEmpty()) { dismiss(); onNew() }
+        } else {
+            dismiss()
+            onNew()
+        }
+    } else {
+        refresh()
+    }
+}
 
     private fun confirmCloseAll() {
         val count = currentTabs().size
