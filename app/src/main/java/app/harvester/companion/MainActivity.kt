@@ -381,26 +381,6 @@ private fun showAddGroupDialog() {
     }
     dialog.show()
 }
-    
-    private fun showAddGroupDialog() {
-    val view = layoutInflater.inflate(R.layout.dialog_create_group, null)
-    val input = view.findViewById<EditText>(R.id.groupNameInput)
-    val dialog = AlertDialog.Builder(this)
-        .setView(view)
-        .setCancelable(true)
-        .create()
-
-    view.findViewById<android.view.View>(R.id.groupCancel)?.setOnClickListener {
-        dialog.dismiss()
-    }
-    view.findViewById<android.view.View>(R.id.groupCreate)?.setOnClickListener {
-        val name = input.text.toString().trim().ifBlank { "Group" }
-        TabGroupStore.create(this, name)
-        Toast.makeText(this, "Group '$name' created", Toast.LENGTH_SHORT).show()
-        dialog.dismiss()
-    }
-    dialog.show()
-}
 
     private fun showAddShortcutDialog() { showShortcutEditor(null) }
 
