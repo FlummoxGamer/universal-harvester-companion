@@ -31,9 +31,14 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.constraintlayout.widget.ConstraintSet
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.LinearLayoutManager
 import app.harvester.companion.databinding.ActivityMainBinding
 import com.google.android.material.bottomsheet.BottomSheetDialog
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.net.URL
 
@@ -42,6 +47,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var tabs: TabManager
     private lateinit var shortcutAdapter: ShortcutAdapter
+    private lateinit var suggestionsAdapter: SuggestionAdapter
     private var currentView: WebView? = null
 
     private val popupTabs = mutableSetOf<Long>()
@@ -51,7 +57,8 @@ class MainActivity : AppCompatActivity() {
     private var downloadSheet: BottomSheetDialog? = null
     private var engineIconCache: Bitmap? = null
     private var currentEngineId: String = ""
-    private lateinit var suggestionsAdapter: SuggestionAdapter
+    private var suggestJob: Job? = null
+    private var urlTextWatcher: android.text.TextWatcher? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -67,9 +74,10 @@ class MainActivity : AppCompatActivity() {
         DownloadStore.listener = { runOnUiThread { refreshDownloadSheet() } }
         MenuCommandStore.listener = { runOnUiThread { updateUi() } }
 
-        setupHomeGrid()   
+        setupHomeGrid()
         setupBottomBar()
         setupSuggestions()
+        setupSwipeRefresh()
         setupBackDispatcher()
 
         val existing = tabs.list()
@@ -91,71 +99,133 @@ class MainActivity : AppCompatActivity() {
         shortcutAdapter.submit(ShortcutStore.list(this))
     }
 
+    private fun setupSwipeRefresh() {
+        binding.swipeRefresh.setOnRefreshListener {
+            currentView?.reload()
+        }
+        binding.swipeRefresh.setOnChildScrollUpCallback { _, _ ->
+            currentView?.scrollY ?: 0 > 0
+        }
+        binding.swipeRefresh.setColorSchemeColors(
+            ContextCompat.getColor(this, R.color.accent)
+        )
+    }
+
     private fun setupSuggestions() {
-    suggestionsAdapter = SuggestionAdapter(
-        onClick = { url ->
-            currentView?.loadUrl(url)
-            exitEditMode()
-            updateHomeVisibility()
-        },
-        onEdit = { url ->
-            binding.urlEdit.setText(url)
-            binding.urlEdit.setSelection(binding.urlEdit.text.length)
-        },
-        onCopy = { url ->
-            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-            cm.setPrimaryClip(android.content.ClipData.newPlainText("URL", url))
-            Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show()
-        },
-        onDelete = { id -> HistoryStore.get(this).delete(id); refreshSuggestions() }
-    )
-    binding.suggestionsList.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this)
-    binding.suggestionsList.adapter = suggestionsAdapter
-}
+        suggestionsAdapter = SuggestionAdapter(
+            onClick = { text ->
+                val trimmed = text.trim()
+                if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+                    HistoryStore.get(this).record(trimmed, null)
+                    currentView?.loadUrl(trimmed)
+                } else {
+                    HistoryStore.get(this).recordSearch(trimmed)
+                    val target = SearchEnginePrefs.getSearchUrl(this, trimmed)
+                    currentView?.loadUrl(target)
+                }
+                exitEditMode()
+                updateHomeVisibility()
+            },
+            onDeleteQuery = { id ->
+                HistoryStore.get(this).deleteSearchQuery(id)
+                refreshSuggestions()
+            },
+            onDeletePage = { id ->
+                HistoryStore.get(this).delete(id)
+                refreshSuggestions()
+            },
+            onCopy = { url ->
+                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("URL", url))
+                Toast.makeText(this, "Link copied", Toast.LENGTH_SHORT).show()
+            },
+            onEdit = { url ->
+                binding.urlEdit.setText(url)
+                binding.urlEdit.setSelection(binding.urlEdit.text.length)
+            }
+        )
+        binding.suggestionsList.layoutManager = LinearLayoutManager(this)
+        binding.suggestionsList.adapter = suggestionsAdapter
+        binding.suggestionsClearAll.setOnClickListener {
+            HistoryStore.get(this).clearSearchHistory()
+            refreshSuggestions()
+        }
+    }
 
-private fun refreshSuggestions() {
-    val query = binding.urlEdit.text.toString()
-    val entries = HistoryStore.get(this).search(query)
-    suggestionsAdapter.submit(entries)
-}
+    private fun refreshSuggestions() {
+        val typed = binding.urlEdit.text.toString().trim()
+        val isUrl = typed.contains(".") && !typed.contains(" ")
 
-private fun showSuggestionsPanel() {
-    binding.suggestionsPanel.visibility = View.VISIBLE
-    binding.webContainer.visibility = View.GONE
-    refreshSuggestions()
-}
+        val queries = if (isUrl) emptyList()
+            else HistoryStore.get(this).searchSearchQueries(typed)
+        val pages = HistoryStore.get(this).searchHistory(typed, 10)
 
-private fun hideSuggestionsPanel() {
-    binding.suggestionsPanel.visibility = View.GONE
-    binding.webContainer.visibility =
-        if (binding.homeScreen.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-}
+        suggestionsAdapter.submitAll(queries, pages)
+        binding.suggestionsClearAll.visibility =
+            if (!isUrl && queries.isNotEmpty()) android.view.View.VISIBLE
+            else android.view.View.GONE
+
+        // fetch live search predictions
+        if (!isUrl && typed.length >= 2) {
+            suggestJob?.cancel()
+            suggestJob = lifecycleScope.launch {
+                delay(250)
+                val engine = SearchEnginePrefs.getEngine(this@MainActivity)
+                val preds = SearchPredictions.fetch(engine, typed)
+                if (preds.isNotEmpty() && binding.urlEdit.text.toString().trim() == typed) {
+                    val fake = preds.mapIndexed { i, p ->
+                        HistoryStore.SearchQuery(-1L - i, p, System.currentTimeMillis())
+                    }
+                    val merged = (fake + queries).distinctBy { it.query.lowercase() }.take(8)
+                    suggestionsAdapter.submitAll(merged, pages)
+                }
+            }
+        }
+    }
 
     private fun setupBottomBar() {
         binding.urlText.setOnClickListener { enterEditMode() }
+        binding.urlClear.setOnClickListener {
+            binding.urlEdit.setText("")
+            refreshSuggestions()
+        }
         binding.urlEdit.setOnEditorActionListener { _, actionId, event ->
             if (actionId == EditorInfo.IME_ACTION_GO ||
                 (event != null && event.keyCode == KeyEvent.KEYCODE_ENTER)) {
-                val target = normalize(binding.urlEdit.text.toString().trim())
-                if (target.isNotBlank()) {
-                    currentView?.loadUrl(target)
-                    exitEditMode()
-                    updateHomeVisibility()
+                val typed = binding.urlEdit.text.toString().trim()
+                if (typed.isNotBlank()) {
+                    navigateInput(typed)
                 }
                 true
             } else false
         }
-        binding.urlEdit.setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus) exitEditMode()
-        }
         binding.searchEngineIcon.setOnClickListener {
-            if (currentView?.url.isNullOrBlank() || currentView?.url == "about:blank") {
+            val isBlank = currentView?.url.isNullOrBlank() || currentView?.url == "about:blank"
+            if (isBlank || binding.urlEdit.visibility == View.VISIBLE) {
                 showSearchEnginePicker()
             }
         }
         binding.btnMenu.setOnClickListener { showMenu() }
         binding.tabCount.setOnClickListener { openTabGrid() }
         binding.btnScriptMenu.setOnClickListener { showScriptMenuSheet() }
+    }
+
+    private fun navigateInput(typed: String): Boolean {
+        val target = normalize(typed)
+        if (target.isBlank()) return false
+        val isSearch = !target.startsWith("http")
+        if (isSearch) HistoryStore.get(this).recordSearch(typed)
+        var view = currentView
+        if (view == null || tabs.currentId() < 0L) {
+            tabs.openNew(target)
+            attachCurrent()
+            view = currentView
+        } else {
+            view.loadUrl(target)
+        }
+        exitEditMode()
+        updateHomeVisibility()
+        return true
     }
 
     private fun setupBackDispatcher() {
@@ -203,67 +273,95 @@ private fun hideSuggestionsPanel() {
         cs.clone(root)
 
         val barId = binding.bottomBar.id
+        val chipId = binding.urlChipBar.id
         val lbId = binding.loadingBar.id
-        val wcId = binding.webContainer.id
-        val hsId = binding.homeScreen.id
+        val wcId = binding.contentContainer.id
+        val spId = binding.suggestionsPanel.id
         val parent = ConstraintSet.PARENT_ID
 
-        cs.clear(barId, ConstraintSet.TOP)
-        cs.clear(barId, ConstraintSet.BOTTOM)
-        cs.clear(lbId, ConstraintSet.TOP)
-        cs.clear(lbId, ConstraintSet.BOTTOM)
-        cs.clear(wcId, ConstraintSet.TOP)
-        cs.clear(wcId, ConstraintSet.BOTTOM)
-        cs.clear(hsId, ConstraintSet.TOP)
-        cs.clear(hsId, ConstraintSet.BOTTOM)
+        listOf(barId, chipId, lbId, wcId, spId).forEach { id ->
+            cs.clear(id, ConstraintSet.TOP)
+            cs.clear(id, ConstraintSet.BOTTOM)
+        }
 
         if (position == 0) {
+            // Top
             cs.connect(barId, ConstraintSet.TOP, parent, ConstraintSet.TOP)
             cs.connect(lbId, ConstraintSet.TOP, barId, ConstraintSet.BOTTOM)
+            cs.connect(chipId, ConstraintSet.TOP, lbId, ConstraintSet.BOTTOM)
+            cs.connect(spId, ConstraintSet.TOP, chipId, ConstraintSet.BOTTOM)
+            cs.connect(spId, ConstraintSet.BOTTOM, parent, ConstraintSet.BOTTOM)
             cs.connect(wcId, ConstraintSet.TOP, lbId, ConstraintSet.BOTTOM)
             cs.connect(wcId, ConstraintSet.BOTTOM, parent, ConstraintSet.BOTTOM)
-            cs.connect(hsId, ConstraintSet.TOP, lbId, ConstraintSet.BOTTOM)
-            cs.connect(hsId, ConstraintSet.BOTTOM, parent, ConstraintSet.BOTTOM)
         } else {
+            // Bottom (default)
             cs.connect(barId, ConstraintSet.BOTTOM, parent, ConstraintSet.BOTTOM)
             cs.connect(lbId, ConstraintSet.BOTTOM, barId, ConstraintSet.TOP)
+            cs.connect(chipId, ConstraintSet.BOTTOM, lbId, ConstraintSet.TOP)
+            cs.connect(spId, ConstraintSet.BOTTOM, chipId, ConstraintSet.TOP)
+            cs.connect(spId, ConstraintSet.TOP, parent, ConstraintSet.TOP)
             cs.connect(wcId, ConstraintSet.TOP, parent, ConstraintSet.TOP)
             cs.connect(wcId, ConstraintSet.BOTTOM, lbId, ConstraintSet.TOP)
-            cs.connect(hsId, ConstraintSet.TOP, parent, ConstraintSet.TOP)
-            cs.connect(hsId, ConstraintSet.BOTTOM, lbId, ConstraintSet.TOP)
         }
         cs.applyTo(root)
     }
 
-private fun enterEditMode() {
-    val url = currentView?.url ?: ""
-    binding.urlEdit.setText(if (url == "about:blank") "" else url)
-    binding.urlEdit.setSelection(binding.urlEdit.text.length)
-    binding.urlText.visibility = View.GONE
-    binding.urlEdit.visibility = View.VISIBLE
-    binding.urlEdit.addTextChangedListener(object : android.text.TextWatcher {
-        override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-        override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) { refreshSuggestions() }
-        override fun afterTextChanged(s: android.text.Editable?) {}
-    })
-    binding.urlEdit.requestFocus()
-    showSuggestionsPanel()
-    binding.urlEdit.post {
-        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-        imm.showSoftInput(binding.urlEdit, InputMethodManager.SHOW_IMPLICIT)
-    }
-}
+    private fun enterEditMode() {
+        val url = currentView?.url ?: ""
+        val isBlank = url.isBlank() || url == "about:blank"
 
-private fun exitEditMode() {
-    binding.urlEdit.setText("")
-    binding.urlEdit.visibility = View.GONE
-    binding.urlText.visibility = View.VISIBLE
-    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-    imm.hideSoftInputFromWindow(binding.urlEdit.windowToken, 0)
-    binding.urlEdit.clearFocus()
-    hideSuggestionsPanel()
-    updateUi()
-}
+        binding.urlChipText.text = if (isBlank) "" else url
+        binding.urlChipBar.visibility = if (isBlank) View.GONE else View.VISIBLE
+
+        binding.urlText.visibility = View.GONE
+        binding.urlEdit.visibility = View.VISIBLE
+        binding.urlEdit.setText("")
+        binding.urlEdit.requestFocus()
+
+        if (urlTextWatcher != null) {
+            binding.urlEdit.removeTextChangedListener(urlTextWatcher)
+        }
+        urlTextWatcher = object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {
+                binding.urlClear.visibility = if (s.isNullOrEmpty()) View.GONE else View.VISIBLE
+                refreshSuggestions()
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        }
+        binding.urlEdit.addTextChangedListener(urlTextWatcher)
+
+        showSuggestionsPanel()
+        binding.urlEdit.post {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(binding.urlEdit, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    private fun exitEditMode() {
+        binding.urlEdit.setText("")
+        binding.urlEdit.visibility = View.GONE
+        binding.urlText.visibility = View.VISIBLE
+        binding.urlClear.visibility = View.GONE
+        binding.urlChipBar.visibility = View.GONE
+        urlTextWatcher?.let { binding.urlEdit.removeTextChangedListener(it) }
+        urlTextWatcher = null
+        suggestJob?.cancel()
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.hideSoftInputFromWindow(binding.urlEdit.windowToken, 0)
+        binding.urlEdit.clearFocus()
+        hideSuggestionsPanel()
+        updateUi()
+    }
+
+    private fun showSuggestionsPanel() {
+        binding.suggestionsPanel.visibility = View.VISIBLE
+        refreshSuggestions()
+    }
+
+    private fun hideSuggestionsPanel() {
+        binding.suggestionsPanel.visibility = View.GONE
+    }
 
     private fun showSearchEnginePicker() {
         val sheet = BottomSheetDialog(this)
@@ -284,6 +382,8 @@ private fun exitEditMode() {
             row.setOnClickListener {
                 SearchEnginePrefs.setEngine(this, entry.id)
                 sheet.dismiss()
+                currentEngineId = ""  // force refresh
+                engineIconCache = null
                 updateSearchEngineIcon()
                 Toast.makeText(this, entry.name, Toast.LENGTH_SHORT).show()
             }
@@ -315,72 +415,27 @@ private fun exitEditMode() {
         val url = currentView?.url ?: ""
         val isBlank = url.isBlank() || url == "about:blank"
 
-        if (isBlank) {
+        if (isBlank || binding.urlEdit.visibility == View.VISIBLE) {
             binding.searchEngineIcon.visibility = View.VISIBLE
             binding.searchEngineIcon.isClickable = true
-            if (currentEngineId != entry.id) {
+            binding.searchEngineIcon.clearColorFilter()
+            if (currentEngineId != entry.id || engineIconCache == null) {
                 currentEngineId = entry.id
-                engineIconCache = null
                 binding.searchEngineIcon.setImageResource(R.drawable.ic_search)
                 loadIconInto(binding.searchEngineIcon, entry.iconUrl, R.drawable.ic_search)
-            } else if (engineIconCache != null) {
+            } else {
                 binding.searchEngineIcon.setImageBitmap(engineIconCache)
             }
         } else if (url.startsWith("https")) {
             binding.searchEngineIcon.setImageResource(R.drawable.ic_lock)
-            binding.searchEngineIcon.setColorFilter(
-                ContextCompat.getColor(this, R.color.accent))
+            binding.searchEngineIcon.setColorFilter(ContextCompat.getColor(this, R.color.accent))
             binding.searchEngineIcon.isClickable = false
         } else {
             binding.searchEngineIcon.setImageResource(R.drawable.ic_lock_open)
-            binding.searchEngineIcon.setColorFilter(
-                ContextCompat.getColor(this, R.color.red))
+            binding.searchEngineIcon.setColorFilter(ContextCompat.getColor(this, R.color.red))
             binding.searchEngineIcon.isClickable = false
         }
     }
-
-    private fun pickOrCreateGroup() {
-    val groups = TabGroupStore.list(this)
-    if (groups.isEmpty()) {
-        showAddGroupDialog()
-        return
-    }
-    val names = groups.map { it.name }.toMutableList()
-    names.add("+ New group")
-    AlertDialog.Builder(this)
-        .setTitle("Add tab to group")
-        .setItems(names.toTypedArray()) { _, which ->
-            if (which == groups.size) {
-                showAddGroupDialog()
-            } else {
-                val g = groups[which]
-                tabs.updateGroup(tabs.currentId(), g.id)
-                Toast.makeText(this, "Added to ${g.name}", Toast.LENGTH_SHORT).show()
-                updateUi()
-            }
-        }
-        .show()
-}
-
-private fun showAddGroupDialog() {
-    val view = layoutInflater.inflate(R.layout.dialog_create_group, null)
-    val input = view.findViewById<EditText>(R.id.groupNameInput)
-    val dialog = AlertDialog.Builder(this)
-        .setView(view)
-        .setCancelable(true)
-        .create()
-
-    view.findViewById<android.view.View>(R.id.groupCancel)?.setOnClickListener {
-        dialog.dismiss()
-    }
-    view.findViewById<android.view.View>(R.id.groupCreate)?.setOnClickListener {
-        val name = input.text.toString().trim().ifBlank { "Group" }
-        TabGroupStore.create(this, name)
-        Toast.makeText(this, "Group '$name' created", Toast.LENGTH_SHORT).show()
-        dialog.dismiss()
-    }
-    dialog.show()
-}
 
     private fun showAddShortcutDialog() { showShortcutEditor(null) }
 
@@ -436,7 +491,7 @@ private fun showAddGroupDialog() {
 
     private fun loadUrlFromHome(url: String) {
         var view = currentView
-        if (view == null || view.url == "about:blank") {
+        if (view == null || view.url == "about:blank" || tabs.currentId() < 0L) {
             tabs.openNew(url); attachCurrent(); view = currentView
         }
         view?.loadUrl(url)
@@ -462,13 +517,12 @@ private fun showAddGroupDialog() {
         val id = tabs.currentId()
         if (id in popupTabs) {
             binding.homeScreen.visibility = View.GONE
-            binding.webContainer.visibility = View.VISIBLE
+            binding.contentContainer.visibility = View.VISIBLE
             return
         }
         val url = tabs.list().firstOrNull { it.id == id }?.url
         val isBlank = url.isNullOrBlank() || url == "about:blank"
         binding.homeScreen.visibility = if (isBlank) View.VISIBLE else View.GONE
-        binding.webContainer.visibility = if (isBlank) View.GONE else View.VISIBLE
     }
 
     private fun prunePopupTabs() {
@@ -594,11 +648,10 @@ private fun showAddGroupDialog() {
                 if (id > 0L) tabs.updateUrl(id, url, null)
                 clear3p(v)
                 if (v === currentView) {
-                    binding.urlText.text = if (url == "about:blank") "Search or type URL" else url
-                    binding.urlText.setTextColor(
-                        ContextCompat.getColor(this@MainActivity,
-                            if (url == "about:blank") R.color.subtext else R.color.text)
-                    )
+                    val isEmpty = url.isBlank() || url == "about:blank"
+                    binding.urlText.text = if (isEmpty) "Search or type URL" else url
+                    binding.urlText.setTextColor(ContextCompat.getColor(
+                        this@MainActivity, if (isEmpty) R.color.subtext else R.color.text))
                     updateSearchEngineIcon()
                 }
                 if (id in popupTabs) UHLog.netPopupLoad(url)
@@ -608,27 +661,31 @@ private fun showAddGroupDialog() {
                 if (v === currentView) updateHomeVisibility()
             }
 
-override fun onPageFinished(v: WebView, url: String) {
-    UHLog.d("web", "finish ${url.take(140)}")
-    val id = tabs.idForView(v)
-    if (id > 0L) tabs.updateUrl(id, url, null)
-    flush3p(v, url)
-    if (url != "about:blank") {
-        UserscriptManager.injectOnPageFinished(this@MainActivity, v, url)
-        val entity = tabs.list().firstOrNull { it.id == id }
-        if (entity?.incognito != true) {
-            HistoryStore.get(this@MainActivity).record(url, entity?.title ?: "")
-        }
-    }
-    if (v === currentView) updateUi()
-}
+            override fun onPageFinished(v: WebView, url: String) {
+                UHLog.d("web", "finish ${url.take(140)}")
+                val id = tabs.idForView(v)
+                if (id > 0L) tabs.updateUrl(id, url, null)
+                flush3p(v, url)
+                binding.swipeRefresh.isRefreshing = false
+                if (url != "about:blank") {
+                    UserscriptManager.injectOnPageFinished(this@MainActivity, v, url)
+                    val entity = tabs.list().firstOrNull { it.id == id }
+                    if (entity?.incognito != true) {
+                        HistoryStore.get(this@MainActivity).record(url, entity?.title ?: "")
+                    }
+                }
+                if (v === currentView) updateUi()
+            }
 
             override fun doUpdateVisitedHistory(v: WebView, url: String?, isReload: Boolean) {
                 tabs.setNav(v, v.canGoBack(), v.canGoForward())
             }
 
             override fun onReceivedError(v: WebView, request: WebResourceRequest, error: WebResourceError) {
-                if (request.isForMainFrame) UHLog.w("web", "error ${error.errorCode} ${request.url}")
+                if (request.isForMainFrame) {
+                    UHLog.w("web", "error ${error.errorCode} ${request.url}")
+                    binding.swipeRefresh.isRefreshing = false
+                }
             }
 
             override fun onReceivedSslError(v: WebView, handler: SslErrorHandler, error: android.net.http.SslError) {
@@ -644,17 +701,17 @@ override fun onPageFinished(v: WebView, url: String) {
                 binding.loadingBar.progress = newProgress
             }
 
-override fun onReceivedTitle(v: WebView, title: String?) {
-    if (title.isNullOrBlank()) return
-    val id = tabs.idForView(v)
-    if (id <= 0L) return
-    val entity = tabs.list().firstOrNull { it.id == id }
-    val url = entity?.url ?: ""
-    tabs.updateUrl(id, url, title)
-    if (entity?.incognito != true && url.isNotBlank() && url != "about:blank") {
-        HistoryStore.get(this@MainActivity).record(url, title)
-    }
-}
+            override fun onReceivedTitle(v: WebView, title: String?) {
+                if (title.isNullOrBlank()) return
+                val id = tabs.idForView(v)
+                if (id <= 0L) return
+                val entity = tabs.list().firstOrNull { it.id == id }
+                val url = entity?.url ?: ""
+                tabs.updateUrl(id, url, title)
+                if (entity?.incognito != true && url.isNotBlank() && url != "about:blank") {
+                    HistoryStore.get(this@MainActivity).record(url, title)
+                }
+            }
 
             override fun onCreateWindow(v: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
                 val parentId = tabs.idForView(v)
@@ -671,7 +728,6 @@ override fun onReceivedTitle(v: WebView, title: String?) {
                 binding.webContainer.removeAllViews()
                 (newView.parent as? ViewGroup)?.removeView(newView)
                 binding.webContainer.addView(newView)
-                binding.webContainer.visibility = View.VISIBLE
                 binding.homeScreen.visibility = View.GONE
                 currentView = newView
                 val transport = resultMsg.obj as WebView.WebViewTransport
@@ -683,6 +739,19 @@ override fun onReceivedTitle(v: WebView, title: String?) {
 
             override fun onPermissionRequest(request: PermissionRequest) { request.deny() }
         }
+
+        view.setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
+            val filename = extractFilename(contentDisposition)
+            DownloadHelper.saveFromUrlWithCookies(this, url, filename, mimetype, userAgent)
+            Toast.makeText(this, "Download started", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun extractFilename(contentDisposition: String?): String? {
+        if (contentDisposition.isNullOrBlank()) return null
+        val rx = Regex("""filename[^;=\n]*=((['"]).*?\2|[^;\n]*)""", RegexOption.IGNORE_CASE)
+        val m = rx.find(contentDisposition) ?: return null
+        return m.groupValues[1].trim().trim('"', '\'')
     }
 
     private fun switchTab(id: Long) {
@@ -699,10 +768,8 @@ override fun onReceivedTitle(v: WebView, title: String?) {
         val isEmpty = url.isBlank() || url == "about:blank"
         if (binding.urlEdit.visibility != View.VISIBLE) {
             binding.urlText.text = if (isEmpty) "Search or type URL" else url
-            binding.urlText.setTextColor(
-                ContextCompat.getColor(this,
-                    if (isEmpty) R.color.subtext else R.color.text)
-            )
+            binding.urlText.setTextColor(ContextCompat.getColor(
+                this, if (isEmpty) R.color.subtext else R.color.text))
         }
         binding.tabCount.text = tabs.list().size.toString()
         binding.btnScriptMenu.visibility = View.VISIBLE
@@ -736,114 +803,111 @@ override fun onReceivedTitle(v: WebView, title: String?) {
         return pi == pattern.length
     }
 
-private fun showScriptMenuSheet() {
-    val sheet = BottomSheetDialog(this)
-    val v = layoutInflater.inflate(R.layout.dialog_script_menu, null)
-    sheet.setContentView(v)
-    sheet.behavior.isDraggable = false
+    private fun showScriptMenuSheet() {
+        val sheet = BottomSheetDialog(this)
+        val v = layoutInflater.inflate(R.layout.dialog_script_menu, null)
+        sheet.setContentView(v)
+        sheet.behavior.isDraggable = false
 
-    val list = v.findViewById<LinearLayout>(R.id.scriptMenuList)
-    populateScriptSheet(list, sheet)
+        val list = v.findViewById<LinearLayout>(R.id.scriptMenuList)
+        populateScriptSheet(list, sheet)
 
-    v.findViewById<android.widget.Button>(R.id.scriptMenuAll)?.setOnClickListener {
-        sheet.dismiss()
-        startActivity(Intent(this, ScriptsActivity::class.java))
-    }
-    sheet.show()
-}
-
-private fun populateScriptSheet(list: LinearLayout, sheet: BottomSheetDialog) {
-    list.removeAllViews()
-    val url = currentView?.url ?: ""
-    val allScripts = UserscriptManager.loadScripts(this)
-        .filter { UserscriptStore.isEnabled(this, it.name) }
-
-    if (allScripts.isEmpty()) {
-        val empty = android.widget.TextView(this).apply {
-            text = "No scripts installed."
-            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.subtext))
-            textSize = 12f
-            setPadding(0, 20, 0, 20)
+        v.findViewById<android.widget.Button>(R.id.scriptMenuAll)?.setOnClickListener {
+            sheet.dismiss()
+            startActivity(Intent(this, ScriptsActivity::class.java))
         }
-        list.addView(empty)
-        return
+        sheet.show()
     }
 
-    val matching = allScripts.filter { matchesAny(it, url) }
-    val nonMatching = allScripts.filter { !matchesAny(it, url) }
-    val ordered = matching + nonMatching
+    private fun populateScriptSheet(list: LinearLayout, sheet: BottomSheetDialog) {
+        list.removeAllViews()
+        val url = currentView?.url ?: ""
+        val allScripts = UserscriptManager.loadScripts(this)
+            .filter { UserscriptStore.isEnabled(this, it.name) }
 
-    for (script in ordered) {
-        val isActive = script in matching
-        val row = layoutInflater.inflate(R.layout.item_script_menu_script, list, false)
-
-        row.findViewById<android.widget.TextView>(R.id.smsName).text =
-            script.displayName.ifBlank { script.name }
-
-        val badge = row.findViewById<android.widget.TextView>(R.id.smsActiveBadge)
-        badge.visibility = if (isActive) View.VISIBLE else View.GONE
-
-        val sw = row.findViewById<android.widget.Switch>(R.id.smsEnabled)
-        sw.isChecked = true
-        sw.setOnCheckedChangeListener { _, checked ->
-            UserscriptStore.setEnabled(this, script.name, checked)
-            if (!checked) sheet.dismiss()
-        }
-
-        val cmds = row.findViewById<LinearLayout>(R.id.smsCommands)
-        val arrow = row.findViewById<ImageView>(R.id.smsExpand)
-        val scriptCommands = MenuCommandStore.forScript(script.name)
-
-        if (scriptCommands.isEmpty()) {
+        if (allScripts.isEmpty()) {
             val empty = android.widget.TextView(this).apply {
-                text = "No menu commands yet"
+                text = "No scripts installed."
                 setTextColor(ContextCompat.getColor(this@MainActivity, R.color.subtext))
-                textSize = 11f
-                setPadding(12, 4, 12, 8)
+                textSize = 12f
+                setPadding(0, 20, 0, 20)
             }
-            cmds.addView(empty)
-        } else {
-            for (cmd in scriptCommands) {
-                val cv = layoutInflater.inflate(R.layout.item_script_menu_command, cmds, false)
-                cv.findViewById<android.widget.TextView>(R.id.smcLabel).text = cmd.name
-                cv.setOnClickListener {
-                    currentView?.evaluateJavascript(
-                        "try{window.__uh_runMenuCommand('${cmd.id}')}catch(e){}", null)
-                    // give script time to update its commands, then rebuild
-                    list.postDelayed({
-                        populateScriptSheet(list, sheet)
-                    }, 400)
+            list.addView(empty)
+            return
+        }
+
+        val matching = allScripts.filter { matchesAny(it, url) }
+        val nonMatching = allScripts.filter { !matchesAny(it, url) }
+        val ordered = matching + nonMatching
+
+        for (script in ordered) {
+            val isActive = script in matching
+            val row = layoutInflater.inflate(R.layout.item_script_menu_script, list, false)
+
+            row.findViewById<android.widget.TextView>(R.id.smsName).text =
+                script.displayName.ifBlank { script.name }
+
+            val badge = row.findViewById<android.widget.TextView>(R.id.smsActiveBadge)
+            badge.visibility = if (isActive) View.VISIBLE else View.GONE
+
+            val sw = row.findViewById<android.widget.Switch>(R.id.smsEnabled)
+            sw.isChecked = true
+            sw.setOnCheckedChangeListener { _, checked ->
+                UserscriptStore.setEnabled(this, script.name, checked)
+                if (!checked) sheet.dismiss()
+            }
+
+            val cmds = row.findViewById<LinearLayout>(R.id.smsCommands)
+            val arrow = row.findViewById<ImageView>(R.id.smsExpand)
+            val scriptCommands = MenuCommandStore.forScript(script.name)
+
+            if (scriptCommands.isEmpty()) {
+                val empty = android.widget.TextView(this).apply {
+                    text = "No menu commands yet"
+                    setTextColor(ContextCompat.getColor(this@MainActivity, R.color.subtext))
+                    textSize = 11f
+                    setPadding(12, 4, 12, 8)
                 }
-                cmds.addView(cv)
-            }
-        }
-
-        arrow.setOnClickListener {
-            if (cmds.visibility == View.VISIBLE) {
-                cmds.visibility = View.GONE
-                arrow.animate().rotation(90f).setDuration(150).start()
+                cmds.addView(empty)
             } else {
-                cmds.visibility = View.VISIBLE
-                arrow.animate().rotation(-90f).setDuration(150).start()
+                for (cmd in scriptCommands) {
+                    val cv = layoutInflater.inflate(R.layout.item_script_menu_command, cmds, false)
+                    cv.findViewById<android.widget.TextView>(R.id.smcLabel).text = cmd.name
+                    cv.setOnClickListener {
+                        currentView?.evaluateJavascript(
+                            "try{window.__uh_runMenuCommand('${cmd.id}')}catch(e){}", null)
+                        list.postDelayed({ populateScriptSheet(list, sheet) }, 400)
+                    }
+                    cmds.addView(cv)
+                }
             }
-        }
 
-        list.addView(row)
+            arrow.setOnClickListener {
+                if (cmds.visibility == View.VISIBLE) {
+                    cmds.visibility = View.GONE
+                    arrow.animate().rotation(90f).setDuration(150).start()
+                } else {
+                    cmds.visibility = View.VISIBLE
+                    arrow.animate().rotation(-90f).setDuration(150).start()
+                }
+            }
+
+            list.addView(row)
+        }
     }
-}
 
-private fun openTabGrid() {
-    TabGridDialog(this, tabs,
-        onSwitch = { id -> switchTab(id) },
-        onNew = { attachCurrent(); updateUi() }
-    ).apply {
-        setOnDismissListener {
-            val live = tabs.currentView()
-            if (live != null && live !== currentView) { attachCurrent(); updateUi() }
-            else updateUi()
-        }
-    }.show()
-}
+    private fun openTabGrid() {
+        TabGridDialog(this, tabs,
+            onSwitch = { id -> switchTab(id) },
+            onNew = { attachCurrent(); updateUi() }
+        ).apply {
+            setOnDismissListener {
+                val live = tabs.currentView()
+                if (live != null && live !== currentView) { attachCurrent(); updateUi() }
+                else updateUi()
+            }
+        }.show()
+    }
 
     private fun normalize(input: String): String {
         val t = input.trim()
@@ -860,7 +924,10 @@ private fun openTabGrid() {
         sheet.setContentView(v)
 
         v.findViewById<View>(R.id.menuFavorites)?.setOnClickListener { sheet.dismiss(); toast("Favorites coming soon") }
-        v.findViewById<View>(R.id.menuHistory)?.setOnClickListener { sheet.dismiss(); toast("History coming soon") }
+        v.findViewById<View>(R.id.menuHistory)?.setOnClickListener {
+            sheet.dismiss()
+            startActivity(Intent(this, HistoryActivity::class.java))
+        }
         v.findViewById<View>(R.id.menuDownloads)?.setOnClickListener {
             sheet.dismiss()
             startActivity(Intent(this, DownloadsActivity::class.java))
@@ -876,8 +943,7 @@ private fun openTabGrid() {
             sheet.dismiss(); startActivity(Intent(this, ToolsActivity::class.java))
         }
         v.findViewById<View>(R.id.menuLogs)?.setOnClickListener {
-            sheet.dismiss()
-            startActivity(Intent(this, LogsActivity::class.java))
+            sheet.dismiss(); startActivity(Intent(this, LogsActivity::class.java))
         }
         v.findViewById<View>(R.id.menuAddToGroup)?.setOnClickListener {
             sheet.dismiss()
@@ -893,10 +959,48 @@ private fun openTabGrid() {
             sheet.dismiss(); startActivity(Intent(this, ScriptsActivity::class.java))
         }
         v.findViewById<View>(R.id.menuBottomReload)?.setOnClickListener {
-            sheet.dismiss(); currentView?.reload()
+            sheet.dismiss()
+            currentView?.reload()
         }
         sheet.behavior.isDraggable = false
         sheet.show()
+    }
+
+    private fun pickOrCreateGroup() {
+        val groups = TabGroupStore.list(this)
+        if (groups.isEmpty()) { showAddGroupDialog(); return }
+        val names = groups.map { it.name }.toMutableList()
+        names.add("+ New group")
+        AlertDialog.Builder(this)
+            .setTitle("Add tab to group")
+            .setItems(names.toTypedArray()) { _, which ->
+                if (which == groups.size) {
+                    showAddGroupDialog()
+                } else {
+                    val g = groups[which]
+                    tabs.updateGroup(tabs.currentId(), g.id)
+                    Toast.makeText(this, "Added to ${g.name}", Toast.LENGTH_SHORT).show()
+                    updateUi()
+                }
+            }
+            .show()
+    }
+
+    private fun showAddGroupDialog() {
+        val view = layoutInflater.inflate(R.layout.dialog_create_group, null)
+        val input = view.findViewById<EditText>(R.id.groupNameInput)
+        val dialog = AlertDialog.Builder(this)
+            .setView(view)
+            .setCancelable(true)
+            .create()
+        view.findViewById<View>(R.id.groupCancel)?.setOnClickListener { dialog.dismiss() }
+        view.findViewById<View>(R.id.groupCreate)?.setOnClickListener {
+            val name = input.text.toString().trim().ifBlank { "Group" }
+            TabGroupStore.create(this, name)
+            Toast.makeText(this, "Group '$name' created", Toast.LENGTH_SHORT).show()
+            dialog.dismiss()
+        }
+        dialog.show()
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
@@ -1014,7 +1118,10 @@ private fun openTabGrid() {
         val incoming = intent.data?.toString() ?: return
         val already = tabs.list().firstOrNull { it.url == incoming }
         if (already != null) { switchTab(already.id); return }
-        tabs.openNew(incoming); attachCurrent(); updateUi()
+        // If no tabs alive, open a fresh one
+        if (tabs.list().isEmpty()) tabs.openNew(incoming)
+        else tabs.openNew(incoming)
+        attachCurrent(); updateUi()
     }
 
     override fun onResume() {
@@ -1038,10 +1145,12 @@ private fun openTabGrid() {
         tabs.saveAll()
         UHLog.onActivityPause(this)
     }
+
     override fun onDestroy() {
         tabs.saveAll()
         DownloadStore.clearListeners()
         MenuCommandStore.listener = null
+        suggestJob?.cancel()
         super.onDestroy()
     }
 }
