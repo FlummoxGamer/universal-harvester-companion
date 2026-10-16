@@ -75,6 +75,13 @@ fun openNew(url: String, incognito: Boolean = false, groupId: Long = 0L): Long {
 
     fun updateUrl(id: Long, url: String, title: String?) = db.update(id, url, title)
 
+@Synchronized
+fun updateGroup(id: Long, groupId: Long) {
+    try {
+        val cv = android.content.ContentValues().apply { put("group_id", groupId) }
+        db.writableDatabase.update("tabs", cv, "id=?", arrayOf(id.toString()))
+    } catch (_: Exception) {}
+}
     fun setNav(view: WebView, back: Boolean, forward: Boolean) {
         synchronized(lock) {
             val slot = alive.entries.firstOrNull { it.value.view === view }?.value ?: return
