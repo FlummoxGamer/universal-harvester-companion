@@ -89,3 +89,7 @@ Download/Harvester/sess_<timestamp>/
 - Play Protect may warn on first install. This is because the app is signed with a self-generated key. Tap "Install anyway" to proceed.
 - Session files can grow large during heavy capture. Use the built-in filters or stop sessions regularly.
 
+
+## License
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for the full text.
