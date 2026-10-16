@@ -75,7 +75,9 @@ Session captures and logs are saved to:
 
 Download/Harvester/sess_<timestamp>/
 ├── session.json    (all captured events)
+
 ├── log.txt         (diagnostic log)
+
 └── net.txt         (network log)
 
 
