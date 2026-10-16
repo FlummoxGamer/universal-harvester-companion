@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.webkit.CookieManager
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -16,28 +17,70 @@ object DownloadHelper {
     const val HARVESTER_DIR = "Harvester"
 
     fun saveFromUrl(ctx: Context, url: String, mime: String?) {
-        try {
+        saveFromUrlWithCookies(ctx, url, null, mime, null)
+    }
+
+    fun saveFromUrlWithCookies(
+        ctx: Context,
+        url: String,
+        suggestedName: String?,
+        mime: String?,
+        userAgent: String?
+    ): Long {
+        return try {
             val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-            val ext = when {
-                mime?.contains("json", true) == true -> "json"
-                url.endsWith(".json", true) -> "json"
-                url.endsWith(".m3u8", true) -> "m3u8"
-                url.endsWith(".vtt", true) -> "vtt"
-                url.endsWith(".srt", true) -> "srt"
-                url.endsWith(".ass", true) -> "ass"
-                else -> "bin"
-            }
-            val filename = "uh_$ts.$ext"
+            val ext = guessExt(url, mime)
+            val filename = sanitizeFilename(
+                suggestedName?.takeIf { it.isNotBlank() }
+                    ?: "uh_$ts.$ext"
+            )
             val req = DownloadManager.Request(Uri.parse(url))
             req.setTitle(filename)
-            req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            req.setMimeType(mime)
+            req.setNotificationVisibility(
+                DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+            )
             req.setDestinationInExternalPublicDir(
                 Environment.DIRECTORY_DOWNLOADS,
                 "$HARVESTER_DIR/$filename"
             )
+            try {
+                val cookie = CookieManager.getInstance().getCookie(url)
+                if (!cookie.isNullOrBlank()) req.addRequestHeader("Cookie", cookie)
+            } catch (_: Exception) {}
+            if (!userAgent.isNullOrBlank()) {
+                req.addRequestHeader("User-Agent", userAgent)
+            }
             val dm = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-            dm.enqueue(req)
-        } catch (_: Exception) {}
+            val id = dm.enqueue(req)
+            DownloadStore.ensureInstalled(ctx)
+            DownloadStore.add(id, filename)
+            id
+        } catch (_: Exception) { -1L }
+    }
+
+    private fun guessExt(url: String, mime: String?): String {
+        val fromUrl = url.substringBefore('?').substringBefore('#').substringAfterLast('.', "")
+        if (fromUrl.length in 1..5 && fromUrl.all { it.isLetterOrDigit() }) return fromUrl.lowercase()
+        return when {
+            mime?.contains("json", true) == true -> "json"
+            mime?.contains("video/mp4", true) == true -> "mp4"
+            mime?.contains("video/", true) == true -> "mkv"
+            mime?.contains("image/png", true) == true -> "png"
+            mime?.contains("image/jpeg", true) == true -> "jpg"
+            mime?.contains("image/", true) == true -> "jpg"
+            mime?.contains("pdf", true) == true -> "pdf"
+            mime?.contains("zip", true) == true -> "zip"
+            mime?.contains("text/plain", true) == true -> "txt"
+            else -> "bin"
+        }
+    }
+
+    private fun sanitizeFilename(name: String): String {
+        return name
+            .replace(Regex("""[\\/:*?"<>|]"""), "_")
+            .take(120)
+            .ifBlank { "download_${System.currentTimeMillis()}" }
     }
 
     fun saveTextToDownloads(
@@ -72,9 +115,7 @@ object DownloadHelper {
             ) ?: return false
             ctx.contentResolver.openOutputStream(uri)?.use { os -> os.write(bytes) }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val done = ContentValues().apply {
-                    put(MediaStore.MediaColumns.IS_PENDING, 0)
-                }
+                val done = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
                 ctx.contentResolver.update(uri, done, null, null)
             }
             true
