@@ -74,6 +74,7 @@ Tap **Check for app update** in Settings → About. Updates install in place wit
 Session captures and logs are saved to:
 
 Download/Harvester/sess_<timestamp>/
+
 ├── session.json    (all captured events)
 
 ├── log.txt         (diagnostic log)
