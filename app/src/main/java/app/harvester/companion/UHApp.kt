@@ -3,6 +3,10 @@ package app.harvester.companion
 import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.Intent
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
 
 class UHApp : Application() {
     override fun onCreate() {
@@ -12,6 +16,18 @@ class UHApp : Application() {
         SessionRecorder.init(this)
         try {
             startService(Intent(this, SessionService::class.java))
+        } catch (_: Exception) {}
+        scheduleCleanup()
+    }
+
+    private fun scheduleCleanup() {
+        try {
+            val req = PeriodicWorkRequestBuilder<CleanupWorker>(6, TimeUnit.HOURS).build()
+            WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+                "uh_cleanup",
+                ExistingPeriodicWorkPolicy.KEEP,
+                req
+            )
         } catch (_: Exception) {}
     }
 
