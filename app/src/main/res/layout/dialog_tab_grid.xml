@@ -79,6 +79,17 @@
             android:contentDescription="Menu" />
     </LinearLayout>
 
+    <LinearLayout
+        android:id="@+id/tabStrip"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/surface"
+        android:visibility="gone"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp" />
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/tabGrid"
         android:layout_width="match_parent"
