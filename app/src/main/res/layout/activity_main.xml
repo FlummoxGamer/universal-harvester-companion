@@ -87,23 +87,28 @@
     </LinearLayout>
 
     <!-- Floating Chip Bar -->
-    <com.google.android.material.card.MaterialCardView
-        android:id="@+id/urlChipBar"
+    <FrameLayout
+        android:id="@+id/urlChipStrip"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="12dp"
-        android:layout_marginEnd="12dp"
-        android:layout_marginBottom="8dp"
+        android:background="@color/bg"
         android:visibility="gone"
-        app:cardBackgroundColor="@color/surface_2"
-        app:cardCornerRadius="20dp"
-        app:cardElevation="0dp"
-        app:strokeColor="@color/border"
-        app:strokeWidth="1dp"
         app:layout_constraintBottom_toTopOf="@id/loadingBar"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/urlChipBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp"
+            android:layout_marginBottom="8dp"
+            app:cardBackgroundColor="@color/surface_2"
+            app:cardCornerRadius="20dp"
+            app:cardElevation="0dp"
+            app:strokeColor="@color/border"
+            app:strokeWidth="1dp">
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -164,7 +169,8 @@
                 app:tint="@color/subtext"
                 android:scaleType="centerInside" />
         </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
+        </com.google.android.material.card.MaterialCardView>
+    </FrameLayout>
 
     <ProgressBar
         android:id="@+id/loadingBar"
