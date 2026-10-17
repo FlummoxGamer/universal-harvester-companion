@@ -64,39 +64,40 @@ class DownloadsActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun showRenameDialog(item: DownloadsQuery.Item) {
-        val view = layoutInflater.inflate(R.layout.dialog_rename, null)
-        val input = view.findViewById<android.widget.EditText>(R.id.renameInput)
-        val dialog = AlertDialog.Builder(this)
-            .setView(view)
-            .setCancelable(true)
-            .create()
+private fun showRenameDialog(item: DownloadsQuery.Item) {
+    val view = layoutInflater.inflate(R.layout.dialog_rename, null)
+    val input = view.findViewById<android.widget.EditText>(R.id.renameInput)
+    val dialog = AlertDialog.Builder(this)
+        .setView(view)
+        .setCancelable(true)
+        .create()
 
-        input.setText(item.filename)
-        input.requestFocus()
+    input.setText(item.filename)
+    input.requestFocus()
+    
+    val name = item.filename
+    val dotIndex = name.lastIndexOf('.')
+    if (dotIndex > 0) {
+        input.setSelection(0, dotIndex)
+    } else {
+        input.setSelection(0, name.length)
+    }
+
+    view.findViewById<View>(R.id.renameCancel).setOnClickListener { dialog.dismiss() }
+    view.findViewById<View>(R.id.renameOk).setOnClickListener {
+        val newName = input.text.toString().trim()
+        if (newName.isNotBlank()) {
+            renameFile(item, newName)
+            dialog.dismiss()
+        }
+    }
+    
+    dialog.setOnShowListener {
         val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
         imm.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
-
-        // Smart selection: exclude the file extension
-        val name = item.filename
-        val dotIndex = name.lastIndexOf('.')
-        if (dotIndex > 0) {
-            input.setSelection(0, dotIndex)
-        } else {
-            input.setSelection(0, name.length)
-        }
-
-        view.findViewById<View>(R.id.renameCancel).setOnClickListener { dialog.dismiss() }
-        view.findViewById<View>(R.id.renameOk).setOnClickListener {
-            val newName = input.text.toString().trim()
-            if (newName.isNotBlank()) {
-                renameFile(item, newName)
-                dialog.dismiss()
-            }
-        }
-
-        dialog.show()
     }
+    dialog.show()
+}
 
     private fun renameFile(item: DownloadsQuery.Item, newName: String) {
         try {
