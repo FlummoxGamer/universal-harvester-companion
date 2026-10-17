@@ -574,8 +574,25 @@ window.__uh_xhr_done = function(id, status, responseText, responseHeaders, final
     if (fn) try { fn(); } catch(e) {}
   };
 
-  if (!window.__uh_blob_hooked) {
-      window.__uh_blob_hooked = true;
+  if (window.System && !window.System.__uh_resolve_patched) {
+    window.System.__uh_resolve_patched = true;
+    var origResolve = window.System.resolve;
+    if (origResolve) {
+        window.System.resolve = function(id, parentUrl) {
+            if (id && (id.startsWith('./') || id.startsWith('../'))) {
+                var regs = window.__uh_sys_regs || {};
+                if (regs[id]) {
+                    return 'uh-blob://' + id;
+                }
+            }
+            try { return origResolve.apply(this, arguments); } 
+            catch(e) { return id; }
+        };
+    }
+}
+
+if (!window.__uh_blob_hooked) {
+    window.__uh_blob_hooked = true;
       window.__uh_blobs = {};
       var origCreate = URL.createObjectURL;
       URL.createObjectURL = function(obj) {
