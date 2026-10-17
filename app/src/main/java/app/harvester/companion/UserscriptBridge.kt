@@ -215,10 +215,16 @@ fun GM_xmlhttpRequest(
 
     // --- Downloads / tabs / clipboard / notifications ---
 
-    @JavascriptInterface
-    fun GM_download(script: String, url: String, name: String) {
-        DownloadHelper.saveFromUrl(ctx, url, null)
-    }
+@JavascriptInterface
+fun GM_download(script: String, url: String, name: String) {
+    try {
+        DownloadHelper.saveFromUrlWithCookies(ctx, url, name, null, null)
+        val w = v() ?: return
+        w.post {
+            android.widget.Toast.makeText(ctx, "Download started", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    } catch (_: Exception) {}
+}
 
     @JavascriptInterface
     fun GM_openInTab(script: String, url: String, active: Boolean) {
