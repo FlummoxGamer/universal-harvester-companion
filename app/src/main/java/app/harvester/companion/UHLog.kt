@@ -251,15 +251,16 @@ fun netPopupCreated(id: Long) {
         write("net", 'V', "3P $pageUrl: $sorted", true)
     }
 
-    private fun sanitize(s: String): String {
-        var out = s
-        out = RX_JWT.replace(out) { "<JWT>" }
-        out = RX_BEARER.replace(out) { m -> m.groupValues[1] + "<BEARER>" }
-        out = RX_COOKIE.replace(out) { m -> m.groupValues[1] + "<COOKIE>" }
-        out = RX_CF.replace(out) { m -> m.groupValues[1] + "<CF>" }
-        out = RX_B64_BLOB.replace(out) { "<BLOB(${it.value.length}b)>" }
-        return out
-    }
+ private fun sanitize(s: String): String {
+    if (s.length < 20) return s
+    var out = s
+    if (out.contains("eyJ")) out = RX_JWT.replace(out) { "<JWT>" }
+    if (out.contains("earer")) out = RX_BEARER.replace(out) { m -> m.groupValues[1] + "<BEARER>" }
+    if (out.contains("ookie")) out = RX_COOKIE.replace(out) { m -> m.groupValues[1] + "<COOKIE>" }
+    if (out.contains("loudfront")) out = RX_CF.replace(out) { m -> m.groupValues[1] + "<CF>" }
+    if (out.length > 300) out = RX_B64_BLOB.replace(out) { "<BLOB(${it.value.length}b)>" }
+    return out
+ }
 
     private fun write(tag: String, level: Char, msg: String, isNet: Boolean = false) {
         val clean = sanitize(msg)
