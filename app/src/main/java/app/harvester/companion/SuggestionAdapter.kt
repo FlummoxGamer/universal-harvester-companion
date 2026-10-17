@@ -6,7 +6,6 @@ import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
-import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 
 class SuggestionAdapter(
@@ -49,8 +48,10 @@ class SuggestionAdapter(
                 val h = holder as QueryVH
                 h.text.text = r.text
                 h.itemView.setOnClickListener { onClick(r.text) }
-                h.delete.visibility = View.VISIBLE
+                // Real history entries get delete; live prediction rows do not
+                h.delete.visibility = if (r.id > 0L) View.VISIBLE else View.GONE
                 h.delete.setOnClickListener { onDeleteQuery(r.id) }
+                h.arrow.visibility = if (r.id > 0L) View.GONE else View.VISIBLE
             }
             is Row.Page -> {
                 val h = holder as PageVH
@@ -66,30 +67,12 @@ class SuggestionAdapter(
 
     override fun getItemCount() = rows.size
 
-    fun submitQueries(queries: List<HistoryStore.SearchQuery>) {
-        rows.removeAll { it is Row.Query }
-        val insertAt = 0
-        queries.forEachIndexed { i, q ->
-            rows.add(insertAt + i, Row.Query(q.id, q.query))
-        }
-        notifyDataSetChanged()
-    }
-
-    fun submitPages(pages: List<HistoryStore.Entry>) {
-        rows.removeAll { it is Row.Page }
-        for (p in pages) rows.add(Row.Page(p.id, p.url, p.title))
-        notifyDataSetChanged()
-    }
-
     fun submitAll(queries: List<HistoryStore.SearchQuery>, pages: List<HistoryStore.Entry>) {
         rows.clear()
         queries.forEach { rows.add(Row.Query(it.id, it.query)) }
         pages.forEach { rows.add(Row.Page(it.id, it.url, it.title)) }
         notifyDataSetChanged()
     }
-
-    fun hasQueries(): Boolean = rows.any { it is Row.Query }
-    fun queryCount(): Int = rows.count { it is Row.Query }
 
     private fun hostOf(url: String): String = try {
         java.net.URI(url).host ?: url
@@ -99,6 +82,7 @@ class SuggestionAdapter(
         val icon: ImageView = v.findViewById(R.id.sugIcon)
         val text: TextView = v.findViewById(R.id.sugText)
         val delete: ImageButton = v.findViewById(R.id.sugDelete)
+        val arrow: ImageView = v.findViewById(R.id.sugArrow)
     }
 
     class PageVH(v: View) : RecyclerView.ViewHolder(v) {
