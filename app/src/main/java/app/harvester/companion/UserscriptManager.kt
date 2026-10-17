@@ -8,7 +8,6 @@ import java.util.zip.ZipInputStream
 
 object UserscriptManager {
 
-    private val hookCache = mutableMapOf<String, String>()
     private var cachedScripts: List<Script>? = null
     private val wrapperCache = mutableMapOf<String, String>()
 
@@ -16,6 +15,9 @@ object UserscriptManager {
         cachedScripts = null
         synchronized(wrapperCache) { wrapperCache.clear() }
     }
+
+    private val hookCache = mutableMapOf<String, String>()
+
     data class Script(
         val name: String,
         val displayName: String,
@@ -38,15 +40,17 @@ object UserscriptManager {
         val fileSize: Long
     )
 
-fun loadScripts(ctx: Context): List<Script> {
-    cachedScripts?.let { return it }
-    val dir = File(ctx.filesDir, "scripts")
-    val list = if (!dir.isDirectory) emptyList() else dir.listFiles()
-        ?.filter { it.isFile && it.extension.equals("js", true) }
-        ?.mapNotNull { f -> try { parse(f.nameWithoutExtension, f.readText(), f.length()) } catch (_: Exception) { null } } ?: emptyList()
-    cachedScripts = list
-    return list
-}
+    fun loadScripts(ctx: Context): List<Script> {
+        cachedScripts?.let { return it }
+        val dir = File(ctx.filesDir, "scripts")
+        val list = if (!dir.isDirectory) emptyList() else dir.listFiles()
+            ?.filter { it.isFile && it.extension.equals("js", true) }
+            ?.mapNotNull { f ->
+                try { parse(f.nameWithoutExtension, f.readText(), f.length()) } catch (_: Exception) { null }
+            } ?: emptyList()
+        cachedScripts = list
+        return list
+    }
 
     fun loadScript(ctx: Context, name: String): Script? {
         val f = File(File(ctx.filesDir, "scripts"), "$name.js")
@@ -121,7 +125,6 @@ fun install(ctx: Context, name: String, body: String): Boolean {
         val dir = File(ctx.filesDir, "scripts").apply { mkdirs() }
         val safe = name.replace(Regex("""[^a-zA-Z0-9_\-]"""), "_").take(80)
         File(dir, "$safe.js").writeText(body)
-        // fetch and cache @require bodies
         try {
             val parsed = parse(name, body)
             cacheRequires(ctx, parsed)
@@ -138,7 +141,6 @@ private fun requiresDir(ctx: Context, scriptName: String): File {
 
 private fun cacheRequires(ctx: Context, script: Script) {
     val dir = requiresDir(ctx, script.name)
-    // wipe old cache
     try { dir.listFiles()?.forEach { it.delete() } } catch (_: Exception) {}
     var idx = 0
     for (url in script.requires) {
@@ -417,33 +419,33 @@ fun injectOnPageStart(view: WebView, ctx: Context, url: String) {
         return { abort: function(){ B.GM_xhrAbort(id); } };
       },
       GM_download: function(d) {
-  if (typeof d === 'string') d = { url: d };
-  var url = d.url;
-  var name = d.name || ('download_' + Date.now() + '.bin');
-  if (url.startsWith('blob:')) {
-      var blob = window.__uh_blobs && window.__uh_blobs[url];
-      if (blob) {
-          var reader = new FileReader();
-          reader.onload = function() {
-              var b64 = reader.result.split(',')[1];
-              B.saveBlob(name, blob.type || 'application/octet-stream', b64);
-          };
-          reader.readAsDataURL(blob);
-          return;
-      }
-  }
-  if (url.startsWith('data:')) {
-      var parts = url.split(',');
-      var meta = parts[0];
-      var data = parts[1];
-      var mimeMatch = meta.match(/data:([^;]+)/);
-      var mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
-      var isBase64 = meta.indexOf('base64') !== -1;
-      B.saveBlob(name, mime, isBase64 ? data : btoa(data));
-      return;
-  }
-  B.GM_download(sn, String(url), String(name));
-},
+        if (typeof d === 'string') d = { url: d };
+        var url = d.url;
+        var name = d.name || ('download_' + Date.now() + '.bin');
+        if (url.startsWith('blob:')) {
+            var blob = window.__uh_blobs && window.__uh_blobs[url];
+            if (blob) {
+                var reader = new FileReader();
+                reader.onload = function() {
+                    var b64 = reader.result.split(',')[1];
+                    B.saveBlob(name, blob.type || 'application/octet-stream', b64);
+                };
+                reader.readAsDataURL(blob);
+                return;
+            }
+        }
+        if (url.startsWith('data:')) {
+            var parts = url.split(',');
+            var meta = parts[0];
+            var data = parts[1];
+            var mimeMatch = meta.match(/data:([^;]+)/);
+            var mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+            var isBase64 = meta.indexOf('base64') !== -1;
+            B.saveBlob(name, mime, isBase64 ? data : btoa(data));
+            return;
+        }
+        B.GM_download(sn, String(url), String(name));
+      },
       GM_openInTab: function(url, opts) {
         var active = !(opts && opts.active === false);
         B.GM_openInTab(sn, String(url), active);
@@ -567,7 +569,7 @@ window.__uh_xhr_done = function(id, status, responseText, responseHeaders, final
     if (cb) try { cb(key, oldV, newV, remote); } catch(e) {}
   };
 
-    window.__uh_runMenuCommand = function(id) {
+  window.__uh_runMenuCommand = function(id) {
     var fn = window.__uh_menu[id];
     if (fn) try { fn(); } catch(e) {}
   };
@@ -638,6 +640,7 @@ window.__uh_xhr_done = function(id, status, responseText, responseHeaders, final
       if (__lastOverlayState) { __lastOverlayState = false; B.setOverlayActive(false); }
   }, {passive: true, capture: true});
 })();
+"""
 
     private fun buildWrapper(ctx: Context, script: Script): String {
         synchronized(wrapperCache) { wrapperCache[script.name]?.let { return it } }
