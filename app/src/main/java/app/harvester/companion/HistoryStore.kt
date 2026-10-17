@@ -50,30 +50,37 @@ class HistoryStore private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "uh
     data class Entry(val id: Long, val url: String, val title: String, val visitedAt: Long)
     data class SearchQuery(val id: Long, val query: String, val searchedAt: Long)
 
-    @Synchronized
-    fun record(url: String, title: String?) {
-        if (url.isBlank()) return
-        if (url == "about:blank" || url.startsWith("chrome-error://")) return
-        val db = writableDatabase
-        val now = System.currentTimeMillis()
-        val existing = db.rawQuery(
-            "SELECT id FROM history WHERE url=? AND visited_at > ? LIMIT 1",
-            arrayOf(url, (now - 3000).toString())
-        ).use { c -> if (c.moveToFirst()) c.getLong(0) else -1L }
-        if (existing > 0L) {
-            val cv = ContentValues().apply { put("title", title ?: ""); put("visited_at", now) }
-            db.update("history", cv, "id=?", arrayOf(existing.toString()))
-        } else {
-            val cv = ContentValues().apply {
-                put("url", url); put("title", title ?: ""); put("visited_at", now)
-            }
-            db.insert("history", null, cv)
+@Synchronized
+fun record(url: String, title: String?) {
+    if (url.isBlank()) return
+    if (url == "about:blank" || url.startsWith("chrome-error://")) return
+    val db = writableDatabase
+    val now = System.currentTimeMillis()
+    // Dedup: same URL anywhere in history — update instead of insert
+    val existing = db.rawQuery(
+        "SELECT id FROM history WHERE url=? LIMIT 1", arrayOf(url)
+    ).use { c -> if (c.moveToFirst()) c.getLong(0) else -1L }
+    if (existing > 0L) {
+        val cv = ContentValues().apply { put("title", title ?: ""); put("visited_at", now) }
+        db.update("history", cv, "id=?", arrayOf(existing.toString()))
+    } else {
+        val cv = ContentValues().apply {
+            put("url", url); put("title", title ?: ""); put("visited_at", now)
         }
-        db.execSQL(
-            "DELETE FROM history WHERE id NOT IN " +
-                "(SELECT id FROM history ORDER BY visited_at DESC LIMIT 5000)"
-        )
+        db.insert("history", null, cv)
     }
+    db.execSQL(
+        "DELETE FROM history WHERE id NOT IN " +
+            "(SELECT id FROM history ORDER BY visited_at DESC LIMIT 5000)"
+    )
+}
+
+@Synchronized
+fun recordUrlOnly(url: String, title: String?) {
+    // Only record if it's a real navigation, not a sub-resource call
+    if (!url.startsWith("http")) return
+    record(url, title)
+}
 
     @Synchronized
     fun recordSearch(query: String) {
