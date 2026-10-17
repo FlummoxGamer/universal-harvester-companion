@@ -110,6 +110,12 @@ private fun setupSwipeRefresh() {
         val bridge = webView.tag as? UserscriptBridge
         webView.scrollY > 0 || bridge?.overlayActive == true
     }
+    
+    binding.swipeRefresh.viewTreeObserver.addOnScrollChangedListener {
+        val webView = currentView ?: return@addOnScrollChangedListener
+        val bridge = webView.tag as? UserscriptBridge
+        binding.swipeRefresh.isEnabled = webView.scrollY == 0 && bridge?.overlayActive != true
+    }
     binding.swipeRefresh.setColorSchemeColors(
         ContextCompat.getColor(this, R.color.accent)
     )
