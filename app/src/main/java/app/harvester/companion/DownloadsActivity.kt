@@ -26,7 +26,10 @@ class DownloadsActivity : AppCompatActivity() {
 
         list = findViewById(R.id.downloadsList)
         emptyView = findViewById(R.id.downloadsEmpty)
-        adapter = Adapter { item -> openItem(item) }
+        adapter = Adapter(
+            onClick = { item -> openItem(item) },
+            onLongClick = { item -> showItemMenu(item) }
+        )
         list.layoutManager = LinearLayoutManager(this)
         list.adapter = adapter
 
@@ -47,6 +50,63 @@ class DownloadsActivity : AppCompatActivity() {
         emptyView.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
         list.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
     }
+    private fun showItemMenu(item: DownloadsQuery.Item) {
+    val opts = arrayOf("Open", "Share", "Copy path", "Delete")
+    androidx.appcompat.app.AlertDialog.Builder(this)
+        .setTitle(item.filename)
+        .setItems(opts) { _, which ->
+            when (which) {
+                0 -> openItem(item)
+                1 -> shareItem(item)
+                2 -> copyItem(item)
+                3 -> deleteItem(item)
+            }
+        }
+        .show()
+}
+
+private fun shareItem(item: DownloadsQuery.Item) {
+    try {
+        val uri = DownloadsQuery.uriFor(item.id)
+        startActivity(android.content.Intent.createChooser(
+            android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = item.mime
+                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            },
+            "Share"
+        ))
+    } catch (_: Exception) {
+        android.widget.Toast.makeText(this, "Share failed", android.widget.Toast.LENGTH_SHORT).show()
+    }
+}
+
+private fun copyItem(item: DownloadsQuery.Item) {
+    try {
+        val uri = DownloadsQuery.uriFor(item.id)
+        val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        cm.setPrimaryClip(android.content.ClipData.newUri(contentResolver, "file", uri))
+        android.widget.Toast.makeText(this, "File copied", android.widget.Toast.LENGTH_SHORT).show()
+    } catch (_: Exception) {
+        android.widget.Toast.makeText(this, "Copy failed", android.widget.Toast.LENGTH_SHORT).show()
+    }
+}
+
+private fun deleteItem(item: DownloadsQuery.Item) {
+    androidx.appcompat.app.AlertDialog.Builder(this)
+        .setTitle("Delete ${item.filename}?")
+        .setPositiveButton("Delete") { _, _ ->
+            try {
+                contentResolver.delete(DownloadsQuery.uriFor(item.id), null, null)
+                android.widget.Toast.makeText(this, "Deleted", android.widget.Toast.LENGTH_SHORT).show()
+                reload()
+            } catch (_: Exception) {
+                android.widget.Toast.makeText(this, "Delete failed", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+        .setNegativeButton("Cancel", null)
+        .show()
+}
 
     private fun openItem(item: DownloadsQuery.Item) {
         try {
@@ -74,8 +134,10 @@ class DownloadsActivity : AppCompatActivity() {
             .show()
     }
 
-    class Adapter(private val onClick: (DownloadsQuery.Item) -> Unit)
-        : RecyclerView.Adapter<Adapter.VH>() {
+    class Adapter(
+        private val onClick: (DownloadsQuery.Item) -> Unit,
+        private val onLongClick: (DownloadsQuery.Item) -> Unit
+    ) : RecyclerView.Adapter<Adapter.VH>() {
 
         private val items = mutableListOf<DownloadsQuery.Item>()
 
@@ -95,6 +157,7 @@ class DownloadsActivity : AppCompatActivity() {
             h.name.text = item.title.ifBlank { item.filename }
             h.meta.text = "${item.sizeText} • ${item.dateText}"
             h.itemView.setOnClickListener { onClick(item) }
+            h.itemView.setOnLongClickListener { onLongClick(item) }
         }
 
         override fun getItemCount() = items.size
