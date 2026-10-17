@@ -46,10 +46,12 @@ object WebViewEngine {
             }
         } catch (_: Throwable) {}
         try {
-            val dark = ThemePrefs.getMode(ctx) == ThemePrefs.MODE_DARK ||
-                (ThemePrefs.getMode(ctx) == ThemePrefs.MODE_SYSTEM && isSystemDark(ctx)) ||
-                SettingsPrefs.getBool(ctx, SettingsPrefs.K_ENHANCE_DARK, false)
             if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+                val dark = when (ThemePrefs.getMode(ctx)) {
+                    ThemePrefs.MODE_DARK -> true
+                    ThemePrefs.MODE_LIGHT -> false
+                    else -> isSystemDark(ctx)
+                }
                 WebSettingsCompat.setAlgorithmicDarkeningAllowed(view.settings, dark)
             }
         } catch (_: Throwable) {}
@@ -64,5 +66,12 @@ object WebViewEngine {
             android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
             android.content.res.Configuration.UI_MODE_NIGHT_YES
     } catch (_: Exception) { false }
+    }
+    fun applyDarkMode(view: WebView, dark: Boolean) {
+        try {
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+                WebSettingsCompat.setAlgorithmicDarkeningAllowed(view.settings, dark)
+            }
+        } catch (_: Throwable) {}
     }
 }
