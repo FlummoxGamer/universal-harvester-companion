@@ -151,7 +151,7 @@ class MainActivity : AppCompatActivity() {
         binding.suggestionsList.adapter = suggestionsAdapter
         binding.suggestionsClearAll.setOnClickListener {
             HistoryStore.get(this).clearSearchHistory()
-            refreshSuggestions()
+            refreshSuggestions(binding.urlEdit.text?.isNotEmpty() == true)
         }
     }
 
@@ -202,7 +202,7 @@ private fun refreshSuggestions(hasText: Boolean) {
         binding.urlText.setOnClickListener { enterEditMode() }
         binding.urlClear.setOnClickListener {
             binding.urlEdit.setText("")
-            refreshSuggestions()
+            refreshSuggestions(false)
         }
         binding.urlEdit.setOnEditorActionListener { _, actionId, event ->
             if (actionId == EditorInfo.IME_ACTION_GO ||
@@ -374,7 +374,7 @@ urlTextWatcher = object : android.text.TextWatcher {
 
     private fun showSuggestionsPanel() {
         binding.suggestionsPanel.visibility = View.VISIBLE
-        refreshSuggestions()
+        refreshSuggestions(binding.urlEdit.text?.isNotEmpty() == true)
     }
 
     private fun hideSuggestionsPanel() {
