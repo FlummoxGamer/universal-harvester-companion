@@ -735,6 +735,7 @@ private fun isStaticAsset(url: String, headers: Map<String, String>?): Boolean {
             override fun onReceivedError(v: WebView, request: WebResourceRequest, error: WebResourceError) {
                 if (request.isForMainFrame) {
                     UHLog.w("web", "error ${error.errorCode} ${request.url}")
+                    UHLog.netError(request.url.toString(), error.errorCode)
                     binding.swipeRefresh.isRefreshing = false
                 }
             }
