@@ -39,6 +39,8 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.URL
 
@@ -99,22 +101,22 @@ class MainActivity : AppCompatActivity() {
         shortcutAdapter.submit(ShortcutStore.list(this))
     }
 
-    private fun setupSwipeRefresh() {
-        binding.swipeRefresh.setOnRefreshListener {
-            currentView?.reload()
-        }
-        binding.swipeRefresh.setOnChildScrollUpCallback { _, _ ->
-            val scrollY = currentView?.scrollY ?: 0
-            val hasOverlay = SessionRecorder.isActive() 
-            scrollY > 0 || hasOverlay
-        }
-        binding.swipeRefresh.setColorSchemeColors(
-            ContextCompat.getColor(this, R.color.accent)
-        )
-        binding.swipeRefresh.setProgressBackgroundColorSchemeColor(
-            ContextCompat.getColor(this, R.color.surface)
-        )
+private fun setupSwipeRefresh() {
+    binding.swipeRefresh.setOnRefreshListener {
+        currentView?.reload()
     }
+    binding.swipeRefresh.setOnChildScrollUpCallback { _, _ ->
+        val webView = currentView ?: return@setOnChildScrollUpCallback false
+        val bridge = webView.tag as? UserscriptBridge
+        webView.scrollY > 0 || bridge?.overlayActive == true
+    }
+    binding.swipeRefresh.setColorSchemeColors(
+        ContextCompat.getColor(this, R.color.accent)
+    )
+    binding.swipeRefresh.setProgressBackgroundColorSchemeColor(
+        ContextCompat.getColor(this, R.color.surface)
+    )
+}
 
     private fun setupSuggestions() {
         suggestionsAdapter = SuggestionAdapter(
@@ -178,40 +180,34 @@ private fun refreshSuggestions(hasText: Boolean) {
     val isUrl = typed.contains(".") && !typed.contains(" ")
     val loadedUrl = currentView?.url ?: ""
 
-    // Loaded page URL chip logic
     val showLoaded = !hasText && loadedUrl.isNotBlank() && loadedUrl != "about:blank"
     if (showLoaded) {
         binding.urlChipTitle.text = tabs.list().firstOrNull { it.id == tabs.currentId() }?.title ?: "Website"
         binding.urlChipText.text = loadedUrl
-        binding.urlChipBar.visibility = View.VISIBLE
+        binding.urlChipStrip.visibility = View.VISIBLE
     } else {
-        binding.urlChipBar.visibility = View.GONE
+        binding.urlChipStrip.visibility = View.GONE
     }
 
-    if (!hasText) {
-        // When blank, show past searches
-        val queries = HistoryStore.get(this).searchSearchQueries("", 10)
+    suggestJob?.cancel()
+    suggestJob = lifecycleScope.launch {
+        if (!hasText) {
+            val queries = withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchSearchQueries("", 10) }
+            suggestionsAdapter.submitAll(queries, emptyList())
+            binding.suggestionsClearAll.visibility = if (queries.isNotEmpty()) View.VISIBLE else View.GONE
+            return@launch
+        }
+
+        val queries = if (isUrl) emptyList() else withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchSearchQueries(typed) }
         suggestionsAdapter.submitAll(queries, emptyList())
-        binding.suggestionsClearAll.visibility = if (queries.isNotEmpty()) View.VISIBLE else View.GONE
-        return
-    }
-
-    // Typed — show search queries + predictions
-    val queries = if (isUrl) emptyList()
-        else HistoryStore.get(this).searchSearchQueries(typed)
-
-    suggestionsAdapter.submitAll(queries, emptyList())
-    binding.suggestionsClearAll.visibility = View.GONE
-    if (!isUrl && typed.length >= 2) {
-        suggestJob?.cancel()
-        suggestJob = lifecycleScope.launch {
+        binding.suggestionsClearAll.visibility = View.GONE
+        
+        if (!isUrl && typed.length >= 2) {
             delay(250)
             val engine = SearchEnginePrefs.getEngine(this@MainActivity)
             val preds = SearchPredictions.fetch(engine, typed)
             if (preds.isNotEmpty() && binding.urlEdit.text.toString().trim() == typed) {
-                val fake = preds.mapIndexed { i, p ->
-                    HistoryStore.SearchQuery(-1L - i, p, System.currentTimeMillis())
-                }
+                val fake = preds.mapIndexed { i, p -> HistoryStore.SearchQuery(-1L - i, p, System.currentTimeMillis()) }
                 val merged = (fake + queries).distinctBy { it.query.lowercase() }.take(8)
                 suggestionsAdapter.submitAll(merged, emptyList())
             }
@@ -309,7 +305,7 @@ private fun refreshSuggestions(hasText: Boolean) {
         cs.clone(root)
 
         val barId = binding.bottomBar.id
-        val chipId = binding.urlChipBar.id
+        val chipId = binding.urlChipStrip.id
         val lbId = binding.loadingBar.id
         val wcId = binding.contentContainer.id
         val spId = binding.suggestionsPanel.id
@@ -347,8 +343,7 @@ private fun refreshSuggestions(hasText: Boolean) {
         val isBlank = url.isBlank() || url == "about:blank"
 
         binding.urlChipText.text = if (isBlank) "" else url
-        binding.urlChipBar.visibility = if (isBlank) View.GONE else View.VISIBLE
-
+        binding.urlChipStrip.visibility = if (isBlank) View.GONE else View.VISIBLE
         binding.urlText.visibility = View.GONE
         binding.urlEdit.visibility = View.VISIBLE
         binding.urlEdit.setText("")
@@ -362,7 +357,7 @@ urlTextWatcher = object : android.text.TextWatcher {
     override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {
         val hasText = !s.isNullOrEmpty()
         binding.urlClear.visibility = if (hasText) View.VISIBLE else View.GONE
-        binding.urlChipBar.visibility = if (hasText) View.GONE else View.VISIBLE
+        binding.urlChipStrip.visibility = if (hasText) View.GONE else View.VISIBLE
         refreshSuggestions(hasText)
     }
     override fun afterTextChanged(s: android.text.Editable?) {}
@@ -382,7 +377,7 @@ urlTextWatcher = object : android.text.TextWatcher {
         binding.urlEdit.visibility = View.GONE
         binding.urlText.visibility = View.VISIBLE
         binding.urlClear.visibility = View.GONE
-        binding.urlChipBar.visibility = View.GONE
+        binding.urlChipStrip.visibility = View.GONE
         urlTextWatcher?.let { binding.urlEdit.removeTextChangedListener(it) }
         urlTextWatcher = null
         suggestJob?.cancel()
@@ -569,15 +564,31 @@ urlTextWatcher = object : android.text.TextWatcher {
         popupTabs.retainAll(live)
     }
 
-    private fun isStaticAsset(url: String, headers: Map<String, String>?): Boolean {
-        val accept = headers?.entries?.firstOrNull { it.key.equals("Accept", true) }?.value ?: ""
-        if (accept.contains("image/") || accept.contains("text/css") ||
-            accept.contains("font/") || accept.contains("video/") || accept.contains("audio/")) return true
-        val path = url.substringBefore('?').substringBefore('#').lowercase()
-        val exts = listOf(".js",".mjs",".css",".map",".woff",".woff2",".ttf",".otf",".eot",
-            ".png",".jpg",".jpeg",".webp",".gif",".svg",".avif",".ico",".bmp")
-        return exts.any { path.endsWith(it) }
-    }
+private fun isStaticAsset(url: String, headers: Map<String, String>?): Boolean {
+    val accept = headers?.entries?.firstOrNull { it.key.equals("Accept", true) }?.value ?: ""
+    if (accept.contains("image/") || accept.contains("text/css") || accept.contains("font/")) return true
+    
+    val path = url.substringBefore('?').substringBefore('#')
+    val dot = path.lastIndexOf('.')
+    if (dot == -1 || path.length - dot > 6) return false
+    val ext = path.substring(dot + 1)
+    if (ext.length < 2) return false
+    val c0 = ext[0].lowercaseChar()
+    if (c0 == 'j') return ext.equals("js", true) || ext.equals("jpg", true) || ext.equals("jpeg", true)
+    if (c0 == 'c') return ext.equals("css", true)
+    if (c0 == 'p') return ext.equals("png", true)
+    if (c0 == 'w') return ext.equals("woff", true) || ext.equals("woff2", true) || ext.equals("webp", true)
+    if (c0 == 't') return ext.equals("ttf", true)
+    if (c0 == 'o') return ext.equals("otf", true)
+    if (c0 == 'e') return ext.equals("eot", true)
+    if (c0 == 's') return ext.equals("svg", true)
+    if (c0 == 'g') return ext.equals("gif", true)
+    if (c0 == 'i') return ext.equals("ico", true)
+    if (c0 == 'm') return ext.equals("mjs", true) || ext.equals("map", true)
+    if (c0 == 'a') return ext.equals("avif", true)
+    if (c0 == 'b') return ext.equals("bmp", true)
+    return false
+}
 
     private fun isBeaconHost(url: String): Boolean {
         val host = try { java.net.URI(url).host?.lowercase() ?: return false } catch (_: Exception) { return false }
@@ -707,10 +718,6 @@ urlTextWatcher = object : android.text.TextWatcher {
                 flush3p(v, url)
                 binding.swipeRefresh.isRefreshing = false
     
-                // Prevent swipe refresh from triggering while touching a script overlay
-                v.setOnScrollChangeListener { _, _, _, _, _ ->
-                    binding.swipeRefresh.isEnabled = v.scrollY == 0
-                }
                 if (url != "about:blank") {
                     UserscriptManager.injectOnPageFinished(this@MainActivity, v, url)
                     val entity = tabs.list().firstOrNull { it.id == id }
