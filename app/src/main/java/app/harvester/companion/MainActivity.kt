@@ -104,7 +104,9 @@ class MainActivity : AppCompatActivity() {
             currentView?.reload()
         }
         binding.swipeRefresh.setOnChildScrollUpCallback { _, _ ->
-            currentView?.scrollY ?: 0 > 0
+            val scrollY = currentView?.scrollY ?: 0
+            val hasOverlay = SessionRecorder.isActive() 
+            scrollY > 0 || hasOverlay
         }
         binding.swipeRefresh.setColorSchemeColors(
             ContextCompat.getColor(this, R.color.accent)
@@ -153,31 +155,53 @@ class MainActivity : AppCompatActivity() {
             HistoryStore.get(this).clearSearchHistory()
             refreshSuggestions(binding.urlEdit.text?.isNotEmpty() == true)
         }
+        binding.urlChipCopy.setOnClickListener {
+            val url = binding.urlChipText.text.toString()
+            if (url.isNotBlank()) {
+                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("URL", url))
+                Toast.makeText(this, "Link copied", Toast.LENGTH_SHORT).show()
+            }
+        }
+        binding.urlChipEdit.setOnClickListener {
+            val url = binding.urlChipText.text.toString()
+            if (url.isNotBlank()) {
+                enterEditMode()
+                binding.urlEdit.setText(url)
+                binding.urlEdit.setSelection(url.length)
+            }
+        }
     }
 
 private fun refreshSuggestions(hasText: Boolean) {
     val typed = binding.urlEdit.text.toString().trim()
     val isUrl = typed.contains(".") && !typed.contains(" ")
-
-    // Loaded page URL — only shown when input empty
     val loadedUrl = currentView?.url ?: ""
+
+    // Loaded page URL chip logic
     val showLoaded = !hasText && loadedUrl.isNotBlank() && loadedUrl != "about:blank"
-    binding.urlChipText.text = if (showLoaded) loadedUrl else ""
-    binding.urlChipBar.visibility = if (showLoaded) View.VISIBLE else View.GONE
+    if (showLoaded) {
+        binding.urlChipTitle.text = tabs.list().firstOrNull { it.id == tabs.currentId() }?.title ?: "Website"
+        binding.urlChipText.text = loadedUrl
+        binding.urlChipBar.visibility = View.VISIBLE
+    } else {
+        binding.urlChipBar.visibility = View.GONE
+    }
 
     if (!hasText) {
-        suggestionsAdapter.submitAll(emptyList(), emptyList())
-        binding.suggestionsClearAll.visibility = View.GONE
+        // When blank, show past searches
+        val queries = HistoryStore.get(this).searchSearchQueries("", 10)
+        suggestionsAdapter.submitAll(queries, emptyList())
+        binding.suggestionsClearAll.visibility = if (queries.isNotEmpty()) View.VISIBLE else View.GONE
         return
     }
 
-    // Typed — show search queries only (no page history)
+    // Typed — show search queries + predictions
     val queries = if (isUrl) emptyList()
         else HistoryStore.get(this).searchSearchQueries(typed)
 
     suggestionsAdapter.submitAll(queries, emptyList())
     binding.suggestionsClearAll.visibility = View.GONE
-
     if (!isUrl && typed.length >= 2) {
         suggestJob?.cancel()
         suggestJob = lifecycleScope.launch {
