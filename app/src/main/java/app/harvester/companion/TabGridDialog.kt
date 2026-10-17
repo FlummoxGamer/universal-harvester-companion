@@ -319,7 +319,17 @@ private fun closeOne(id: Long) {
             val t = items[position]
             h.title.text = t.title.ifBlank { "New Tab" }
             h.url.text = t.url.take(160)
-            h.itemView.alpha = if (t.id == currentId) 1f else 0.72f
+            val card = h.itemView as? com.google.android.material.card.MaterialCardView
+            val ctx = h.itemView.context
+            if (t.id == currentId) {
+                card?.strokeColor = androidx.core.content.ContextCompat.getColor(ctx, R.color.accent)
+                card?.strokeWidth = (2 * ctx.resources.displayMetrics.density).toInt()
+                h.itemView.alpha = 1f
+            } else {
+                card?.strokeColor = androidx.core.content.ContextCompat.getColor(ctx, R.color.border)
+                card?.strokeWidth = (1 * ctx.resources.displayMetrics.density).toInt()
+                h.itemView.alpha = 0.85f
+            }
             h.itemView.setOnClickListener { onTap(t.id) }
             h.close.setOnClickListener { onClose(t.id) }
             h.itemView.setOnLongClickListener {
