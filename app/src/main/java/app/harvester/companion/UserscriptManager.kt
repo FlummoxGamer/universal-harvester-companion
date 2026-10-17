@@ -9,7 +9,13 @@ import java.util.zip.ZipInputStream
 object UserscriptManager {
 
     private val hookCache = mutableMapOf<String, String>()
+    private var cachedScripts: List<Script>? = null
+    private val wrapperCache = mutableMapOf<String, String>()
 
+    fun invalidateCache() {
+        cachedScripts = null
+        synchronized(wrapperCache) { wrapperCache.clear() }
+    }
     data class Script(
         val name: String,
         val displayName: String,
@@ -32,15 +38,15 @@ object UserscriptManager {
         val fileSize: Long
     )
 
-    fun loadScripts(ctx: Context): List<Script> {
-        val dir = File(ctx.filesDir, "scripts")
-        if (!dir.isDirectory) return emptyList()
-        return dir.listFiles()
-            ?.filter { it.isFile && it.extension.equals("js", true) }
-            ?.mapNotNull { f ->
-                try { parse(f.nameWithoutExtension, f.readText(), f.length()) } catch (_: Exception) { null }
-            } ?: emptyList()
-    }
+fun loadScripts(ctx: Context): List<Script> {
+    cachedScripts?.let { return it }
+    val dir = File(ctx.filesDir, "scripts")
+    val list = if (!dir.isDirectory) emptyList() else dir.listFiles()
+        ?.filter { it.isFile && it.extension.equals("js", true) }
+        ?.mapNotNull { f -> try { parse(f.nameWithoutExtension, f.readText(), f.length()) } catch (_: Exception) { null } } ?: emptyList()
+    cachedScripts = list
+    return list
+}
 
     fun loadScript(ctx: Context, name: String): Script? {
         val f = File(File(ctx.filesDir, "scripts"), "$name.js")
@@ -110,6 +116,7 @@ object UserscriptManager {
     }
 
 fun install(ctx: Context, name: String, body: String): Boolean {
+    invalidateCache()
     return try {
         val dir = File(ctx.filesDir, "scripts").apply { mkdirs() }
         val safe = name.replace(Regex("""[^a-zA-Z0-9_\-]"""), "_").take(80)
@@ -256,6 +263,7 @@ private fun loadCachedRequires(ctx: Context, script: Script): String {
     }
 
     fun uninstall(ctx: Context, name: String): Boolean {
+        invalidateCache()
         return try {
             File(File(ctx.filesDir, "scripts"), "$name.js").delete().also {
                 UserscriptStore.forget(ctx, name)
@@ -265,6 +273,7 @@ private fun loadCachedRequires(ctx: Context, script: Script): String {
     }
 
     fun saveEdited(ctx: Context, name: String, body: String): Boolean {
+        invalidateCache()
         MenuCommandStore.clearScript(name)
         return install(ctx, name, body)
     }
@@ -408,11 +417,33 @@ fun injectOnPageStart(view: WebView, ctx: Context, url: String) {
         return { abort: function(){ B.GM_xhrAbort(id); } };
       },
       GM_download: function(d) {
-        if (typeof d === 'string') d = { url: d };
-        var url = d.url;
-        var name = d.name || '';
-        B.GM_download(sn, String(url), String(name));
-      },
+  if (typeof d === 'string') d = { url: d };
+  var url = d.url;
+  var name = d.name || ('download_' + Date.now() + '.bin');
+  if (url.startsWith('blob:')) {
+      var blob = window.__uh_blobs && window.__uh_blobs[url];
+      if (blob) {
+          var reader = new FileReader();
+          reader.onload = function() {
+              var b64 = reader.result.split(',')[1];
+              B.saveBlob(name, blob.type || 'application/octet-stream', b64);
+          };
+          reader.readAsDataURL(blob);
+          return;
+      }
+  }
+  if (url.startsWith('data:')) {
+      var parts = url.split(',');
+      var meta = parts[0];
+      var data = parts[1];
+      var mimeMatch = meta.match(/data:([^;]+)/);
+      var mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+      var isBase64 = meta.indexOf('base64') !== -1;
+      B.saveBlob(name, mime, isBase64 ? data : btoa(data));
+      return;
+  }
+  B.GM_download(sn, String(url), String(name));
+},
       GM_openInTab: function(url, opts) {
         var active = !(opts && opts.active === false);
         B.GM_openInTab(sn, String(url), active);
@@ -536,14 +567,80 @@ window.__uh_xhr_done = function(id, status, responseText, responseHeaders, final
     if (cb) try { cb(key, oldV, newV, remote); } catch(e) {}
   };
 
-  window.__uh_runMenuCommand = function(id) {
+    window.__uh_runMenuCommand = function(id) {
     var fn = window.__uh_menu[id];
     if (fn) try { fn(); } catch(e) {}
   };
+
+  if (!window.__uh_blob_hooked) {
+      window.__uh_blob_hooked = true;
+      window.__uh_blobs = {};
+      var origCreate = URL.createObjectURL;
+      URL.createObjectURL = function(obj) {
+          var url = origCreate.call(URL, obj);
+          if (obj instanceof Blob) window.__uh_blobs[url] = obj;
+          return url;
+      };
+      var origRevoke = URL.revokeObjectURL;
+      URL.revokeObjectURL = function(url) {
+          delete window.__uh_blobs[url];
+          return origRevoke.call(URL, url);
+      };
+      var origClick = HTMLAnchorElement.prototype.click;
+      HTMLAnchorElement.prototype.click = function() {
+          var href = this.href;
+          var name = this.download || ('download_' + Date.now() + '.bin');
+          if (href && href.startsWith('blob:')) {
+              var blob = window.__uh_blobs[href];
+              if (blob) {
+                  var reader = new FileReader();
+                  reader.onload = function() {
+                      var b64 = reader.result.split(',')[1];
+                      B.saveBlob(name, blob.type || 'application/octet-stream', b64);
+                  };
+                  reader.readAsDataURL(blob);
+                  return;
+              }
+          }
+          if (href && href.startsWith('data:')) {
+              var parts = href.split(',');
+              var meta = parts[0];
+              var data = parts[1];
+              var mimeMatch = meta.match(/data:([^;]+)/);
+              var mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+              var isBase64 = meta.indexOf('base64') !== -1;
+              B.saveBlob(name, mime, isBase64 ? data : btoa(data));
+              return;
+          }
+          return origClick.apply(this, arguments);
+      };
+  }
+
+  var __lastOverlayState = false;
+  document.addEventListener('touchstart', function(e) {
+      var isFab = false;
+      var path = e.composedPath ? e.composedPath() : [];
+      for (var i=0; i<path.length; i++) {
+          var el = path[i];
+          if (el.classList && (el.classList.contains('uh-fab') || el.classList.contains('fab') || el.id === 'uh-fab' || el.getAttribute('data-uh-fab') !== null)) {
+              isFab = true; break;
+          }
+      }
+      if (isFab !== __lastOverlayState) {
+          __lastOverlayState = isFab;
+          B.setOverlayActive(isFab);
+      }
+  }, {passive: true, capture: true});
+  document.addEventListener('touchend', function() {
+      if (__lastOverlayState) { __lastOverlayState = false; B.setOverlayActive(false); }
+  }, {passive: true, capture: true});
+  document.addEventListener('touchcancel', function() {
+      if (__lastOverlayState) { __lastOverlayState = false; B.setOverlayActive(false); }
+  }, {passive: true, capture: true});
 })();
-"""
 
     private fun buildWrapper(ctx: Context, script: Script): String {
+        synchronized(wrapperCache) { wrapperCache[script.name]?.let { return it } }
         val patsJson = script.patterns.joinToString(",") {
             "\"" + it.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
         }
@@ -643,7 +740,9 @@ window.__uh_xhr_done = function(id, status, responseText, responseHeaders, final
         }
 
         val requirePrelude = loadCachedRequires(ctx, script)
-        return preamble + "\n" + requirePrelude + "\n" + script.body + "\n" + postamble
+        val result = preamble + "\n" + requirePrelude + "\n" + script.body + "\n" + postamble
+        synchronized(wrapperCache) { wrapperCache[script.name] = result }
+        return result
     }
     private fun buildScriptMetaJson(script: Script): String {
         val sb = StringBuilder()
