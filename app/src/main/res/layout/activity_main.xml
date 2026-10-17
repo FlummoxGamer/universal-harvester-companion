@@ -211,7 +211,7 @@
                     android:background="@null"
                     android:gravity="center_vertical"
                     android:paddingStart="4dp"
-                    android:paddingEnd="4dp"
+                    android:paddingEnd="32dp"
                     android:maxLines="1"
                     android:inputType="textUri|textNoSuggestions"
                     android:imeOptions="actionGo"
