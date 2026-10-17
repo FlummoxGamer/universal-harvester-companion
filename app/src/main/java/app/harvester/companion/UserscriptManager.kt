@@ -408,8 +408,9 @@ fun injectOnPageStart(view: WebView, ctx: Context, url: String) {
         return { abort: function(){ B.GM_xhrAbort(id); } };
       },
       GM_download: function(d) {
-        var url = typeof d === 'string' ? d : d.url;
-        var name = typeof d === 'object' && d.name ? d.name : '';
+        if (typeof d === 'string') d = { url: d };
+        var url = d.url;
+        var name = d.name || '';
         B.GM_download(sn, String(url), String(name));
       },
       GM_openInTab: function(url, opts) {
