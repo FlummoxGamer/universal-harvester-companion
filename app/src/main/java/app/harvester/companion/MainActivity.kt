@@ -171,11 +171,11 @@ private fun refreshSuggestions(hasText: Boolean) {
         return
     }
 
-   // Typed — show search queries only (no page history)
-   val queries = if (isUrl) emptyList()
-       else HistoryStore.get(this).searchSearchQueries(typed)
+    // Typed — show search queries only (no page history)
+    val queries = if (isUrl) emptyList()
+        else HistoryStore.get(this).searchSearchQueries(typed)
 
-   suggestionsAdapter.submitAll(queries, emptyList())
+    suggestionsAdapter.submitAll(queries, emptyList())
     binding.suggestionsClearAll.visibility = View.GONE
 
     if (!isUrl && typed.length >= 2) {
@@ -189,7 +189,7 @@ private fun refreshSuggestions(hasText: Boolean) {
                     HistoryStore.SearchQuery(-1L - i, p, System.currentTimeMillis())
                 }
                 val merged = (fake + queries).distinctBy { it.query.lowercase() }.take(8)
-                suggestionsAdapter.submitAll(merged, pages)
+                suggestionsAdapter.submitAll(merged, emptyList())
             }
         }
     }
