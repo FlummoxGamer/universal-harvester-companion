@@ -157,7 +157,10 @@ private fun deleteItem(item: DownloadsQuery.Item) {
             h.name.text = item.title.ifBlank { item.filename }
             h.meta.text = "${item.sizeText} • ${item.dateText}"
             h.itemView.setOnClickListener { onClick(item) }
-            h.itemView.setOnLongClickListener { onLongClick(item) }
+            h.itemView.setOnLongClickListener {
+                onLongClick(item)
+                true
+            }
         }
 
         override fun getItemCount() = items.size
