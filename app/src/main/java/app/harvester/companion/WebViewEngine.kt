@@ -58,6 +58,7 @@ object WebViewEngine {
         val bridge = UserscriptBridge(ctx)
         view.addJavascriptInterface(bridge, "UH_BRIDGE")
         bridge.attach(view)
+        view.tag = bridge
         return view
     }
     private fun isSystemDark(ctx: Context): Boolean {
