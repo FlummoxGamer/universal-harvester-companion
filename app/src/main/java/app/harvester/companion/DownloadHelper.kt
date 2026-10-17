@@ -42,7 +42,7 @@ object DownloadHelper {
             )
             req.setDestinationInExternalPublicDir(
                 Environment.DIRECTORY_DOWNLOADS,
-                "$HARVESTER_DIR/$filename"
+                filename
             )
             try {
                 val cookie = CookieManager.getInstance().getCookie(url)
