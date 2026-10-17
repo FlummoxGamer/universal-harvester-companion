@@ -209,6 +209,10 @@ object UHLog {
         write("net", 'V', "API $method $url", true)
     }
 
+    fun netError(url: String, code: Int) {
+        write("net", 'E', "ERROR $code $url", true)
+    }
+
     fun netScheme(raw: String, action: String) {
         if (!verbose) return
         write("net", 'V', "SCHEME $raw → $action", true)
@@ -227,6 +231,11 @@ fun netPopupCreated(id: Long) {
     fun netPopupLoad(url: String) {
         if (!verbose) return
         write("net", 'V', "POPUP load $url", true)
+    }
+
+    fun netResource(url: String, mime: String) {
+        if (!verbose) return
+        write("net", 'V', "RES $mime $url", true)
     }
 
     fun netExtDialog(url: String) {
