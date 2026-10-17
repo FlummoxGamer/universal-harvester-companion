@@ -65,19 +65,64 @@ class DownloadsActivity : AppCompatActivity() {
         .show()
 }
 
-private fun shareItem(item: DownloadsQuery.Item) {
+private fun showItemMenu(item: DownloadsQuery.Item) {
+    val opts = arrayOf("Open", "Share", "Rename", "Delete")
+    androidx.appcompat.app.AlertDialog.Builder(this)
+        .setTitle(item.filename)
+        .setItems(opts) { _, which ->
+            when (which) {
+                0 -> openItem(item)
+                1 -> shareItem(item)
+                2 -> showRenameDialog(item)
+                3 -> deleteItem(item)
+            }
+        }
+        .show()
+}
+
+private fun showRenameDialog(item: DownloadsQuery.Item) {
+    val view = layoutInflater.inflate(R.layout.dialog_rename, null)
+    val input = view.findViewById<android.widget.EditText>(R.id.renameInput)
+    val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+        .setView(view)
+        .setCancelable(true)
+        .create()
+
+    input.setText(item.filename)
+    input.requestFocus()
+
+    // Smart selection: exclude the file extension
+    val name = item.filename
+    val dotIndex = name.lastIndexOf('.')
+    if (dotIndex > 0) {
+        input.setSelection(0, dotIndex)
+    } else {
+        input.setSelection(0, name.length)
+    }
+
+    view.findViewById<android.view.View>(R.id.renameCancel).setOnClickListener { dialog.dismiss() }
+    view.findViewById<android.view.View>(R.id.renameOk).setOnClickListener {
+        val newName = input.text.toString().trim()
+        if (newName.isNotBlank()) {
+            renameFile(item, newName)
+            dialog.dismiss()
+        }
+    }
+
+    dialog.show()
+}
+
+private fun renameFile(item: DownloadsQuery.Item, newName: String) {
     try {
         val uri = DownloadsQuery.uriFor(item.id)
-        startActivity(android.content.Intent.createChooser(
-            android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                type = item.mime
-                putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            },
-            "Share"
-        ))
-    } catch (_: Exception) {
-        android.widget.Toast.makeText(this, "Share failed", android.widget.Toast.LENGTH_SHORT).show()
+        val values = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, newName)
+        }
+        contentResolver.update(uri, values, null, null)
+        android.widget.Toast.makeText(this, "Renamed", android.widget.Toast.LENGTH_SHORT).show()
+        reload()
+    } catch (e: Exception) {
+        android.widget.Toast.makeText(this, "Rename failed", android.widget.Toast.LENGTH_SHORT).show()
     }
 }
 
