@@ -128,11 +128,11 @@ class MainActivity : AppCompatActivity() {
             },
             onDeleteQuery = { id ->
                 HistoryStore.get(this).deleteSearchQuery(id)
-                refreshSuggestions()
+                refreshSuggestions(binding.urlEdit.text?.isNotEmpty() == true)
             },
             onDeletePage = { id ->
                 HistoryStore.get(this).delete(id)
-                refreshSuggestions()
+                refreshSuggestions(binding.urlEdit.text?.isNotEmpty() == true)
             },
             onCopy = { url ->
                 val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
@@ -152,36 +152,48 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun refreshSuggestions() {
-        val typed = binding.urlEdit.text.toString().trim()
-        val isUrl = typed.contains(".") && !typed.contains(" ")
+private fun refreshSuggestions(hasText: Boolean) {
+    val typed = binding.urlEdit.text.toString().trim()
+    val isUrl = typed.contains(".") && !typed.contains(" ")
 
-        val queries = if (isUrl) emptyList()
-            else HistoryStore.get(this).searchSearchQueries(typed)
-        val pages = HistoryStore.get(this).searchHistory(typed, 10)
+    // Loaded page URL — only shown when input empty
+    val loadedUrl = currentView?.url ?: ""
+    val showLoaded = !hasText && loadedUrl.isNotBlank() && loadedUrl != "about:blank"
+    binding.urlChipText.text = if (showLoaded) loadedUrl else ""
+    binding.urlChipBar.visibility = if (showLoaded) View.VISIBLE else View.GONE
 
-        suggestionsAdapter.submitAll(queries, pages)
-        binding.suggestionsClearAll.visibility =
-            if (!isUrl && queries.isNotEmpty()) android.view.View.VISIBLE
-            else android.view.View.GONE
+    if (!hasText) {
+        // Only history pages shown when input empty
+        val pages = HistoryStore.get(this).searchHistory("", 20)
+        suggestionsAdapter.submitAll(emptyList(), pages)
+        binding.suggestionsClearAll.visibility = View.GONE
+        return
+    }
 
-        // fetch live search predictions
-        if (!isUrl && typed.length >= 2) {
-            suggestJob?.cancel()
-            suggestJob = lifecycleScope.launch {
-                delay(250)
-                val engine = SearchEnginePrefs.getEngine(this@MainActivity)
-                val preds = SearchPredictions.fetch(engine, typed)
-                if (preds.isNotEmpty() && binding.urlEdit.text.toString().trim() == typed) {
-                    val fake = preds.mapIndexed { i, p ->
-                        HistoryStore.SearchQuery(-1L - i, p, System.currentTimeMillis())
-                    }
-                    val merged = (fake + queries).distinctBy { it.query.lowercase() }.take(8)
-                    suggestionsAdapter.submitAll(merged, pages)
+    // Typed — show search queries + matching pages
+    val queries = if (isUrl) emptyList()
+        else HistoryStore.get(this).searchSearchQueries(typed)
+    val pages = HistoryStore.get(this).searchHistory(typed, 8)
+
+    suggestionsAdapter.submitAll(queries, pages)
+    binding.suggestionsClearAll.visibility = View.GONE
+
+    if (!isUrl && typed.length >= 2) {
+        suggestJob?.cancel()
+        suggestJob = lifecycleScope.launch {
+            delay(250)
+            val engine = SearchEnginePrefs.getEngine(this@MainActivity)
+            val preds = SearchPredictions.fetch(engine, typed)
+            if (preds.isNotEmpty() && binding.urlEdit.text.toString().trim() == typed) {
+                val fake = preds.mapIndexed { i, p ->
+                    HistoryStore.SearchQuery(-1L - i, p, System.currentTimeMillis())
                 }
+                val merged = (fake + queries).distinctBy { it.query.lowercase() }.take(8)
+                suggestionsAdapter.submitAll(merged, pages)
             }
         }
     }
+}
 
     private fun setupBottomBar() {
         binding.urlText.setOnClickListener { enterEditMode() }
@@ -321,17 +333,20 @@ class MainActivity : AppCompatActivity() {
         if (urlTextWatcher != null) {
             binding.urlEdit.removeTextChangedListener(urlTextWatcher)
         }
-        urlTextWatcher = object : android.text.TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {
-                binding.urlClear.visibility = if (s.isNullOrEmpty()) View.GONE else View.VISIBLE
-                refreshSuggestions()
-            }
-            override fun afterTextChanged(s: android.text.Editable?) {}
-        }
+urlTextWatcher = object : android.text.TextWatcher {
+    override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+    override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {
+        val hasText = !s.isNullOrEmpty()
+        binding.urlClear.visibility = if (hasText) View.VISIBLE else View.GONE
+        binding.urlChipBar.visibility = if (hasText) View.GONE else View.VISIBLE
+        refreshSuggestions(hasText)
+    }
+    override fun afterTextChanged(s: android.text.Editable?) {}
+}
         binding.urlEdit.addTextChangedListener(urlTextWatcher)
 
         showSuggestionsPanel()
+        refreshSuggestions(false)
         binding.urlEdit.post {
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
             imm.showSoftInput(binding.urlEdit, InputMethodManager.SHOW_IMPLICIT)
@@ -945,10 +960,7 @@ class MainActivity : AppCompatActivity() {
         v.findViewById<View>(R.id.menuLogs)?.setOnClickListener {
             sheet.dismiss(); startActivity(Intent(this, LogsActivity::class.java))
         }
-        v.findViewById<View>(R.id.menuAddToGroup)?.setOnClickListener {
-            sheet.dismiss()
-            pickOrCreateGroup()
-        }
+        
         v.findViewById<View>(R.id.menuBottomHome)?.setOnClickListener {
             sheet.dismiss()
             tabs.openNew("about:blank"); attachCurrent(); updateUi()
