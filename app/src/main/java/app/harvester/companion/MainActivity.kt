@@ -723,9 +723,6 @@ urlTextWatcher = object : android.text.TextWatcher {
                 val entity = tabs.list().firstOrNull { it.id == id }
                 val url = entity?.url ?: ""
                 tabs.updateUrl(id, url, title)
-                if (entity?.incognito != true && url.isNotBlank() && url != "about:blank") {
-                    HistoryStore.get(this@MainActivity).record(url, title)
-                }
             }
 
             override fun onCreateWindow(v: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
