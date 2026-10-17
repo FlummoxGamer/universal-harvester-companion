@@ -30,6 +30,23 @@ class UserscriptBridge(private val ctx: Context) {
 
     private fun nsKey(script: String, key: String) = "$script::$key"
 
+@Volatile var overlayActive = false
+
+@JavascriptInterface
+fun setOverlayActive(active: Boolean) { overlayActive = active }
+
+@JavascriptInterface
+fun saveBlob(filename: String, mime: String, base64Data: String) {
+    try {
+        val bytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT)
+        DownloadHelper.saveBytesToDownloads(ctx, filename, bytes, mime)
+        val w = v() ?: return
+        w.post { android.widget.Toast.makeText(ctx, "Download started: $filename", android.widget.Toast.LENGTH_SHORT).show() }
+    } catch (e: Exception) {
+        UHLog.throwable("blob", "saveBlob failed", e)
+    }
+}
+    
 init {
     prefs.registerOnSharedPreferenceChangeListener(
         android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, k ->
