@@ -205,36 +205,6 @@
     </LinearLayout>
 
     <LinearLayout
-        android:id="@+id/menuAddToGroup"
-        android:layout_width="match_parent"
-        android:layout_height="52dp"
-        android:layout_marginTop="2dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:background="@color/surface"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp">
-        <ImageView
-            android:layout_width="22dp"
-            android:layout_height="22dp"
-            android:src="@drawable/ic_grid_view"
-            app:tint="@color/subtext" />
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="16dp"
-            android:text="Add tab to group"
-            android:textColor="@color/text"
-            android:textSize="15sp" />
-        <ImageView
-            android:layout_width="18dp"
-            android:layout_height="18dp"
-            android:src="@drawable/ic_forward"
-            app:tint="@color/subtext" />
-    </LinearLayout>
-
-    <LinearLayout
         android:id="@+id/menuLogs"
         android:layout_width="match_parent"
         android:layout_height="52dp"
