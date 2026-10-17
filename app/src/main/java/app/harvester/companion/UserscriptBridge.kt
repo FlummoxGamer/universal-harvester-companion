@@ -33,7 +33,7 @@ class UserscriptBridge(private val ctx: Context) {
 @Volatile var overlayActive = false
 
 @JavascriptInterface
-fun setOverlayActive(active: Boolean) { overlayActive = active }
+fun updateOverlayState(active: Boolean) { overlayActive = active }
 
 @JavascriptInterface
 fun saveBlob(filename: String, mime: String, base64Data: String) {
