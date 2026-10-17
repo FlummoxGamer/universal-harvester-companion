@@ -92,11 +92,13 @@ private fun showRenameDialog(item: DownloadsQuery.Item) {
         }
     }
     
-    dialog.setOnShowListener {
-        val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
-        imm.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
-    }
     dialog.show()
+    dialog.window?.clearFlags(
+        android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+        android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
+    )
+    dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+    input.requestFocus()
 }
 
     private fun renameFile(item: DownloadsQuery.Item, newName: String) {
