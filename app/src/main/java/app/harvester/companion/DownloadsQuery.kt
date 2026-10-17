@@ -68,6 +68,11 @@ private fun isInternalFile(name: String): Boolean {
     val n = name.lowercase()
     if (n.startsWith("uh_log_")) return true
     if (n.startsWith("uh_net_")) return true
+    if (n.startsWith("uh_")) return true
+    if (n.startsWith("wasm_")) return true
+    if (n.startsWith("atob_")) return true
+    if (n.startsWith("crypto_")) return true
+    if (n.startsWith("textdecode_")) return true
     if (n == "log" || n == "net") return true
     if (n == "log.txt" || n == "net.txt" || n == "session.json") return true
     return false
