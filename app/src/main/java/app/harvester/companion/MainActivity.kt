@@ -1142,6 +1142,15 @@ urlTextWatcher = object : android.text.TextWatcher {
         applyAddressBarPosition()
         currentView?.onResume()
         currentView?.resumeTimers()
+        val dark = when (ThemePrefs.getMode(this)) {
+            ThemePrefs.MODE_DARK -> true
+            ThemePrefs.MODE_LIGHT -> false
+            else -> (resources.configuration.uiMode and
+                android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
+        }
+        tabs.list().forEach { }
+        currentView?.let { WebViewEngine.applyDarkMode(it, dark) }
         if (UserscriptStore.consumeDirty(this)) {
             val v = currentView
             val u = v?.url
