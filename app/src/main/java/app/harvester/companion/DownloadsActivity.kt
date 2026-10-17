@@ -74,6 +74,8 @@ class DownloadsActivity : AppCompatActivity() {
 
         input.setText(item.filename)
         input.requestFocus()
+        val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+        imm.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
 
         // Smart selection: exclude the file extension
         val name = item.filename
