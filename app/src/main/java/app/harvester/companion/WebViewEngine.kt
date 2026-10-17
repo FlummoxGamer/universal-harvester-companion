@@ -47,12 +47,7 @@ object WebViewEngine {
         } catch (_: Throwable) {}
         try {
             if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
-                val dark = when (ThemePrefs.getMode(ctx)) {
-                    ThemePrefs.MODE_DARK -> true
-                    ThemePrefs.MODE_LIGHT -> false
-                    else -> isSystemDark(ctx)
-                }
-                WebSettingsCompat.setAlgorithmicDarkeningAllowed(view.settings, dark)
+                WebSettingsCompat.setAlgorithmicDarkeningAllowed(view.settings, false)
             }
         } catch (_: Throwable) {}
         val bridge = UserscriptBridge(ctx)
