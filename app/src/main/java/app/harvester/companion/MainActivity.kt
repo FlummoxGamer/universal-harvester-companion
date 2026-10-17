@@ -166,19 +166,16 @@ private fun refreshSuggestions(hasText: Boolean) {
     binding.urlChipBar.visibility = if (showLoaded) View.VISIBLE else View.GONE
 
     if (!hasText) {
-        // Only history pages shown when input empty
-        val pages = HistoryStore.get(this).searchHistory("", 20)
-        suggestionsAdapter.submitAll(emptyList(), pages)
+        suggestionsAdapter.submitAll(emptyList(), emptyList())
         binding.suggestionsClearAll.visibility = View.GONE
         return
     }
 
-    // Typed — show search queries + matching pages
-    val queries = if (isUrl) emptyList()
-        else HistoryStore.get(this).searchSearchQueries(typed)
-    val pages = HistoryStore.get(this).searchHistory(typed, 8)
+   // Typed — show search queries only (no page history)
+   val queries = if (isUrl) emptyList()
+       else HistoryStore.get(this).searchSearchQueries(typed)
 
-    suggestionsAdapter.submitAll(queries, pages)
+   suggestionsAdapter.submitAll(queries, emptyList())
     binding.suggestionsClearAll.visibility = View.GONE
 
     if (!isUrl && typed.length >= 2) {
