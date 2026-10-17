@@ -630,14 +630,14 @@ window.__uh_xhr_done = function(id, status, responseText, responseHeaders, final
       }
       if (isFab !== __lastOverlayState) {
           __lastOverlayState = isFab;
-          B.setOverlayActive(isFab);
+          B.updateOverlayState(isFab);
       }
   }, {passive: true, capture: true});
   document.addEventListener('touchend', function() {
-      if (__lastOverlayState) { __lastOverlayState = false; B.setOverlayActive(false); }
+      if (__lastOverlayState) { __lastOverlayState = false; B.updateOverlayState(false); }
   }, {passive: true, capture: true});
   document.addEventListener('touchcancel', function() {
-      if (__lastOverlayState) { __lastOverlayState = false; B.setOverlayActive(false); }
+      if (__lastOverlayState) { __lastOverlayState = false; B.updateOverlayState(false); }
   }, {passive: true, capture: true});
 })();
 """
