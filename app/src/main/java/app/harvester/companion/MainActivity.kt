@@ -109,6 +109,9 @@ class MainActivity : AppCompatActivity() {
         binding.swipeRefresh.setColorSchemeColors(
             ContextCompat.getColor(this, R.color.accent)
         )
+        binding.swipeRefresh.setProgressBackgroundColorSchemeColor(
+            ContextCompat.getColor(this, R.color.surface)
+        )
     }
 
     private fun setupSuggestions() {
