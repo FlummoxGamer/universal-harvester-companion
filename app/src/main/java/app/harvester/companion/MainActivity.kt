@@ -682,6 +682,11 @@ urlTextWatcher = object : android.text.TextWatcher {
                 if (id > 0L) tabs.updateUrl(id, url, null)
                 flush3p(v, url)
                 binding.swipeRefresh.isRefreshing = false
+    
+                // Prevent swipe refresh from triggering while touching a script overlay
+                v.setOnScrollChangeListener { _, _, _, _, _ ->
+                    binding.swipeRefresh.isEnabled = v.scrollY == 0
+                }
                 if (url != "about:blank") {
                     UserscriptManager.injectOnPageFinished(this@MainActivity, v, url)
                     val entity = tabs.list().firstOrNull { it.id == id }
