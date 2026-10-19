@@ -284,7 +284,13 @@ private fun refreshSuggestions(hasText: Boolean) {
             val v = currentView
             val id = if (v != null) tabs.idForView(v) else -1L
             if (v != null && id in popupTabs) { closeBlankPopup(v); return@addCallback }
-            if (v != null && v.canGoBack()) { v.goBack(); return@addCallback }
+            if (v != null) {
+                val history = v.copyBackForwardList()
+                if (history.currentIndex > 0) {
+                    v.goBack()
+                    return@addCallback
+                }
+            }
             val url = v?.url
             val isOnSite = !url.isNullOrBlank() && url != "about:blank" &&
                 !url.startsWith("chrome-error://")
