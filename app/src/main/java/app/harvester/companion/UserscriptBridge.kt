@@ -377,6 +377,17 @@ fun GM_download(script: String, url: String, name: String) {
         UHLog.d("capture", "$kind $url — $detail")
     }
 
+@JavascriptInterface
+fun openImage(url: String) {
+    try {
+        val intent = Intent(ctx, ImagePreviewActivity::class.java).apply {
+            putExtra("url", url)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        ctx.startActivity(intent)
+    } catch (_: Exception) {}
+}
+
     private fun jsString(s: String): String {
         val sb = StringBuilder("\"")
         for (c in s) {
