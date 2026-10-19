@@ -34,6 +34,21 @@ class DownloadService : Service() {
             }
         }
 
+    fun notifyBlobComplete(ctx: Context, filename: String) {
+    val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    val intent = Intent(ctx, DownloadsActivity::class.java)
+    val pi = PendingIntent.getActivity(ctx, 0, intent, PendingIntent.FLAG_IMMUTABLE)
+    
+    val n = NotificationCompat.Builder(ctx, CHANNEL_ID)
+        .setSmallIcon(R.drawable.ic_downloads)
+        .setContentTitle(filename)
+        .setContentText("Download complete")
+        .setAutoCancel(true)
+        .setContentIntent(pi)
+        .build()
+    nm.notify(System.currentTimeMillis().toInt(), n)
+}
+
         private fun buildNotification(ctx: Context, filename: String, progress: Int, text: String, indeterminate: Boolean): android.app.Notification {
             val intent = Intent(ctx, DownloadsActivity::class.java)
             val pi = PendingIntent.getActivity(ctx, 0, intent, PendingIntent.FLAG_IMMUTABLE)
