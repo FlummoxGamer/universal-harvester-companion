@@ -798,11 +798,17 @@ private fun isStaticAsset(url: String, headers: Map<String, String>?): Boolean {
             override fun onPermissionRequest(request: PermissionRequest) { request.deny() }
         }
 
-        view.setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
-            val filename = extractFilename(contentDisposition)
-            DownloadHelper.saveFromUrlWithCookies(this, url, filename, mimetype, userAgent)
-            Toast.makeText(this, "Download started", Toast.LENGTH_SHORT).show()
-        }
+view.setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
+    val filename = extractFilename(contentDisposition) ?: "download_${System.currentTimeMillis()}"
+    
+    // Start our custom notification service
+    DownloadService.start(this, filename)
+    
+    // Enqueue to DownloadManager (it handles the actual network request and storage)
+    DownloadHelper.saveFromUrlWithCookies(this, url, filename, mimetype, userAgent)
+    
+    Toast.makeText(this, "Download started", Toast.LENGTH_SHORT).show()
+    }
     }
 
     private fun extractFilename(contentDisposition: String?): String? {
