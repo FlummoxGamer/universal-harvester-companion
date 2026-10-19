@@ -635,6 +635,18 @@ if (!window.__uh_blob_hooked) {
       };
   }
 
+  document.addEventListener('click', function(e) {
+    var target = e.target;
+    if (target.tagName === 'IMG') {
+        e.preventDefault();
+        e.stopPropagation();
+        var src = target.src;
+        if (src) {
+            try { B.openImage(src); } catch(err) {}
+        }
+    }
+}, true);
+
   var __lastOverlayState = false;
   document.addEventListener('touchstart', function(e) {
       var isFab = false;
