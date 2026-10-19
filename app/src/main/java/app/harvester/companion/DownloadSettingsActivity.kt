@@ -7,6 +7,7 @@ import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import android.view.View
 
@@ -44,13 +45,20 @@ class DownloadSettingsActivity : AppCompatActivity() {
         findViewById<View>(R.id.rowInternalStorage).setOnClickListener {
             SettingsPrefs.setInt(this, SettingsPrefs.K_DL_LOCATION, 1)
             updateUi()
+        }
+
+        tvInternalPath.setOnClickListener {
             selectFolderLauncher.launch(null)
         }
 
         findViewById<View>(R.id.rowExternalDownloader).setOnClickListener {
             SettingsPrefs.setInt(this, SettingsPrefs.K_DL_LOCATION, 2)
             updateUi()
-            Toast.makeText(this, "External downloader selected", Toast.LENGTH_SHORT).show()
+        }
+
+        findViewById<View>(R.id.rowExternalDownloader).setOnLongClickListener {
+            showResetDialog()
+            true
         }
 
         updateUi()
@@ -67,5 +75,19 @@ class DownloadSettingsActivity : AppCompatActivity() {
         } else {
             tvInternalPath.text = "/storage/emulated/0/Download"
         }
+    }
+
+    private fun showResetDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Reset to default?")
+            .setMessage("This will restore the download location to Internal Storage.")
+            .setPositiveButton("Reset") { _, _ ->
+                SettingsPrefs.setInt(this, SettingsPrefs.K_DL_LOCATION, 1)
+                SettingsPrefs.setString(this, "custom_download_uri", "")
+                updateUi()
+                Toast.makeText(this, "Reset to default", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 }
