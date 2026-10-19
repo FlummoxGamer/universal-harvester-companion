@@ -34,13 +34,35 @@ class DownloadsActivity : AppCompatActivity() {
         findViewById<ImageButton>(R.id.downloadsBack).setOnClickListener { finish() }
         findViewById<ImageButton>(R.id.downloadsMenu).setOnClickListener { showSortMenu() }
 
-        reload()
-    }
+    reload()
+    setupActiveDownloadTracker()
+}
 
-    override fun onResume() {
-        super.onResume()
-        reload()
+private fun setupActiveDownloadTracker() {
+    val chip = findViewById<android.view.View>(R.id.activeDownloadChip)
+    val nameText = findViewById<android.widget.TextView>(R.id.activeDlName)
+    val statusText = findViewById<android.widget.TextView>(R.id.activeDlStatus)
+    val progress = findViewById<android.widget.ProgressBar>(R.id.activeDlProgress)
+
+    val dm = getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+    val query = android.app.DownloadManager.Query().setFilterByStatus(android.app.DownloadManager.STATUS_RUNNING or android.app.DownloadManager.STATUS_PENDING)
+    
+    val cursor = dm.query(query)
+    if (cursor != null && cursor.moveToFirst()) {
+        chip.visibility = android.view.View.VISIBLE
+        val downloaded = cursor.getLong(cursor.getColumnIndexOrThrow(android.app.DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
+        val total = cursor.getLong(cursor.getColumnIndexOrThrow(android.app.DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
+        val title = cursor.getString(cursor.getColumnIndexOrThrow(android.app.DownloadManager.COLUMN_TITLE))
+        
+        nameText.text = title
+        statusText.text = "$downloaded / $total"
+        progress.max = if (total > 0) total.toInt() else 100
+        progress.progress = if (total > 0) downloaded.toInt() else 0
+    } else {
+        chip.visibility = android.view.View.GONE
     }
+    cursor?.close()
+}
 
     private fun reload() {
         val items = DownloadsQuery.list(this)
