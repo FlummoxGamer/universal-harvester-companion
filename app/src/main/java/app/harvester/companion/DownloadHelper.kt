@@ -38,7 +38,7 @@ object DownloadHelper {
             req.setTitle(filename)
             req.setMimeType(mime)
             req.setNotificationVisibility(
-                DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+                DownloadManager.Request.VISIBILITY_HIDDEN
             )
             req.setDestinationInExternalPublicDir(
                 Environment.DIRECTORY_DOWNLOADS,
