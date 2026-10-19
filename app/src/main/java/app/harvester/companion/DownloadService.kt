@@ -5,10 +5,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
@@ -26,10 +24,11 @@ class DownloadService : Service() {
         const val ACTION_PAUSE = "app.harvester.companion.PAUSE_DOWNLOAD"
         const val ACTION_CANCEL = "app.harvester.companion.CANCEL_DOWNLOAD"
 
-        fun startTracking(ctx: Context, downloadId: Long, filename: String) {
+        fun startTracking(ctx: Context, downloadId: Long, filename: String, url: String) {
             val intent = Intent(ctx, DownloadService::class.java).apply {
                 putExtra("id", downloadId)
                 putExtra("filename", filename)
+                putExtra("url", url)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 ctx.startForegroundService(intent)
@@ -42,7 +41,7 @@ class DownloadService : Service() {
             val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             val intent = Intent(ctx, DownloadsActivity::class.java)
             val pi = PendingIntent.getActivity(ctx, 0, intent, PendingIntent.FLAG_IMMUTABLE)
-            
+
             val n = NotificationCompat.Builder(ctx, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_downloads)
                 .setContentTitle(filename)
@@ -53,12 +52,12 @@ class DownloadService : Service() {
             nm.notify(System.currentTimeMillis().toInt(), n)
         }
 
-        private fun buildNotification(ctx: Context, filename: String, progress: Int, text: String, indeterminate: Boolean, id: Long): android.app.Notification {
+        private fun buildNotification(ctx: Context, filename: String, progress: Int, text: String, indeterminate: Boolean, id: Long, isPaused: Boolean): android.app.Notification {
             val openIntent = Intent(ctx, DownloadsActivity::class.java)
             val piOpen = PendingIntent.getActivity(ctx, 0, openIntent, PendingIntent.FLAG_IMMUTABLE)
 
             val pauseIntent = Intent(ctx, DownloadService::class.java).apply {
-                action = ACTION_PAUSE
+                action = if (isPaused) "RESUME" else ACTION_PAUSE
                 putExtra("id", id)
             }
             val piPause = PendingIntent.getService(ctx, 0, pauseIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -77,11 +76,14 @@ class DownloadService : Service() {
                 .setOnlyAlertOnce(true)
                 .setProgress(100, progress, indeterminate)
                 .setOngoing(!indeterminate)
-                .addAction(android.R.drawable.ic_media_pause, "Pause", piPause)
+                .addAction(if (isPaused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause, if (isPaused) "Resume" else "Pause", piPause)
                 .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", piCancel)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
                 .build()
         }
     }
+
+    private var currentDownloadId = -1L
 
     override fun onCreate() {
         super.onCreate()
@@ -95,32 +97,29 @@ class DownloadService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_PAUSE || intent?.action == ACTION_CANCEL) {
-            val id = intent.getLongExtra("id", -1L)
-            val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-            if (intent.action == ACTION_CANCEL) {
-                dm.remove(id)
-                stopForeground(true)
-                stopSelf()
-            } else if (intent.action == ACTION_PAUSE) {
+        val action = intent?.action
+        val id = intent?.getLongExtra("id", -1L) ?: -1L
 
-            }
+        if (action == ACTION_CANCEL) {
+            val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+            dm.remove(id)
+            stopForeground(true)
+            stopSelf()
             return START_NOT_STICKY
         }
 
-        val downloadId = intent?.getLongExtra("id", -1L) ?: -1L
-        val filename = intent?.getStringExtra("filename") ?: "Downloading..."
-        
-        startForeground(NOTIFICATION_ID, buildNotification(this, filename, 0, "Starting...", true, downloadId))
-
-        if (downloadId != -1L) {
-            trackProgress(downloadId, filename)
+        if (id != -1L) {
+            currentDownloadId = id
+            val filename = intent?.getStringExtra("filename") ?: "Downloading..."
+            val url = intent?.getStringExtra("url") ?: ""
+            startForeground(NOTIFICATION_ID, buildNotification(this, filename, 0, "Starting...", true, id, false))
+            trackProgress(id, filename, url)
         }
 
         return START_NOT_STICKY
     }
 
-    private fun trackProgress(id: Long, filename: String) {
+    private fun trackProgress(id: Long, filename: String, url: String) {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
 
@@ -129,7 +128,7 @@ class DownloadService : Service() {
             var lastBytes = 0L
             var lastTime = System.currentTimeMillis()
 
-            while (isRunning) {
+            while (isRunning && currentDownloadId == id) {
                 val cursor = dm.query(DownloadManager.Query().setFilterById(id))
                 if (cursor != null && cursor.moveToFirst()) {
                     val status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
@@ -145,14 +144,14 @@ class DownloadService : Service() {
 
                         val progress = if (total > 0) ((downloaded * 100) / total).toInt() else 0
                         val text = if (total > 0) {
-                            val etaStr = if (etaSec > 0) "$etaSec seconds left" else "Calculating..."
+                            val etaStr = if (etaSec > 0) "$etaSec sec remaining" else "Calculating..."
                             "${formatSize(downloaded)} / ${formatSize(total)} • $etaStr"
                         } else {
                             "${formatSize(downloaded)} downloaded"
                         }
 
                         withContext(Dispatchers.Main) {
-                            nm.notify(NOTIFICATION_ID, buildNotification(this@DownloadService, filename, progress, text, false, id))
+                            nm.notify(NOTIFICATION_ID, buildNotification(this@DownloadService, filename, progress, text, false, id, false))
                         }
                         lastBytes = downloaded
                         lastTime = now
@@ -164,11 +163,10 @@ class DownloadService : Service() {
                                 .setContentTitle(filename)
                                 .setContentText("Download complete • ${formatSize(total)}")
                                 .setAutoCancel(true)
-                                .setOngoing(false)
                                 .setContentIntent(PendingIntent.getActivity(this@DownloadService, 0, Intent(this@DownloadService, DownloadsActivity::class.java), PendingIntent.FLAG_IMMUTABLE))
                                 .build()
                             nm.notify(NOTIFICATION_ID, n)
-                            stopForeground(false) // Keeps the notification visible
+                            stopForeground(false)
                             stopSelf()
                         }
                     } else if (status == DownloadManager.STATUS_FAILED) {
