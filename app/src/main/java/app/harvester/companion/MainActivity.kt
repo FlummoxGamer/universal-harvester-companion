@@ -807,15 +807,88 @@ private fun isStaticAsset(url: String, headers: Map<String, String>?): Boolean {
 view.setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
     val filename = extractFilename(contentDisposition) ?: "download_${System.currentTimeMillis()}"
     
-    // Start our custom notification service
-    DownloadService.start(this, filename)
-    
-    // Enqueue to DownloadManager (it handles the actual network request and storage)
-    DownloadHelper.saveFromUrlWithCookies(this, url, filename, mimetype, userAgent)
-    
-    Toast.makeText(this, "Download started", Toast.LENGTH_SHORT).show()
+    if (SettingsPrefs.getBool(this, SettingsPrefs.K_ASK_DL, true)) {
+        showDownloadConfirmationSheet(url, filename, mimetype, userAgent)
+    } else {
+        executeDownload(url, filename, mimetype, userAgent)
     }
     }
+    }
+
+    private fun showDownloadConfirmationSheet(url: String, filename: String, mimetype: String?, userAgent: String?) {
+    val sheet = BottomSheetDialog(this)
+    val v = layoutInflater.inflate(R.layout.dialog_download_confirmation, null)
+    sheet.setContentView(v)
+
+    v.findViewById<android.widget.TextView>(R.id.dlFileName).text = filename
+    v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = "Calculating..."
+    v.findViewById<android.widget.TextView>(R.id.dlFileUrl).text = url
+    
+    val customUri = SettingsPrefs.getString(this, "custom_download_uri", "")
+    val pathStr = if (customUri.isNotBlank()) {
+         customUri.replace("content://com.android.externalstorage.documents/tree/primary%3A", "/storage/emulated/0/").replace("%2F", "/")
+    } else {
+        "/storage/emulated/0/Download"
+    }
+    v.findViewById<android.widget.TextView>(R.id.dlLocationPath).text = pathStr
+
+    v.findViewById<android.view.View>(R.id.dlLocationRow).setOnClickListener {
+        startActivity(Intent(this, DownloadSettingsActivity::class.java))
+        sheet.dismiss()
+    }
+
+    v.findViewById<android.view.View>(R.id.dlStartBtn).setOnClickListener {
+        sheet.dismiss()
+        executeDownload(url, filename, mimetype, userAgent)
+    }
+
+    v.findViewById<android.view.View>(R.id.dlEditName).setOnClickListener {
+        val input = android.widget.EditText(this).apply { setText(filename) }
+        AlertDialog.Builder(this)
+            .setTitle("Rename")
+            .setView(input)
+            .setPositiveButton("OK") { _, _ ->
+                val newName = input.text.toString().trim()
+                if (newName.isNotBlank()) {
+                    v.findViewById<android.widget.TextView>(R.id.dlFileName).text = newName
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    // Try to get file size via HEAD request in background
+    Thread {
+        try {
+            val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "HEAD"
+            conn.connectTimeout = 3000
+            val size = conn.contentLengthLong
+            runOnUiThread {
+                if (size > 0) {
+                    v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = android.text.format.Formatter.formatShortFileSize(this, size)
+                } else {
+                    v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = "Unknown size"
+                }
+            }
+            conn.disconnect()
+        } catch (_: Exception) {
+            runOnUiThread { v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = "Unknown size" }
+        }
+    }.start()
+
+    sheet.show()
+}
+
+private fun executeDownload(url: String, filename: String, mimetype: String?, userAgent: String?) {
+    val id = DownloadHelper.saveFromUrlWithCookies(this, url, filename, mimetype, userAgent)
+    if (id != -1L) {
+        DownloadService.startTracking(this, id, filename)
+        Toast.makeText(this, "Download started", Toast.LENGTH_SHORT).show()
+    } else {
+        Toast.makeText(this, "Failed to start download", Toast.LENGTH_SHORT).show()
+    }
+}
 
     private fun extractFilename(contentDisposition: String?): String? {
         if (contentDisposition.isNullOrBlank()) return null
