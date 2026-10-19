@@ -293,16 +293,10 @@ class MainActivity : AppCompatActivity() {
                 tabs.openNew("about:blank")
                 attachCurrent(); updateUi(); return@addCallback
             }
-            val all = tabs.list()
-            if (all.size > 1) {
-                val closeId = tabs.currentId()
-                popupTabs.remove(closeId)
-                tabs.close(closeId)
-                val remaining = tabs.list()
-                if (remaining.isNotEmpty()) {
-                    tabs.acquireView(remaining.first().id)
-                    attachCurrent(); updateUi()
-                }
+            val previousId = tabs.popHistory()
+            if (previousId != null) {
+                tabs.acquireView(previousId)
+                attachCurrent(); updateUi()
                 return@addCallback
             }
             val now = System.currentTimeMillis()
@@ -814,7 +808,11 @@ class MainActivity : AppCompatActivity() {
                         .setTitle("Image Options")
                         .setItems(options) { _, which ->
                             when (which) {
-                                0 -> executeDownload(imageUrl, "image_${System.currentTimeMillis()}.jpg", "image/jpeg", null)
+                                0 -> {
+                                    val filename = "image_${System.currentTimeMillis()}.jpg"
+                                    DownloadService.notifyBlobComplete(this, filename)
+                                    executeDownload(imageUrl, filename, "image/jpeg", null)
+                                }
                                 1 -> {
                                     val intent = Intent(Intent.ACTION_SEND).apply {
                                         type = "text/plain"
