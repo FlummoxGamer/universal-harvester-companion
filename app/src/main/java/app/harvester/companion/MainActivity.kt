@@ -63,10 +63,16 @@ class MainActivity : AppCompatActivity() {
     private var urlTextWatcher: android.text.TextWatcher? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        UHLog.init(this)
-        SessionRecorder.init(this)
-        UHLog.section("MAIN")
+    super.onCreate(savedInstanceState)
+    UHLog.init(this)
+    SessionRecorder.init(this)
+    UHLog.section("MAIN")
+
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+        if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
+        }
+    }
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
