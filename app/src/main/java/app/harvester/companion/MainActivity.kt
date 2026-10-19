@@ -542,13 +542,16 @@ class MainActivity : AppCompatActivity() {
         updateHomeVisibility()
     }
 
-    private fun attachCurrent() {
-        val view = tabs.currentView() ?: return
-        if (view === currentView) { updateHomeVisibility(); return }
-        binding.webContainer.removeAllViews()
-        (view.parent as? ViewGroup)?.removeView(view)
-        binding.webContainer.addView(view)
-        currentView = view
+private fun attachCurrent() {
+    val view = tabs.currentView() ?: return
+    if (view === currentView) { updateHomeVisibility(); return }
+    
+    tabs.pushHistory(tabs.currentId())
+    
+    binding.webContainer.removeAllViews()
+    (view.parent as? ViewGroup)?.removeView(view)
+    binding.webContainer.addView(view)
+    currentView = view
         if (view.getTag(R.id.webContainer) == null) {
             installClients(view)
             view.setTag(R.id.webContainer, true)
@@ -810,8 +813,13 @@ class MainActivity : AppCompatActivity() {
                             when (which) {
                                 0 -> {
                                     val filename = "image_${System.currentTimeMillis()}.jpg"
-                                    DownloadService.notifyBlobComplete(this, filename)
-                                    executeDownload(imageUrl, filename, "image/jpeg", null)
+                                    if (imageUrl.startsWith("blob:") || imageUrl.startsWith("data:")) {
+                                        currentView?.evaluateJavascript(
+                                            "fetch('$imageUrl').then(r=>r.blob()).then(b=>{var reader=new FileReader();reader.onload=function(){window.UH_BRIDGE.saveBlob('$filename',b.type,reader.result.split(',')[1])};reader.readAsDataURL(b);})", null
+                                        )
+                                    } else {
+                                        executeDownload(imageUrl, filename, "image/jpeg", null)
+                                    }
                                 }
                                 1 -> {
                                     val intent = Intent(Intent.ACTION_SEND).apply {
