@@ -121,6 +121,11 @@
             android:name=".LogsActivity"
             android:exported="false"
             android:label="Logs" />
+        
+        <activity
+            android:name=".ImagePreviewActivity"
+            android:exported="false"
+            android:theme="@style/Theme.UHCompanion" />
 
         <service
             android:name=".SessionService"
