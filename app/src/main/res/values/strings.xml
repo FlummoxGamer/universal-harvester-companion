@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Harvester</string>
+    <string name="app_name">Universal Harvester</string>
     <string name="settings_title">Settings</string>
     <string name="url_hint">Enter URL</string>
     <string name="menu_capture">Capture Now</string>
