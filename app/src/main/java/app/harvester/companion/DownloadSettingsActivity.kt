@@ -1,78 +1,71 @@
 package app.harvester.companion
 
+import android.content.Intent
 import android.os.Bundle
-import android.view.View
-import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.Switch
 import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
+import android.view.View
 
 class DownloadSettingsActivity : AppCompatActivity() {
 
+    private lateinit var radioInternal: RadioButton
+    private lateinit var radioExternal: RadioButton
+    private lateinit var tvInternalPath: TextView
+
+    private val selectFolderLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            SettingsPrefs.setString(this, "custom_download_uri", uri.toString())
+            updateUi()
+            Toast.makeText(this, "Location updated", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_settings_simple)
+        setContentView(R.layout.activity_download_settings)
 
-        findViewById<TextView>(R.id.simpleTitle).text = "Download Settings"
-        findViewById<View>(R.id.simpleBack).setOnClickListener { finish() }
+        findViewById<View>(R.id.dlSettingsBack).setOnClickListener { finish() }
 
-        val c = findViewById<LinearLayout>(R.id.simpleContent)
+        radioInternal = findViewById(R.id.radioInternal)
+        radioExternal = findViewById(R.id.radioExternal)
+        tvInternalPath = findViewById(R.id.tvInternalPath)
 
-        val askRow = layoutInflater.inflate(R.layout.item_tool_category, c, false)
-        askRow.findViewById<TextView>(R.id.rowLabel).text = "Ask Before Downloading"
-        val askSw = askRow.findViewById<Switch>(R.id.rowSwitch)
-        askSw.isChecked = SettingsPrefs.getBool(this, SettingsPrefs.K_ASK_DL, true)
-        askSw.setOnCheckedChangeListener { _, b ->
+        val swAsk = findViewById<Switch>(R.id.swAskBeforeDl)
+        swAsk.isChecked = SettingsPrefs.getBool(this, SettingsPrefs.K_ASK_DL, true)
+        swAsk.setOnCheckedChangeListener { _, b ->
             SettingsPrefs.setBool(this, SettingsPrefs.K_ASK_DL, b)
         }
-        c.addView(askRow)
 
-        val title = TextView(this).apply {
-            text = "DOWNLOAD LOCATION"
-            setTextColor(ContextCompat.getColor(this@DownloadSettingsActivity, R.color.subtext))
-            textSize = 12f
-            setPadding(16, 32, 16, 8)
+        findViewById<View>(R.id.rowInternalStorage).setOnClickListener {
+            SettingsPrefs.setInt(this, SettingsPrefs.K_DL_LOCATION, 1)
+            updateUi()
+            selectFolderLauncher.launch(null)
         }
-        c.addView(title)
 
-        val opts = listOf("Data Vault", "Public Storage", "External Downloader")
-        val current = SettingsPrefs.getInt(this, SettingsPrefs.K_DL_LOCATION, 1)
-        for ((i, name) in opts.withIndex()) {
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.CENTER_VERTICAL
-                setBackgroundColor(ContextCompat.getColor(
-                    this@DownloadSettingsActivity, R.color.surface))
-                setPadding(32, 32, 32, 32)
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = 2 }
-                isClickable = true
-                setOnClickListener {
-                    SettingsPrefs.setInt(this@DownloadSettingsActivity, SettingsPrefs.K_DL_LOCATION, i)
-                    recreate()
-                }
-            }
-            val radio = RadioButton(this).apply {
-                isChecked = (i == current)
-                isClickable = false
-                buttonTintList = android.content.res.ColorStateList.valueOf(
-                    ContextCompat.getColor(this@DownloadSettingsActivity, R.color.accent)
-                )
-            }
-            val label = TextView(this).apply {
-                text = name
-                setTextColor(ContextCompat.getColor(
-                    this@DownloadSettingsActivity, R.color.text))
-                textSize = 15f
-                setPadding(24, 0, 0, 0)
-            }
-            row.addView(radio)
-            row.addView(label)
-            c.addView(row)
+        findViewById<View>(R.id.rowExternalDownloader).setOnClickListener {
+            SettingsPrefs.setInt(this, SettingsPrefs.K_DL_LOCATION, 2)
+            updateUi()
+            Toast.makeText(this, "External downloader selected", Toast.LENGTH_SHORT).show()
+        }
+
+        updateUi()
+    }
+
+    private fun updateUi() {
+        val mode = SettingsPrefs.getInt(this, SettingsPrefs.K_DL_LOCATION, 1)
+        radioInternal.isChecked = mode == 1
+        radioExternal.isChecked = mode == 2
+
+        val customUri = SettingsPrefs.getString(this, "custom_download_uri", "")
+        if (customUri.isNotBlank()) {
+            tvInternalPath.text = customUri.replace("content://com.android.externalstorage.documents/tree/primary%3A", "/storage/emulated/0/").replace("%2F", "/")
+        } else {
+            tvInternalPath.text = "/storage/emulated/0/Download"
         }
     }
 }
