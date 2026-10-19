@@ -103,8 +103,7 @@ class DownloadService : Service() {
                 stopForeground(true)
                 stopSelf()
             } else if (intent.action == ACTION_PAUSE) {
-                // Android DownloadManager does not support pausing easily, 
-                // so we remove and restart for now, or just show a toast
+
             }
             return START_NOT_STICKY
         }
@@ -165,9 +164,11 @@ class DownloadService : Service() {
                                 .setContentTitle(filename)
                                 .setContentText("Download complete • ${formatSize(total)}")
                                 .setAutoCancel(true)
+                                .setOngoing(false)
+                                .setContentIntent(PendingIntent.getActivity(this@DownloadService, 0, Intent(this@DownloadService, DownloadsActivity::class.java), PendingIntent.FLAG_IMMUTABLE))
                                 .build()
                             nm.notify(NOTIFICATION_ID, n)
-                            stopForeground(false)
+                            stopForeground(false) // Keeps the notification visible
                             stopSelf()
                         }
                     } else if (status == DownloadManager.STATUS_FAILED) {
