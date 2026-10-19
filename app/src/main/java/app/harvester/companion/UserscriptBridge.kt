@@ -38,12 +38,26 @@ fun updateOverlayState(active: Boolean) { overlayActive = active }
 @JavascriptInterface
 fun saveBlob(filename: String, mime: String, base64Data: String) {
     try {
-        val bytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT)
-        DownloadHelper.saveBytesToDownloads(ctx, filename, bytes, mime)
-        val w = v() ?: return
-        w.post { android.widget.Toast.makeText(ctx, "Download started: $filename", android.widget.Toast.LENGTH_SHORT).show() }
+        DownloadService.start(ctx, filename)
+        DownloadService.updateProgress(ctx, filename, 50, "Processing...")
+        
+        Thread {
+            try {
+                val bytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT)
+                DownloadHelper.saveBytesToDownloads(ctx, filename, bytes, mime)
+                
+                DownloadService.updateProgress(ctx, filename, 100, "0s")
+                DownloadService.finish(ctx, filename, true)
+                
+                val w = v() ?: return@Thread
+                w.post { android.widget.Toast.makeText(ctx, "Saved: $filename", android.widget.Toast.LENGTH_SHORT).show() }
+            } catch (e: Exception) {
+                DownloadService.finish(ctx, filename, false)
+                UHLog.throwable("blob", "saveBlob failed", e)
+            }
+        }.start()
     } catch (e: Exception) {
-        UHLog.throwable("blob", "saveBlob failed", e)
+        UHLog.throwable("blob", "service failed", e)
     }
 }
     
