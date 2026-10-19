@@ -21,8 +21,21 @@ class TabManager private constructor(private val ctx: Context) {
         var canGoForward: Boolean = false
     }
 
-    private val db = TabDb(ctx)
-    private val alive = LinkedHashMap<Long, Slot>(16, 0.75f, true)
+private val db = TabDb(ctx)
+private val alive = LinkedHashMap<Long, Slot>(16, 0.75f, true)
+private val tabHistory = mutableListOf<Long>()
+
+fun pushHistory(id: Long) {
+    if (tabHistory.isNotEmpty() && tabHistory.last() == id) return
+    tabHistory.add(id)
+    if (tabHistory.size > 20) tabHistory.removeAt(0)
+}
+
+fun popHistory(): Long? {
+    if (tabHistory.isEmpty()) return null
+    tabHistory.removeAt(tabHistory.size - 1)
+    return tabHistory.lastOrNull()
+}
     private val pendingDestroy = mutableListOf<WebView>()
     private val lock = Any()
     private var currentId: Long = -1L
