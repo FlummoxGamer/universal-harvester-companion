@@ -734,22 +734,18 @@ if (!window.__uh_blob_hooked) {
             append("var __orig=v.register;\n")
             append("v.register=function(name,deps,fn){\n")
             append("if(typeof name!=='string'){fn=deps;deps=name;name='__anon_'+Math.random().toString(36).slice(2);}\n")
-            append("try{window.__uh_sys_regs=window.__uh_sys_regs||{};window.__uh_sys_regs[name]=true;\n")
-            append("window.UH_BRIDGE.report(location.href,'sys_reg',name);}catch(e){}\n")
+            append("try{window.__uh_sys_regs=window.__uh_sys_regs||{};window.__uh_sys_regs[name]=true;}catch(e){}\n")
             append("return __orig.call(this,name,deps,fn);\n")
             append("};\n")
-            append("window.UH_BRIDGE.report(location.href,'sys_patched','yes');\n")
             append("}\n")
             append("}catch(e){}\n")
             append("}});\n")
             append("}catch(e){}\n")
-            append("try{window.UH_BRIDGE.report(u,'wrap_enter',__ns+' top='+(window.top===window.self)+' ready='+document.readyState);}catch(e){}\n")
             append("try{\n")
         }
 
         val postamble = buildString {
             append("}catch(e){try{window.UH_BRIDGE.report(u,'userscript_err',String((e&&e.message)||e));}catch(_){}}\n")
-            append("try{window.UH_BRIDGE.report(u,'wrap_body_done',__ns+' sys='+(typeof System)+' regs='+Object.keys(window.__uh_sys_regs||{}).length);}catch(e){}\n")
             append("if(typeof System!=='undefined'&&System.import){\n")
             append("setTimeout(function(){try{var names=Object.keys(window.__uh_sys_regs||{});\n")
             append("for(var k=0;k<names.length;k++){(function(n){try{System.import(n).catch(function(e){try{window.UH_BRIDGE.report(location.href,'sys_import_err_'+n,String((e&&e.message)||e));}catch(_){}});}catch(e){}})(names[k]);}\n")
