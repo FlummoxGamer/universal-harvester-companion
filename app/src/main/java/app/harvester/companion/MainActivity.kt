@@ -199,13 +199,16 @@ private fun refreshSuggestions(hasText: Boolean) {
     suggestJob = lifecycleScope.launch {
         if (!hasText) {
             val queries = withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchSearchQueries("", 10) }
-            suggestionsAdapter.submitAll(queries, emptyList())
+            val pages = withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchHistory("", 5) }
+            suggestionsAdapter.submitAll(queries, pages)
             binding.suggestionsClearAll.visibility = if (queries.isNotEmpty()) View.VISIBLE else View.GONE
             return@launch
         }
 
         val queries = if (isUrl) emptyList() else withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchSearchQueries(typed) }
-        suggestionsAdapter.submitAll(queries, emptyList())
+        val pages = withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchHistory(typed, 10) }
+        
+        suggestionsAdapter.submitAll(queries, pages)
         binding.suggestionsClearAll.visibility = View.GONE
         
         if (!isUrl && typed.length >= 2) {
@@ -215,7 +218,7 @@ private fun refreshSuggestions(hasText: Boolean) {
             if (preds.isNotEmpty() && binding.urlEdit.text.toString().trim() == typed) {
                 val fake = preds.mapIndexed { i, p -> HistoryStore.SearchQuery(-1L - i, p, System.currentTimeMillis()) }
                 val merged = (fake + queries).distinctBy { it.query.lowercase() }.take(8)
-                suggestionsAdapter.submitAll(merged, emptyList())
+                suggestionsAdapter.submitAll(merged, pages)
             }
         }
     }
