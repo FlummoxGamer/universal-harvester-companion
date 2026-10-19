@@ -23,7 +23,6 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.EditText
 import android.widget.ImageView
-import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.appcompat.app.AlertDialog
@@ -36,10 +35,10 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import app.harvester.companion.databinding.ActivityMainBinding
 import com.google.android.material.bottomsheet.BottomSheetDialog
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.URL
@@ -56,30 +55,27 @@ class MainActivity : AppCompatActivity() {
     private val page3p = mutableMapOf<Long, MutableSet<String>>()
     private val recentUrls = LinkedHashMap<String, Long>()
     private var lastBackPress = 0L
-    private var downloadSheet: BottomSheetDialog? = null
     private var engineIconCache: Bitmap? = null
     private var currentEngineId: String = ""
     private var suggestJob: Job? = null
     private var urlTextWatcher: android.text.TextWatcher? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
-    super.onCreate(savedInstanceState)
-    UHLog.init(this)
-    SessionRecorder.init(this)
-    UHLog.section("MAIN")
+        super.onCreate(savedInstanceState)
+        UHLog.init(this)
+        SessionRecorder.init(this)
+        UHLog.section("MAIN")
 
-    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-        if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
+            }
         }
-    }
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         tabs = TabManager.get(this)
 
-        DownloadStore.ensureInstalled(this)
-        DownloadStore.listener = { runOnUiThread { refreshDownloadSheet() } }
         MenuCommandStore.listener = { runOnUiThread { updateUi() } }
 
         setupHomeGrid()
@@ -107,28 +103,27 @@ class MainActivity : AppCompatActivity() {
         shortcutAdapter.submit(ShortcutStore.list(this))
     }
 
-private fun setupSwipeRefresh() {
-    binding.swipeRefresh.setOnRefreshListener {
-        currentView?.reload()
+    private fun setupSwipeRefresh() {
+        binding.swipeRefresh.setOnRefreshListener {
+            currentView?.reload()
+        }
+        binding.swipeRefresh.setOnChildScrollUpCallback { _, _ ->
+            val webView = currentView ?: return@setOnChildScrollUpCallback false
+            val bridge = webView.tag as? UserscriptBridge
+            webView.scrollY > 0 || bridge?.overlayActive == true
+        }
+        binding.swipeRefresh.viewTreeObserver.addOnScrollChangedListener {
+            val webView = currentView ?: return@addOnScrollChangedListener
+            val bridge = webView.tag as? UserscriptBridge
+            binding.swipeRefresh.isEnabled = webView.scrollY == 0 && bridge?.overlayActive != true
+        }
+        binding.swipeRefresh.setColorSchemeColors(
+            ContextCompat.getColor(this, R.color.accent)
+        )
+        binding.swipeRefresh.setProgressBackgroundColorSchemeColor(
+            ContextCompat.getColor(this, R.color.surface)
+        )
     }
-    binding.swipeRefresh.setOnChildScrollUpCallback { _, _ ->
-        val webView = currentView ?: return@setOnChildScrollUpCallback false
-        val bridge = webView.tag as? UserscriptBridge
-        webView.scrollY > 0 || bridge?.overlayActive == true
-    }
-    
-    binding.swipeRefresh.viewTreeObserver.addOnScrollChangedListener {
-        val webView = currentView ?: return@addOnScrollChangedListener
-        val bridge = webView.tag as? UserscriptBridge
-        binding.swipeRefresh.isEnabled = webView.scrollY == 0 && bridge?.overlayActive != true
-    }
-    binding.swipeRefresh.setColorSchemeColors(
-        ContextCompat.getColor(this, R.color.accent)
-    )
-    binding.swipeRefresh.setProgressBackgroundColorSchemeColor(
-        ContextCompat.getColor(this, R.color.surface)
-    )
-}
 
     private fun setupSuggestions() {
         suggestionsAdapter = SuggestionAdapter(
@@ -187,48 +182,48 @@ private fun setupSwipeRefresh() {
         }
     }
 
-private fun refreshSuggestions(hasText: Boolean) {
-    val typed = binding.urlEdit.text.toString().trim()
-    val isUrl = typed.contains(".") && !typed.contains(" ")
-    val loadedUrl = currentView?.url ?: ""
+    private fun refreshSuggestions(hasText: Boolean) {
+        val typed = binding.urlEdit.text.toString().trim()
+        val isUrl = typed.contains(".") && !typed.contains(" ")
+        val loadedUrl = currentView?.url ?: ""
 
-    val showLoaded = !hasText && loadedUrl.isNotBlank() && loadedUrl != "about:blank"
-    if (showLoaded) {
-        binding.urlChipTitle.text = tabs.list().firstOrNull { it.id == tabs.currentId() }?.title ?: "Website"
-        binding.urlChipText.text = loadedUrl
-        binding.urlChipStrip.visibility = View.VISIBLE
-    } else {
-        binding.urlChipStrip.visibility = View.GONE
-    }
-
-    suggestJob?.cancel()
-    suggestJob = lifecycleScope.launch {
-        if (!hasText) {
-            val queries = withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchSearchQueries("", 10) }
-            val pages = withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchHistory("", 5) }
-            suggestionsAdapter.submitAll(queries, pages)
-            binding.suggestionsClearAll.visibility = if (queries.isNotEmpty()) View.VISIBLE else View.GONE
-            return@launch
+        val showLoaded = !hasText && loadedUrl.isNotBlank() && loadedUrl != "about:blank"
+        if (showLoaded) {
+            binding.urlChipTitle.text = tabs.list().firstOrNull { it.id == tabs.currentId() }?.title ?: "Website"
+            binding.urlChipText.text = loadedUrl
+            binding.urlChipStrip.visibility = View.VISIBLE
+        } else {
+            binding.urlChipStrip.visibility = View.GONE
         }
 
-        val queries = if (isUrl) emptyList() else withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchSearchQueries(typed) }
-        val pages = withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchHistory(typed, 10) }
-        
-        suggestionsAdapter.submitAll(queries, pages)
-        binding.suggestionsClearAll.visibility = View.GONE
-        
-        if (!isUrl && typed.length >= 2) {
-            delay(250)
-            val engine = SearchEnginePrefs.getEngine(this@MainActivity)
-            val preds = SearchPredictions.fetch(engine, typed)
-            if (preds.isNotEmpty() && binding.urlEdit.text.toString().trim() == typed) {
-                val fake = preds.mapIndexed { i, p -> HistoryStore.SearchQuery(-1L - i, p, System.currentTimeMillis()) }
-                val merged = (fake + queries).distinctBy { it.query.lowercase() }.take(8)
-                suggestionsAdapter.submitAll(merged, pages)
+        suggestJob?.cancel()
+        suggestJob = lifecycleScope.launch {
+            if (!hasText) {
+                val queries = withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchSearchQueries("", 10) }
+                val pages = withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchHistory("", 5) }
+                suggestionsAdapter.submitAll(queries, pages)
+                binding.suggestionsClearAll.visibility = if (queries.isNotEmpty()) View.VISIBLE else View.GONE
+                return@launch
+            }
+
+            val queries = if (isUrl) emptyList() else withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchSearchQueries(typed) }
+            val pages = withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchHistory(typed, 10) }
+            
+            suggestionsAdapter.submitAll(queries, pages)
+            binding.suggestionsClearAll.visibility = View.GONE
+            
+            if (!isUrl && typed.length >= 2) {
+                delay(250)
+                val engine = SearchEnginePrefs.getEngine(this@MainActivity)
+                val preds = SearchPredictions.fetch(engine, typed)
+                if (preds.isNotEmpty() && binding.urlEdit.text.toString().trim() == typed) {
+                    val fake = preds.mapIndexed { i, p -> HistoryStore.SearchQuery(-1L - i, p, System.currentTimeMillis()) }
+                    val merged = (fake + queries).distinctBy { it.query.lowercase() }.take(8)
+                    suggestionsAdapter.submitAll(merged, pages)
+                }
             }
         }
     }
-}
 
     private fun setupBottomBar() {
         binding.urlText.setOnClickListener { enterEditMode() }
@@ -338,7 +333,6 @@ private fun refreshSuggestions(hasText: Boolean) {
         }
 
         if (position == 0) {
-            // Top
             cs.connect(barId, ConstraintSet.TOP, parent, ConstraintSet.TOP)
             cs.connect(lbId, ConstraintSet.TOP, barId, ConstraintSet.BOTTOM)
             cs.connect(chipId, ConstraintSet.TOP, lbId, ConstraintSet.BOTTOM)
@@ -347,7 +341,6 @@ private fun refreshSuggestions(hasText: Boolean) {
             cs.connect(wcId, ConstraintSet.TOP, lbId, ConstraintSet.BOTTOM)
             cs.connect(wcId, ConstraintSet.BOTTOM, parent, ConstraintSet.BOTTOM)
         } else {
-            // Bottom (default)
             cs.connect(barId, ConstraintSet.BOTTOM, parent, ConstraintSet.BOTTOM)
             cs.connect(lbId, ConstraintSet.BOTTOM, barId, ConstraintSet.TOP)
             cs.connect(chipId, ConstraintSet.BOTTOM, lbId, ConstraintSet.TOP)
@@ -365,6 +358,7 @@ private fun refreshSuggestions(hasText: Boolean) {
 
         binding.urlChipText.text = if (isBlank) "" else url
         binding.urlChipStrip.visibility = if (isBlank) View.GONE else View.VISIBLE
+
         binding.urlText.visibility = View.GONE
         binding.urlEdit.visibility = View.VISIBLE
         binding.urlEdit.setText("")
@@ -373,16 +367,16 @@ private fun refreshSuggestions(hasText: Boolean) {
         if (urlTextWatcher != null) {
             binding.urlEdit.removeTextChangedListener(urlTextWatcher)
         }
-urlTextWatcher = object : android.text.TextWatcher {
-    override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-    override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {
-        val hasText = !s.isNullOrEmpty()
-        binding.urlClear.visibility = if (hasText) View.VISIBLE else View.GONE
-        binding.urlChipStrip.visibility = if (hasText) View.GONE else View.VISIBLE
-        refreshSuggestions(hasText)
-    }
-    override fun afterTextChanged(s: android.text.Editable?) {}
-}
+        urlTextWatcher = object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {
+                val hasText = !s.isNullOrEmpty()
+                binding.urlClear.visibility = if (hasText) View.VISIBLE else View.GONE
+                binding.urlChipStrip.visibility = if (hasText) View.GONE else View.VISIBLE
+                refreshSuggestions(hasText)
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        }
         binding.urlEdit.addTextChangedListener(urlTextWatcher)
 
         showSuggestionsPanel()
@@ -421,10 +415,11 @@ urlTextWatcher = object : android.text.TextWatcher {
     private fun showSearchEnginePicker() {
         val sheet = BottomSheetDialog(this)
         val v = layoutInflater.inflate(R.layout.dialog_search_engine_picker, null)
+        v.setBackgroundResource(R.drawable.bg_bottom_sheet)
         sheet.setContentView(v)
         sheet.behavior.isDraggable = false
 
-        val list = v.findViewById<LinearLayout>(R.id.engineList)
+        val list = v.findViewById<android.widget.LinearLayout>(R.id.engineList)
         val current = SearchEnginePrefs.getEngine(this)
         for (entry in SearchEnginePrefs.all(this)) {
             val row = layoutInflater.inflate(R.layout.item_search_engine_picker, list, false)
@@ -437,7 +432,7 @@ urlTextWatcher = object : android.text.TextWatcher {
             row.setOnClickListener {
                 SearchEnginePrefs.setEngine(this, entry.id)
                 sheet.dismiss()
-                currentEngineId = ""  // force refresh
+                currentEngineId = ""
                 engineIconCache = null
                 updateSearchEngineIcon()
                 Toast.makeText(this, entry.name, Toast.LENGTH_SHORT).show()
@@ -507,8 +502,8 @@ urlTextWatcher = object : android.text.TextWatcher {
             setHintTextColor(ContextCompat.getColor(this@MainActivity, R.color.subtext))
             if (existing != null) setText(existing.name)
         }
-        val wrap = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        val wrap = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
             setPadding(40, 16, 40, 16)
             addView(urlInput); addView(nameInput)
         }
@@ -585,31 +580,31 @@ urlTextWatcher = object : android.text.TextWatcher {
         popupTabs.retainAll(live)
     }
 
-private fun isStaticAsset(url: String, headers: Map<String, String>?): Boolean {
-    val accept = headers?.entries?.firstOrNull { it.key.equals("Accept", true) }?.value ?: ""
-    if (accept.contains("image/") || accept.contains("text/css") || accept.contains("font/")) return true
-    
-    val path = url.substringBefore('?').substringBefore('#')
-    val dot = path.lastIndexOf('.')
-    if (dot == -1 || path.length - dot > 6) return false
-    val ext = path.substring(dot + 1)
-    if (ext.length < 2) return false
-    val c0 = ext[0].lowercaseChar()
-    if (c0 == 'j') return ext.equals("js", true) || ext.equals("jpg", true) || ext.equals("jpeg", true)
-    if (c0 == 'c') return ext.equals("css", true)
-    if (c0 == 'p') return ext.equals("png", true)
-    if (c0 == 'w') return ext.equals("woff", true) || ext.equals("woff2", true) || ext.equals("webp", true)
-    if (c0 == 't') return ext.equals("ttf", true)
-    if (c0 == 'o') return ext.equals("otf", true)
-    if (c0 == 'e') return ext.equals("eot", true)
-    if (c0 == 's') return ext.equals("svg", true)
-    if (c0 == 'g') return ext.equals("gif", true)
-    if (c0 == 'i') return ext.equals("ico", true)
-    if (c0 == 'm') return ext.equals("mjs", true) || ext.equals("map", true)
-    if (c0 == 'a') return ext.equals("avif", true)
-    if (c0 == 'b') return ext.equals("bmp", true)
-    return false
-}
+    private fun isStaticAsset(url: String, headers: Map<String, String>?): Boolean {
+        val accept = headers?.entries?.firstOrNull { it.key.equals("Accept", true) }?.value ?: ""
+        if (accept.contains("image/") || accept.contains("text/css") || accept.contains("font/")) return true
+        
+        val path = url.substringBefore('?').substringBefore('#')
+        val dot = path.lastIndexOf('.')
+        if (dot == -1 || path.length - dot > 6) return false
+        val ext = path.substring(dot + 1)
+        if (ext.length < 2) return false
+        val c0 = ext[0].lowercaseChar()
+        if (c0 == 'j') return ext.equals("js", true) || ext.equals("jpg", true) || ext.equals("jpeg", true)
+        if (c0 == 'c') return ext.equals("css", true)
+        if (c0 == 'p') return ext.equals("png", true)
+        if (c0 == 'w') return ext.equals("woff", true) || ext.equals("woff2", true) || ext.equals("webp", true)
+        if (c0 == 't') return ext.equals("ttf", true)
+        if (c0 == 'o') return ext.equals("otf", true)
+        if (c0 == 'e') return ext.equals("eot", true)
+        if (c0 == 's') return ext.equals("svg", true)
+        if (c0 == 'g') return ext.equals("gif", true)
+        if (c0 == 'i') return ext.equals("ico", true)
+        if (c0 == 'm') return ext.equals("mjs", true) || ext.equals("map", true)
+        if (c0 == 'a') return ext.equals("avif", true)
+        if (c0 == 'b') return ext.equals("bmp", true)
+        return false
+    }
 
     private fun isBeaconHost(url: String): Boolean {
         val host = try { java.net.URI(url).host?.lowercase() ?: return false } catch (_: Exception) { return false }
@@ -738,7 +733,6 @@ private fun isStaticAsset(url: String, headers: Map<String, String>?): Boolean {
                 if (id > 0L) tabs.updateUrl(id, url, null)
                 flush3p(v, url)
                 binding.swipeRefresh.isRefreshing = false
-    
                 if (url != "about:blank") {
                     UserscriptManager.injectOnPageFinished(this@MainActivity, v, url)
                     val entity = tabs.list().firstOrNull { it.id == id }
@@ -810,91 +804,122 @@ private fun isStaticAsset(url: String, headers: Map<String, String>?): Boolean {
             override fun onPermissionRequest(request: PermissionRequest) { request.deny() }
         }
 
-view.setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
-    val filename = extractFilename(contentDisposition) ?: "download_${System.currentTimeMillis()}"
-    
-    if (SettingsPrefs.getBool(this, SettingsPrefs.K_ASK_DL, true)) {
-        showDownloadConfirmationSheet(url, filename, mimetype, userAgent)
-    } else {
-        executeDownload(url, filename, mimetype, userAgent)
-    }
-    }
+        view.setOnLongClickListener {
+            val result = view.hitTestResult
+            if (result.type == WebView.HitTestResult.IMAGE_TYPE || result.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) {
+                val imageUrl = result.extra
+                if (!imageUrl.isNullOrBlank()) {
+                    val options = arrayOf("Download Image", "Share Image", "Copy Image Link", "Open Image")
+                    AlertDialog.Builder(this)
+                        .setTitle("Image Options")
+                        .setItems(options) { _, which ->
+                            when (which) {
+                                0 -> executeDownload(imageUrl, "image_${System.currentTimeMillis()}.jpg", "image/jpeg", null)
+                                1 -> {
+                                    val intent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_TEXT, imageUrl)
+                                    }
+                                    startActivity(Intent.createChooser(intent, "Share Image Link"))
+                                }
+                                2 -> {
+                                    val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                    cm.setPrimaryClip(android.content.ClipData.newPlainText("Image URL", imageUrl))
+                                    Toast.makeText(this, "Link copied", Toast.LENGTH_SHORT).show()
+                                }
+                                3 -> currentView?.loadUrl(imageUrl)
+                            }
+                        }
+                        .show()
+                }
+                true
+            } else false
+        }
+
+        view.setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
+            val filename = extractFilename(contentDisposition) ?: "download_${System.currentTimeMillis()}"
+            
+            if (SettingsPrefs.getBool(this, SettingsPrefs.K_ASK_DL, true)) {
+                showDownloadConfirmationSheet(url, filename, mimetype, userAgent)
+            } else {
+                executeDownload(url, filename, mimetype, userAgent)
+            }
+        }
     }
 
     private fun showDownloadConfirmationSheet(url: String, filename: String, mimetype: String?, userAgent: String?) {
-    val sheet = BottomSheetDialog(this)
-    val v = layoutInflater.inflate(R.layout.dialog_download_confirmation, null)
-    sheet.setContentView(v)
+        val sheet = BottomSheetDialog(this)
+        val v = layoutInflater.inflate(R.layout.dialog_download_confirmation, null)
+        v.setBackgroundResource(R.drawable.bg_bottom_sheet)
+        sheet.setContentView(v)
 
-    v.findViewById<android.widget.TextView>(R.id.dlFileName).text = filename
-    v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = "Calculating..."
-    v.findViewById<android.widget.TextView>(R.id.dlFileUrl).text = url
-    
-    val customUri = SettingsPrefs.getString(this, "custom_download_uri", "")
-    val pathStr = if (customUri.isNotBlank()) {
-         customUri.replace("content://com.android.externalstorage.documents/tree/primary%3A", "/storage/emulated/0/").replace("%2F", "/")
-    } else {
-        "/storage/emulated/0/Download"
-    }
-    v.findViewById<android.widget.TextView>(R.id.dlLocationPath).text = pathStr
-
-    v.findViewById<android.view.View>(R.id.dlLocationRow).setOnClickListener {
-        startActivity(Intent(this, DownloadSettingsActivity::class.java))
-        sheet.dismiss()
-    }
-
-    v.findViewById<android.view.View>(R.id.dlStartBtn).setOnClickListener {
-        sheet.dismiss()
-        executeDownload(url, filename, mimetype, userAgent)
-    }
-
-    v.findViewById<android.view.View>(R.id.dlEditName).setOnClickListener {
-        val input = android.widget.EditText(this).apply { setText(filename) }
-        AlertDialog.Builder(this)
-            .setTitle("Rename")
-            .setView(input)
-            .setPositiveButton("OK") { _, _ ->
-                val newName = input.text.toString().trim()
-                if (newName.isNotBlank()) {
-                    v.findViewById<android.widget.TextView>(R.id.dlFileName).text = newName
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    // Try to get file size via HEAD request in background
-    Thread {
-        try {
-            val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-            conn.requestMethod = "HEAD"
-            conn.connectTimeout = 3000
-            val size = conn.contentLengthLong
-            runOnUiThread {
-                if (size > 0) {
-                    v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = android.text.format.Formatter.formatShortFileSize(this, size)
-                } else {
-                    v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = "Unknown size"
-                }
-            }
-            conn.disconnect()
-        } catch (_: Exception) {
-            runOnUiThread { v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = "Unknown size" }
+        v.findViewById<android.widget.TextView>(R.id.dlFileName).text = filename
+        v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = "Calculating..."
+        v.findViewById<android.widget.TextView>(R.id.dlFileUrl).text = url
+        
+        val customUri = SettingsPrefs.getString(this, "custom_download_uri", "")
+        val pathStr = if (customUri.isNotBlank()) {
+             customUri.replace("content://com.android.externalstorage.documents/tree/primary%3A", "/storage/emulated/0/").replace("%2F", "/")
+        } else {
+            "/storage/emulated/0/Download"
         }
-    }.start()
+        v.findViewById<android.widget.TextView>(R.id.dlLocationPath).text = pathStr
 
-    sheet.show()
-}
+        v.findViewById<android.view.View>(R.id.dlLocationRow).setOnClickListener {
+            startActivity(Intent(this, DownloadSettingsActivity::class.java))
+            sheet.dismiss()
+        }
 
-private fun executeDownload(url: String, filename: String, mimetype: String?, userAgent: String?) {
-    val id = DownloadHelper.saveFromUrlWithCookies(this, url, filename, mimetype, userAgent)
-    if (id != -1L) {
-        DownloadService.startTracking(this, id, filename)
-        Toast.makeText(this, "Download started", Toast.LENGTH_SHORT).show()
-    } else {
-        Toast.makeText(this, "Failed to start download", Toast.LENGTH_SHORT).show()
+        v.findViewById<android.view.View>(R.id.dlStartBtn).setOnClickListener {
+            sheet.dismiss()
+            executeDownload(url, filename, mimetype, userAgent)
+        }
+
+        v.findViewById<android.view.View>(R.id.dlEditName).setOnClickListener {
+            val input = EditText(this).apply { setText(filename) }
+            AlertDialog.Builder(this)
+                .setTitle("Rename")
+                .setView(input)
+                .setPositiveButton("OK") { _, _ ->
+                    val newName = input.text.toString().trim()
+                    if (newName.isNotBlank()) {
+                        v.findViewById<android.widget.TextView>(R.id.dlFileName).text = newName
+                    }
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+
+        Thread {
+            try {
+                val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                conn.requestMethod = "HEAD"
+                conn.connectTimeout = 3000
+                val size = conn.contentLengthLong
+                runOnUiThread {
+                    if (size > 0) {
+                        v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = android.text.format.Formatter.formatShortFileSize(this, size)
+                    } else {
+                        v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = "Unknown size"
+                    }
+                }
+                conn.disconnect()
+            } catch (_: Exception) {
+                runOnUiThread { v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = "Unknown size" }
+            }
+        }.start()
+
+        sheet.show()
     }
-}
+
+    private fun executeDownload(url: String, filename: String, mimetype: String?, userAgent: String?) {
+        val id = DownloadHelper.saveFromUrlWithCookies(this, url, filename, mimetype, userAgent)
+        if (id != -1L) {
+            DownloadService.startTracking(this, id, filename)
+        } else {
+            Toast.makeText(this, "Failed to start download", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     private fun extractFilename(contentDisposition: String?): String? {
         if (contentDisposition.isNullOrBlank()) return null
@@ -955,10 +980,11 @@ private fun executeDownload(url: String, filename: String, mimetype: String?, us
     private fun showScriptMenuSheet() {
         val sheet = BottomSheetDialog(this)
         val v = layoutInflater.inflate(R.layout.dialog_script_menu, null)
+        v.setBackgroundResource(R.drawable.bg_bottom_sheet)
         sheet.setContentView(v)
         sheet.behavior.isDraggable = false
 
-        val list = v.findViewById<LinearLayout>(R.id.scriptMenuList)
+        val list = v.findViewById<android.widget.LinearLayout>(R.id.scriptMenuList)
         populateScriptSheet(list, sheet)
 
         v.findViewById<android.widget.Button>(R.id.scriptMenuAll)?.setOnClickListener {
@@ -968,7 +994,7 @@ private fun executeDownload(url: String, filename: String, mimetype: String?, us
         sheet.show()
     }
 
-    private fun populateScriptSheet(list: LinearLayout, sheet: BottomSheetDialog) {
+    private fun populateScriptSheet(list: android.widget.LinearLayout, sheet: BottomSheetDialog) {
         list.removeAllViews()
         val url = currentView?.url ?: ""
         val allScripts = UserscriptManager.loadScripts(this)
@@ -1006,7 +1032,7 @@ private fun executeDownload(url: String, filename: String, mimetype: String?, us
                 if (!checked) sheet.dismiss()
             }
 
-            val cmds = row.findViewById<LinearLayout>(R.id.smsCommands)
+            val cmds = row.findViewById<android.widget.LinearLayout>(R.id.smsCommands)
             val arrow = row.findViewById<ImageView>(R.id.smsExpand)
             val scriptCommands = MenuCommandStore.forScript(script.name)
 
@@ -1070,6 +1096,7 @@ private fun executeDownload(url: String, filename: String, mimetype: String?, us
     private fun showMenu() {
         val sheet = BottomSheetDialog(this)
         val v = layoutInflater.inflate(R.layout.dialog_main_menu, null)
+        v.setBackgroundResource(R.drawable.bg_bottom_sheet)
         sheet.setContentView(v)
 
         v.findViewById<View>(R.id.menuFavorites)?.setOnClickListener { sheet.dismiss(); toast("Favorites coming soon") }
@@ -1150,36 +1177,6 @@ private fun executeDownload(url: String, filename: String, mimetype: String?, us
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
-
-    private fun refreshDownloadSheet() {
-        val active = DownloadStore.active()
-        if (active.isEmpty()) { downloadSheet?.dismiss(); downloadSheet = null; return }
-        if (downloadSheet == null) {
-            val sheet = BottomSheetDialog(this)
-            val v = layoutInflater.inflate(R.layout.dialog_downloads, null)
-            sheet.setContentView(v)
-            sheet.setOnDismissListener { downloadSheet = null }
-            downloadSheet = sheet
-            sheet.show()
-        }
-        downloadSheet?.findViewById<LinearLayout>(R.id.dlList)?.let { rebuildDownloadList(it) }
-    }
-
-    private fun rebuildDownloadList(container: LinearLayout) {
-        container.removeAllViews()
-        val items = DownloadStore.active()
-        if (items.isEmpty()) { downloadSheet?.dismiss(); downloadSheet = null; return }
-        for (d in items) {
-            val row = layoutInflater.inflate(R.layout.item_download, container, false)
-            row.findViewById<android.widget.TextView>(R.id.dlName).text = d.filename
-            val pb = row.findViewById<android.widget.ProgressBar>(R.id.dlProgress)
-            pb.isIndeterminate = d.total <= 0
-            if (d.total > 0) { pb.max = 100; pb.progress = ((d.done * 100) / d.total).toInt() }
-            row.findViewById<android.widget.TextView>(R.id.dlPct).text =
-                if (d.total > 0) "${(d.done * 100) / d.total}%" else "…"
-            container.addView(row)
-        }
-    }
 
     private fun handleIntentUrl(url: String) {
         try {
@@ -1264,7 +1261,6 @@ private fun executeDownload(url: String, filename: String, mimetype: String?, us
         val incoming = intent.data?.toString() ?: return
         val already = tabs.list().firstOrNull { it.url == incoming }
         if (already != null) { switchTab(already.id); return }
-        // If no tabs alive, open a fresh one
         if (tabs.list().isEmpty()) tabs.openNew(incoming)
         else tabs.openNew(incoming)
         attachCurrent(); updateUi()
@@ -1283,7 +1279,6 @@ private fun executeDownload(url: String, filename: String, mimetype: String?, us
                 android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
                 android.content.res.Configuration.UI_MODE_NIGHT_YES
         }
-        tabs.list().forEach { }
         currentView?.let { WebViewEngine.applyDarkMode(it, dark) }
         if (UserscriptStore.consumeDirty(this)) {
             val v = currentView
@@ -1303,7 +1298,6 @@ private fun executeDownload(url: String, filename: String, mimetype: String?, us
 
     override fun onDestroy() {
         tabs.saveAll()
-        DownloadStore.clearListeners()
         MenuCommandStore.listener = null
         suggestJob?.cancel()
         super.onDestroy()
