@@ -10,47 +10,29 @@ import java.io.File
 class CleanupWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
 
     override fun doWork(): Result {
-    return try {
-        cleanupPrivateSessions(applicationContext)
-        cleanupPublicSessions(applicationContext)
-        Result.success()
-    } catch (_: Exception) {
-        Result.success()
-    }
-}
-
-private fun cleanupPrivateSessions(ctx: Context) {
-    val dir = File(ctx.filesDir, "sessions")
-    if (!dir.isDirectory) return
-    val cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000
-    val folders = dir.listFiles { f -> f.isDirectory }?.sortedByDescending { it.lastModified() }
-        ?: return
-    folders.forEachIndexed { idx, f ->
-        val tooOld = f.lastModified() < cutoff
-        val beyondLimit = idx >= 5
-        if (tooOld || beyondLimit) {
-            try { f.deleteRecursively() } catch (_: Exception) {}
+        return try {
+            cleanupPrivateSessions(applicationContext)
+            cleanupPublicSessions(applicationContext)
+            Result.success()
+        } catch (_: Exception) {
+            Result.success()
         }
     }
-}
 
-private fun cleanupPublicSessions(ctx: Context) {
-    val ext = ctx.getExternalFilesDir(null) ?: return
-    val harvesterDir = File(ext, "Harvester")
-    if (!harvesterDir.isDirectory) return
-    
-    val cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000
-    val folders = harvesterDir.listFiles { f -> f.isDirectory && f.name.startsWith("sess_") }
-        ?.sortedByDescending { it.lastModified() } ?: return
-
-    folders.forEachIndexed { idx, f ->
-        val tooOld = f.lastModified() < cutoff
-        val beyondLimit = idx >= 5
-        if (tooOld || beyondLimit) {
-            try { f.deleteRecursively() } catch (_: Exception) {}
+    private fun cleanupPrivateSessions(ctx: Context) {
+        val dir = File(ctx.filesDir, "sessions")
+        if (!dir.isDirectory) return
+        val cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000
+        val folders = dir.listFiles { f -> f.isDirectory }?.sortedByDescending { it.lastModified() }
+            ?: return
+        folders.forEachIndexed { idx, f ->
+            val tooOld = f.lastModified() < cutoff
+            val beyondLimit = idx >= 5
+            if (tooOld || beyondLimit) {
+                try { f.deleteRecursively() } catch (_: Exception) {}
+            }
         }
     }
-}
 
     private fun cleanupPublicSessions(ctx: Context) {
         val resolver = ctx.contentResolver
