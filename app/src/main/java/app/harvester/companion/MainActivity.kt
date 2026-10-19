@@ -918,14 +918,14 @@ private fun attachCurrent() {
         sheet.show()
     }
 
-    private fun executeDownload(url: String, filename: String, mimetype: String?, userAgent: String?) {
-        val id = DownloadHelper.saveFromUrlWithCookies(this, url, filename, mimetype, userAgent)
-        if (id != -1L) {
-            DownloadService.startTracking(this, id, filename)
-        } else {
-            Toast.makeText(this, "Failed to start download", Toast.LENGTH_SHORT).show()
-        }
+private fun executeDownload(url: String, filename: String, mimetype: String?, userAgent: String?) {
+    val id = DownloadHelper.saveFromUrlWithCookies(this, url, filename, mimetype, userAgent)
+    if (id != -1L) {
+        DownloadService.startTracking(this, id, filename, url)
+    } else {
+        Toast.makeText(this, "Failed to start download", Toast.LENGTH_SHORT).show()
     }
+}
 
     private fun extractFilename(contentDisposition: String?): String? {
         if (contentDisposition.isNullOrBlank()) return null
