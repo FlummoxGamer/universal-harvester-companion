@@ -297,45 +297,30 @@ object UserscriptManager {
     // injectOnPageStart
     fun injectOnPageStart(view: GeckoSession, ctx: Context, url: String) {
         if (isBadUrl(url)) return
-        try { view.evaluateJS(BRIDGE_BOOT, null) } catch (_: Exception) {}
-        
-        val enabled = SessionRecorder.ALL_CATEGORIES.filter { SessionRecorder.isEnabled(it) }
-        for (hook in enabled) {
-            val body = loadHook(ctx, hook)
-            if (body.isNotBlank()) {
-                try { view.evaluateJS(body, null) } catch (_: Exception) {}
-            }
-        }
-
-        val scripts = loadScripts(ctx)
-        for (script in scripts) {
-            if (!UserscriptStore.isEnabled(ctx, script.name)) continue
-            if (script.runAt != "document-start") continue
-            if (!matchesPatterns(script.patterns, url)) continue
-            if (matchesPatterns(script.excludes, url)) continue
-            val wrapped = buildWrapper(ctx, script)
-            if (wrapped.isBlank()) continue
-            try {
-                view.evaluateJS(wrapped, null)
-                UHLog.d("userscript", "injected ${script.name} (start) sysjs=${script.usesSystemjs} grants=${script.grants.size} reqs=${script.requires.size}")
-            } catch (e: Exception) {
-                UHLog.throwable("userscript", "inject ${script.name} failed", e)
-            }
-        }
     }
 
     // injectOnPageFinished
     fun injectOnPageFinished(ctx: Context, view: GeckoSession, url: String) {
         if (isBadUrl(url)) return
+        
+        try { view.loadUri("javascript:$BRIDGE_BOOT") } catch (_: Exception) {}
+        
+        val enabled = SessionRecorder.ALL_CATEGORIES.filter { SessionRecorder.isEnabled(it) }
+        for (hook in enabled) {
+            val body = loadHook(ctx, hook)
+            if (body.isNotBlank()) {
+                try { view.loadUri("javascript:$body") } catch (_: Exception) {}
+            }
+        }
+        
         val scripts = loadScripts(ctx)
         for (script in scripts) {
             if (!UserscriptStore.isEnabled(ctx, script.name)) continue
-            if (script.runAt == "document-start") continue
             if (!matchesPatterns(script.patterns, url)) continue
             if (matchesPatterns(script.excludes, url)) continue
             val wrapped = buildWrapper(ctx, script)
             if (wrapped.isBlank()) continue
-            view.evaluateJS(wrapped, null)
+            view.loadUri("javascript:$wrapped")
             UHLog.d("userscript", "injected ${script.name} (${script.runAt}) into $url")
         }
     }
