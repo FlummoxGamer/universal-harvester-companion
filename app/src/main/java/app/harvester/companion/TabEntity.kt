@@ -6,5 +6,6 @@ data class TabEntity(
     val title: String,
     val position: Int,
     val incognito: Boolean = false,
-    val groupId: Long = 0L
+    val groupId: Long = 0L,
+    val parentId: Long = 0L
 )
