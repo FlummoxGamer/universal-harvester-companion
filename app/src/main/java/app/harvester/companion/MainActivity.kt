@@ -254,23 +254,25 @@ class MainActivity : AppCompatActivity() {
         binding.btnScriptMenu.setOnClickListener { showScriptMenuSheet() }
     }
 
-    private fun navigateInput(typed: String): Boolean {
-        val target = normalize(typed)
-        if (target.isBlank()) return false
-        val isSearch = !target.startsWith("http")
-        if (isSearch) HistoryStore.get(this).recordSearch(typed)
-        var session = currentSession
-        if (session == null || tabs.list().isEmpty() || tabs.currentId() < 0L) {
-            tabs.openNew(target)
-            attachCurrent()
-            session = currentSession
-        } else {
-            session.loadUri(target)
-        }
-        exitEditMode()
+private fun navigateInput(typed: String): Boolean {
+    val target = normalize(typed)
+    if (target.isBlank()) return false
+    val isSearch = !target.startsWith("http")
+    if (isSearch) HistoryStore.get(this).recordSearch(typed)
+    var session = currentSession
+    if (session == null || tabs.list().isEmpty() || tabs.currentId() < 0L) {
+        tabs.openNew(target)
+        attachCurrent()
+        session = currentSession
+    } else {
+        currentUrl = target
+        binding.urlText.text = target
         updateHomeVisibility()
-        return true
+        session.loadUri(target)
     }
+    exitEditMode()
+    return true
+}
 
     private fun setupBackDispatcher() {
         onBackPressedDispatcher.addCallback(this) {
@@ -1027,7 +1029,7 @@ class MainActivity : AppCompatActivity() {
                     val cv = layoutInflater.inflate(R.layout.item_script_menu_command, cmds, false)
                     cv.findViewById<android.widget.TextView>(R.id.smcLabel).text = cmd.name
                     cv.setOnClickListener {
-                        currentSession?.loadUri("javascript:try{window.__uh_runMenuCommand('${cmd.id}')}catch(e){}")
+                        currentSession?.evaluateJS("try{window.__uh_runMenuCommand('${cmd.id}')}catch(e){}", null)
                         list.postDelayed({ populateScriptSheet(list, sheet) }, 400)
                     }
                     cmds.addView(cv)
