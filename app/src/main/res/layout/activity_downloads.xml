@@ -45,14 +45,12 @@
     </LinearLayout>
 
     <LinearLayout
-    android:id="@+id/activeDownloadChip"
-    android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:layout_margin="12dp"
-    android:orientation="vertical"
-    android:background="@color/surface"
-    android:padding="12dp"
-    android:visibility="gone">
+        android:id="@+id/activeDownloadChip"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="12dp"
+        android:orientation="vertical"
+        android:visibility="gone">
 
     <TextView
         android:id="@+id/activeDlName"
