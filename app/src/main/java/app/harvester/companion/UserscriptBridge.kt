@@ -37,9 +37,9 @@ class UserscriptBridge(private val ctx: Context) {
 fun updateOverlayState(active: Boolean) { overlayActive = active }
 
 @JavascriptInterface
-fun saveBlob(filename: String, mime: String, base64Data: String) {
+fun saveBlob(filename: String, mime: String, base64Data: String, pageUrl: String) {
     try {
-        DownloadEngine.startDownload(ctx, "", filename, mime, base64Data, null, v()?.url)
+        DownloadEngine.startDownload(ctx, "", filename, mime, base64Data, null, pageUrl)
         val w = v() ?: return
         w.post { android.widget.Toast.makeText(ctx, "Download started", android.widget.Toast.LENGTH_SHORT).show() }
     } catch (e: Exception) {
