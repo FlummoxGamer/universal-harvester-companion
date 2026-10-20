@@ -40,9 +40,9 @@ fun popHistory(): Long? {
     private val lock = Any()
     private var currentId: Long = -1L
 
-fun openNew(url: String, incognito: Boolean = false, groupId: Long = 0L): Long {
+fun openNew(url: String, incognito: Boolean = false, groupId: Long = 0L, parentId: Long = 0L): Long {
     synchronized(lock) {
-        val id = db.insert(url, incognito, groupId)
+        val id = db.insert(url, incognito, groupId, parentId)
         val view = WebViewEngine.create(ctx, incognito)
         alive[id] = Slot(view, incognito)
         currentId = id
@@ -50,8 +50,8 @@ fun openNew(url: String, incognito: Boolean = false, groupId: Long = 0L): Long {
         return id
     }
 }
-    fun openBlankTab(incognito: Boolean = false, groupId: Long = 0L): Long =
-        openNew("about:blank", incognito, groupId)
+    fun openBlankTab(incognito: Boolean = false, groupId: Long = 0L, parentId: Long = 0L): Long =
+        openNew("about:blank", incognito, groupId, parentId)
 
     fun acquireView(id: Long): WebView? {
         synchronized(lock) {
