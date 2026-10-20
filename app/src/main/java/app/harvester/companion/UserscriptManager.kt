@@ -428,7 +428,7 @@ fun injectOnPageStart(view: WebView, ctx: Context, url: String) {
                 var reader = new FileReader();
                 reader.onload = function() {
                     var b64 = reader.result.split(',')[1];
-                    B.saveBlob(name, blob.type || 'application/octet-stream', b64);
+                    B.saveBlob(name, blob.type || 'application/octet-stream', b64, location.href);
                 };
                 reader.readAsDataURL(blob);
                 return;
@@ -441,7 +441,7 @@ fun injectOnPageStart(view: WebView, ctx: Context, url: String) {
             var mimeMatch = meta.match(/data:([^;]+)/);
             var mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
             var isBase64 = meta.indexOf('base64') !== -1;
-            B.saveBlob(name, mime, isBase64 ? data : btoa(data));
+            B.saveBlob(name, mime, isBase64 ? data : btoa(data), location.href);
             return;
         }
         B.GM_download(sn, String(url), String(name));
