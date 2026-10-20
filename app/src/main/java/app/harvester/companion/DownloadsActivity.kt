@@ -1,7 +1,6 @@
 package app.harvester.companion
 
 import android.app.DownloadManager
-import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
@@ -63,7 +62,8 @@ class DownloadsActivity : AppCompatActivity() {
                         name.text = task.filename
                         val size = "${formatSize(task.bytesDownloaded)} / ${formatSize(task.totalBytes)}"
                         val speed = "${formatSize(task.speed)}/s"
-                        val eta = if (task.etaSeconds > 0) "${task.etaSeconds} sec left" else ""
+                        val eta = if (task.etaSeconds > 0) "${task.etaSeconds} sec left" else "Calculating..."
+                        
                         status.text = if (task.status == DownloadStore.Status.PAUSED) "Paused • $size" else "$size • $speed • $eta"
                         
                         pb.max = 100
@@ -71,8 +71,11 @@ class DownloadsActivity : AppCompatActivity() {
 
                         btnToggle.setImageResource(if (task.status == DownloadStore.Status.PAUSED) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause)
                         btnToggle.setOnClickListener {
-                            if (task.status == DownloadStore.Status.PAUSED) DownloadEngine.resumeDownload(this@DownloadsActivity, task.id)
-                            else DownloadEngine.pauseDownload(task.id)
+                            if (task.status == DownloadStore.Status.PAUSED) {
+                                DownloadEngine.resumeDownload(this@DownloadsActivity, task.id)
+                            } else {
+                                DownloadEngine.pauseDownload(task.id)
+                            }
                         }
 
                         activeContainer.addView(v)
@@ -90,8 +93,9 @@ class DownloadsActivity : AppCompatActivity() {
     private fun reload() {
         val items = DownloadsQuery.list(this)
         adapter.submit(items)
-        emptyView.visibility = if (items.isEmpty() && DownloadStore.activeDownloads.value.isEmpty()) View.VISIBLE else View.GONE
-        list.visibility = if (items.isEmpty() && DownloadStore.activeDownloads.value.isEmpty()) View.GONE else View.VISIBLE
+        val hasActive = DownloadStore.activeDownloads.value.isNotEmpty()
+        emptyView.visibility = if (items.isEmpty() && !hasActive) View.VISIBLE else View.GONE
+        list.visibility = if (items.isEmpty() && !hasActive) View.GONE else View.VISIBLE
     }
 
     private fun formatSize(b: Long): String = when {
