@@ -51,30 +51,18 @@ jobs:
             echo "RELEASE_NOTES=Automated Stable Build" >> $GITHUB_OUTPUT
           fi
 
-      - name: Publish APKs to GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build debug APK
+        working-directory: src
+        run: gradle assemble${{ steps.vars.outputs.FLAVOR }}Debug --no-daemon --no-configuration-cache
+
+      - name: Read version
+        id: ver
+        working-directory: src
         run: |
-          REPO="${{ github.repository }}"
-          VN="${{ steps.ver.outputs.name }}"
-          VC="${{ steps.ver.outputs.code }}"
-          TAG="v$VN-$VC-${{ steps.vars.outputs.FLAVOR }}"
-    
-          gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag 2>/dev/null || true
-    
-          # publishRelease
-          if [ "${{ steps.vars.outputs.FLAVOR }}" == "dev" ]; then
-            PRERELEASE_FLAG="--prerelease"
-          else
-            PRERELEASE_FLAG=""
-          fi
-    
-          gh release create "$TAG" \
-            --repo "$REPO" \
-            --title "${{ steps.vars.outputs.RELEASE_PREFIX }}Build $VN ($VC)" \
-            --notes "${{ steps.vars.outputs.RELEASE_NOTES }}" \
-            $PRERELEASE_FLAG \
-            out/*.apk
+          VC=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts | head -1)
+          VN=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts | head -1)
+          echo "code=$VC" >> $GITHUB_OUTPUT
+          echo "name=$VN" >> $GITHUB_OUTPUT
 
       - name: Locate APKs
         id: apks
@@ -112,10 +100,18 @@ jobs:
           
           gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag 2>/dev/null || true
           
+          # publishRelease
+          if [ "${{ steps.vars.outputs.FLAVOR }}" == "dev" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          else
+            PRERELEASE_FLAG=""
+          fi
+          
           gh release create "$TAG" \
             --repo "$REPO" \
             --title "${{ steps.vars.outputs.RELEASE_PREFIX }}Build $VN ($VC)" \
             --notes "${{ steps.vars.outputs.RELEASE_NOTES }}" \
+            $PRERELEASE_FLAG \
             out/*.apk
 
       - name: Publish version JSON
