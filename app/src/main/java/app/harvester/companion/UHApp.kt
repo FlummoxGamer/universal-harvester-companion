@@ -6,11 +6,15 @@ import android.content.Intent
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import java.io.File
+import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 
 class UHApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        checkSafeMode()
+        setupCrashHandler()
         ThemePrefs.applyCurrent(this)
         UHLog.init(this)
         SessionRecorder.init(this)
@@ -45,5 +49,52 @@ class UHApp : Application() {
         try {
             TabManager.get(this).evictForMemory(keep)
         } catch (_: Exception) {}
+    }
+
+    // checkSafeMode
+    private fun checkSafeMode() {
+        val bootMarker = File(filesDir, "boot_marker.tmp")
+        val crashFile = File(filesDir, "last_crash.txt")
+        
+        if (crashFile.exists()) {
+            val prefs = getSharedPreferences("uh_safe_mode", MODE_PRIVATE)
+            prefs.edit().putBoolean("force_safe_mode", true).apply()
+            
+            val crashDir = File(filesDir, "crashes").apply { mkdirs() }
+            val dest = File(crashDir, "crash_${System.currentTimeMillis()}.txt")
+            crashFile.renameTo(dest)
+            
+            if (bootMarker.exists()) bootMarker.delete()
+        }
+        
+        bootMarker.createNewFile()
+    }
+
+    // setupCrashHandler
+    private fun setupCrashHandler() {
+        val prev = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            try {
+                val crashFile = File(filesDir, "last_crash.txt")
+                FileOutputStream(crashFile).use { out ->
+                    out.write("Thread: ${t.name}\n".toByteArray())
+                    out.write("Exception: ${e.javaClass.name}: ${e.message}\n".toByteArray())
+                    e.stackTrace.forEach { 
+                        out.write("  at $it\n".toByteArray()) 
+                    }
+                    var cause = e.cause
+                    while (cause != null) {
+                        out.write("Caused by: ${cause.javaClass.name}: ${cause.message}\n".toByteArray())
+                        cause.stackTrace.forEach { 
+                            out.write("  at $it\n".toByteArray()) 
+                        }
+                        cause = cause.cause
+                    }
+                    out.flush()
+                    out.fd.sync()
+                }
+            } catch (_: Exception) {}
+            prev?.uncaughtException(t, e)
+        }
     }
 }
