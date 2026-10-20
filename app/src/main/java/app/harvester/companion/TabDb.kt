@@ -5,7 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
-class TabDb(ctx: Context) : SQLiteOpenHelper(ctx, "uh_tabs.db", null, 3) {
+class TabDb(ctx: Context) : SQLiteOpenHelper(ctx, "uh_tabs.db", null, 4) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -17,7 +17,8 @@ class TabDb(ctx: Context) : SQLiteOpenHelper(ctx, "uh_tabs.db", null, 3) {
                 "created_at INTEGER NOT NULL," +
                 "state BLOB," +
                 "incognito INTEGER NOT NULL DEFAULT 0," +
-                "group_id INTEGER NOT NULL DEFAULT 0)"
+                "group_id INTEGER NOT NULL DEFAULT 0," +
+                "parent_id INTEGER NOT NULL DEFAULT 0)"
         )
     }
 
@@ -29,10 +30,13 @@ class TabDb(ctx: Context) : SQLiteOpenHelper(ctx, "uh_tabs.db", null, 3) {
             try { db.execSQL("ALTER TABLE tabs ADD COLUMN incognito INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
             try { db.execSQL("ALTER TABLE tabs ADD COLUMN group_id INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
         }
+        if (oldVersion < 4) {
+            try { db.execSQL("ALTER TABLE tabs ADD COLUMN parent_id INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
+        }
     }
 
     @Synchronized
-    fun insert(url: String, incognito: Boolean = false, groupId: Long = 0L): Long {
+    fun insert(url: String, incognito: Boolean = false, groupId: Long = 0L, parentId: Long = 0L): Long {
         val db = writableDatabase
         val maxPos = db.rawQuery("SELECT COALESCE(MAX(position), -1) FROM tabs", null).use {
             if (it.moveToFirst()) it.getInt(0) else -1
@@ -44,6 +48,7 @@ class TabDb(ctx: Context) : SQLiteOpenHelper(ctx, "uh_tabs.db", null, 3) {
             put("created_at", System.currentTimeMillis())
             put("incognito", if (incognito) 1 else 0)
             put("group_id", groupId)
+            put("parent_id", parentId)
         }
         return db.insert("tabs", null, cv)
     }
@@ -52,7 +57,7 @@ class TabDb(ctx: Context) : SQLiteOpenHelper(ctx, "uh_tabs.db", null, 3) {
     fun list(): List<TabEntity> {
         val out = mutableListOf<TabEntity>()
         readableDatabase.rawQuery(
-            "SELECT id, url, title, position, incognito, group_id FROM tabs ORDER BY position ASC", null
+            "SELECT id, url, title, position, incognito, group_id, parent_id FROM tabs ORDER BY position ASC", null
         ).use { c ->
             while (c.moveToNext()) {
                 out.add(
@@ -62,7 +67,8 @@ class TabDb(ctx: Context) : SQLiteOpenHelper(ctx, "uh_tabs.db", null, 3) {
                         title = c.getString(2) ?: "",
                         position = c.getInt(3),
                         incognito = c.getInt(4) == 1,
-                        groupId = c.getLong(5)
+                        groupId = c.getLong(5),
+                        parentId = c.getLong(6)
                     )
                 )
             }
