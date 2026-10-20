@@ -62,6 +62,14 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+    
+        val safePrefs = getSharedPreferences("uh_safe_mode", MODE_PRIVATE)
+        if (safePrefs.getBoolean("force_safe_mode", false)) {
+            startActivity(Intent(this, SafeModeActivity::class.java))
+            finish()
+            return
+        }
+    
         UHLog.init(this)
         SessionRecorder.init(this)
         UHLog.section("MAIN")
