@@ -925,8 +925,12 @@ view.setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
 Thread {
     try {
         val client = okhttp3.OkHttpClient.Builder().connectTimeout(3, java.util.concurrent.TimeUnit.SECONDS).build()
-        val req = okhttp3.Request.Builder().url(url).head().build()
-        client.newCall(req).execute().use { resp ->
+        val reqBuilder = okhttp3.Request.Builder().url(url).head()
+        reqBuilder.addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 10)")
+        val referer = currentView?.url
+        if (!referer.isNullOrBlank()) reqBuilder.addHeader("Referer", referer)
+        
+        client.newCall(reqBuilder.build()).execute().use { resp ->
             val size = resp.body?.contentLength() ?: -1L
             runOnUiThread {
                 if (size > 0) {
