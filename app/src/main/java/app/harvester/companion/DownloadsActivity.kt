@@ -11,6 +11,8 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.launch
@@ -44,8 +46,9 @@ class DownloadsActivity : AppCompatActivity() {
         reload()
     }
 
-    private fun observeActiveDownloads() {
-        lifecycleScope.launch {
+private fun observeActiveDownloads() {
+    lifecycleScope.launch {
+        repeatOnLifecycle(Lifecycle.State.STARTED) {
             DownloadStore.activeDownloads.collect { tasks ->
                 activeContainer.removeAllViews()
                 if (tasks.isEmpty()) {
@@ -64,17 +67,27 @@ class DownloadsActivity : AppCompatActivity() {
                         val speed = "${formatSize(task.speed)}/s"
                         val eta = if (task.etaSeconds > 0) "${task.etaSeconds} sec left" else "Calculating..."
                         
-                        status.text = if (task.status == DownloadStore.Status.PAUSED) "Paused • $size" else "$size • $speed • $eta"
+                        status.text = when (task.status) {
+                            DownloadStore.Status.PAUSED -> "Paused • $size"
+                            DownloadStore.Status.FAILED -> "Failed • $size"
+                            else -> "$size • $speed • $eta"
+                        }
                         
                         pb.max = 100
                         pb.progress = if (task.totalBytes > 0) ((task.bytesDownloaded * 100) / task.totalBytes).toInt() else 0
 
-                        btnToggle.setImageResource(if (task.status == DownloadStore.Status.PAUSED) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause)
-                        btnToggle.setOnClickListener {
-                            if (task.status == DownloadStore.Status.PAUSED) {
-                                DownloadEngine.resumeDownload(this@DownloadsActivity, task.id)
-                            } else {
-                                DownloadEngine.pauseDownload(task.id)
+                        when (task.status) {
+                            DownloadStore.Status.RUNNING -> {
+                                btnToggle.setImageResource(android.R.drawable.ic_media_pause)
+                                btnToggle.setOnClickListener { DownloadEngine.pauseDownload(task.id) }
+                            }
+                            DownloadStore.Status.PAUSED -> {
+                                btnToggle.setImageResource(android.R.drawable.ic_media_play)
+                                btnToggle.setOnClickListener { DownloadEngine.resumeDownload(this@DownloadsActivity, task.id) }
+                            }
+                            DownloadStore.Status.FAILED -> {
+                                btnToggle.setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
+                                btnToggle.setOnClickListener { DownloadEngine.cancelDownload(this@DownloadsActivity, task.id) }
                             }
                         }
 
@@ -84,6 +97,7 @@ class DownloadsActivity : AppCompatActivity() {
             }
         }
     }
+}
 
     override fun onResume() {
         super.onResume()
