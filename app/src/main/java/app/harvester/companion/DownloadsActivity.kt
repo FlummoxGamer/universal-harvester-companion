@@ -7,17 +7,21 @@ import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
+import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import kotlinx.coroutines.launch
 
 class DownloadsActivity : AppCompatActivity() {
 
     private lateinit var adapter: Adapter
     private lateinit var emptyView: TextView
     private lateinit var list: RecyclerView
+    private lateinit var activeContainer: android.widget.LinearLayout
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -25,6 +29,8 @@ class DownloadsActivity : AppCompatActivity() {
 
         list = findViewById(R.id.downloadsList)
         emptyView = findViewById(R.id.downloadsEmpty)
+        activeContainer = findViewById(R.id.activeDownloadChip)
+        
         adapter = Adapter(
             onClick = { item -> openItem(item) },
             onLongClick = { item -> showItemMenu(item) }
@@ -35,41 +41,65 @@ class DownloadsActivity : AppCompatActivity() {
         findViewById<ImageButton>(R.id.downloadsBack).setOnClickListener { finish() }
         findViewById<ImageButton>(R.id.downloadsMenu).setOnClickListener { showSortMenu() }
 
-    reload()
-    setupActiveDownloadTracker()
-}
-
-private fun setupActiveDownloadTracker() {
-    val chip = findViewById<android.view.View>(R.id.activeDownloadChip)
-    val nameText = findViewById<android.widget.TextView>(R.id.activeDlName)
-    val statusText = findViewById<android.widget.TextView>(R.id.activeDlStatus)
-    val progress = findViewById<android.widget.ProgressBar>(R.id.activeDlProgress)
-
-    val dm = getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
-    val query = android.app.DownloadManager.Query().setFilterByStatus(android.app.DownloadManager.STATUS_RUNNING or android.app.DownloadManager.STATUS_PENDING)
-    
-    val cursor = dm.query(query)
-    if (cursor != null && cursor.moveToFirst()) {
-        chip.visibility = android.view.View.VISIBLE
-        val downloaded = cursor.getLong(cursor.getColumnIndexOrThrow(android.app.DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
-        val total = cursor.getLong(cursor.getColumnIndexOrThrow(android.app.DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
-        val title = cursor.getString(cursor.getColumnIndexOrThrow(android.app.DownloadManager.COLUMN_TITLE))
-        
-        nameText.text = title
-        statusText.text = "$downloaded / $total"
-        progress.max = if (total > 0) total.toInt() else 100
-        progress.progress = if (total > 0) downloaded.toInt() else 0
-    } else {
-        chip.visibility = android.view.View.GONE
+        observeActiveDownloads()
+        reload()
     }
-    cursor?.close()
-}
+
+    private fun observeActiveDownloads() {
+        lifecycleScope.launch {
+            DownloadStore.activeDownloads.collect { tasks ->
+                activeContainer.removeAllViews()
+                if (tasks.isEmpty()) {
+                    activeContainer.visibility = View.GONE
+                } else {
+                    activeContainer.visibility = View.VISIBLE
+                    for (task in tasks) {
+                        val v = layoutInflater.inflate(R.layout.item_active_download, activeContainer, false)
+                        val name = v.findViewById<TextView>(R.id.activeDlName)
+                        val status = v.findViewById<TextView>(R.id.activeDlStatus)
+                        val pb = v.findViewById<ProgressBar>(R.id.activeDlProgress)
+                        val btnToggle = v.findViewById<ImageButton>(R.id.btnTogglePause)
+
+                        name.text = task.filename
+                        val size = "${formatSize(task.bytesDownloaded)} / ${formatSize(task.totalBytes)}"
+                        val speed = "${formatSize(task.speed)}/s"
+                        val eta = if (task.etaSeconds > 0) "${task.etaSeconds} sec left" else ""
+                        status.text = if (task.status == DownloadStore.Status.PAUSED) "Paused • $size" else "$size • $speed • $eta"
+                        
+                        pb.max = 100
+                        pb.progress = if (task.totalBytes > 0) ((task.bytesDownloaded * 100) / task.totalBytes).toInt() else 0
+
+                        btnToggle.setImageResource(if (task.status == DownloadStore.Status.PAUSED) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause)
+                        btnToggle.setOnClickListener {
+                            if (task.status == DownloadStore.Status.PAUSED) DownloadEngine.resumeDownload(this@DownloadsActivity, task.id)
+                            else DownloadEngine.pauseDownload(task.id)
+                        }
+
+                        activeContainer.addView(v)
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        reload()
+    }
 
     private fun reload() {
         val items = DownloadsQuery.list(this)
         adapter.submit(items)
-        emptyView.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
-        list.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
+        emptyView.visibility = if (items.isEmpty() && DownloadStore.activeDownloads.value.isEmpty()) View.VISIBLE else View.GONE
+        list.visibility = if (items.isEmpty() && DownloadStore.activeDownloads.value.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    private fun formatSize(b: Long): String = when {
+        b < 0 -> "?"
+        b < 1024 -> "$b B"
+        b < 1024 * 1024 -> "%.1f KB".format(b / 1024.0)
+        b < 1024L * 1024 * 1024 -> "%.1f MB".format(b / (1024.0 * 1024))
+        else -> "%.1f GB".format(b / (1024.0 * 1024 * 1024))
     }
 
     private fun showItemMenu(item: DownloadsQuery.Item) {
@@ -87,42 +117,42 @@ private fun setupActiveDownloadTracker() {
             .show()
     }
 
-private fun showRenameDialog(item: DownloadsQuery.Item) {
-    val view = layoutInflater.inflate(R.layout.dialog_rename, null)
-    val input = view.findViewById<android.widget.EditText>(R.id.renameInput)
-    val dialog = AlertDialog.Builder(this)
-        .setView(view)
-        .setCancelable(true)
-        .create()
+    private fun showRenameDialog(item: DownloadsQuery.Item) {
+        val view = layoutInflater.inflate(R.layout.dialog_rename, null)
+        val input = view.findViewById<android.widget.EditText>(R.id.renameInput)
+        val dialog = AlertDialog.Builder(this)
+            .setView(view)
+            .setCancelable(true)
+            .create()
 
-    input.setText(item.filename)
-    input.requestFocus()
-    
-    val name = item.filename
-    val dotIndex = name.lastIndexOf('.')
-    if (dotIndex > 0) {
-        input.setSelection(0, dotIndex)
-    } else {
-        input.setSelection(0, name.length)
-    }
-
-    view.findViewById<View>(R.id.renameCancel).setOnClickListener { dialog.dismiss() }
-    view.findViewById<View>(R.id.renameOk).setOnClickListener {
-        val newName = input.text.toString().trim()
-        if (newName.isNotBlank()) {
-            renameFile(item, newName)
-            dialog.dismiss()
+        input.setText(item.filename)
+        input.requestFocus()
+        
+        val name = item.filename
+        val dotIndex = name.lastIndexOf('.')
+        if (dotIndex > 0) {
+            input.setSelection(0, dotIndex)
+        } else {
+            input.setSelection(0, name.length)
         }
+
+        view.findViewById<View>(R.id.renameCancel).setOnClickListener { dialog.dismiss() }
+        view.findViewById<View>(R.id.renameOk).setOnClickListener {
+            val newName = input.text.toString().trim()
+            if (newName.isNotBlank()) {
+                renameFile(item, newName)
+                dialog.dismiss()
+            }
+        }
+        
+        dialog.show()
+        dialog.window?.clearFlags(
+            android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
+        )
+        dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+        input.requestFocus()
     }
-    
-    dialog.show()
-    dialog.window?.clearFlags(
-        android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-        android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
-    )
-    dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
-    input.requestFocus()
-}
 
     private fun renameFile(item: DownloadsQuery.Item, newName: String) {
         try {
