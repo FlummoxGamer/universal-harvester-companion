@@ -270,43 +270,69 @@ class MainActivity : AppCompatActivity() {
         return true
     }
 
-    private fun setupBackDispatcher() {
-        onBackPressedDispatcher.addCallback(this) {
-            if (binding.urlEdit.visibility == View.VISIBLE) {
-                exitEditMode()
+private fun setupBackDispatcher() {
+    onBackPressedDispatcher.addCallback(this) {
+        if (binding.urlEdit.visibility == View.VISIBLE) {
+            exitEditMode()
+            return@addCallback
+        }
+
+        val v = currentView
+        val id = if (v != null) tabs.idForView(v) else -1L
+
+        // 1. WebView History
+        if (v != null) {
+            val history = v.copyBackForwardList()
+            if (history.currentIndex > 0) {
+                v.goBack()
                 return@addCallback
-            }
-            val v = currentView
-            val id = if (v != null) tabs.idForView(v) else -1L
-            if (v != null && id in popupTabs) { closeBlankPopup(v); return@addCallback }
-            if (v != null) {
-                val history = v.copyBackForwardList()
-                if (history.currentIndex > 0) {
-                    v.goBack()
-                    return@addCallback
-                }
-            }
-            val url = v?.url
-            val isOnSite = !url.isNullOrBlank() && url != "about:blank" &&
-                !url.startsWith("chrome-error://")
-            if (isOnSite) {
-                tabs.openNew("about:blank")
-                attachCurrent(); updateUi(); return@addCallback
-            }
-            val previousId = tabs.popHistory()
-            if (previousId != null) {
-                tabs.acquireView(previousId)
-                attachCurrent(); updateUi()
-                return@addCallback
-            }
-            val now = System.currentTimeMillis()
-            if (now - lastBackPress < 2000L) finish()
-            else {
-                lastBackPress = now
-                Toast.makeText(this@MainActivity, "Press back again to exit", Toast.LENGTH_SHORT).show()
             }
         }
+
+        // 2. Parent Tab Chain
+        val currentEntity = tabs.list().firstOrNull { it.id == id }
+        if (currentEntity != null && currentEntity.parentId != 0L) {
+            val parentId = currentEntity.parentId
+            popupTabs.remove(id)
+            tabs.close(id)
+            tabs.acquireView(parentId)
+            attachCurrent()
+            updateUi()
+            return@addCallback
+        }
+
+        // 3. Go to Home Screen (about:blank)
+        val url = v?.url
+        val isOnSite = !url.isNullOrBlank() && url != "about:blank" &&
+            !url.startsWith("chrome-error://")
+        if (isOnSite) {
+            v?.loadUrl("about:blank")
+            v?.clearHistory()
+            return@addCallback
+        }
+
+        // 4. Tab Management (Close Tab)
+        val all = tabs.list()
+        if (all.size > 1) {
+            popupTabs.remove(id)
+            tabs.close(id)
+            val remaining = tabs.list()
+            if (remaining.isNotEmpty()) {
+                tabs.acquireView(remaining.first().id)
+                attachCurrent(); updateUi()
+            }
+            return@addCallback
+        }
+
+        // 5. Exit
+        val now = System.currentTimeMillis()
+        if (now - lastBackPress < 2000L) finish()
+        else {
+            lastBackPress = now
+            Toast.makeText(this@MainActivity, "Press back again to exit", Toast.LENGTH_SHORT).show()
+        }
     }
+}
 
     private fun applyAddressBarPosition() {
         val position = SettingsPrefs.getInt(this, SettingsPrefs.K_ADDRESS_BAR_POSITION, 1)
@@ -775,10 +801,10 @@ private fun attachCurrent() {
             }
 
             override fun onCreateWindow(v: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
-                val parentId = tabs.idForView(v)
+                val parentId = tabs.idForView(v).takeIf { it > 0L } ?: 0L
                 val parentUrl = tabs.list().firstOrNull { it.id == parentId }?.url ?: v.url ?: ""
                 UHLog.netPopupOpen(parentUrl, isUserGesture, isDialog)
-                val id = tabs.openBlankTab()
+                val id = tabs.openBlankTab(parentId = parentId)
                 val newView = tabs.acquireView(id) ?: return false
                 popupTabs.add(id)
                 UHLog.netPopupCreated(id)
