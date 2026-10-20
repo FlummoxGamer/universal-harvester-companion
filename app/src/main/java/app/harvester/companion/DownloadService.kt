@@ -9,7 +9,6 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import kotlinx.coroutines.*
 
 class DownloadService : Service() {
     companion object {
@@ -27,7 +26,7 @@ class DownloadService : Service() {
 
         fun updateNotification() {
             val nm = appContext?.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
-            val active = DownloadStore.activeDownloads.value.filter { it.status == DownloadStore.Status.RUNNING || it.status == DownloadStore.Status.PAUSED }
+            val active = DownloadStore.activeDownloads.value
             
             if (active.isEmpty()) {
                 nm.cancel(NOTIFICATION_ID)
@@ -38,15 +37,22 @@ class DownloadService : Service() {
             nm.notify(NOTIFICATION_ID, buildNotification(appContext!!, active))
         }
 
-        fun cancelNotification(id: String) {
-            updateNotification()
-        }
-
         private var appContext: Context? = null
 
         private fun buildNotification(ctx: Context, tasks: List<DownloadStore.Task>): android.app.Notification {
             val openIntent = Intent(ctx, DownloadsActivity::class.java)
             val piOpen = PendingIntent.getActivity(ctx, 0, openIntent, PendingIntent.FLAG_IMMUTABLE)
+
+            // SAFETY CHECK: Prevent crash on empty list
+            if (tasks.isEmpty()) {
+                return NotificationCompat.Builder(ctx, CHANNEL_ID)
+                    .setSmallIcon(R.drawable.ic_downloads)
+                    .setContentTitle("Downloads")
+                    .setContentText("No active downloads")
+                    .setContentIntent(piOpen)
+                    .setAutoCancel(true)
+                    .build()
+            }
 
             val primaryTask = tasks.first()
             val isPaused = primaryTask.status == DownloadStore.Status.PAUSED
@@ -66,7 +72,7 @@ class DownloadService : Service() {
             val title = if (tasks.size > 1) "${tasks.size} downloads in progress" else primaryTask.filename
             
             val speed = formatSpeed(primaryTask.speed)
-            val eta = if (primaryTask.etaSeconds > 0) "${primaryTask.etaSeconds} sec left" else "Calculating..."
+            val eta = if (primaryTask.etaSeconds > 0) "${primaryTask.etaSeconds}s left" else "Calculating..."
             val size = "${formatSize(primaryTask.bytesDownloaded)} / ${formatSize(primaryTask.totalBytes)}"
             val text = if (isPaused) "Paused • $size" else "$size • $speed • $eta"
 
@@ -113,7 +119,11 @@ class DownloadService : Service() {
             ACTION_RESUME -> if (id != null) DownloadEngine.resumeDownload(this, id)
             ACTION_CANCEL -> if (id != null) DownloadEngine.cancelDownload(this, id)
         }
-        startForeground(NOTIFICATION_ID, buildNotification(this, DownloadStore.activeDownloads.value))
+        
+        // Bind to StateFlow to keep notification alive and updated
+        val active = DownloadStore.activeDownloads.value
+        startForeground(NOTIFICATION_ID, buildNotification(this, active))
+        
         return START_NOT_STICKY
     }
 
