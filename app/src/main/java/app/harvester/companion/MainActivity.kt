@@ -279,8 +279,31 @@ private fun setupBackDispatcher() {
 
         val v = currentView
         val id = if (v != null) tabs.idForView(v) else -1L
+        val url = v?.url
 
-        // 1. WebView History
+        // 1. Home Screen logic (Exit or Close Tab)
+        if (url == "about:blank" || url.isNullOrBlank()) {
+            val all = tabs.list()
+            if (all.size > 1) {
+                popupTabs.remove(id)
+                tabs.close(id)
+                val remaining = tabs.list()
+                if (remaining.isNotEmpty()) {
+                    tabs.acquireView(remaining.first().id)
+                    attachCurrent(); updateUi()
+                }
+            } else {
+                val now = System.currentTimeMillis()
+                if (now - lastBackPress < 2000L) finish()
+                else {
+                    lastBackPress = now
+                    Toast.makeText(this@MainActivity, "Press back again to exit", Toast.LENGTH_SHORT).show()
+                }
+            }
+            return@addCallback
+        }
+
+        // 2. WebView History
         if (v != null) {
             val history = v.copyBackForwardList()
             if (history.currentIndex > 0) {
@@ -289,7 +312,7 @@ private fun setupBackDispatcher() {
             }
         }
 
-        // 2. Parent Tab Chain
+        // 3. Parent Tab Chain
         val currentEntity = tabs.list().firstOrNull { it.id == id }
         if (currentEntity != null && currentEntity.parentId != 0L) {
             val parentId = currentEntity.parentId
@@ -301,39 +324,16 @@ private fun setupBackDispatcher() {
             return@addCallback
         }
 
-        // 3. Go to Home Screen (about:blank)
-        val url = v?.url
-        val isOnSite = !url.isNullOrBlank() && url != "about:blank" &&
-            !url.startsWith("chrome-error://")
-        if (isOnSite) {
-            v?.loadUrl("about:blank")
-            v?.clearHistory()
+        // 4. Go to Home Screen
+        if (v != null) {
+            v.loadUrl("about:blank")
+            v.clearHistory()
             return@addCallback
         }
 
-        // 4. Tab Management (Close Tab)
-        val all = tabs.list()
-        if (all.size > 1) {
-            popupTabs.remove(id)
-            tabs.close(id)
-            val remaining = tabs.list()
-            if (remaining.isNotEmpty()) {
-                tabs.acquireView(remaining.first().id)
-                attachCurrent(); updateUi()
-            }
-            return@addCallback
-        }
-
-        // 5. Exit
-        val now = System.currentTimeMillis()
-        if (now - lastBackPress < 2000L) finish()
-        else {
-            lastBackPress = now
-            Toast.makeText(this@MainActivity, "Press back again to exit", Toast.LENGTH_SHORT).show()
-        }
+        finish()
     }
 }
-
     private fun applyAddressBarPosition() {
         val position = SettingsPrefs.getInt(this, SettingsPrefs.K_ADDRESS_BAR_POSITION, 1)
         val root = binding.root as ConstraintLayout
