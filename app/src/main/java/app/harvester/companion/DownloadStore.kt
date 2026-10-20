@@ -1,103 +1,45 @@
 package app.harvester.companion
 
-import android.app.DownloadManager
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.database.ContentObserver
-import android.net.Uri
-import android.os.Handler
-import android.os.Looper
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 object DownloadStore {
+    enum class Status { PENDING, RUNNING, PAUSED, SUCCESS, FAILED, CANCELLED }
 
-    data class Item(
-        val id: Long,
+    data class Task(
+        val id: String,
+        val url: String,
         val filename: String,
-        val done: Long,
-        val total: Long
+        val mime: String,
+        var bytesDownloaded: Long = 0L,
+        var totalBytes: Long = -1L,
+        var speed: Long = 0L,
+        var etaSeconds: Long = -1L,
+        var status: Status = Status.PENDING,
+        var error: String? = null,
+        val base64Data: String? = null,
+        val userAgent: String? = null
     )
 
-    private val items = mutableMapOf<Long, Item>()
-    private val lock = Any()
+    private val _activeDownloads = MutableStateFlow<List<Task>>(emptyList())
+    val activeDownloads: StateFlow<List<Task>> = _activeDownloads
 
-    @Volatile var listener: (() -> Unit)? = null
-
-    private var ctxRef: Context? = null
-    private var receiver: BroadcastReceiver? = null
-    private var observer: ContentObserver? = null
-
-    fun ensureInstalled(ctx: Context) {
-        if (ctxRef != null) return
-        ctxRef = ctx.applicationContext
-
-        receiver = object : BroadcastReceiver() {
-            override fun onReceive(c: Context?, intent: Intent?) {
-                if (intent?.action == DownloadManager.ACTION_DOWNLOAD_COMPLETE) {
-                    val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
-                    synchronized(lock) { items.remove(id) }
-                    listener?.invoke()
-                }
-            }
-        }
-        try {
-            ctx.registerReceiver(receiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE))
-        } catch (_: Exception) {}
-
-        observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
-            override fun onChange(selfChange: Boolean) { pollAll() }
-        }
-        try {
-            ctx.contentResolver.registerContentObserver(
-                Uri.parse("content://downloads/"), true, observer!!
-            )
-        } catch (_: Exception) {}
+    fun addTask(task: Task) {
+        _activeDownloads.value = _activeDownloads.value + task
     }
 
-    fun add(id: Long, filename: String) {
-        synchronized(lock) {
-            items[id] = Item(id, filename, 0L, -1L)
+    fun updateTask(id: String, updateBlock: (Task) -> Unit) {
+        _activeDownloads.value = _activeDownloads.value.map {
+            if (it.id == id) {
+                updateBlock(it)
+                it.copy()
+            } else it
         }
-        listener?.invoke()
     }
 
-    fun pollAll() {
-        val ctx = ctxRef ?: return
-        val dm = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-        synchronized(lock) {
-            val iter = items.entries.iterator()
-            while (iter.hasNext()) {
-                val (id, _) = iter.next()
-                try {
-                    val q = DownloadManager.Query().setFilterById(id)
-                    val c = dm.query(q)
-                    if (c != null) {
-                        if (c.moveToFirst()) {
-                            val status = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
-                            val done = c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
-                            val total = c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
-                            val cur = items[id]
-                            if (cur != null) items[id] = cur.copy(done = done, total = total)
-                            if (status == DownloadManager.STATUS_SUCCESSFUL || status == DownloadManager.STATUS_FAILED) {
-                                items[id] = items[id]!!.copy(
-                                    done = total.coerceAtLeast(done),
-                                    total = total.coerceAtLeast(1)
-                                )
-                                iter.remove()
-                            }
-                        } else {
-                            iter.remove()
-                        }
-                        c.close()
-                    }
-                } catch (_: Exception) {}
-            }
-        }
-        listener?.invoke()
+    fun removeTask(id: String) {
+        _activeDownloads.value = _activeDownloads.value.filterNot { it.id == id }
     }
 
-    fun active(): List<Item> = synchronized(lock) { items.values.sortedBy { it.id } }
-
-    fun clearListeners() { listener = null }
+    fun getTask(id: String): Task? = _activeDownloads.value.find { it.id == id }
 }
