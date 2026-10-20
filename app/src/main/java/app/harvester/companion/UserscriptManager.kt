@@ -2,7 +2,7 @@ package app.harvester.companion
 
 import android.content.Context
 import android.net.Uri
-import android.webkit.WebView
+import org.mozilla.geckoview.GeckoSession
 import java.io.File
 import java.util.zip.ZipInputStream
 
@@ -40,6 +40,7 @@ object UserscriptManager {
         val fileSize: Long
     )
 
+    // loadScripts
     fun loadScripts(ctx: Context): List<Script> {
         cachedScripts?.let { return it }
         val dir = File(ctx.filesDir, "scripts")
@@ -52,12 +53,14 @@ object UserscriptManager {
         return list
     }
 
+    // loadScript
     fun loadScript(ctx: Context, name: String): Script? {
         val f = File(File(ctx.filesDir, "scripts"), "$name.js")
         if (!f.isFile) return null
         return try { parse(name, f.readText(), f.length()) } catch (_: Exception) { null }
     }
 
+    // parse
     fun parse(name: String, body: String, fileSize: Long = 0L): Script {
         var displayName = name
         var namespace = ""
@@ -119,90 +122,97 @@ object UserscriptManager {
         )
     }
 
-fun install(ctx: Context, name: String, body: String): Boolean {
-    invalidateCache()
-    return try {
-        val dir = File(ctx.filesDir, "scripts").apply { mkdirs() }
-        val safe = name.replace(Regex("""[^a-zA-Z0-9_\-]"""), "_").take(80)
-        File(dir, "$safe.js").writeText(body)
-        try {
-            val parsed = parse(name, body)
-            cacheRequires(ctx, parsed)
-        } catch (_: Exception) {}
-        UserscriptStore.markDirty(ctx)
-        true
-    } catch (_: Exception) { false }
-}
+    // install
+    fun install(ctx: Context, name: String, body: String): Boolean {
+        invalidateCache()
+        return try {
+            val dir = File(ctx.filesDir, "scripts").apply { mkdirs() }
+            val safe = name.replace(Regex("""[^a-zA-Z0-9_\-]"""), "_").take(80)
+            File(dir, "$safe.js").writeText(body)
+            try {
+                val parsed = parse(name, body)
+                cacheRequires(ctx, parsed)
+            } catch (_: Exception) {}
+            UserscriptStore.markDirty(ctx)
+            true
+        } catch (_: Exception) { false }
+    }
 
-private fun requiresDir(ctx: Context, scriptName: String): File {
-    val safe = scriptName.replace(Regex("""[^a-zA-Z0-9_\-]"""), "_").take(80)
-    return File(ctx.filesDir, "requires/$safe").apply { mkdirs() }
-}
+    // requiresDir
+    private fun requiresDir(ctx: Context, scriptName: String): File {
+        val safe = scriptName.replace(Regex("""[^a-zA-Z0-9_\-]"""), "_").take(80)
+        return File(ctx.filesDir, "requires/$safe").apply { mkdirs() }
+    }
 
-private fun cacheRequires(ctx: Context, script: Script) {
-    val dir = requiresDir(ctx, script.name)
-    try { dir.listFiles()?.forEach { it.delete() } } catch (_: Exception) {}
-    var idx = 0
-    for (url in script.requires) {
-        val target = File(dir, "req_${idx.toString().padStart(3, '0')}.js")
-        try {
-            if (url.startsWith("data:")) {
-                val body = decodeDataUrl(url) ?: continue
-                target.writeText(body)
-            } else {
-                val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-                conn.connectTimeout = 20000
-                conn.readTimeout = 20000
-                conn.connect()
-                if (conn.responseCode in 200..299) {
-                    conn.inputStream.use { input ->
-                        target.outputStream().use { input.copyTo(it) }
+    // cacheRequires
+    private fun cacheRequires(ctx: Context, script: Script) {
+        val dir = requiresDir(ctx, script.name)
+        try { dir.listFiles()?.forEach { it.delete() } } catch (_: Exception) {}
+        var idx = 0
+        for (url in script.requires) {
+            val target = File(dir, "req_${idx.toString().padStart(3, '0')}.js")
+            try {
+                if (url.startsWith("data:")) {
+                    val body = decodeDataUrl(url) ?: continue
+                    target.writeText(body)
+                } else {
+                    val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                    conn.connectTimeout = 20000
+                    conn.readTimeout = 20000
+                    conn.connect()
+                    if (conn.responseCode in 200..299) {
+                        conn.inputStream.use { input ->
+                            target.outputStream().use { input.copyTo(it) }
+                        }
                     }
+                    conn.disconnect()
                 }
-                conn.disconnect()
+                UHLog.d("userscript", "require cached ${script.name}[$idx] ${target.length()}B")
+            } catch (e: Exception) {
+                UHLog.throwable("userscript", "require fetch failed idx=$idx url=$url", e)
             }
-            UHLog.d("userscript", "require cached ${script.name}[$idx] ${target.length()}B")
-        } catch (e: Exception) {
-            UHLog.throwable("userscript", "require fetch failed idx=$idx url=$url", e)
+            idx++
         }
-        idx++
     }
-}
 
-private fun decodeDataUrl(url: String): String? {
-    return try {
-        val comma = url.indexOf(',')
-        if (comma < 0) return null
-        val meta = url.substring(5, comma)
-        val data = url.substring(comma + 1)
-        if (meta.contains("base64", ignoreCase = true)) {
-            String(android.util.Base64.decode(data, android.util.Base64.DEFAULT), Charsets.UTF_8)
-        } else {
-            java.net.URLDecoder.decode(data, "UTF-8")
+    // decodeDataUrl
+    private fun decodeDataUrl(url: String): String? {
+        return try {
+            val comma = url.indexOf(',')
+            if (comma < 0) return null
+            val meta = url.substring(5, comma)
+            val data = url.substring(comma + 1)
+            if (meta.contains("base64", ignoreCase = true)) {
+                String(android.util.Base64.decode(data, android.util.Base64.DEFAULT), Charsets.UTF_8)
+            } else {
+                java.net.URLDecoder.decode(data, "UTF-8")
+            }
+        } catch (_: Exception) { null }
+    }
+
+    // loadCachedRequires
+    private fun loadCachedRequires(ctx: Context, script: Script): String {
+        val dir = requiresDir(ctx, script.name)
+        val files = dir.listFiles { f -> f.isFile && f.name.startsWith("req_") }
+            ?.sortedBy { it.name } ?: return ""
+        val sb = StringBuilder()
+        for (f in files) {
+            try {
+                sb.append("\n/* uh-require: ").append(f.name).append(" */\n")
+                sb.append(f.readText())
+                sb.append("\n")
+            } catch (_: Exception) {}
         }
-    } catch (_: Exception) { null }
-}
-
-private fun loadCachedRequires(ctx: Context, script: Script): String {
-    val dir = requiresDir(ctx, script.name)
-    val files = dir.listFiles { f -> f.isFile && f.name.startsWith("req_") }
-        ?.sortedBy { it.name } ?: return ""
-    val sb = StringBuilder()
-    for (f in files) {
-        try {
-            sb.append("\n/* uh-require: ").append(f.name).append(" */\n")
-            sb.append(f.readText())
-            sb.append("\n")
-        } catch (_: Exception) {}
+        return sb.toString()
     }
-    return sb.toString()
-}
 
+    // installFromText
     fun installFromText(ctx: Context, body: String): Boolean {
         val parsed = parse("script_" + System.currentTimeMillis(), body)
         return install(ctx, parsed.name, body)
     }
 
+    // installFromUrl
     fun installFromUrl(ctx: Context, url: String, callback: (Boolean) -> Unit) {
         Thread {
             try {
@@ -223,6 +233,7 @@ private fun loadCachedRequires(ctx: Context, script: Script): String {
         }.start()
     }
 
+    // installFromUri
     fun installFromUri(ctx: Context, uri: Uri): Boolean {
         return try {
             val input = ctx.contentResolver.openInputStream(uri) ?: return false
@@ -240,6 +251,7 @@ private fun loadCachedRequires(ctx: Context, script: Script): String {
         }
     }
 
+    // installFromZipBytes
     private fun installFromZipBytes(ctx: Context, bytes: ByteArray): Boolean {
         return try {
             var n: String? = null
@@ -264,6 +276,7 @@ private fun loadCachedRequires(ctx: Context, script: Script): String {
         } catch (_: Exception) { false }
     }
 
+    // uninstall
     fun uninstall(ctx: Context, name: String): Boolean {
         invalidateCache()
         return try {
@@ -274,56 +287,60 @@ private fun loadCachedRequires(ctx: Context, script: Script): String {
         } catch (_: Exception) { false }
     }
 
+    // saveEdited
     fun saveEdited(ctx: Context, name: String, body: String): Boolean {
         invalidateCache()
         MenuCommandStore.clearScript(name)
         return install(ctx, name, body)
     }
 
+    // injectOnPageStart
     fun injectOnPageStart(view: GeckoSession, ctx: Context, url: String) {
         if (isBadUrl(url)) return
-        try { view.evaluateJS(BRIDGE_BOOT, null) } catch (_: Exception) {}
+        try { view.loadUri("javascript:$BRIDGE_BOOT") } catch (_: Exception) {}
 
-    val enabled = SessionRecorder.ALL_CATEGORIES.filter { SessionRecorder.isEnabled(it) }
-    for (hook in enabled) {
-    val body = loadHook(ctx, hook)
-    if (body.isNotBlank()) {
-        try { view.evaluateJS(body, null) } catch (_: Exception) {}
-    }
-    }
-
-    val scripts = loadScripts(ctx)
-    for (script in scripts) {
-        if (!UserscriptStore.isEnabled(ctx, script.name)) continue
-        if (script.runAt != "document-start") continue
-        if (!matchesPatterns(script.patterns, url)) continue
-        if (matchesPatterns(script.excludes, url)) continue
-        val wrapped = buildWrapper(ctx, script)
-        if (wrapped.isBlank()) continue
-        try {
-            view.evaluateJS(wrapped, null)
-            UHLog.d("userscript", "injected ${script.name} (start) sysjs=${script.usesSystemjs} grants=${script.grants.size} reqs=${script.requires.size}")
-        } catch (e: Exception) {
-            UHLog.throwable("userscript", "inject ${script.name} failed", e)
+        val enabled = SessionRecorder.ALL_CATEGORIES.filter { SessionRecorder.isEnabled(it) }
+        for (hook in enabled) {
+            val body = loadHook(ctx, hook)
+            if (body.isNotBlank()) {
+                try { view.loadUri("javascript:$body") } catch (_: Exception) {}
+            }
         }
-      }
+
+        val scripts = loadScripts(ctx)
+        for (script in scripts) {
+            if (!UserscriptStore.isEnabled(ctx, script.name)) continue
+            if (script.runAt != "document-start") continue
+            if (!matchesPatterns(script.patterns, url)) continue
+            if (matchesPatterns(script.excludes, url)) continue
+            val wrapped = buildWrapper(ctx, script)
+            if (wrapped.isBlank()) continue
+            try {
+                view.loadUri("javascript:$wrapped")
+                UHLog.d("userscript", "injected ${script.name} (start) sysjs=${script.usesSystemjs} grants=${script.grants.size} reqs=${script.requires.size}")
+            } catch (e: Exception) {
+                UHLog.throwable("userscript", "inject ${script.name} failed", e)
+            }
+        }
     }
 
-fun injectOnPageFinished(ctx: Context, view: GeckoSession, url: String) {
-    if (isBadUrl(url)) return
-    val scripts = loadScripts(ctx)
-    for (script in scripts) {
-        if (!UserscriptStore.isEnabled(ctx, script.name)) continue
-        if (script.runAt == "document-start") continue
-        if (!matchesPatterns(script.patterns, url)) continue
-        if (matchesPatterns(script.excludes, url)) continue
-        val wrapped = buildWrapper(ctx, script)
-        if (wrapped.isBlank()) continue
-        view.evaluateJS(wrapped, null)
-        UHLog.d("userscript", "injected ${script.name} (${script.runAt}) into $url")
+    // injectOnPageFinished
+    fun injectOnPageFinished(ctx: Context, view: GeckoSession, url: String) {
+        if (isBadUrl(url)) return
+        val scripts = loadScripts(ctx)
+        for (script in scripts) {
+            if (!UserscriptStore.isEnabled(ctx, script.name)) continue
+            if (script.runAt == "document-start") continue
+            if (!matchesPatterns(script.patterns, url)) continue
+            if (matchesPatterns(script.excludes, url)) continue
+            val wrapped = buildWrapper(ctx, script)
+            if (wrapped.isBlank()) continue
+            view.loadUri("javascript:$wrapped")
+            UHLog.d("userscript", "injected ${script.name} (${script.runAt}) into $url")
+        }
     }
-}
 
+    // isBadUrl
     private fun isBadUrl(url: String): Boolean {
         if (url.isBlank() || url == "about:blank") return true
         if (url.startsWith("chrome-error://")) return true
@@ -334,6 +351,7 @@ fun injectOnPageFinished(ctx: Context, view: GeckoSession, url: String) {
         return false
     }
 
+    // loadAsset
     private fun loadAsset(ctx: Context, path: String): String {
         synchronized(hookCache) { hookCache[path]?.let { return it } }
         val body = try { ctx.assets.open(path).bufferedReader().use { it.readText() } } catch (_: Exception) { "" }
@@ -341,8 +359,10 @@ fun injectOnPageFinished(ctx: Context, view: GeckoSession, url: String) {
         return body
     }
 
+    // loadHook
     private fun loadHook(ctx: Context, name: String): String = loadAsset(ctx, "hooks/$name.js")
 
+    // prefetchResources
     fun prefetchResources(ctx: Context, script: Script) {
         if (script.resources.isEmpty()) return
         Thread {
@@ -364,7 +384,6 @@ fun injectOnPageFinished(ctx: Context, view: GeckoSession, url: String) {
   window.__uh_vcl = window.__uh_vcl || {};
   window.__uh_menu = window.__uh_menu || {};
 
-  // --- START OF VITE / BUNDLER ENVIRONMENT SHIM ---
   if (!document.currentScript) {
     try {
       var dummyScript = document.createElement('script');
@@ -376,9 +395,8 @@ fun injectOnPageFinished(ctx: Context, view: GeckoSession, url: String) {
         },
         configurable: true
       });
-    } catch(e) { /* silent */ }
+    } catch(e) { }
   }
-  // --- END OF VITE / BUNDLER ENVIRONMENT SHIM ---
 
   window.__uh_gm = function(scriptName) {
     var sn = scriptName;
@@ -428,7 +446,7 @@ fun injectOnPageFinished(ctx: Context, view: GeckoSession, url: String) {
                 var reader = new FileReader();
                 reader.onload = function() {
                     var b64 = reader.result.split(',')[1];
-                    B.saveBlob(name, blob.type || 'application/octet-stream', b64, location.href);
+                    B.saveBlob(name, blob.type || 'application/octet-stream', b64);
                 };
                 reader.readAsDataURL(blob);
                 return;
@@ -441,7 +459,7 @@ fun injectOnPageFinished(ctx: Context, view: GeckoSession, url: String) {
             var mimeMatch = meta.match(/data:([^;]+)/);
             var mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
             var isBase64 = meta.indexOf('base64') !== -1;
-            B.saveBlob(name, mime, isBase64 ? data : btoa(data), location.href);
+            B.saveBlob(name, mime, isBase64 ? data : btoa(data));
             return;
         }
         B.GM_download(sn, String(url), String(name));
@@ -718,6 +736,7 @@ if (!window.__uh_blob_hooked) {
 })();
 """
 
+    // buildWrapper
     private fun buildWrapper(ctx: Context, script: Script): String {
         synchronized(wrapperCache) { wrapperCache[script.name]?.let { return it } }
         val patsJson = script.patterns.joinToString(",") {
@@ -819,6 +838,8 @@ if (!window.__uh_blob_hooked) {
         synchronized(wrapperCache) { wrapperCache[script.name] = result }
         return result
     }
+
+    // buildScriptMetaJson
     private fun buildScriptMetaJson(script: Script): String {
         val sb = StringBuilder()
         sb.append("{")
@@ -845,6 +866,7 @@ if (!window.__uh_blob_hooked) {
         return sb.toString()
     }
 
+    // jsonStr
     private fun jsonStr(s: String): String {
         val sb = StringBuilder("\"")
         for (c in s) {
@@ -863,11 +885,13 @@ if (!window.__uh_blob_hooked) {
         return sb.toString()
     }
 
+    // matchesPatterns
     private fun matchesPatterns(patterns: List<String>, url: String): Boolean {
         if (patterns.isEmpty()) return false
         return patterns.any { globMatch(it, url) }
     }
 
+    // globMatch
     private fun globMatch(pattern: String, url: String): Boolean {
         var pi = 0; var ui = 0; var star = -1; var mark = 0
         while (ui < url.length) {
