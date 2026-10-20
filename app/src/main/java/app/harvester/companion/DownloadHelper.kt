@@ -53,8 +53,6 @@ object DownloadHelper {
             }
             val dm = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
             val id = dm.enqueue(req)
-            DownloadStore.ensureInstalled(ctx)
-            DownloadStore.add(id, filename)
             id
         } catch (_: Exception) { -1L }
     }
