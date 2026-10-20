@@ -102,16 +102,16 @@ jobs:
           
           # publishRelease
           if [ "${{ steps.vars.outputs.FLAVOR }}" == "dev" ]; then
-            PRERELEASE_FLAG="--prerelease"
+            RELEASE_FLAGS="--prerelease --latest=false"
           else
-            PRERELEASE_FLAG=""
+            RELEASE_FLAGS="--latest=true"
           fi
-          
+
           gh release create "$TAG" \
             --repo "$REPO" \
             --title "${{ steps.vars.outputs.RELEASE_PREFIX }}Build $VN ($VC)" \
             --notes "${{ steps.vars.outputs.RELEASE_NOTES }}" \
-            $PRERELEASE_FLAG \
+            $RELEASE_FLAGS \
             out/*.apk
 
       - name: Publish version JSON
