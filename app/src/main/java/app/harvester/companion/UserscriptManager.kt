@@ -3,6 +3,7 @@ package app.harvester.companion
 import android.content.Context
 import android.net.Uri
 import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.GeckoResult
 import java.io.File
 import java.util.zip.ZipInputStream
 
@@ -303,13 +304,15 @@ object UserscriptManager {
     fun injectOnPageFinished(ctx: Context, view: GeckoSession, url: String) {
         if (isBadUrl(url)) return
         
-        try { view.loadUri("javascript:$BRIDGE_BOOT") } catch (_: Exception) {}
+        val result = GeckoResult<String>()
+        
+        try { view.evaluateJS("$BRIDGE_BOOT\nvoid 0;", result) } catch (_: Exception) {}
         
         val enabled = SessionRecorder.ALL_CATEGORIES.filter { SessionRecorder.isEnabled(it) }
         for (hook in enabled) {
             val body = loadHook(ctx, hook)
             if (body.isNotBlank()) {
-                try { view.loadUri("javascript:$body") } catch (_: Exception) {}
+                try { view.evaluateJS("$body\nvoid 0;", result) } catch (_: Exception) {}
             }
         }
         
@@ -320,7 +323,8 @@ object UserscriptManager {
             if (matchesPatterns(script.excludes, url)) continue
             val wrapped = buildWrapper(ctx, script)
             if (wrapped.isBlank()) continue
-            view.loadUri("javascript:$wrapped")
+            
+            view.evaluateJS("$wrapped\nvoid 0;", result)
             UHLog.d("userscript", "injected ${script.name} (${script.runAt}) into $url")
         }
     }
