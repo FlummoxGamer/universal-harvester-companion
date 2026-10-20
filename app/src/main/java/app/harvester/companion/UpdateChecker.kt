@@ -19,8 +19,13 @@ import java.net.URL
 
 object UpdateChecker {
 
-    private const val MANIFEST_URL =
-    "https://gh-proxy.com/https://raw.githubusercontent.com/FlummoxGamer/universal-harvester-companion/builds/version.json"
+    private val MANIFEST_URL: String
+    get() {
+        val isDev = BuildConfig.VERSION_NAME.contains("-dev")
+        val branch = if (isDev) "builds-dev" else "builds"
+        val file = if (isDev) "version-dev.json" else "version.json"
+        return "https://gh-proxy.com/https://raw.githubusercontent.com/FlummoxGamer/universal-harvester-companion/$branch/$file"
+    }
 
     fun checkAndPrompt(activity: Activity) {
         UHLog.section("UPDATE")
@@ -66,10 +71,7 @@ object UpdateChecker {
         }
     }
 
-    /**
-     * Called from an Activity's onResume. If a previous install was waiting for
-     * the user to grant "Install unknown apps", resume it now.
-     */
+
     fun resumePendingInstallIfPossible(activity: Activity) {
         val path = DebugPrefs.pendingApk(activity) ?: return
         val apk = File(path)
@@ -80,7 +82,7 @@ object UpdateChecker {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             !activity.packageManager.canRequestPackageInstalls()
         ) {
-            // Permission still not granted. Leave it pending.
+
             return
         }
         DebugPrefs.setPendingApk(activity, null)
@@ -171,7 +173,7 @@ object UpdateChecker {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             !activity.packageManager.canRequestPackageInstalls()
         ) {
-            // Remember the APK so we can resume after the user grants permission.
+
             DebugPrefs.setPendingApk(activity, apk.absolutePath)
 
             AlertDialog.Builder(activity)
