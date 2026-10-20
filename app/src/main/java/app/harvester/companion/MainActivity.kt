@@ -7,20 +7,11 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
-import android.os.Message
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
-import android.webkit.PermissionRequest
-import android.webkit.SslErrorHandler
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.Toast
@@ -42,6 +33,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.URL
+import org.mozilla.geckoview.GeckoView
+import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.GeckoResult
+import org.mozilla.geckoview.AllowOrDeny
+import org.mozilla.geckoview.WebResponse
 
 class MainActivity : AppCompatActivity() {
 
@@ -49,7 +45,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tabs: TabManager
     private lateinit var shortcutAdapter: ShortcutAdapter
     private lateinit var suggestionsAdapter: SuggestionAdapter
-    private var currentView: WebView? = null
+    private var currentView: GeckoView? = null
+    private var currentSession: GeckoSession? = null
+    private var currentUrl: String = ""
 
     private val popupTabs = mutableSetOf<Long>()
     private val page3p = mutableMapOf<Long, MutableSet<String>>()
@@ -62,14 +60,14 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-    
+        
         val safePrefs = getSharedPreferences("uh_safe_mode", MODE_PRIVATE)
         if (safePrefs.getBoolean("force_safe_mode", false)) {
             startActivity(Intent(this, SafeModeActivity::class.java))
             finish()
             return
         }
-    
+
         UHLog.init(this)
         SessionRecorder.init(this)
         UHLog.section("MAIN")
@@ -93,8 +91,11 @@ class MainActivity : AppCompatActivity() {
         setupBackDispatcher()
 
         val existing = tabs.list()
-        if (existing.isEmpty()) tabs.openNew("about:blank")
-        else tabs.acquireView(existing.first().id)
+        if (existing.isEmpty()) {
+            tabs.openNew("about:blank")
+        } else {
+            tabs.acquireSession(existing.first().id)
+        }
         attachCurrent()
         applyAddressBarPosition()
         UHLog.d("main", "onCreate complete")
@@ -113,17 +114,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupSwipeRefresh() {
         binding.swipeRefresh.setOnRefreshListener {
-            currentView?.reload()
+            currentSession?.reload()
         }
         binding.swipeRefresh.setOnChildScrollUpCallback { _, _ ->
-            val webView = currentView ?: return@setOnChildScrollUpCallback false
-            val bridge = webView.tag as? UserscriptBridge
-            webView.scrollY > 0 || bridge?.overlayActive == true
-        }
-        binding.swipeRefresh.viewTreeObserver.addOnScrollChangedListener {
-            val webView = currentView ?: return@addOnScrollChangedListener
-            val bridge = webView.tag as? UserscriptBridge
-            binding.swipeRefresh.isEnabled = webView.scrollY == 0 && bridge?.overlayActive != true
+            false
         }
         binding.swipeRefresh.setColorSchemeColors(
             ContextCompat.getColor(this, R.color.accent)
@@ -139,11 +133,11 @@ class MainActivity : AppCompatActivity() {
                 val trimmed = text.trim()
                 if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
                     HistoryStore.get(this).record(trimmed, null)
-                    if (tabs.list().isEmpty()) { tabs.openNew(trimmed); attachCurrent() } else { currentView?.loadUrl(trimmed) }
+                    if (tabs.list().isEmpty()) { tabs.openNew(trimmed); attachCurrent() } else { currentSession?.loadUri(trimmed) }
                 } else {
                     HistoryStore.get(this).recordSearch(trimmed)
                     val target = SearchEnginePrefs.getSearchUrl(this, trimmed)
-                    if (tabs.list().isEmpty()) { tabs.openNew(target); attachCurrent() } else { currentView?.loadUrl(target) }
+                    if (tabs.list().isEmpty()) { tabs.openNew(target); attachCurrent() } else { currentSession?.loadUri(target) }
                 }
                 exitEditMode()
                 updateHomeVisibility()
@@ -193,7 +187,7 @@ class MainActivity : AppCompatActivity() {
     private fun refreshSuggestions(hasText: Boolean) {
         val typed = binding.urlEdit.text.toString().trim()
         val isUrl = typed.contains(".") && !typed.contains(" ")
-        val loadedUrl = currentView?.url ?: ""
+        val loadedUrl = currentUrl
 
         val showLoaded = !hasText && loadedUrl.isNotBlank() && loadedUrl != "about:blank"
         if (showLoaded) {
@@ -250,7 +244,7 @@ class MainActivity : AppCompatActivity() {
             } else false
         }
         binding.searchEngineIcon.setOnClickListener {
-            val isBlank = currentView?.url.isNullOrBlank() || currentView?.url == "about:blank"
+            val isBlank = currentUrl.isBlank() || currentUrl == "about:blank"
             if (isBlank || binding.urlEdit.visibility == View.VISIBLE) {
                 showSearchEnginePicker()
             }
@@ -260,88 +254,83 @@ class MainActivity : AppCompatActivity() {
         binding.btnScriptMenu.setOnClickListener { showScriptMenuSheet() }
     }
 
-private fun navigateInput(typed: String): Boolean {
-    val target = normalize(typed)
-    if (target.isBlank()) return false
-    val isSearch = !target.startsWith("http")
-    if (isSearch) HistoryStore.get(this).recordSearch(typed)
-    var view = currentView
-    if (view == null || tabs.list().isEmpty() || tabs.currentId() < 0L) {
-        tabs.openNew(target)
-        attachCurrent()
-        view = currentView
-    } else {
-        view.loadUrl(target)
-    }
+    private fun navigateInput(typed: String): Boolean {
+        val target = normalize(typed)
+        if (target.isBlank()) return false
+        val isSearch = !target.startsWith("http")
+        if (isSearch) HistoryStore.get(this).recordSearch(typed)
+        var session = currentSession
+        if (session == null || tabs.list().isEmpty() || tabs.currentId() < 0L) {
+            tabs.openNew(target)
+            attachCurrent()
+            session = currentSession
+        } else {
+            session.loadUri(target)
+        }
         exitEditMode()
         updateHomeVisibility()
         return true
     }
 
-private fun setupBackDispatcher() {
-    onBackPressedDispatcher.addCallback(this) {
-        if (binding.urlEdit.visibility == View.VISIBLE) {
-            exitEditMode()
-            return@addCallback
-        }
-
-        val v = currentView
-        val id = if (v != null) tabs.idForView(v) else -1L
-        val url = v?.url
-
-        // 1. Home Screen logic (Exit or Close Tab)
-        if (url == "about:blank" || url.isNullOrBlank()) {
-            val all = tabs.list()
-            if (all.size > 1) {
-                popupTabs.remove(id)
-                tabs.close(id)
-                val remaining = tabs.list()
-                if (remaining.isNotEmpty()) {
-                    tabs.acquireView(remaining.first().id)
-                    attachCurrent(); updateUi()
-                }
-            } else {
-                val now = System.currentTimeMillis()
-                if (now - lastBackPress < 2000L) finish()
-                else {
-                    lastBackPress = now
-                    Toast.makeText(this@MainActivity, "Press back again to exit", Toast.LENGTH_SHORT).show()
-                }
-            }
-            return@addCallback
-        }
-
-        // 2. WebView History
-        if (v != null) {
-            val history = v.copyBackForwardList()
-            if (history.currentIndex > 0) {
-                v.goBack()
+    private fun setupBackDispatcher() {
+        onBackPressedDispatcher.addCallback(this) {
+            if (binding.urlEdit.visibility == View.VISIBLE) {
+                exitEditMode()
                 return@addCallback
             }
-        }
 
-        // 3. Parent Tab Chain
-        val currentEntity = tabs.list().firstOrNull { it.id == id }
-        if (currentEntity != null && currentEntity.parentId != 0L) {
-            val parentId = currentEntity.parentId
-            popupTabs.remove(id)
-            tabs.close(id)
-            tabs.acquireView(parentId)
-            attachCurrent()
-            updateUi()
-            return@addCallback
-        }
+            val v = currentSession
+            val id = if (v != null) tabs.idForSession(v) else -1L
+            val url = currentUrl
 
-        // 4. Go to Home Screen
-        if (v != null) {
-            v.loadUrl("about:blank")
-            v.clearHistory()
-            return@addCallback
-        }
+            if (url == "about:blank" || url.isNullOrBlank()) {
+                val all = tabs.list()
+                if (all.size > 1) {
+                    popupTabs.remove(id)
+                    tabs.close(id)
+                    val remaining = tabs.list()
+                    if (remaining.isNotEmpty()) {
+                        tabs.acquireSession(remaining.first().id)
+                        attachCurrent(); updateUi()
+                    }
+                } else {
+                    val now = System.currentTimeMillis()
+                    if (now - lastBackPress < 2000L) finish()
+                    else {
+                        lastBackPress = now
+                        Toast.makeText(this@MainActivity, "Press back again to exit", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                return@addCallback
+            }
 
-        finish()
+            if (v != null) {
+                if (tabs.canGoBack(v)) {
+                    v.goBack()
+                    return@addCallback
+                }
+            }
+
+            val currentEntity = tabs.list().firstOrNull { it.id == id }
+            if (currentEntity != null && currentEntity.parentId != 0L) {
+                val parentId = currentEntity.parentId
+                popupTabs.remove(id)
+                tabs.close(id)
+                tabs.acquireSession(parentId)
+                attachCurrent()
+                updateUi()
+                return@addCallback
+            }
+
+            if (v != null) {
+                v.loadUri("about:blank")
+                return@addCallback
+            }
+
+            finish()
+        }
     }
-}
+
     private fun applyAddressBarPosition() {
         val position = SettingsPrefs.getInt(this, SettingsPrefs.K_ADDRESS_BAR_POSITION, 1)
         val root = binding.root as ConstraintLayout
@@ -381,7 +370,7 @@ private fun setupBackDispatcher() {
     }
 
     private fun enterEditMode() {
-        val url = currentView?.url ?: ""
+        val url = currentUrl
         val isBlank = url.isBlank() || url == "about:blank"
 
         binding.urlChipText.text = if (isBlank) "" else url
@@ -490,7 +479,7 @@ private fun setupBackDispatcher() {
 
     private fun updateSearchEngineIcon() {
         val entry = SearchEnginePrefs.currentEntry(this)
-        val url = currentView?.url ?: ""
+        val url = currentUrl
         val isBlank = url.isBlank() || url == "about:blank"
 
         if (isBlank || binding.urlEdit.visibility == View.VISIBLE) {
@@ -568,30 +557,33 @@ private fun setupBackDispatcher() {
     }
 
     private fun loadUrlFromHome(url: String) {
-        var view = currentView
-        if (view == null || view.url == "about:blank" || tabs.currentId() < 0L) {
-            tabs.openNew(url); attachCurrent(); view = currentView
+        var session = currentSession
+        if (session == null || currentUrl == "about:blank" || tabs.currentId() < 0L) {
+            tabs.openNew(url); attachCurrent(); session = currentSession
         }
-        view?.loadUrl(url)
+        session?.loadUri(url)
         updateHomeVisibility()
     }
 
-private fun attachCurrent() {
-    val view = tabs.currentView() ?: return
-    if (view === currentView) { updateHomeVisibility(); return }
-    
-    tabs.pushHistory(tabs.currentId())
-    
-    binding.webContainer.removeAllViews()
-    (view.parent as? ViewGroup)?.removeView(view)
-    binding.webContainer.addView(view)
-    currentView = view
-        if (view.getTag(R.id.webContainer) == null) {
-            installClients(view)
-            view.setTag(R.id.webContainer, true)
+    private fun attachCurrent() {
+        val session = tabs.currentSession() ?: return
+        if (session === currentSession) { updateHomeVisibility(); return }
+        
+        tabs.pushHistory(tabs.currentId())
+        
+        binding.webContainer.removeAllViews()
+        val gv = GeckoView(this)
+        gv.setSession(session)
+        binding.webContainer.addView(gv)
+        
+        currentView = gv
+        currentSession = session
+        currentUrl = tabs.list().firstOrNull { it.id == tabs.currentId() }?.url ?: ""
+        
+        if (tabs.markAttached(session)) {
+            installDelegates(session)
         }
         updateUi()
-        tabs.drainPendingDestroy()
     }
 
     private fun updateHomeVisibility() {
@@ -660,91 +652,36 @@ private fun attachCurrent() {
         }
     }
 
-    private fun collect3p(v: WebView, url: String) {
+    private fun collect3p(session: GeckoSession, url: String) {
         val host = try { java.net.URI(url).host?.lowercase() ?: return } catch (_: Exception) { return }
-        val viewUrl = v.url ?: return
+        val viewUrl = currentUrl
         val viewHost = try { java.net.URI(viewUrl).host?.lowercase() ?: return } catch (_: Exception) { return }
         if (host == viewHost) return
-        val id = tabs.idForView(v)
+        val id = tabs.idForSession(session)
         if (id <= 0L) return
         synchronized(page3p) { page3p.getOrPut(id) { mutableSetOf() }.add(host) }
     }
 
-    private fun flush3p(v: WebView, pageUrl: String) {
-        val id = tabs.idForView(v)
+    private fun flush3p(session: GeckoSession, pageUrl: String) {
+        val id = tabs.idForSession(session)
         if (id <= 0L) return
         val hosts = synchronized(page3p) { page3p.remove(id)?.toList() } ?: return
         if (hosts.isNotEmpty()) UHLog.net3p(pageUrl, hosts)
     }
 
-    private fun clear3p(v: WebView) {
-        val id = tabs.idForView(v)
+    private fun clear3p(session: GeckoSession) {
+        val id = tabs.idForSession(session)
         if (id <= 0L) return
         synchronized(page3p) { page3p.remove(id) }
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
-    private fun installClients(view: WebView) {
-        view.webViewClient = object : WebViewClient() {
-            override fun shouldInterceptRequest(v: WebView, request: WebResourceRequest): WebResourceResponse? {
-                try {
-                    val url = request.url.toString()
-                    val method = request.method ?: "GET"
-                    val headers = request.requestHeaders
-                    if (request.isForMainFrame && url.isNotBlank() && url != "about:blank") {
-                        val id = tabs.idForView(v)
-                        if (id > 0L) tabs.updateUrl(id, url, null)
-                        val ref = headers?.entries?.firstOrNull { it.key.equals("Referer", true) }?.value
-                        val hasCookie = headers?.keys?.any { it.equals("Cookie", true) } == true
-                        val hasAuth = headers?.keys?.any { it.equals("Authorization", true) } == true
-                        UHLog.netNav(method, url, ref, hasCookie, hasAuth)
-                        if (SessionRecorder.isActive() && SessionRecorder.isEnabled("header")) {
-                            SessionRecorder.record("header") {
-                                put("url", url); put("method", method)
-                                val h = JSONObject()
-                                for ((k, value) in headers ?: emptyMap()) h.put(k, value)
-                                put("headers", h)
-                            }
-                        }
-                        return null
-                    }
-                    if (isStaticAsset(url, headers)) return null
-                    if (isBeaconHost(url)) return null
-                    if (!recordUrlOnce(url)) return null
-                    val accept = headers?.entries?.firstOrNull { it.key.equals("Accept", true) }?.value ?: ""
-                    val isApi = accept.contains("json", true) || url.contains("/api/") ||
-                        headers?.keys?.any { it.equals("X-Requested-With", true) } == true
-                    when {
-                        method == "POST" -> {
-                            val ct = headers?.entries?.firstOrNull { it.key.equals("Content-Type", true) }?.value
-                            val cl = headers?.entries?.firstOrNull { it.key.equals("Content-Length", true) }?.value?.toLongOrNull() ?: -1L
-                            UHLog.netPost(url, ct, cl)
-                        }
-                        isApi -> UHLog.netApi(method, url)
-                    }
-                    collect3p(v, url)
-                } catch (_: Exception) {}
-                return null
-            }
-
-            override fun shouldOverrideUrlLoading(v: WebView, request: WebResourceRequest): Boolean {
-                val url = request.url.toString()
-                val scheme = request.url.scheme ?: ""
-                if (scheme == "intent") { handleIntentUrl(url); return true }
-                if (scheme == "http" || scheme == "https") return false
-                if (scheme == "about" || scheme == "data" || scheme == "blob" ||
-                    scheme == "file" || scheme == "javascript") return false
-                UHLog.netScheme(url, "dialog")
-                askOpenExternal(v, url)
-                return true
-            }
-
-            override fun onPageStarted(v: WebView, url: String, favicon: Bitmap?) {
+    private fun installDelegates(session: GeckoSession) {
+        session.progressDelegate = object : GeckoSession.ProgressDelegate {
+            override fun onPageStart(session: GeckoSession, url: String) {
                 UHLog.d("web", "start ${url.take(140)}")
-                val id = tabs.idForView(v)
+                val id = tabs.idForSession(session)
                 if (id > 0L) tabs.updateUrl(id, url, null)
-                clear3p(v)
-                if (v === currentView) {
+                if (session === currentSession) {
                     val isEmpty = url.isBlank() || url == "about:blank"
                     binding.urlText.text = if (isEmpty) "Search or type URL" else url
                     binding.urlText.setTextColor(ContextCompat.getColor(
@@ -753,138 +690,119 @@ private fun attachCurrent() {
                 }
                 if (id in popupTabs) UHLog.netPopupLoad(url)
                 if (url != "about:blank" && !url.startsWith("chrome-error://")) {
-                    UserscriptManager.injectOnPageStart(v, this@MainActivity, url)
+                    UserscriptManager.injectOnPageStart(session, this@MainActivity, url)
                 }
-                if (v === currentView) updateHomeVisibility()
+                if (session === currentSession) updateHomeVisibility()
             }
 
-            override fun onPageFinished(v: WebView, url: String) {
+            override fun onPageStop(session: GeckoSession, success: Boolean) {
+                val url = currentUrl
                 UHLog.d("web", "finish ${url.take(140)}")
-                val id = tabs.idForView(v)
+                val id = tabs.idForSession(session)
                 if (id > 0L) tabs.updateUrl(id, url, null)
-                flush3p(v, url)
+                flush3p(session, url)
                 binding.swipeRefresh.isRefreshing = false
                 if (url != "about:blank") {
-                    UserscriptManager.injectOnPageFinished(this@MainActivity, v, url)
+                    UserscriptManager.injectOnPageFinished(this@MainActivity, session, url)
                     val entity = tabs.list().firstOrNull { it.id == id }
                     if (entity?.incognito != true) {
                         HistoryStore.get(this@MainActivity).record(url, entity?.title ?: "")
                     }
                 }
-                if (v === currentView) updateUi()
+                if (session === currentSession) updateUi()
             }
 
-            override fun doUpdateVisitedHistory(v: WebView, url: String?, isReload: Boolean) {
-                tabs.setNav(v, v.canGoBack(), v.canGoForward())
+            override fun onProgressChange(session: GeckoSession, progress: Int) {
+                if (session !== currentSession) return
+                binding.loadingBar.visibility =
+                    if (progress in 1..99) View.VISIBLE else View.GONE
+                binding.loadingBar.progress = progress
             }
 
-            override fun onReceivedError(v: WebView, request: WebResourceRequest, error: WebResourceError) {
-                if (request.isForMainFrame) {
-                    UHLog.w("web", "error ${error.errorCode} ${request.url}")
-                    UHLog.netError(request.url.toString(), error.errorCode)
-                    binding.swipeRefresh.isRefreshing = false
-                }
-            }
-
-            override fun onReceivedSslError(v: WebView, handler: SslErrorHandler, error: android.net.http.SslError) {
-                handler.cancel()
+            override fun onSecurityChange(session: GeckoSession, securityInfo: GeckoSession.ProgressDelegate.SecurityInformation) {
+                tabs.setNav(session, session.canGoBack(), session.canGoForward())
             }
         }
 
-        view.webChromeClient = object : WebChromeClient() {
-            override fun onProgressChanged(v: WebView, newProgress: Int) {
-                if (v !== currentView) return
-                binding.loadingBar.visibility =
-                    if (newProgress in 1..99) View.VISIBLE else View.GONE
-                binding.loadingBar.progress = newProgress
-            }
-
-            override fun onReceivedTitle(v: WebView, title: String?) {
+        session.contentDelegate = object : GeckoSession.ContentDelegate {
+            override fun onTitleChange(session: GeckoSession, title: String?) {
                 if (title.isNullOrBlank()) return
-                val id = tabs.idForView(v)
+                val id = tabs.idForSession(session)
                 if (id <= 0L) return
                 val entity = tabs.list().firstOrNull { it.id == id }
                 val url = entity?.url ?: ""
                 tabs.updateUrl(id, url, title)
             }
 
-            override fun onCreateWindow(v: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
-                val parentId = tabs.idForView(v).takeIf { it > 0L } ?: 0L
-                val parentUrl = tabs.list().firstOrNull { it.id == parentId }?.url ?: v.url ?: ""
-                UHLog.netPopupOpen(parentUrl, isUserGesture, isDialog)
-                val id = tabs.openBlankTab(parentId = parentId)
-                val newView = tabs.acquireView(id) ?: return false
-                popupTabs.add(id)
-                UHLog.netPopupCreated(id)
-                if (newView.getTag(R.id.webContainer) == null) {
-                    installClients(newView)
-                    newView.setTag(R.id.webContainer, true)
+            override fun onExternalResponse(session: GeckoSession, response: WebResponse) {
+                val headers = response.headers
+                val disposition = headers["Content-Disposition"] ?: headers["content-disposition"]
+                val contentType = headers["Content-Type"] ?: headers["content-type"]
+                val cleanContentType = contentType?.lowercase()?.trim() ?: ""
+
+                if (cleanContentType.contains("text/html") || cleanContentType.contains("application/xhtml+xml")) {
+                    return
                 }
-                binding.webContainer.removeAllViews()
-                (newView.parent as? ViewGroup)?.removeView(newView)
-                binding.webContainer.addView(newView)
-                binding.homeScreen.visibility = View.GONE
-                currentView = newView
-                val transport = resultMsg.obj as WebView.WebViewTransport
-                transport.webView = newView
-                resultMsg.sendToTarget()
-                updateUi()
-                return true
+
+                val filename = extractFilename(disposition) ?: "download_${System.currentTimeMillis()}"
+                if (SettingsPrefs.getBool(this@MainActivity, SettingsPrefs.K_ASK_DL, true)) {
+                    showDownloadConfirmationSheet(response.uri, filename, contentType, headers["User-Agent"])
+                } else {
+                    executeDownload(response.uri, filename, contentType, headers["User-Agent"])
+                }
             }
 
-            override fun onPermissionRequest(request: PermissionRequest) { request.deny() }
+            override fun onCrash(session: GeckoSession) {
+                UHLog.e("gecko", "Tab crashed. Reloading.")
+                session.reload()
+            }
         }
 
-        view.setOnLongClickListener {
-            val result = view.hitTestResult
-            if (result.type == WebView.HitTestResult.IMAGE_TYPE || result.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) {
-                val imageUrl = result.extra
-                if (!imageUrl.isNullOrBlank()) {
-                    val options = arrayOf("Download Image", "Share Image", "Copy Image Link", "Open Image")
-                    AlertDialog.Builder(this)
-                        .setTitle("Image Options")
-                        .setItems(options) { _, which ->
-                            when (which) {
-                                0 -> {
-                                    val filename = "image_${System.currentTimeMillis()}.jpg"
-                                    if (imageUrl.startsWith("blob:") || imageUrl.startsWith("data:")) {
-                                        currentView?.evaluateJavascript(
-                                            "fetch('$imageUrl').then(r=>r.blob()).then(b=>{var reader=new FileReader();reader.onload=function(){window.UH_BRIDGE.saveBlob('$filename',b.type,reader.result.split(',')[1])};reader.readAsDataURL(b);})", null
-                                        )
-                                    } else {
-                                        executeDownload(imageUrl, filename, "image/jpeg", null)
-                                    }
-                                }
-                                1 -> {
-                                    val intent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        putExtra(Intent.EXTRA_TEXT, imageUrl)
-                                    }
-                                    startActivity(Intent.createChooser(intent, "Share Image Link"))
-                                }
-                                2 -> {
-                                    val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                    cm.setPrimaryClip(android.content.ClipData.newPlainText("Image URL", imageUrl))
-                                    Toast.makeText(this, "Link copied", Toast.LENGTH_SHORT).show()
-                                }
-                                3 -> currentView?.loadUrl(imageUrl)
-                            }
-                        }
-                        .show()
+        session.navigationDelegate = object : GeckoSession.NavigationDelegate {
+            override fun onLocationChange(session: GeckoSession, url: String?) {
+                if (url != null) {
+                    currentUrl = url
+                    tabs.setNav(session, session.canGoBack(), session.canGoForward())
                 }
-                true
-            } else false
-        }
+            }
 
-view.setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
-    val filename = extractFilename(contentDisposition) ?: "download_${System.currentTimeMillis()}"
-    
-    if (SettingsPrefs.getBool(this, SettingsPrefs.K_ASK_DL, true)) {
-        showDownloadConfirmationSheet(url, filename, mimetype, userAgent)
-    } else {
-        executeDownload(url, filename, mimetype, userAgent)
-    }
-    }
+            override fun onLoadRequest(session: GeckoSession, request: GeckoSession.NavigationDelegate.LoadRequest): GeckoResult<AllowOrDeny>? {
+                val url = request.uri
+                val scheme = Uri.parse(url).scheme ?: ""
+                if (scheme == "intent") { 
+                    handleIntentUrl(url)
+                    return GeckoResult.fromValue(AllowOrDeny.DENY)
+                }
+                if (scheme != "http" && scheme != "https" && scheme != "about" && scheme != "data" && scheme != "blob" && scheme != "file" && scheme != "javascript" && scheme != "moz-extension") {
+                    UHLog.netScheme(url, "dialog")
+                    askOpenExternal(session, url)
+                    return GeckoResult.fromValue(AllowOrDeny.DENY)
+                }
+                return GeckoResult.fromValue(AllowOrDeny.ALLOW)
+            }
+
+            override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
+                val parentId = tabs.idForSession(session).takeIf { it > 0L } ?: 0L
+                val parentUrl = tabs.list().firstOrNull { it.id == parentId }?.url ?: currentUrl
+                UHLog.netPopupOpen(parentUrl, true, false)
+                val id = tabs.openBlankTab(parentId = parentId)
+                val newSession = tabs.acquireSession(id) ?: return null
+                popupTabs.add(id)
+                UHLog.netPopupCreated(id)
+                if (tabs.markAttached(newSession)) {
+                    installDelegates(newSession)
+                }
+                binding.webContainer.removeAllViews()
+                val gv = GeckoView(this@MainActivity)
+                gv.setSession(newSession)
+                binding.webContainer.addView(gv)
+                binding.homeScreen.visibility = View.GONE
+                currentView = gv
+                currentSession = newSession
+                updateUi()
+                return GeckoResult.fromValue(newSession)
+            }
+        }
     }
 
     private fun showDownloadConfirmationSheet(url: String, filename: String, mimetype: String?, userAgent: String?) {
@@ -912,7 +830,8 @@ view.setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
 
         v.findViewById<android.view.View>(R.id.dlStartBtn).setOnClickListener {
             sheet.dismiss()
-            executeDownload(url, filename, mimetype, userAgent)
+            val finalName = v.findViewById<android.widget.TextView>(R.id.dlFileName).text.toString()
+            executeDownload(url, finalName, mimetype, userAgent)
         }
 
         v.findViewById<android.view.View>(R.id.dlEditName).setOnClickListener {
@@ -930,34 +849,46 @@ view.setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
                 .show()
         }
 
-Thread {
-    try {
-        val client = okhttp3.OkHttpClient.Builder().connectTimeout(3, java.util.concurrent.TimeUnit.SECONDS).build()
-        val reqBuilder = okhttp3.Request.Builder().url(url).head()
-        reqBuilder.addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 10)")
-        val referer = currentView?.url
-        if (!referer.isNullOrBlank()) reqBuilder.addHeader("Referer", referer)
-        
-        client.newCall(reqBuilder.build()).execute().use { resp ->
-            val size = resp.body?.contentLength() ?: -1L
-            runOnUiThread {
-                if (size > 0) {
-                    v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = android.text.format.Formatter.formatShortFileSize(this, size)
-                } else {
-                    v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = "Unknown size"
+        Thread {
+            try {
+                val client = okhttp3.OkHttpClient.Builder().connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS).build()
+                val reqBuilder = okhttp3.Request.Builder().url(url)
+                    .header("User-Agent", userAgent ?: "Mozilla/5.0")
+                    .header("Range", "bytes=0-0")
+                    .header("Accept-Encoding", "identity")
+                val referer = currentUrl
+                if (!referer.isNullOrBlank()) reqBuilder.addHeader("Referer", referer)
+                
+                val cookie = android.webkit.CookieManager.getInstance().getCookie(url)
+                if (!cookie.isNullOrBlank()) reqBuilder.addHeader("Cookie", cookie)
+                
+                client.newCall(reqBuilder.build()).execute().use { resp ->
+                    var size = -1L
+                    val contentRange = resp.header("Content-Range")
+                    if (contentRange != null && contentRange.contains("/")) {
+                        size = contentRange.substringAfterLast("/").toLongOrNull() ?: -1L
+                    } else {
+                        size = resp.header("Content-Length")?.toLongOrNull() ?: -1L
+                    }
+                    
+                    runOnUiThread {
+                        if (size > 0) {
+                            v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = android.text.format.Formatter.formatShortFileSize(this@MainActivity, size)
+                        } else {
+                            v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = "Unknown size"
+                        }
+                    }
                 }
+            } catch (_: Exception) {
+                runOnUiThread { v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = "Unknown size" }
             }
-        }
-    } catch (_: Exception) {
-        runOnUiThread { v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = "Unknown size" }
-    }
-}.start()
+        }.start()
 
         sheet.show()
     }
 
     private fun executeDownload(url: String, filename: String, mimetype: String?, userAgent: String?) {
-        val referer = currentView?.url
+        val referer = currentUrl
         DownloadEngine.startDownload(this, url, filename, mimetype ?: "application/octet-stream", null, userAgent, referer)
     }
 
@@ -970,7 +901,7 @@ Thread {
 
     private fun switchTab(id: Long) {
         tabs.saveCurrentState()
-        tabs.acquireView(id)
+        tabs.acquireSession(id)
         attachCurrent()
         updateUi()
     }
@@ -1036,7 +967,7 @@ Thread {
 
     private fun populateScriptSheet(list: android.widget.LinearLayout, sheet: BottomSheetDialog) {
         list.removeAllViews()
-        val url = currentView?.url ?: ""
+        val url = currentUrl
         val allScripts = UserscriptManager.loadScripts(this)
             .filter { UserscriptStore.isEnabled(this, it.name) }
 
@@ -1089,8 +1020,7 @@ Thread {
                     val cv = layoutInflater.inflate(R.layout.item_script_menu_command, cmds, false)
                     cv.findViewById<android.widget.TextView>(R.id.smcLabel).text = cmd.name
                     cv.setOnClickListener {
-                        currentView?.evaluateJavascript(
-                            "try{window.__uh_runMenuCommand('${cmd.id}')}catch(e){}", null)
+                        currentSession?.evaluateJS("try{window.__uh_runMenuCommand('${cmd.id}')}catch(e){}", null)
                         list.postDelayed({ populateScriptSheet(list, sheet) }, 400)
                     }
                     cmds.addView(cv)
@@ -1117,8 +1047,8 @@ Thread {
             onNew = { attachCurrent(); updateUi() }
         ).apply {
             setOnDismissListener {
-                val live = tabs.currentView()
-                if (live != null && live !== currentView) { attachCurrent(); updateUi() }
+                val live = tabs.currentSession()
+                if (live != null && live !== currentSession) { attachCurrent(); updateUi() }
                 else updateUi()
             }
         }.show()
@@ -1173,7 +1103,7 @@ Thread {
         }
         v.findViewById<View>(R.id.menuBottomReload)?.setOnClickListener {
             sheet.dismiss()
-            currentView?.reload()
+            currentSession?.reload()
         }
         sheet.behavior.isDraggable = false
         sheet.show()
@@ -1227,13 +1157,13 @@ Thread {
                 schemeExtra == "http" || schemeExtra == "https"
             if (isWeb) {
                 val target = intent.data?.toString()
-                if (!target.isNullOrBlank()) { UHLog.netScheme(url, "unwrapped→$target"); currentView?.loadUrl(target); return }
+                if (!target.isNullOrBlank()) { UHLog.netScheme(url, "unwrapped→$target"); currentSession?.loadUri(target); return }
             }
             val resolved = packageManager.queryIntentActivities(intent, 0)
-            if (resolved.isNotEmpty()) { UHLog.netScheme(url, "external"); askOpenExternalIntent(intent, currentView) }
+            if (resolved.isNotEmpty()) { UHLog.netScheme(url, "external"); askOpenExternalIntent(intent, currentSession) }
             else {
                 val fallback = intent.getStringExtra("browser_fallback_url")
-                if (!fallback.isNullOrBlank()) { UHLog.netScheme(url, "fallback→$fallback"); currentView?.loadUrl(fallback) }
+                if (!fallback.isNullOrBlank()) { UHLog.netScheme(url, "fallback→$fallback"); currentSession?.loadUri(fallback) }
                 else {
                     val pkg = intent.`package`
                     if (!pkg.isNullOrBlank()) {
@@ -1247,8 +1177,8 @@ Thread {
         } catch (e: Exception) { UHLog.throwable("nav", "intent parse failed: $url", e) }
     }
 
-    private fun askOpenExternal(view: WebView, url: String) {
-        val isFresh = view.url.isNullOrBlank() || view.url == "about:blank"
+    private fun askOpenExternal(session: GeckoSession, url: String) {
+        val isFresh = currentUrl.isNullOrBlank() || currentUrl == "about:blank"
         UHLog.netExtDialog(url)
         AlertDialog.Builder(this)
             .setTitle("Open in another app?").setMessage(url)
@@ -1256,17 +1186,17 @@ Thread {
                 UHLog.netExtOpen(url)
                 try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                 catch (_: Exception) { toast("No app can handle this link") }
-                if (isFresh) closeBlankPopup(view)
+                if (isFresh) closeBlankPopup(session)
             }
             .setNegativeButton("Stay") { _, _ ->
                 UHLog.netExtStay(url)
-                if (isFresh) closeBlankPopup(view)
+                if (isFresh) closeBlankPopup(session)
             }
             .show()
     }
 
-    private fun askOpenExternalIntent(intent: Intent, view: WebView?) {
-        val isFresh = view?.url.isNullOrBlank() || view?.url == "about:blank"
+    private fun askOpenExternalIntent(intent: Intent, session: GeckoSession?) {
+        val isFresh = session == null || currentUrl.isNullOrBlank() || currentUrl == "about:blank"
         val urlString = intent.data?.toString() ?: "External app link"
         UHLog.netExtDialog(urlString)
         AlertDialog.Builder(this)
@@ -1275,23 +1205,23 @@ Thread {
                 UHLog.netExtOpen(urlString)
                 try { intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); startActivity(intent) }
                 catch (_: Exception) { toast("Failed to open app") }
-                if (isFresh) view?.let { closeBlankPopup(it) }
+                if (isFresh && session != null) closeBlankPopup(session)
             }
             .setNegativeButton("Stay") { _, _ ->
                 UHLog.netExtStay(urlString)
-                if (isFresh) view?.let { closeBlankPopup(it) }
+                if (isFresh && session != null) closeBlankPopup(session)
             }
             .show()
     }
 
-    private fun closeBlankPopup(view: WebView) {
-        val id = tabs.idForView(view)
+    private fun closeBlankPopup(session: GeckoSession) {
+        val id = tabs.idForSession(session)
         if (id <= 0L) return
         popupTabs.remove(id)
         tabs.close(id)
         val remaining = tabs.list()
         if (remaining.isEmpty()) tabs.openNew("about:blank")
-        else tabs.acquireView(remaining.first().id)
+        else tabs.acquireSession(remaining.first().id)
         attachCurrent(); updateUi()
     }
 
@@ -1310,28 +1240,13 @@ Thread {
         super.onResume()
         UpdateChecker.resumePendingInstallIfPossible(this)
         applyAddressBarPosition()
-        currentView?.onResume()
-        currentView?.resumeTimers()
-        val dark = when (ThemePrefs.getMode(this)) {
-            ThemePrefs.MODE_DARK -> true
-            ThemePrefs.MODE_LIGHT -> false
-            else -> (resources.configuration.uiMode and
-                android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-                android.content.res.Configuration.UI_MODE_NIGHT_YES
-        }
-        currentView?.let { WebViewEngine.applyDarkMode(it, dark) }
-        if (UserscriptStore.consumeDirty(this)) {
-            val v = currentView
-            val u = v?.url
-            if (v != null && !u.isNullOrBlank()) UserscriptManager.injectOnPageStart(v, this, u)
-        }
+        currentSession?.setActive(true)
         updateUi()
     }
 
     override fun onPause() {
         super.onPause()
-        currentView?.onPause()
-        currentView?.pauseTimers()
+        currentSession?.setActive(false)
         tabs.saveAll()
         UHLog.onActivityPause(this)
     }
