@@ -3,16 +3,15 @@ package app.harvester.companion
 import android.content.Context
 import android.net.Uri
 import android.os.Environment
-import android.provider.MediaStore
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.*
 import java.io.File
 import java.io.FileOutputStream
-import java.io.InputStream
 import java.io.OutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
+import kotlin.coroutines.coroutineContext
 
 object DownloadEngine {
     private val jobs = mutableMapOf<String, Job>()
@@ -84,7 +83,7 @@ object DownloadEngine {
         DownloadStore.removeTask(task.id)
     }
 
-    private fun handleNetworkDownload(ctx: Context, task: DownloadStore.Task) {
+    private suspend fun handleNetworkDownload(ctx: Context, task: DownloadStore.Task) {
         val conn = URL(task.url).openConnection() as HttpURLConnection
         conn.connectTimeout = 15000
         conn.readTimeout = 15000
@@ -121,8 +120,8 @@ object DownloadEngine {
 
             outputStream.use { out ->
                 inputStream.use { input ->
-                    while (isActive) {
-                        bytesRead = input.read(buffer)
+                    while (coroutineContext.isActive) {
+                       bytesRead = input.read(buffer)
                         if (bytesRead == -1) break
                         out.write(buffer, 0, bytesRead)
                         task.bytesDownloaded += bytesRead
