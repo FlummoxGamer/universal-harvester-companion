@@ -1,0 +1,56 @@
+package app.harvester.companion
+
+import android.content.Context
+import org.mozilla.geckoview.GeckoRuntime
+import org.mozilla.geckoview.GeckoRuntimeSettings
+
+object GeckoEngine {
+    @Volatile
+    private var runtime: GeckoRuntime? = null
+
+    // getRuntime
+    fun getRuntime(ctx: Context): GeckoRuntime? {
+        if (runtime == null) {
+            synchronized(this) {
+                if (runtime == null) {
+                    val prefs = ctx.getSharedPreferences("uh_safe_mode", Context.MODE_PRIVATE)
+                    val safeMode = prefs.getBoolean("force_safe_mode", false)
+                    if (safeMode) {
+                        UHLog.e("gecko", "Safe mode enabled. GeckoRuntime will not start.")
+                        return null
+                    }
+                    
+                    try {
+                        val settings = GeckoRuntimeSettings.Builder()
+                            .consoleOutput(true)
+                            .debugLogging(true)
+                            .build()
+                            
+                        val rt = GeckoRuntime.create(ctx, settings)
+                        rt.delegate = object : GeckoRuntime.Delegate {
+                            override fun onShutdown() {
+                                UHLog.e("gecko", "GeckoRuntime shut down unexpectedly.")
+                            }
+                        }
+                        runtime = rt
+                    } catch (e: Throwable) {
+                        UHLog.e("gecko", "GeckoRuntime init failed: ${e.message}")
+                        UHLog.throwable("gecko", "GeckoRuntime init failed", e)
+                        throw e
+                    }
+                }
+            }
+        }
+        return runtime
+    }
+
+    // clearBootMarker
+    fun clearBootMarker(ctx: Context) {
+        try {
+            val bootMarker = java.io.File(ctx.filesDir, "boot_marker.tmp")
+            if (bootMarker.exists()) {
+                bootMarker.delete()
+            }
+        } catch (_: Exception) {}
+    }
+}
