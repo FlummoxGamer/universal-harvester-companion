@@ -125,7 +125,7 @@ object DownloadEngine {
 
             outputStream.use { out ->
                 inputStream.use { input ->
-                    while (coroutineContext.isActive) {
+                    while (currentCoroutineContext().isActive) {
                         bytesRead = input.read(buffer)
                         if (bytesRead == -1) break
                         out.write(buffer, 0, bytesRead)
