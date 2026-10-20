@@ -1029,7 +1029,7 @@ private fun navigateInput(typed: String): Boolean {
                     val cv = layoutInflater.inflate(R.layout.item_script_menu_command, cmds, false)
                     cv.findViewById<android.widget.TextView>(R.id.smcLabel).text = cmd.name
                     cv.setOnClickListener {
-                        currentSession?.evaluateJS("try{window.__uh_runMenuCommand('${cmd.id}')}catch(e){}", null)
+                        currentSession?.loadUri("javascript:try{window.__uh_runMenuCommand('${cmd.id}')}catch(e){}")
                         list.postDelayed({ populateScriptSheet(list, sheet) }, 400)
                     }
                     cmds.addView(cv)
