@@ -5,21 +5,30 @@ import android.net.Uri
 import android.os.Environment
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.*
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.UUID
-import kotlin.coroutines.coroutineContext
+import java.util.concurrent.TimeUnit
 
 object DownloadEngine {
     private val jobs = mutableMapOf<String, Job>()
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .build()
 
     fun startDownload(ctx: Context, url: String, filename: String, mime: String, base64Data: String? = null, userAgent: String? = null): String {
         val id = UUID.randomUUID().toString()
         val task = DownloadStore.Task(id, url, filename, mime, base64Data = base64Data, userAgent = userAgent)
         DownloadStore.addTask(task)
+        
+        // Start the service immediately to avoid race conditions
+        DownloadService.start(ctx)
+        
         resumeDownload(ctx, id)
         return id
     }
@@ -41,7 +50,7 @@ object DownloadEngine {
             deletePartialFile(ctx, task.filename)
             DownloadStore.removeTask(id)
         }
-        DownloadService.cancelNotification(id)
+        DownloadService.updateNotification()
     }
 
     fun resumeDownload(ctx: Context, id: String) {
@@ -84,34 +93,30 @@ object DownloadEngine {
     }
 
     private suspend fun handleNetworkDownload(ctx: Context, task: DownloadStore.Task) {
-        val conn = URL(task.url).openConnection() as HttpURLConnection
-        conn.connectTimeout = 15000
-        conn.readTimeout = 15000
+        val requestBuilder = Request.Builder().url(task.url)
         
-        try {
-            val cookie = android.webkit.CookieManager.getInstance().getCookie(task.url)
-            if (!cookie.isNullOrBlank()) conn.setRequestProperty("Cookie", cookie)
-            if (!task.userAgent.isNullOrBlank()) conn.setRequestProperty("User-Agent", task.userAgent)
-            else conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10)")
+        // Inject Cookies and User-Agent
+        val cookie = android.webkit.CookieManager.getInstance().getCookie(task.url)
+        if (!cookie.isNullOrBlank()) requestBuilder.addHeader("Cookie", cookie)
+        if (!task.userAgent.isNullOrBlank()) requestBuilder.addHeader("User-Agent", task.userAgent)
+        else requestBuilder.addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 10)")
 
-            if (task.bytesDownloaded > 0) {
-                conn.setRequestProperty("Range", "bytes=${task.bytesDownloaded}-")
-            }
+        // Range header for resume
+        if (task.bytesDownloaded > 0) {
+            requestBuilder.addHeader("Range", "bytes=${task.bytesDownloaded}-")
+        }
 
-            conn.connect()
-            val code = conn.responseCode
-            if (code !in 200..299) throw Exception("HTTP $code")
-
-            val total = if (code == 206) {
-                task.bytesDownloaded + conn.contentLengthLong
-            } else {
-                conn.contentLengthLong
-            }
+        client.newCall(requestBuilder.build()).execute().use { response ->
+            if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
+            
+            val body = response.body ?: throw Exception("Empty body")
+            val total = if (response.code == 206) task.bytesDownloaded + body.contentLength() else body.contentLength()
             
             DownloadStore.updateTask(task.id) { it.totalBytes = total }
 
-            val inputStream = conn.inputStream
-            val outputStream = getOutputStream(ctx, task.filename, append = task.bytesDownloaded > 0) ?: throw Exception("Cannot open file")
+            val inputStream = body.byteStream()
+            val outputStream = getOutputStream(ctx, task.filename, append = task.bytesDownloaded > 0) 
+                ?: throw Exception("Cannot open file")
 
             val buffer = ByteArray(8192)
             var bytesRead: Int
@@ -121,7 +126,7 @@ object DownloadEngine {
             outputStream.use { out ->
                 inputStream.use { input ->
                     while (coroutineContext.isActive) {
-                       bytesRead = input.read(buffer)
+                        bytesRead = input.read(buffer)
                         if (bytesRead == -1) break
                         out.write(buffer, 0, bytesRead)
                         task.bytesDownloaded += bytesRead
@@ -129,8 +134,7 @@ object DownloadEngine {
 
                         val now = System.currentTimeMillis()
                         if (now - lastUpdate > 500) {
-                            val timeDiff = now - lastUpdate
-                            val speed = (bytesSinceLastUpdate * 1000) / timeDiff
+                            val speed = (bytesSinceLastUpdate * 1000) / (now - lastUpdate)
                             val eta = if (speed > 0 && total > 0) (total - task.bytesDownloaded) / speed else -1L
                             
                             DownloadStore.updateTask(task.id) {
@@ -149,9 +153,6 @@ object DownloadEngine {
             DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.SUCCESS }
             DownloadService.updateNotification()
             DownloadStore.removeTask(task.id)
-
-        } finally {
-            conn.disconnect()
         }
     }
 
@@ -160,13 +161,10 @@ object DownloadEngine {
         return if (customUriStr.isNotBlank()) {
             val treeUri = Uri.parse(customUriStr)
             val doc = DocumentFile.fromTreeUri(ctx, treeUri)?.createFile("application/octet-stream", filename)
-            if (doc != null) {
-                ctx.contentResolver.openOutputStream(doc.uri, if (append) "wa" else "w")
-            } else null
+            if (doc != null) ctx.contentResolver.openOutputStream(doc.uri, if (append) "wa" else "w") else null
         } else {
             val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            val file = File(dir, filename)
-            FileOutputStream(file, append)
+            FileOutputStream(File(dir, filename), append)
         }
     }
     
@@ -175,12 +173,10 @@ object DownloadEngine {
             val customUriStr = SettingsPrefs.getString(ctx, "custom_download_uri", "")
             if (customUriStr.isNotBlank()) {
                 val treeUri = Uri.parse(customUriStr)
-                val doc = DocumentFile.fromTreeUri(ctx, treeUri)?.findFile(filename)
-                doc?.delete()
+                DocumentFile.fromTreeUri(ctx, treeUri)?.findFile(filename)?.delete()
             } else {
                 val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                val file = File(dir, filename)
-                if (file.exists()) file.delete()
+                File(dir, filename).delete()
             }
         } catch (_: Exception) {}
     }
