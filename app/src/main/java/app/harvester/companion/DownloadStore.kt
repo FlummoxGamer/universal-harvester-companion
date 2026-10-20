@@ -29,11 +29,12 @@ object DownloadStore {
     }
 
     fun updateTask(id: String, updateBlock: (Task) -> Unit) {
-        _activeDownloads.value = _activeDownloads.value.map {
-            if (it.id == id) {
-                updateBlock(it)
-                it.copy()
-            } else it
+        _activeDownloads.value = _activeDownloads.value.map { task ->
+            if (task.id == id) {
+                val newTask = task.copy()
+                updateBlock(newTask)
+                newTask
+            } else task
         }
     }
 
