@@ -123,7 +123,11 @@ object DownloadEngine {
             
             val body = response.body ?: throw Exception("Empty body")
             
-            // If server ignores Range and sends 200, we must restart from 0
+            
+            if (response.code == 200 && task.bytesDownloaded > 0) {
+                task.bytesDownloaded = 0
+            }
+
             if (response.code == 200 && task.bytesDownloaded > 0) {
                 task.bytesDownloaded = 0
             }
@@ -167,24 +171,39 @@ object DownloadEngine {
                 }
             }
 
-            DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.SUCCESS }
-            DownloadService.updateNotification()
-            DownloadStore.removeTask(task.id)
-        }
-        calls.remove(task.id)
-    }
+                    DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.SUCCESS }
+                    DownloadService.updateNotification()
+                    DownloadStore.removeTask(task.id)
+                    DownloadService.notifyComplete(ctx, task.filename)
+                }
+                calls.remove(task.id)
+             }
 
-    private fun getOutputStream(ctx: Context, filename: String, append: Boolean = false): OutputStream? {
-        val customUriStr = SettingsPrefs.getString(ctx, "custom_download_uri", "")
-        return if (customUriStr.isNotBlank()) {
-            val treeUri = Uri.parse(customUriStr)
-            val doc = DocumentFile.fromTreeUri(ctx, treeUri)?.createFile("application/octet-stream", filename)
-            if (doc != null) ctx.contentResolver.openOutputStream(doc.uri, if (append) "wa" else "w") else null
-        } else {
-            val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            FileOutputStream(File(dir, filename), append)
+private fun getOutputStream(ctx: Context, filename: String, append: Boolean = false): OutputStream? {
+    val customUriStr = SettingsPrefs.getString(ctx, "custom_download_uri", "")
+    return if (customUriStr.isNotBlank()) {
+        val treeUri = Uri.parse(customUriStr)
+        val parent = DocumentFile.fromTreeUri(ctx, treeUri) ?: return null
+        
+        var doc = parent.findFile(filename)
+        if (doc == null && !append) {
+            val dotIndex = filename.lastIndexOf('.')
+            val name = if (dotIndex > 0) filename.substring(0, dotIndex) else filename
+            val ext = if (dotIndex > 0) filename.substring(dotIndex) else ""
+            
+            doc = parent.createFile("application/octet-stream", name)
+            if (doc != null) {
+                val finalName = doc.name?.let { if (it.endsWith(ext)) it else "$it$ext" } ?: "$name$ext"
+                doc.renameTo(finalName)
+            }
         }
+        
+        if (doc != null) ctx.contentResolver.openOutputStream(doc.uri, if (append) "wa" else "w") else null
+    } else {
+        val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        FileOutputStream(File(dir, filename), append)
     }
+}
     
     private fun deletePartialFile(ctx: Context, filename: String) {
         try {
