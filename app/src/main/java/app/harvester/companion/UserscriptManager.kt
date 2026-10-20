@@ -668,6 +668,53 @@ if (!window.__uh_blob_hooked) {
   document.addEventListener('touchcancel', function() {
       if (__lastOverlayState) { __lastOverlayState = false; B.updateOverlayState(false); }
   }, {passive: true, capture: true});
+
+  if (!window.__uh_blob_hooked) {
+      window.__uh_blob_hooked = true;
+      window.__uh_blobs = {};
+      
+      var origCreate = URL.createObjectURL;
+      URL.createObjectURL = function(obj) {
+          var url = origCreate.call(URL, obj);
+          if (obj instanceof Blob) window.__uh_blobs[url] = obj;
+          return url;
+      };
+      
+      var origRevoke = URL.revokeObjectURL;
+      URL.revokeObjectURL = function(url) {
+          delete window.__uh_blobs[url];
+          return origRevoke.call(URL, url);
+      };
+      
+      var origClick = HTMLAnchorElement.prototype.click;
+      HTMLAnchorElement.prototype.click = function() {
+          var href = this.href;
+          var name = this.download || ('download_' + Date.now() + '.bin');
+          if (href && href.startsWith('blob:')) {
+              var blob = window.__uh_blobs[href];
+              if (blob) {
+                  var reader = new FileReader();
+                  reader.onload = function() {
+                      var b64 = reader.result.split(',')[1];
+                      B.saveBlob(name, blob.type || 'application/octet-stream', b64);
+                  };
+                  reader.readAsDataURL(blob);
+                  return;
+              }
+          }
+          if (href && href.startsWith('data:')) {
+              var parts = href.split(',');
+              var meta = parts[0];
+              var data = parts[1];
+              var mimeMatch = meta.match(/data:([^;]+)/);
+              var mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+              var isBase64 = meta.indexOf('base64') !== -1;
+              B.saveBlob(name, mime, isBase64 ? data : btoa(data));
+              return;
+          }
+          return origClick.apply(this, arguments);
+      };
+  }
 })();
 """
 
