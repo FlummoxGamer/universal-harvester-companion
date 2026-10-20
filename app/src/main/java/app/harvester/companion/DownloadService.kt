@@ -43,7 +43,6 @@ class DownloadService : Service() {
             val openIntent = Intent(ctx, DownloadsActivity::class.java)
             val piOpen = PendingIntent.getActivity(ctx, 0, openIntent, PendingIntent.FLAG_IMMUTABLE)
 
-            // SAFETY CHECK: Prevent crash on empty list
             if (tasks.isEmpty()) {
                 return NotificationCompat.Builder(ctx, CHANNEL_ID)
                     .setSmallIcon(R.drawable.ic_downloads)
@@ -120,7 +119,6 @@ class DownloadService : Service() {
             ACTION_CANCEL -> if (id != null) DownloadEngine.cancelDownload(this, id)
         }
         
-        // Bind to StateFlow to keep notification alive and updated
         val active = DownloadStore.activeDownloads.value
         startForeground(NOTIFICATION_ID, buildNotification(this, active))
         
