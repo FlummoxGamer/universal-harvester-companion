@@ -758,13 +758,20 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        session.navigationDelegate = object : GeckoSession.NavigationDelegate {
-            override fun onLocationChange(session: GeckoSession, url: String?) {
-                if (url != null) {
-                    currentUrl = url
-                    tabs.setNav(session, session.canGoBack(), session.canGoForward())
-                }
-            }
+session.navigationDelegate = object : GeckoSession.NavigationDelegate {
+    override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) {
+        tabs.setNav(session, canGoBack, tabs.canGoForward(session))
+    }
+
+    override fun onCanGoForward(session: GeckoSession, canGoForward: Boolean) {
+        tabs.setNav(session, tabs.canGoBack(session), canGoForward)
+    }
+
+    override fun onLocationChange(session: GeckoSession, url: String?, permissions: MutableList<GeckoSession.PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
+        if (url != null) {
+            currentUrl = url
+        }
+    }
 
             override fun onLoadRequest(session: GeckoSession, request: GeckoSession.NavigationDelegate.LoadRequest): GeckoResult<AllowOrDeny>? {
                 val url = request.uri
@@ -1020,7 +1027,7 @@ class MainActivity : AppCompatActivity() {
                     val cv = layoutInflater.inflate(R.layout.item_script_menu_command, cmds, false)
                     cv.findViewById<android.widget.TextView>(R.id.smcLabel).text = cmd.name
                     cv.setOnClickListener {
-                        currentSession?.evaluateJS("try{window.__uh_runMenuCommand('${cmd.id}')}catch(e){}", null)
+                        currentSession?.loadUri("javascript:try{window.__uh_runMenuCommand('${cmd.id}')}catch(e){}")
                         list.postDelayed({ populateScriptSheet(list, sheet) }, 400)
                     }
                     cmds.addView(cv)
