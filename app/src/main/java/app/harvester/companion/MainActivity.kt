@@ -131,11 +131,11 @@ class MainActivity : AppCompatActivity() {
                 val trimmed = text.trim()
                 if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
                     HistoryStore.get(this).record(trimmed, null)
-                    currentView?.loadUrl(trimmed)
+                    if (tabs.list().isEmpty()) { tabs.openNew(trimmed); attachCurrent() } else { currentView?.loadUrl(trimmed) }
                 } else {
                     HistoryStore.get(this).recordSearch(trimmed)
                     val target = SearchEnginePrefs.getSearchUrl(this, trimmed)
-                    currentView?.loadUrl(target)
+                    if (tabs.list().isEmpty()) { tabs.openNew(target); attachCurrent() } else { currentView?.loadUrl(target) }
                 }
                 exitEditMode()
                 updateHomeVisibility()
@@ -252,19 +252,19 @@ class MainActivity : AppCompatActivity() {
         binding.btnScriptMenu.setOnClickListener { showScriptMenuSheet() }
     }
 
-    private fun navigateInput(typed: String): Boolean {
-        val target = normalize(typed)
-        if (target.isBlank()) return false
-        val isSearch = !target.startsWith("http")
-        if (isSearch) HistoryStore.get(this).recordSearch(typed)
-        var view = currentView
-        if (view == null || tabs.currentId() < 0L) {
-            tabs.openNew(target)
-            attachCurrent()
-            view = currentView
-        } else {
-            view.loadUrl(target)
-        }
+private fun navigateInput(typed: String): Boolean {
+    val target = normalize(typed)
+    if (target.isBlank()) return false
+    val isSearch = !target.startsWith("http")
+    if (isSearch) HistoryStore.get(this).recordSearch(typed)
+    var view = currentView
+    if (view == null || tabs.list().isEmpty() || tabs.currentId() < 0L) {
+        tabs.openNew(target)
+        attachCurrent()
+        view = currentView
+    } else {
+        view.loadUrl(target)
+    }
         exitEditMode()
         updateHomeVisibility()
         return true
