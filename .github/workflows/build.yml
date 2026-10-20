@@ -34,52 +34,45 @@ jobs:
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > uh-debug.jks
           ls -la uh-debug.jks
 
-      - name: Build debug APKs
-        working-directory: src
-        run: gradle assembleDebug --no-daemon --no-configuration-cache
+      - name: Set Build Variables
+        id: vars
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/dev" ]; then
+            echo "FLAVOR=dev" >> $GITHUB_OUTPUT
+            echo "TARGET_BRANCH=builds-dev" >> $GITHUB_OUTPUT
+            echo "VERSION_FILE=version-dev.json" >> $GITHUB_OUTPUT
+            echo "RELEASE_PREFIX=[DEV ONLY] " >> $GITHUB_OUTPUT
+            echo "RELEASE_NOTES=⚠️ WARNING: This is a DEV TESTING build. Do not download unless you are testing. It will install as 'UH Dev' next to your main app." >> $GITHUB_OUTPUT
+          else
+            echo "FLAVOR=stable" >> $GITHUB_OUTPUT
+            echo "TARGET_BRANCH=builds" >> $GITHUB_OUTPUT
+            echo "VERSION_FILE=version.json" >> $GITHUB_OUTPUT
+            echo "RELEASE_PREFIX=" >> $GITHUB_OUTPUT
+            echo "RELEASE_NOTES=Automated Stable Build" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Read version & set branch targets
+      - name: Build debug APK
+        working-directory: src
+        run: gradle assemble${{ steps.vars.outputs.FLAVOR }}Debug --no-daemon --no-configuration-cache
+
+      - name: Read version
         id: ver
         working-directory: src
         run: |
           VC=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts | head -1)
           VN=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts | head -1)
-          if [ -z "$VC" ] || [ -z "$VN" ]; then
-            echo "version missing"
-            exit 1
-          fi
-          
-          if [ "${{ github.ref }}" == "refs/heads/dev" ]; then
-            VN="${VN}-dev"
-            TARGET_BRANCH="builds-dev"
-            VERSION_FILE="version-dev.json"
-          else
-            TARGET_BRANCH="builds"
-            VERSION_FILE="version.json"
-          fi
-          
           echo "code=$VC" >> $GITHUB_OUTPUT
           echo "name=$VN" >> $GITHUB_OUTPUT
-          echo "target_branch=$TARGET_BRANCH" >> $GITHUB_OUTPUT
-          echo "version_file=$VERSION_FILE" >> $GITHUB_OUTPUT
-          echo "Building v$VN (code $VC) for $TARGET_BRANCH"
 
       - name: Locate APKs
         id: apks
         working-directory: src
         run: |
-          ls -la app/build/outputs/apk/debug/ || true
-          ARM64=$(find app/build/outputs/apk/debug -name "*-arm64-v8a-debug.apk" | head -1)
-          ARM32=$(find app/build/outputs/apk/debug -name "*-armeabi-v7a-debug.apk" | head -1)
-          if [ -z "$ARM64" ]; then
-            echo "Missing arm64 APK"
-            find app/build/outputs/apk/debug -name "*.apk"
-            exit 1
-          fi
+          FLAVOR_DIR="${{ steps.vars.outputs.FLAVOR }}"
+          ARM64=$(find app/build/outputs/apk/$FLAVOR_DIR/debug -name "*-arm64-v8a-debug.apk" | head -1)
+          ARM32=$(find app/build/outputs/apk/$FLAVOR_DIR/debug -name "*-armeabi-v7a-debug.apk" | head -1)
           echo "arm64=$ARM64" >> $GITHUB_OUTPUT
           echo "arm32=$ARM32" >> $GITHUB_OUTPUT
-          echo "ARM64: $ARM64"
-          echo "ARM32: $ARM32"
 
       - name: Stage artifacts
         run: |
@@ -88,12 +81,11 @@ jobs:
           if [ -n "${{ steps.apks.outputs.arm32 }}" ]; then
             cp "src/${{ steps.apks.outputs.arm32 }}" "out/uh-companion-${{ steps.ver.outputs.name }}-armeabi-v7a.apk"
           fi
-          ls -la out/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: uh-companion-debug
+          name: uh-companion-${{ steps.vars.outputs.FLAVOR }}
           path: out/*.apk
           if-no-files-found: error
 
@@ -104,12 +96,14 @@ jobs:
           REPO="${{ github.repository }}"
           VN="${{ steps.ver.outputs.name }}"
           VC="${{ steps.ver.outputs.code }}"
-          TAG="v$VN-$VC"
+          TAG="v$VN-$VC-${{ steps.vars.outputs.FLAVOR }}"
+          
           gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag 2>/dev/null || true
+          
           gh release create "$TAG" \
             --repo "$REPO" \
-            --title "Build $VN ($VC)" \
-            --notes "Automated build (${{ github.ref_name }})" \
+            --title "${{ steps.vars.outputs.RELEASE_PREFIX }}Build $VN ($VC)" \
+            --notes "${{ steps.vars.outputs.RELEASE_NOTES }}" \
             out/*.apk
 
       - name: Publish version JSON
@@ -119,9 +113,9 @@ jobs:
           REPO="${{ github.repository }}"
           VN="${{ steps.ver.outputs.name }}"
           VC="${{ steps.ver.outputs.code }}"
-          TAG="v$VN-$VC"
-          TARGET_BRANCH="${{ steps.ver.outputs.target_branch }}"
-          VERSION_FILE="${{ steps.ver.outputs.version_file }}"
+          TAG="v$VN-$VC-${{ steps.vars.outputs.FLAVOR }}"
+          TARGET_BRANCH="${{ steps.vars.outputs.TARGET_BRANCH }}"
+          VERSION_FILE="${{ steps.vars.outputs.VERSION_FILE }}"
           
           ARM64="uh-companion-$VN-arm64-v8a.apk"
           ARM32="uh-companion-$VN-armeabi-v7a.apk"
@@ -144,7 +138,6 @@ jobs:
           }
           EOF
           
-          cat /tmp/publish/$VERSION_FILE
           cd /tmp/publish
           git init -q -b $TARGET_BRANCH
           git remote add origin "https://x-access-token:$GH_TOKEN@github.com/$REPO.git"
