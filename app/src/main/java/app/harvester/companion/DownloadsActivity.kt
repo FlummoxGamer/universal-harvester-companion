@@ -85,10 +85,11 @@ private fun observeActiveDownloads() {
                                 btnToggle.setImageResource(android.R.drawable.ic_media_play)
                                 btnToggle.setOnClickListener { DownloadEngine.resumeDownload(this@DownloadsActivity, task.id) }
                             }
-                            DownloadStore.Status.FAILED -> {
+                                DownloadStore.Status.FAILED -> {
                                 btnToggle.setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
                                 btnToggle.setOnClickListener { DownloadEngine.cancelDownload(this@DownloadsActivity, task.id) }
                             }
+                            else -> {}
                         }
 
                         activeContainer.addView(v)
