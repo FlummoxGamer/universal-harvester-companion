@@ -39,8 +39,7 @@ fun updateOverlayState(active: Boolean) { overlayActive = active }
 @JavascriptInterface
 fun saveBlob(filename: String, mime: String, base64Data: String) {
     try {
-        DownloadService.start(ctx)
-        DownloadEngine.startDownload(ctx, "", filename, mime, base64Data)
+        DownloadEngine.startDownload(ctx, "", filename, mime, base64Data, null, v()?.url)
         val w = v() ?: return
         w.post { android.widget.Toast.makeText(ctx, "Download started", android.widget.Toast.LENGTH_SHORT).show() }
     } catch (e: Exception) {
