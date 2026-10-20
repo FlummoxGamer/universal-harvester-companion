@@ -922,30 +922,31 @@ view.setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
                 .show()
         }
 
-        Thread {
-            try {
-                val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-                conn.requestMethod = "HEAD"
-                conn.connectTimeout = 3000
-                val size = conn.contentLengthLong
-                runOnUiThread {
-                    if (size > 0) {
-                        v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = android.text.format.Formatter.formatShortFileSize(this, size)
-                    } else {
-                        v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = "Unknown size"
-                    }
+Thread {
+    try {
+        val client = okhttp3.OkHttpClient.Builder().connectTimeout(3, java.util.concurrent.TimeUnit.SECONDS).build()
+        val req = okhttp3.Request.Builder().url(url).head().build()
+        client.newCall(req).execute().use { resp ->
+            val size = resp.body?.contentLength() ?: -1L
+            runOnUiThread {
+                if (size > 0) {
+                    v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = android.text.format.Formatter.formatShortFileSize(this, size)
+                } else {
+                    v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = "Unknown size"
                 }
-                conn.disconnect()
-            } catch (_: Exception) {
-                runOnUiThread { v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = "Unknown size" }
             }
-        }.start()
+        }
+    } catch (_: Exception) {
+        runOnUiThread { v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = "Unknown size" }
+    }
+}.start()
 
         sheet.show()
     }
 
     private fun executeDownload(url: String, filename: String, mimetype: String?, userAgent: String?) {
-        DownloadEngine.startDownload(this, url, filename, mimetype ?: "application/octet-stream", null, userAgent)
+        val referer = currentView?.url
+        DownloadEngine.startDownload(this, url, filename, mimetype ?: "application/octet-stream", null, userAgent, referer)
     }
 
     private fun extractFilename(contentDisposition: String?): String? {
