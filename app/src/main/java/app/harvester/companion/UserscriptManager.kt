@@ -280,16 +280,16 @@ private fun loadCachedRequires(ctx: Context, script: Script): String {
         return install(ctx, name, body)
     }
 
-fun injectOnPageStart(view: WebView, ctx: Context, url: String) {
-    if (isBadUrl(url)) return
-    try { view.evaluateJavascript(BRIDGE_BOOT, null) } catch (_: Exception) {}
+    fun injectOnPageStart(view: GeckoSession, ctx: Context, url: String) {
+        if (isBadUrl(url)) return
+        try { view.evaluateJS(BRIDGE_BOOT, null) } catch (_: Exception) {}
 
     val enabled = SessionRecorder.ALL_CATEGORIES.filter { SessionRecorder.isEnabled(it) }
     for (hook in enabled) {
-        val body = loadHook(ctx, hook)
-        if (body.isNotBlank()) {
-            try { view.evaluateJavascript(body, null) } catch (_: Exception) {}
-        }
+    val body = loadHook(ctx, hook)
+    if (body.isNotBlank()) {
+        try { view.evaluateJS(body, null) } catch (_: Exception) {}
+    }
     }
 
     val scripts = loadScripts(ctx)
@@ -301,28 +301,28 @@ fun injectOnPageStart(view: WebView, ctx: Context, url: String) {
         val wrapped = buildWrapper(ctx, script)
         if (wrapped.isBlank()) continue
         try {
-            view.evaluateJavascript(wrapped, null)
+            view.evaluateJS(wrapped, null)
             UHLog.d("userscript", "injected ${script.name} (start) sysjs=${script.usesSystemjs} grants=${script.grants.size} reqs=${script.requires.size}")
         } catch (e: Exception) {
             UHLog.throwable("userscript", "inject ${script.name} failed", e)
         }
+      }
+    }
+
+fun injectOnPageFinished(ctx: Context, view: GeckoSession, url: String) {
+    if (isBadUrl(url)) return
+    val scripts = loadScripts(ctx)
+    for (script in scripts) {
+        if (!UserscriptStore.isEnabled(ctx, script.name)) continue
+        if (script.runAt == "document-start") continue
+        if (!matchesPatterns(script.patterns, url)) continue
+        if (matchesPatterns(script.excludes, url)) continue
+        val wrapped = buildWrapper(ctx, script)
+        if (wrapped.isBlank()) continue
+        view.evaluateJS(wrapped, null)
+        UHLog.d("userscript", "injected ${script.name} (${script.runAt}) into $url")
     }
 }
-
-    fun injectOnPageFinished(ctx: Context, view: WebView, url: String) {
-        if (isBadUrl(url)) return
-        val scripts = loadScripts(ctx)
-        for (script in scripts) {
-            if (!UserscriptStore.isEnabled(ctx, script.name)) continue
-            if (script.runAt == "document-start") continue
-            if (!matchesPatterns(script.patterns, url)) continue
-            if (matchesPatterns(script.excludes, url)) continue
-            val wrapped = buildWrapper(ctx, script)
-            if (wrapped.isBlank()) continue
-            view.evaluateJavascript(wrapped, null)
-            UHLog.d("userscript", "injected ${script.name} (${script.runAt}) into $url")
-        }
-    }
 
     private fun isBadUrl(url: String): Boolean {
         if (url.isBlank() || url == "about:blank") return true
