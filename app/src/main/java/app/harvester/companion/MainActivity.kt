@@ -1,10 +1,5 @@
 package app.harvester.companion
 
-import org.mozilla.geckoview.GeckoView
-import org.mozilla.geckoview.GeckoSession
-import org.mozilla.geckoview.GeckoResult
-import org.mozilla.geckoview.AllowOrDeny
-import org.mozilla.geckoview.WebResponse
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
@@ -54,8 +49,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tabs: TabManager
     private lateinit var shortcutAdapter: ShortcutAdapter
     private lateinit var suggestionsAdapter: SuggestionAdapter
-    private var currentView: GeckoView? = null
-    private var currentSession: GeckoSession? = null
+    private var currentView: WebView? = null
 
     private val popupTabs = mutableSetOf<Long>()
     private val page3p = mutableMapOf<Long, MutableSet<String>>()
@@ -111,10 +105,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupSwipeRefresh() {
         binding.swipeRefresh.setOnRefreshListener {
-            currentSession?.reload()
+            currentView?.reload()
         }
         binding.swipeRefresh.setOnChildScrollUpCallback { _, _ ->
-            false
+            val webView = currentView ?: return@setOnChildScrollUpCallback false
+            val bridge = webView.tag as? UserscriptBridge
+            webView.scrollY > 0 || bridge?.overlayActive == true
+        }
+        binding.swipeRefresh.viewTreeObserver.addOnScrollChangedListener {
+            val webView = currentView ?: return@addOnScrollChangedListener
+            val bridge = webView.tag as? UserscriptBridge
+            binding.swipeRefresh.isEnabled = webView.scrollY == 0 && bridge?.overlayActive != true
         }
         binding.swipeRefresh.setColorSchemeColors(
             ContextCompat.getColor(this, R.color.accent)
@@ -256,18 +257,18 @@ private fun navigateInput(typed: String): Boolean {
     if (target.isBlank()) return false
     val isSearch = !target.startsWith("http")
     if (isSearch) HistoryStore.get(this).recordSearch(typed)
-    var session = currentSession
-    if (session == null || tabs.list().isEmpty() || tabs.currentId() < 0L) {
+    var view = currentView
+    if (view == null || tabs.list().isEmpty() || tabs.currentId() < 0L) {
         tabs.openNew(target)
         attachCurrent()
-        session = currentSession
+        view = currentView
     } else {
-        session.loadUri(target)
+        view.loadUrl(target)
     }
-    exitEditMode()
-    updateHomeVisibility()
-    return true
-}
+        exitEditMode()
+        updateHomeVisibility()
+        return true
+    }
 
 private fun setupBackDispatcher() {
     onBackPressedDispatcher.addCallback(this) {
@@ -303,9 +304,10 @@ private fun setupBackDispatcher() {
         }
 
         // 2. WebView History
-        if (v != null && currentSession != null) {
-            if (tabs.canGoBack(currentSession!!)) {
-                currentSession?.goBack()
+        if (v != null) {
+            val history = v.copyBackForwardList()
+            if (history.currentIndex > 0) {
+                v.goBack()
                 return@addCallback
             }
         }
@@ -323,8 +325,9 @@ private fun setupBackDispatcher() {
         }
 
         // 4. Go to Home Screen
-        if (v != null && currentSession != null) {
-            currentSession?.loadUri("about:blank")
+        if (v != null) {
+            v.loadUrl("about:blank")
+            v.clearHistory()
             return@addCallback
         }
 
@@ -566,24 +569,22 @@ private fun setupBackDispatcher() {
     }
 
 private fun attachCurrent() {
-    val session = tabs.currentSession() ?: return
-    if (session === currentSession) { updateHomeVisibility(); return }
+    val view = tabs.currentView() ?: return
+    if (view === currentView) { updateHomeVisibility(); return }
     
     tabs.pushHistory(tabs.currentId())
     
     binding.webContainer.removeAllViews()
-    val gv = GeckoView(this)
-    gv.setSession(session)
-    binding.webContainer.addView(gv)
-    
-    currentView = gv
-    currentSession = session
-    
-    if (tabs.markAttached(session)) {
-        installDelegates(session)
+    (view.parent as? ViewGroup)?.removeView(view)
+    binding.webContainer.addView(view)
+    currentView = view
+        if (view.getTag(R.id.webContainer) == null) {
+            installClients(view)
+            view.setTag(R.id.webContainer, true)
+        }
+        updateUi()
+        tabs.drainPendingDestroy()
     }
-    updateUi()
-}
 
     private fun updateHomeVisibility() {
         val id = tabs.currentId()
