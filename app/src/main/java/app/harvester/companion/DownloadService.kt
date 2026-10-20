@@ -18,41 +18,42 @@ class DownloadService : Service() {
         const val ACTION_RESUME = "app.harvester.companion.RESUME"
         const val ACTION_CANCEL = "app.harvester.companion.CANCEL"
 
+        // start
         fun start(ctx: Context) {
             val intent = Intent(ctx, DownloadService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(intent)
             else ctx.startService(intent)
         }
 
-        fun updateNotification() {
-            val nm = appContext?.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+        // updateNotification
+        fun updateNotification(ctx: Context) {
+            val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
             val active = DownloadStore.activeDownloads.value
             
             if (active.isEmpty()) {
                 nm.cancel(NOTIFICATION_ID)
-                appContext?.stopService(Intent(appContext, DownloadService::class.java))
+                ctx.stopService(Intent(ctx, DownloadService::class.java))
                 return
             }
-            
-            nm.notify(NOTIFICATION_ID, buildNotification(appContext!!, active))
+            nm.notify(NOTIFICATION_ID, buildNotification(ctx, active))
         }
 
-    fun notifyComplete(ctx: Context, filename: String) {
-    val nm = appContext?.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
-    val openIntent = Intent(ctx, DownloadsActivity::class.java)
-    val piOpen = PendingIntent.getActivity(ctx, 0, openIntent, PendingIntent.FLAG_IMMUTABLE)
-    val n = NotificationCompat.Builder(ctx, CHANNEL_ID)
-        .setSmallIcon(R.drawable.ic_downloads)
-        .setContentTitle(filename)
-        .setContentText("Download complete")
-        .setContentIntent(piOpen)
-        .setAutoCancel(true)
-        .build()
-    nm.notify(System.currentTimeMillis().toInt(), n)
-}
+        // notifyComplete
+        fun notifyComplete(ctx: Context, filename: String) {
+            val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+            val openIntent = Intent(ctx, DownloadsActivity::class.java)
+            val piOpen = PendingIntent.getActivity(ctx, 0, openIntent, PendingIntent.FLAG_IMMUTABLE)
+            val n = NotificationCompat.Builder(ctx, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_downloads)
+                .setContentTitle(filename)
+                .setContentText("Download complete")
+                .setContentIntent(piOpen)
+                .setAutoCancel(true)
+                .build()
+            nm.notify(System.currentTimeMillis().toInt(), n)
+        }
 
-        private var appContext: Context? = null
-
+        // buildNotification
         private fun buildNotification(ctx: Context, tasks: List<DownloadStore.Task>): android.app.Notification {
             val openIntent = Intent(ctx, DownloadsActivity::class.java)
             val piOpen = PendingIntent.getActivity(ctx, 0, openIntent, PendingIntent.FLAG_IMMUTABLE)
@@ -105,7 +106,10 @@ class DownloadService : Service() {
                 .build()
         }
 
+        // formatSpeed
         private fun formatSpeed(b: Long): String = if (b <= 0) "0 B/s" else "${formatSize(b)}/s"
+
+        // formatSize
         private fun formatSize(b: Long): String = when {
             b < 0 -> "?"
             b < 1024 -> "$b B"
@@ -117,7 +121,6 @@ class DownloadService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        appContext = applicationContext
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(CHANNEL_ID, "Downloads", NotificationManager.IMPORTANCE_LOW)
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
