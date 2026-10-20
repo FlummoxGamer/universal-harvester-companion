@@ -97,6 +97,7 @@ kotlin {
 }
 
 dependencies {
+    implementation("org.mozilla.geckoview:geckoview:121.0.20231210154525")
     implementation("androidx.webkit:webkit:1.12.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
