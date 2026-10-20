@@ -868,15 +868,15 @@ private fun attachCurrent() {
             } else false
         }
 
-        view.setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
-            val filename = extractFilename(contentDisposition) ?: "download_${System.currentTimeMillis()}"
-            
-            if (SettingsPrefs.getBool(this, SettingsPrefs.K_ASK_DL, true)) {
-                showDownloadConfirmationSheet(url, filename, mimetype, userAgent)
-            } else {
-                executeDownload(url, filename, mimetype, userAgent)
-            }
-        }
+view.setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
+    val filename = extractFilename(contentDisposition) ?: "download_${System.currentTimeMillis()}"
+    
+    if (SettingsPrefs.getBool(this, SettingsPrefs.K_ASK_DL, true)) {
+        showDownloadConfirmationSheet(url, filename, mimetype, userAgent)
+    } else {
+        executeDownload(url, filename, mimetype, userAgent)
+    }
+    }
     }
 
     private fun showDownloadConfirmationSheet(url: String, filename: String, mimetype: String?, userAgent: String?) {
@@ -944,10 +944,9 @@ private fun attachCurrent() {
         sheet.show()
     }
 
-private fun executeDownload(url: String, filename: String, mimetype: String?, userAgent: String?) {
-    DownloadService.start(this)
-    DownloadEngine.startDownload(this, url, filename, mimetype ?: "application/octet-stream", null, userAgent)
-}
+    private fun executeDownload(url: String, filename: String, mimetype: String?, userAgent: String?) {
+        DownloadEngine.startDownload(this, url, filename, mimetype ?: "application/octet-stream", null, userAgent)
+    }
 
     private fun extractFilename(contentDisposition: String?): String? {
         if (contentDisposition.isNullOrBlank()) return null
