@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, dev ]
   workflow_dispatch:
 
 concurrency:
@@ -38,7 +38,7 @@ jobs:
         working-directory: src
         run: gradle assembleDebug --no-daemon --no-configuration-cache
 
-      - name: Read version
+      - name: Read version & set branch targets
         id: ver
         working-directory: src
         run: |
@@ -48,9 +48,21 @@ jobs:
             echo "version missing"
             exit 1
           fi
+          
+          if [ "${{ github.ref }}" == "refs/heads/dev" ]; then
+            VN="${VN}-dev"
+            TARGET_BRANCH="builds-dev"
+            VERSION_FILE="version-dev.json"
+          else
+            TARGET_BRANCH="builds"
+            VERSION_FILE="version.json"
+          fi
+          
           echo "code=$VC" >> $GITHUB_OUTPUT
           echo "name=$VN" >> $GITHUB_OUTPUT
-          echo "Building v$VN (code $VC)"
+          echo "target_branch=$TARGET_BRANCH" >> $GITHUB_OUTPUT
+          echo "version_file=$VERSION_FILE" >> $GITHUB_OUTPUT
+          echo "Building v$VN (code $VC) for $TARGET_BRANCH"
 
       - name: Locate APKs
         id: apks
@@ -97,10 +109,10 @@ jobs:
           gh release create "$TAG" \
             --repo "$REPO" \
             --title "Build $VN ($VC)" \
-            --notes "Automated build" \
+            --notes "Automated build (${{ github.ref_name }})" \
             out/*.apk
 
-      - name: Publish version.json to builds branch
+      - name: Publish version JSON
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -108,6 +120,9 @@ jobs:
           VN="${{ steps.ver.outputs.name }}"
           VC="${{ steps.ver.outputs.code }}"
           TAG="v$VN-$VC"
+          TARGET_BRANCH="${{ steps.ver.outputs.target_branch }}"
+          VERSION_FILE="${{ steps.ver.outputs.version_file }}"
+          
           ARM64="uh-companion-$VN-arm64-v8a.apk"
           ARM32="uh-companion-$VN-armeabi-v7a.apk"
           mkdir -p /tmp/publish
@@ -117,7 +132,7 @@ jobs:
             ARM32_LINE="\"apkUrlArm32\": \"https://gh-proxy.com/https://github.com/$REPO/releases/download/$TAG/$ARM32\","
           fi
 
-          cat > /tmp/publish/version.json <<EOF
+          cat > /tmp/publish/$VERSION_FILE <<EOF
           {
             "versionCode": $VC,
             "versionName": "$VN",
@@ -128,12 +143,13 @@ jobs:
             "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }
           EOF
-          cat /tmp/publish/version.json
+          
+          cat /tmp/publish/$VERSION_FILE
           cd /tmp/publish
-          git init -q -b builds
+          git init -q -b $TARGET_BRANCH
           git remote add origin "https://x-access-token:$GH_TOKEN@github.com/$REPO.git"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Build v$VN ($VC)"
-          git push origin builds --force
+          git commit -m "Build $VN ($VC)"
+          git push origin $TARGET_BRANCH --force
