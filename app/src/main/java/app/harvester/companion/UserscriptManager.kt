@@ -3,7 +3,6 @@ package app.harvester.companion
 import android.content.Context
 import android.net.Uri
 import org.mozilla.geckoview.GeckoSession
-import org.mozilla.geckoview.GeckoResult
 import java.io.File
 import java.util.zip.ZipInputStream
 
@@ -295,25 +294,34 @@ object UserscriptManager {
         return install(ctx, name, body)
     }
 
-    // injectOnPageStart
-    fun injectOnPageStart(view: GeckoSession, ctx: Context, url: String) {
-        if (isBadUrl(url)) return
+    // getAllGmData
+    private fun getAllGmData(ctx: Context): String {
+        val prefs = ctx.getSharedPreferences("uh_gm", Context.MODE_PRIVATE)
+        val root = org.json.JSONObject()
+        for ((k, v) in prefs.all) {
+            val parts = k.split("::", limit = 2)
+            if (parts.size == 2) {
+                val script = parts[0]
+                val key = parts[1]
+                if (!root.has(script)) root.put(script, org.json.JSONObject())
+                root.getJSONObject(script).put(key, v?.toString() ?: "")
+            }
+        }
+        return root.toString()
     }
 
-    // injectOnPageFinished
-    fun injectOnPageFinished(ctx: Context, view: GeckoSession, url: String) {
-        if (isBadUrl(url)) return
+    // buildInjectionScript
+    fun buildInjectionScript(ctx: Context, url: String): String {
+        if (isBadUrl(url)) return ""
+        val sb = StringBuilder()
         
-        val result = GeckoResult<String>()
-        
-        try { view.evaluateJS("$BRIDGE_BOOT\nvoid 0;", result) } catch (_: Exception) {}
+        sb.append("window.__uh_gm_data = ").append(getAllGmData(ctx)).append(";\n")
+        sb.append(BRIDGE_BOOT).append("\n")
         
         val enabled = SessionRecorder.ALL_CATEGORIES.filter { SessionRecorder.isEnabled(it) }
         for (hook in enabled) {
             val body = loadHook(ctx, hook)
-            if (body.isNotBlank()) {
-                try { view.evaluateJS("$body\nvoid 0;", result) } catch (_: Exception) {}
-            }
+            if (body.isNotBlank()) sb.append(body).append("\n")
         }
         
         val scripts = loadScripts(ctx)
@@ -322,11 +330,13 @@ object UserscriptManager {
             if (!matchesPatterns(script.patterns, url)) continue
             if (matchesPatterns(script.excludes, url)) continue
             val wrapped = buildWrapper(ctx, script)
-            if (wrapped.isBlank()) continue
-            
-            view.evaluateJS("$wrapped\nvoid 0;", result)
-            UHLog.d("userscript", "injected ${script.name} (${script.runAt}) into $url")
+            if (wrapped.isNotBlank()) {
+                sb.append(wrapped).append("\n")
+                UHLog.d("userscript", "queued ${script.name} (${script.runAt}) for $url")
+            }
         }
+        
+        return sb.toString()
     }
 
     // isBadUrl
@@ -365,8 +375,6 @@ object UserscriptManager {
 (function(){
   if (window.__uh_bridge_ready) return;
   window.__uh_bridge_ready = true;
-  var B = window.UH_BRIDGE;
-  if (!B) return;
 
   window.unsafeWindow = window;
   window.__uh_xhr = window.__uh_xhr || {};
@@ -391,39 +399,39 @@ object UserscriptManager {
     var sn = scriptName;
     var wrap = {
       GM_getValue: function(k, d) {
-        var v = B.GM_getValueNs(sn, String(k));
-        if (v == null || v === '') return d;
-        try { return JSON.parse(v); } catch(e) { return v; }
+        try {
+          var store = window.__uh_gm_data[sn] || {};
+          var v = store[String(k)];
+          if (v == null || v === '') return d;
+          return JSON.parse(v);
+        } catch(e) { return d; }
       },
-      GM_setValue: function(k, v) { B.GM_setValueNs(sn, String(k), JSON.stringify(v)); },
-      GM_deleteValue: function(k) { B.GM_deleteValueNs(sn, String(k)); },
-      GM_listValues: function() { return JSON.parse(B.GM_listValuesNs(sn)); },
+      GM_setValue: function(k, v) { 
+        window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'GM_setValue', script: sn, key: String(k), value: JSON.stringify(v) } }, '*'); 
+      },
+      GM_deleteValue: function(k) { 
+        window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'GM_deleteValue', script: sn, key: String(k) } }, '*'); 
+      },
+      GM_listValues: function() { 
+        try { return Object.keys(window.__uh_gm_data[sn] || {}); } catch(e) { return []; }
+      },
       GM_addValueChangeListener: function(k, cb) {
-        var id = B.GM_addValueChangeListenerNs(sn, String(k));
+        var id = 'vcl_' + Math.random().toString(36).slice(2);
         window.__uh_vcl[id] = cb;
         return id;
       },
       GM_removeValueChangeListener: function(id) {
         delete window.__uh_vcl[id];
-        B.GM_removeValueChangeListener(String(id));
       },
       GM_xmlhttpRequest: function(d) {
         var id = 'xhr_' + Math.random().toString(36).slice(2);
         window.__uh_xhr[id] = d;
-        try {
-          B.GM_xmlhttpRequest(
-            sn, id,
-            String(d.method || 'GET'),
-            String(d.url),
-            d.headers ? JSON.stringify(d.headers) : '',
-            d.data != null ? String(d.data) : '',
-            d.responseType ? String(d.responseType) : '',
-            d.timeout ? String(d.timeout) : '0',
-            d.user ? String(d.user) : '',
-            d.password ? String(d.password) : ''
-          );
-        } catch(e) { if (d.onerror) try{d.onerror({error:String(e)})}catch(_){} }
-        return { abort: function(){ B.GM_xhrAbort(id); } };
+        window.postMessage({ type: 'UH_NATIVE_CALL', payload: { 
+          type: 'GM_xmlhttpRequest', id: id, method: d.method || 'GET', url: d.url, 
+          headers: d.headers ? JSON.stringify(d.headers) : '', data: d.data != null ? String(d.data) : '',
+          timeout: d.timeout || 0 
+        }}, '*');
+        return { abort: function(){} };
       },
       GM_download: function(d) {
         if (typeof d === 'string') d = { url: d };
@@ -435,7 +443,7 @@ object UserscriptManager {
                 var reader = new FileReader();
                 reader.onload = function() {
                     var b64 = reader.result.split(',')[1];
-                    B.saveBlob(name, blob.type || 'application/octet-stream', b64);
+                    window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'SAVE_BLOB', filename: name, mime: blob.type || 'application/octet-stream', base64: b64 } }, '*');
                 };
                 reader.readAsDataURL(blob);
                 return;
@@ -448,30 +456,31 @@ object UserscriptManager {
             var mimeMatch = meta.match(/data:([^;]+)/);
             var mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
             var isBase64 = meta.indexOf('base64') !== -1;
-            B.saveBlob(name, mime, isBase64 ? data : btoa(data));
+            window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'SAVE_BLOB', filename: name, mime: mime, base64: isBase64 ? data : btoa(data) } }, '*');
             return;
         }
-        B.GM_download(sn, String(url), String(name));
+        window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'GM_download', script: sn, url: url, name: name } }, '*');
       },
       GM_openInTab: function(url, opts) {
-        var active = !(opts && opts.active === false);
-        B.GM_openInTab(sn, String(url), active);
+        window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'GM_openInTab', script: sn, url: String(url) } }, '*');
       },
-      GM_setClipboard: function(t) { B.GM_setClipboard(String(t)); },
+      GM_setClipboard: function(t) { 
+        window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'GM_setClipboard', text: String(t) } }, '*'); 
+      },
       GM_notification: function(d) {
         var title = typeof d === 'string' ? d : (d.title || '');
         var text = typeof d === 'object' ? (d.text || d.body || '') : '';
-        B.GM_notification(sn, String(title), String(text));
+        window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'GM_notification', script: sn, title: String(title), text: String(text) } }, '*');
       },
       GM_registerMenuCommand: function(name, fn) {
         var id = 'menu_' + Math.random().toString(36).slice(2);
         window.__uh_menu[id] = fn;
-        B.GM_registerMenuCommand(sn, String(name), id, '');
+        window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'GM_registerMenuCommand', script: sn, name: String(name), id: id } }, '*');
         return id;
       },
       GM_unregisterMenuCommand: function(id) {
         delete window.__uh_menu[id];
-        B.GM_unregisterMenuCommand(sn, String(id));
+        window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'GM_unregisterMenuCommand', script: sn, id: String(id) } }, '*');
       },
       GM_addStyle: function(css) {
         var s = document.createElement('style');
@@ -491,30 +500,13 @@ object UserscriptManager {
         return el;
       },
       GM_cookie: {
-        list: function(details, cb) {
-          var url = (details && details.url) || location.href;
-          var raw = B.GM_cookieGet(url);
-          var arr = [];
-          try { arr = JSON.parse(raw); } catch(e) {}
-          if (cb) cb(arr);
-          return Promise.resolve(arr);
-        },
-        set: function(details, cb) {
-          var url = (details && details.url) || location.href;
-          B.GM_cookieSet(url, String(details.name), String(details.value));
-          if (cb) cb();
-          return Promise.resolve();
-        },
-        delete: function(details, cb) {
-          var url = (details && details.url) || location.href;
-          B.GM_cookieDelete(url, String(details.name));
-          if (cb) cb();
-          return Promise.resolve();
-        }
+        list: function(details, cb) { if(cb) cb([]); return Promise.resolve([]); },
+        set: function(details, cb) { if(cb) cb(); return Promise.resolve(); },
+        delete: function(details, cb) { if(cb) cb(); return Promise.resolve(); }
       },
-      GM_getResourceText: function(name) { return B.GM_getResourceText(sn, String(name)); },
-      GM_getResourceURL: function(name) { return B.GM_getResourceURL(sn, String(name)); },
-      GM_log: function(m) { B.GM_log(String(m)); }
+      GM_getResourceText: function(name) { return null; },
+      GM_getResourceURL: function(name) { return null; },
+      GM_log: function(m) { window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'GM_log', message: String(m) } }, '*'); }
     };
     var async = {
       getValue: function(k, d) { return Promise.resolve(wrap.GM_getValue(k, d)); },
@@ -622,7 +614,7 @@ if (!window.__uh_blob_hooked) {
                   var reader = new FileReader();
                   reader.onload = function() {
                       var b64 = reader.result.split(',')[1];
-                      B.saveBlob(name, blob.type || 'application/octet-stream', b64);
+                      window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'SAVE_BLOB', filename: name, mime: blob.type || 'application/octet-stream', base64: b64 } }, '*');
                   };
                   reader.readAsDataURL(blob);
                   return;
@@ -635,7 +627,7 @@ if (!window.__uh_blob_hooked) {
               var mimeMatch = meta.match(/data:([^;]+)/);
               var mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
               var isBase64 = meta.indexOf('base64') !== -1;
-              B.saveBlob(name, mime, isBase64 ? data : btoa(data));
+              window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'SAVE_BLOB', filename: name, mime: mime, base64: isBase64 ? data : btoa(data) } }, '*');
               return;
           }
           return origClick.apply(this, arguments);
@@ -649,7 +641,7 @@ if (!window.__uh_blob_hooked) {
         e.stopPropagation();
         var src = target.src;
         if (src) {
-            try { B.openImage(src); } catch(err) {}
+            window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'OPEN_IMAGE', url: src } }, '*');
         }
     }
 }, true);
@@ -666,62 +658,15 @@ if (!window.__uh_blob_hooked) {
       }
       if (isFab !== __lastOverlayState) {
           __lastOverlayState = isFab;
-          B.updateOverlayState(isFab);
+          window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'OVERLAY_STATE', active: isFab } }, '*');
       }
   }, {passive: true, capture: true});
   document.addEventListener('touchend', function() {
-      if (__lastOverlayState) { __lastOverlayState = false; B.updateOverlayState(false); }
+      if (__lastOverlayState) { __lastOverlayState = false; window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'OVERLAY_STATE', active: false } }, '*'); }
   }, {passive: true, capture: true});
   document.addEventListener('touchcancel', function() {
-      if (__lastOverlayState) { __lastOverlayState = false; B.updateOverlayState(false); }
+      if (__lastOverlayState) { __lastOverlayState = false; window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'OVERLAY_STATE', active: false } }, '*'); }
   }, {passive: true, capture: true});
-
-  if (!window.__uh_blob_hooked) {
-      window.__uh_blob_hooked = true;
-      window.__uh_blobs = {};
-      
-      var origCreate = URL.createObjectURL;
-      URL.createObjectURL = function(obj) {
-          var url = origCreate.call(URL, obj);
-          if (obj instanceof Blob) window.__uh_blobs[url] = obj;
-          return url;
-      };
-      
-      var origRevoke = URL.revokeObjectURL;
-      URL.revokeObjectURL = function(url) {
-          delete window.__uh_blobs[url];
-          return origRevoke.call(URL, url);
-      };
-      
-      var origClick = HTMLAnchorElement.prototype.click;
-      HTMLAnchorElement.prototype.click = function() {
-          var href = this.href;
-          var name = this.download || ('download_' + Date.now() + '.bin');
-          if (href && href.startsWith('blob:')) {
-              var blob = window.__uh_blobs[href];
-              if (blob) {
-                  var reader = new FileReader();
-                  reader.onload = function() {
-                      var b64 = reader.result.split(',')[1];
-                      B.saveBlob(name, blob.type || 'application/octet-stream', b64);
-                  };
-                  reader.readAsDataURL(blob);
-                  return;
-              }
-          }
-          if (href && href.startsWith('data:')) {
-              var parts = href.split(',');
-              var meta = parts[0];
-              var data = parts[1];
-              var mimeMatch = meta.match(/data:([^;]+)/);
-              var mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
-              var isBase64 = meta.indexOf('base64') !== -1;
-              B.saveBlob(name, mime, isBase64 ? data : btoa(data));
-              return;
-          }
-          return origClick.apply(this, arguments);
-      };
-  }
 })();
 """
 
@@ -812,13 +757,13 @@ if (!window.__uh_blob_hooked) {
         }
 
         val postamble = buildString {
-            append("}catch(e){try{window.UH_BRIDGE.report(u,'userscript_err',String((e&&e.message)||e));}catch(_){}}\n")
+            append("}catch(e){try{window.postMessage({type:'UH_NATIVE_CALL',payload:{type:'REPORT',url:u,kind:'userscript_err',detail:String((e&&e.message)||e)}},'*');}catch(_){}}\n")
             append("if(typeof System!=='undefined'&&System.import){\n")
             append("setTimeout(function(){try{var names=Object.keys(window.__uh_sys_regs||{});\n")
-            append("for(var k=0;k<names.length;k++){(function(n){try{System.import(n).catch(function(e){try{window.UH_BRIDGE.report(location.href,'sys_import_err_'+n,String((e&&e.message)||e));}catch(_){}});}catch(e){}})(names[k]);}\n")
+            append("for(var k=0;k<names.length;k++){(function(n){try{System.import(n).catch(function(e){try{window.postMessage({type:'UH_NATIVE_CALL',payload:{type:'REPORT',url:location.href,kind:'sys_import_err_'+n,detail:String((e&&e.message)||e)}},'*');}catch(_){}});}catch(e){}})(names[k]);}\n")
             append("}catch(e){}},50);\n")
             append("}\n")
-            append("}catch(e){try{window.UH_BRIDGE.report(location.href,'wrapper_err',String((e&&e.message)||e));}catch(_){}}\n")
+            append("}catch(e){try{window.postMessage({type:'UH_NATIVE_CALL',payload:{type:'REPORT',url:location.href,kind:'wrapper_err',detail:String((e&&e.message)||e)}},'*');}catch(_){}}\n")
             append("})();\n")
         }
 
