@@ -270,29 +270,29 @@
                     android:visibility="gone" />
             </FrameLayout>
 
-            <TextView
-                android:id="@+id/tabCount"
-                android:layout_width="wrap_content"
-                android:layout_height="28dp"
-                android:minWidth="28dp"
-                android:gravity="center"
-                android:background="@color/surface_3"
-                android:textColor="@color/text"
-                android:textSize="12sp"
-                android:paddingStart="6dp"
-                android:paddingEnd="6dp"
-                android:text="1" />
-        </LinearLayout>
-
-                <ImageButton
-                    android:id="@+id/btnMenu"
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:src="@drawable/ic_menu"
-                    app:tint="@color/subtext"
-                    android:scaleType="centerInside" />
+                <TextView
+                    android:id="@+id/tabCount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="28dp"
+                    android:minWidth="28dp"
+                    android:gravity="center"
+                    android:background="@color/surface_3"
+                    android:textColor="@color/text"
+                    android:textSize="12sp"
+                    android:paddingStart="6dp"
+                    android:paddingEnd="6dp"
+                    android:text="1" />
             </LinearLayout>
+
+            <ImageButton
+                android:id="@+id/btnMenu"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_menu"
+                app:tint="@color/subtext"
+                android:scaleType="centerInside" />
+    </LinearLayout>
 
     <FrameLayout
         android:id="@+id/splashScreen"
