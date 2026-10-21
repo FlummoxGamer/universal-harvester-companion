@@ -798,43 +798,41 @@ private fun hideSplash() {
                 session.reload()
             }
 
-            override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, displayContext: GeckoSession.ContentDelegate.ContextElement): GeckoResult<AllowOrDeny>? {
-                if (displayContext.type == GeckoSession.ContentDelegate.ContextElement.TYPE_IMAGE) {
-                    val imageUrl = displayContext.uri
-                    if (!imageUrl.isNullOrBlank()) {
-                        AlertDialog.Builder(this@MainActivity)
-                            .setTitle("Image Options")
-                            .setItems(arrayOf("Download Image", "Share Image", "Copy Image Link", "Open Image")) { _, which ->
-                                when (which) {
-                                    0 -> {
-                                        val filename = "image_${System.currentTimeMillis()}.jpg"
-                                        if (imageUrl.startsWith("blob:") || imageUrl.startsWith("data:")) {
-                                            currentSession?.loadUri("javascript:fetch('$imageUrl').then(r=>r.blob()).then(b=>{var reader=new FileReader();reader.onload=function(){window.postMessage({type:'UH_NATIVE_CALL',payload:{type:'SAVE_BLOB',filename:'$filename',mime:b.type,base64:reader.result.split(',')[1]}},'*')};reader.readAsDataURL(b);})")
-                                        } else {
-                                            executeDownload(imageUrl, filename, "image/jpeg", null)
-                                        }
-                                    }
-                                    1 -> {
-                                        val intent = Intent(Intent.ACTION_SEND).apply {
-                                            type = "text/plain"
-                                            putExtra(Intent.EXTRA_TEXT, imageUrl)
-                                        }
-                                        startActivity(Intent.createChooser(intent, "Share Image Link"))
-                                    }
-                                    2 -> {
-                                        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                        cm.setPrimaryClip(android.content.ClipData.newPlainText("Image URL", imageUrl))
-                                        Toast.makeText(this@MainActivity, "Link copied", Toast.LENGTH_SHORT).show()
-                                    }
-                                    3 -> currentSession?.loadUri(imageUrl)
-                                }
+override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, displayContext: GeckoSession.ContentDelegate.ContextElement) {
+    if (displayContext.type == GeckoSession.ContentDelegate.ContextElement.TYPE_IMAGE) {
+        val imageUrl = displayContext.src
+        if (!imageUrl.isNullOrBlank()) {
+            AlertDialog.Builder(this@MainActivity)
+                .setTitle("Image Options")
+                .setItems(arrayOf("Download Image", "Share Image", "Copy Image Link", "Open Image")) { _, which ->
+                    when (which) {
+                        0 -> {
+                            val filename = "image_${System.currentTimeMillis()}.jpg"
+                            if (imageUrl.startsWith("blob:") || imageUrl.startsWith("data:")) {
+                                currentSession?.loadUri("javascript:fetch('$imageUrl').then(r=>r.blob()).then(b=>{var reader=new FileReader();reader.onload=function(){window.postMessage({type:'UH_NATIVE_CALL',payload:{type:'SAVE_BLOB',filename:'$filename',mime:b.type,base64:reader.result.split(',')[1]}},'*')};reader.readAsDataURL(b);})")
+                            } else {
+                                executeDownload(imageUrl, filename, "image/jpeg", null)
                             }
-                            .show()
-                        return GeckoResult.fromValue(AllowOrDeny.DENY)
+                        }
+                        1 -> {
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, imageUrl)
+                            }
+                            startActivity(Intent.createChooser(intent, "Share Image Link"))
+                        }
+                        2 -> {
+                            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            cm.setPrimaryClip(android.content.ClipData.newPlainText("Image URL", imageUrl))
+                            Toast.makeText(this@MainActivity, "Link copied", Toast.LENGTH_SHORT).show()
+                        }
+                        3 -> currentSession?.loadUri(imageUrl)
                     }
                 }
-                return GeckoResult.fromValue(AllowOrDeny.DENY)
-            }
+                .show()
+        }
+    }
+}
         }
 
         session.promptDelegate = object : GeckoSession.PromptDelegate {
