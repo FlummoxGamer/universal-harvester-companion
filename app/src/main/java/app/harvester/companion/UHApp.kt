@@ -9,6 +9,7 @@ import androidx.work.WorkManager
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.launch
 
 class UHApp : Application() {
     override fun onCreate() {
@@ -22,6 +23,30 @@ class UHApp : Application() {
             startService(Intent(this, SessionService::class.java))
         } catch (_: Exception) {}
         scheduleCleanup()
+    
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            try {
+                val checker = UpdateChecker.checkSilently(this@UHApp)
+                if (checker != null) {
+                    val nm = getSystemService(android.app.NotificationManager::class.java)
+                    val chId = "uh_updates"
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        val channel = android.app.NotificationChannel(chId, "App Updates", android.app.NotificationManager.IMPORTANCE_HIGH)
+                        nm.createNotificationChannel(channel)
+                    }
+                    val intent = Intent(this@UHApp, UpdateChecker::class.java)
+                    val pi = android.app.PendingIntent.getService(this@UHApp, 0, intent, android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+                    val n = androidx.core.app.NotificationCompat.Builder(this@UHApp, chId)
+                        .setSmallIcon(R.drawable.ic_downloads)
+                        .setContentTitle("Update Available")
+                        .setContentText("Tap to download v${checker.versionName}")
+                        .setContentIntent(pi)
+                        .setAutoCancel(true)
+                        .build()
+                    nm.notify(9000, n)
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     private fun scheduleCleanup() {
@@ -51,7 +76,6 @@ class UHApp : Application() {
         } catch (_: Exception) {}
     }
 
-    // checkSafeMode
     private fun checkSafeMode() {
         val bootMarker = File(filesDir, "boot_marker.tmp")
         val crashFile = File(filesDir, "last_crash.txt")
@@ -70,7 +94,6 @@ class UHApp : Application() {
         bootMarker.createNewFile()
     }
 
-    // setupCrashHandler
     private fun setupCrashHandler() {
         val prev = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
