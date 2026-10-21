@@ -10,4 +10,8 @@
         <item name="colorSurface">@color/surface</item>
         <item name="colorOnSurface">@color/text</item>
     </style>
+
+    <style name="Theme.UHCompanion.Launch" parent="Theme.UHCompanion">
+        <item name="android:windowBackground">@drawable/splash_bg</item>
+    </style>
 </resources>
