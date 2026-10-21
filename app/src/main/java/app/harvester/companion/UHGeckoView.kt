@@ -23,25 +23,25 @@ class UHGeckoView(context: Context) : GeckoView(context), NestedScrollingChild {
     private var nestedOffsetY: Int = 0
     private var childHelper: NestedScrollingChildHelper = NestedScrollingChildHelper(this)
 
-    private var handledResult: Int = 0
-    private var scrollableDirections: Int = 0
-    private var overscrollDirections: Int = 0
+private var cachedHandledResult: Int = 0
+private var cachedScrollableDirections: Int = 0
+private var cachedOverscrollDirections: Int = 0
 
-    init {
-        isNestedScrollingEnabled = true
-    }
+init {
+    isNestedScrollingEnabled = true
+}
 
-    private fun canOverscrollTop(): Boolean {
-        return (overscrollDirections and PanZoomController.OVERSCROLL_DIRECTION_TOP) != 0
-    }
+private fun canOverscrollTop(): Boolean {
+    return (cachedOverscrollDirections and PanZoomController.OVERSCROLL_DIRECTION_TOP) != 0
+}
 
-    private fun isTouchHandledByWebsite(): Boolean {
-        return (handledResult and PanZoomController.INPUT_RESULT_HANDLED_CONTENT) != 0
-    }
+private fun isTouchHandledByWebsite(): Boolean {
+    return (cachedHandledResult and PanZoomController.INPUT_RESULT_HANDLED_CONTENT) != 0
+}
 
-    private fun isTouchHandledByBrowser(): Boolean {
-        return (handledResult and PanZoomController.INPUT_RESULT_HANDLED) != 0
-    }
+private fun isTouchHandledByBrowser(): Boolean {
+    return (cachedHandledResult and PanZoomController.INPUT_RESULT_HANDLED) != 0
+}
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(ev: MotionEvent): Boolean {
@@ -86,9 +86,9 @@ class UHGeckoView(context: Context) : GeckoView(context), NestedScrollingChild {
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                handledResult = 0
-                scrollableDirections = 0
-                overscrollDirections = 0
+                cachedHandledResult = 0
+                cachedScrollableDirections = 0
+                cachedOverscrollDirections = 0
                 stopNestedScroll()
                 parent?.requestDisallowInterceptTouchEvent(false)
                 gestureCanReachParent = true
@@ -105,9 +105,9 @@ class UHGeckoView(context: Context) : GeckoView(context), NestedScrollingChild {
         super.onTouchEventForDetailResult(event).accept { detail ->
             if (!gestureCanReachParent || detail == null) return@accept
 
-            handledResult = detail.handledResult
-            scrollableDirections = detail.scrollableDirections
-            overscrollDirections = detail.overscrollDirections
+            cachedHandledResult = detail.handledResult()
+            cachedScrollableDirections = detail.scrollableDirections()
+            cachedOverscrollDirections = detail.overscrollDirections()
 
             if (eventAction == MotionEvent.ACTION_DOWN) {
                 gestureCanReachParent = canOverscrollTop()
