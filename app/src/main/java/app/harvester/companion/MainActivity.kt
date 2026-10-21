@@ -49,6 +49,7 @@ class MainActivity : AppCompatActivity() {
     private var currentView: GeckoView? = null
     private var currentSession: GeckoSession? = null
     private var currentUrl: String = ""
+    private var currentScrollY: Int = 0
 
     private val popupTabs = mutableSetOf<Long>()
     private val page3p = mutableMapOf<Long, MutableSet<String>>()
@@ -210,7 +211,7 @@ class MainActivity : AppCompatActivity() {
             currentSession?.reload()
         }
         binding.swipeRefresh.setOnChildScrollUpCallback { _, _ ->
-            false
+            currentScrollY > 0
         }
         binding.swipeRefresh.setColorSchemeColors(
             ContextCompat.getColor(this, R.color.accent)
@@ -741,6 +742,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        session.scrollDelegate = object : GeckoSession.ScrollDelegate {
+            override fun onScrollChanged(session: GeckoSession, scrollX: Int, scrollY: Int) {
+                if (session === currentSession) {
+                    currentScrollY = scrollY
+                }
+            }
+        }
+
         session.contentDelegate = object : GeckoSession.ContentDelegate {
             override fun onTitleChange(session: GeckoSession, title: String?) {
                 if (title.isNullOrBlank()) return
@@ -772,6 +781,68 @@ class MainActivity : AppCompatActivity() {
             override fun onCrash(session: GeckoSession) {
                 UHLog.e("gecko", "Tab crashed. Reloading.")
                 session.reload()
+            }
+
+            override fun onContextMenu(session: GeckoSession, displayContext: GeckoSession.ContentDelegate.ContextElement): GeckoResult<AllowOrDeny>? {
+                if (displayContext.type == GeckoSession.ContentDelegate.ContextElement.TYPE_IMAGE) {
+                    val imageUrl = displayContext.src
+                    if (!imageUrl.isNullOrBlank()) {
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle("Image Options")
+                            .setItems(arrayOf("Download Image", "Share Image", "Copy Image Link", "Open Image")) { _, which ->
+                                when (which) {
+                                    0 -> {
+                                        val filename = "image_${System.currentTimeMillis()}.jpg"
+                                        if (imageUrl.startsWith("blob:") || imageUrl.startsWith("data:")) {
+                                            currentSession?.loadUri("javascript:fetch('$imageUrl').then(r=>r.blob()).then(b=>{var reader=new FileReader();reader.onload=function(){window.postMessage({type:'UH_NATIVE_CALL',payload:{type:'SAVE_BLOB',filename:'$filename',mime:b.type,base64:reader.result.split(',')[1]}},'*')};reader.readAsDataURL(b);})")
+                                        } else {
+                                            executeDownload(imageUrl, filename, "image/jpeg", null)
+                                        }
+                                    }
+                                    1 -> {
+                                        val intent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(Intent.EXTRA_TEXT, imageUrl)
+                                        }
+                                        startActivity(Intent.createChooser(intent, "Share Image Link"))
+                                    }
+                                    2 -> {
+                                        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                        cm.setPrimaryClip(android.content.ClipData.newPlainText("Image URL", imageUrl))
+                                        Toast.makeText(this@MainActivity, "Link copied", Toast.LENGTH_SHORT).show()
+                                    }
+                                    3 -> currentSession?.loadUri(imageUrl)
+                                }
+                            }
+                            .show()
+                        return GeckoResult.fromValue(AllowOrDeny.DENY)
+                    }
+                }
+                return GeckoResult.fromValue(AllowOrDeny.DENY)
+            }
+        }
+
+        session.promptDelegate = object : GeckoSession.PromptDelegate {
+            override fun onChoicePrompt(session: GeckoSession, prompt: GeckoSession.PromptDelegate.ChoicePrompt): GeckoResult<GeckoSession.PromptDelegate.PromptResponse>? {
+                val result = GeckoResult<GeckoSession.PromptDelegate.PromptResponse>()
+                val choices = prompt.choices
+                if (choices.isEmpty()) {
+                    result.complete(prompt.dismiss())
+                    return result
+                }
+                val labels = choices.map { it.label }.toTypedArray()
+                runOnUiThread {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle(prompt.message ?: "Select an option")
+                        .setItems(labels) { _, which ->
+                            result.complete(prompt.confirm(choices[which]))
+                        }
+                        .setOnCancelListener {
+                            result.complete(prompt.dismiss())
+                        }
+                        .show()
+                }
+                return result
             }
         }
 
