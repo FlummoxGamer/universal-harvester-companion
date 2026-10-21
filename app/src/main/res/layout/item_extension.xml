@@ -6,50 +6,56 @@
     android:gravity="center_vertical"
     android:background="@color/surface"
     android:padding="12dp"
-    android:layout_marginBottom="6dp">
+    android:layout_marginBottom="8dp">
+
+    <ImageView
+        android:id="@+id/extIcon"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:scaleType="fitCenter" />
 
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
+        android:layout_marginStart="14dp"
         android:orientation="vertical">
 
         <TextView
             android:id="@+id/extName"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:maxLines="1"
-            android:ellipsize="end"
             android:textColor="@color/text"
-            android:textSize="14sp"
-            android:textStyle="bold" />
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end" />
 
         <TextView
             android:id="@+id/extMeta"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:maxLines="1"
-            android:ellipsize="end"
             android:textColor="@color/subtext"
-            android:textSize="11sp" />
+            android:textSize="12sp"
+            android:maxLines="2"
+            android:ellipsize="end" />
     </LinearLayout>
 
-    <ImageView
-        android:id="@+id/extToggle"
+    <ImageButton
+        android:id="@+id/extOptions"
         android:layout_width="40dp"
         android:layout_height="40dp"
-        android:padding="8dp"
-        android:scaleType="centerInside"
-        android:contentDescription="Enable or disable" />
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:src="@drawable/ic_settings"
+        app:tint="@color/subtext"
+        android:scaleType="centerInside" />
 
-    <ImageView
-        android:id="@+id/extRemove"
+    <ImageButton
+        android:id="@+id/extDelete"
         android:layout_width="40dp"
         android:layout_height="40dp"
-        android:padding="8dp"
-        android:src="@drawable/ic_close"
-        android:scaleType="centerInside"
-        android:contentDescription="Remove" />
-
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:src="@drawable/ic_delete"
+        app:tint="@color/red"
+        android:scaleType="centerInside" />
 </LinearLayout>
