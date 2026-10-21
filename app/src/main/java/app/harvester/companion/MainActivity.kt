@@ -860,6 +860,7 @@ override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, di
         }
     }
 }
+
         }
 
         session.promptDelegate = object : GeckoSession.PromptDelegate {
