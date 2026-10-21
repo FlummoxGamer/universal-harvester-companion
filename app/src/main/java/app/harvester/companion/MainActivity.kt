@@ -49,7 +49,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var mainGeckoView: UHGeckoView
     private var currentSession: GeckoSession? = null
     private var currentUrl: String = ""
-    private var currentScrollY: Int = 0
 
     private val popupTabs = mutableSetOf<Long>()
     private val page3p = mutableMapOf<Long, MutableSet<String>>()
@@ -770,14 +769,6 @@ private fun attachCurrent() {
             }
 
             override fun onSecurityChange(session: GeckoSession, securityInfo: GeckoSession.ProgressDelegate.SecurityInformation) {
-            }
-        }
-
-        session.scrollDelegate = object : GeckoSession.ScrollDelegate {
-            override fun onScrollChanged(session: GeckoSession, scrollX: Int, scrollY: Int) {
-                if (session === currentSession) {
-                    currentScrollY = scrollY
-                }
             }
         }
 
