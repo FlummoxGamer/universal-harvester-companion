@@ -62,6 +62,12 @@
             </LinearLayout>
 
             <LinearLayout android:id="@+id/settingsScripts" style="@style/UhSettingsRow">
+                <ImageView style="@style/UhSettingsIcon" android:src="@drawable/ic_code" />
+                <TextView style="@style/UhSettingsLabel" android:text="Scripts" />
+                <ImageView style="@style/UhSettingsChevron" />
+            </LinearLayout>
+
+            <LinearLayout android:id="@+id/settingsExtensions" style="@style/UhSettingsRow">
                 <ImageView style="@style/UhSettingsIcon" android:src="@drawable/ic_extension_rounded" />
                 <TextView style="@style/UhSettingsLabel" android:text="Extensions" />
                 <ImageView style="@style/UhSettingsChevron" />
