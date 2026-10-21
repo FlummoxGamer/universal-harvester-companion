@@ -46,7 +46,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tabs: TabManager
     private lateinit var shortcutAdapter: ShortcutAdapter
     private lateinit var suggestionsAdapter: SuggestionAdapter
-    private var currentView: GeckoView? = null
+    private lateinit var mainGeckoView: UHGeckoView
     private var currentSession: GeckoSession? = null
     private var currentUrl: String = ""
     private var currentScrollY: Int = 0
@@ -85,6 +85,9 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
         tabs = TabManager.get(this)
         setupWebExtensionBridge()
+
+        mainGeckoView = UHGeckoView(this)
+        binding.webContainer.addView(mainGeckoView)
 
         MenuCommandStore.listener = { runOnUiThread { updateUi() } }
 
@@ -238,9 +241,6 @@ private fun hideSplash() {
     private fun setupSwipeRefresh() {
         binding.swipeRefresh.setOnRefreshListener {
             currentSession?.reload()
-        }
-        binding.swipeRefresh.setOnChildScrollUpCallback { _, _ ->
-            currentScrollY > 0
         }
         binding.swipeRefresh.setColorSchemeColors(
             ContextCompat.getColor(this, R.color.accent)
@@ -690,26 +690,27 @@ private fun hideSplash() {
         updateHomeVisibility()
     }
 
-    private fun attachCurrent() {
-        val session = tabs.currentSession() ?: return
-        if (session === currentSession) { updateHomeVisibility(); return }
-        
-        tabs.pushHistory(tabs.currentId())
-        
-        binding.webContainer.removeAllViews()
-        val gv = GeckoView(this)
-        gv.setSession(session)
-        binding.webContainer.addView(gv)
-        
-        currentView = gv
-        currentSession = session
-        currentUrl = tabs.list().firstOrNull { it.id == tabs.currentId() }?.url ?: ""
-        
-        if (tabs.markAttached(session)) {
-            installDelegates(session)
-        }
-        updateUi()
+private fun attachCurrent() {
+    val session = tabs.currentSession() ?: return
+    if (session === currentSession) { updateHomeVisibility(); return }
+    
+    tabs.pushHistory(tabs.currentId())
+    
+    if (currentSession != null) {
+        currentSession?.setActive(false)
     }
+    
+    mainGeckoView.setSession(session)
+    currentSession = session
+    session.setActive(true)
+    
+    currentUrl = tabs.list().firstOrNull { it.id == tabs.currentId() }?.url ?: ""
+    
+    if (tabs.markAttached(session)) {
+        installDelegates(session)
+    }
+    updateUi()
+}
 
     private fun updateHomeVisibility() {
         val id = tabs.currentId()
@@ -917,31 +918,28 @@ override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, di
                 return GeckoResult.fromValue(AllowOrDeny.ALLOW)
             }
 
-            override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
-                val parentId = tabs.idForSession(session).takeIf { it > 0L } ?: 0L
-                val (id, newSession) = tabs.createUnopenedSession(parentId = parentId)
-                popupTabs.add(id)
-                UHLog.netPopupCreated(id)
-                if (tabs.markAttached(newSession)) {
-                    installDelegates(newSession)
-                }
-                
-                tabs.setCurrentId(id)
-                
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    binding.webContainer.removeAllViews()
-                    val gv = GeckoView(this@MainActivity)
-                    gv.setSession(newSession)
-                    binding.webContainer.addView(gv)
-                    binding.homeScreen.visibility = View.GONE
-                    currentView = gv
-                    currentSession = newSession
-                    currentUrl = "about:blank"
-                    updateUi()
-                }
-                
-                return GeckoResult.fromValue(newSession)
-            }
+override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
+    val parentId = tabs.idForSession(session).takeIf { it > 0L } ?: 0L
+    val (id, newSession) = tabs.createUnopenedSession(parentId = parentId)
+    popupTabs.add(id)
+    UHLog.netPopupCreated(id)
+    if (tabs.markAttached(newSession)) {
+        installDelegates(newSession)
+    }
+    
+    tabs.setCurrentId(id)
+    
+    android.os.Handler(android.os.Looper.getMainLooper()).post {
+        currentSession?.setActive(false)
+        mainGeckoView.setSession(newSession)
+        currentSession = newSession
+        currentUrl = "about:blank"
+        binding.homeScreen.visibility = View.GONE
+        updateUi()
+    }
+    
+    return GeckoResult.fromValue(newSession)
+        }
         }
     }
 
@@ -1091,12 +1089,12 @@ override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, di
         return m.groupValues[1].trim().trim('"', '\'')
     }
 
-    private fun switchTab(id: Long) {
-        tabs.saveCurrentState()
-        tabs.acquireSession(id)
-        attachCurrent()
-        updateUi()
-    }
+private fun switchTab(id: Long) {
+    tabs.saveCurrentState()
+    tabs.acquireSession(id)
+    attachCurrent()
+    updateUi()
+}
 
     private fun updateUi() {
         prunePopupTabs()
