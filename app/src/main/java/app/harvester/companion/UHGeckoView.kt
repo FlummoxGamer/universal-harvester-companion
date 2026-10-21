@@ -96,9 +96,9 @@ class UHGeckoView(context: Context) : GeckoView(context), NestedScrollingChild {
         super.onTouchEventForDetailResult(event).accept { detail ->
             if (!gestureCanReachParent || detail == null) return@accept
 
-            handledResult = detail.handledResult
-            scrollableDirections = detail.scrollableDirections
-            overscrollDirections = detail.overscrollDirections
+            handledResult = detail.handledResult()
+            scrollableDirections = detail.scrollableDirections()
+            overscrollDirections = detail.overscrollDirections()
 
             if (eventAction == MotionEvent.ACTION_DOWN) {
                 gestureCanReachParent = canOverscrollTop()
