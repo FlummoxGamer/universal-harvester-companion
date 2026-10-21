@@ -1,12 +1,14 @@
 const api = typeof browser !== "undefined" ? browser : chrome;
 
+const injectScript = document.createElement('script');
+injectScript.src = api.runtime.getURL('inject.js');
+(document.head || document.documentElement).appendChild(injectScript);
+injectScript.remove();
+
 api.runtime.sendNativeMessage('uhApp', { type: 'GET_SCRIPTS', url: window.location.href })
     .then((response) => {
         if (response && response.scripts) {
-            const script = document.createElement('script');
-            script.textContent = response.scripts;
-            (document.head || document.documentElement).appendChild(script);
-            script.remove();
+            window.postMessage({ type: 'UH_RUN_SCRIPTS', scripts: response.scripts }, '*');
         }
     })
     .catch((e) => console.error('UH Bridge failed to get scripts:', e));
