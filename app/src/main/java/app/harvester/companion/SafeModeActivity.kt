@@ -71,6 +71,9 @@ class SafeModeActivity : AppCompatActivity() {
                     
                     crashDir.deleteRecursively()
                     
+                    DownloadStore.activeDownloads.value.forEach { DownloadEngine.cancelDownload(this@SafeModeActivity, it.id) }
+                    stopService(Intent(this@SafeModeActivity, DownloadService::class.java))
+                    
                     val intent = packageManager.getLaunchIntentForPackage(packageName)
                     intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
                     startActivity(intent)
