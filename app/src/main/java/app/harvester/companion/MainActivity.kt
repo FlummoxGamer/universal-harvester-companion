@@ -61,9 +61,10 @@ class MainActivity : AppCompatActivity() {
     private var urlTextWatcher: android.text.TextWatcher? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        
-        val safePrefs = getSharedPreferences("uh_safe_mode", MODE_PRIVATE)
+    setTheme(R.style.Theme_UHCompanion)
+    super.onCreate(savedInstanceState)
+    
+    val safePrefs = getSharedPreferences("uh_safe_mode", MODE_PRIVATE)
         if (safePrefs.getBoolean("force_safe_mode", false)) {
             startActivity(Intent(this, SafeModeActivity::class.java))
             finish()
