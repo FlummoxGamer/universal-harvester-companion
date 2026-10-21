@@ -33,6 +33,18 @@ object GeckoEngine {
                             }
                         }
                         runtime = rt
+                        
+                        rt.webExtensionController.ensureBuiltIn(
+                            "resource://android/assets/web_extensions/uh_bridge/",
+                            "uh-bridge@harvester.app"
+                        ).accept({ ext ->
+                            if (ext != null) {
+                                rt.webExtensionController.enable(ext, org.mozilla.geckoview.WebExtensionController.EnableSource.APP)
+                            }
+                        }, { error ->
+                            UHLog.e("gecko", "Failed to load UH Bridge extension: ${error.message}")
+                        })
+                        
                     } catch (e: Throwable) {
                         UHLog.e("gecko", "GeckoRuntime init failed: ${e.message}")
                         UHLog.throwable("gecko", "GeckoRuntime init failed", e)
