@@ -155,5 +155,5 @@ class DownloadService : Service() {
         return START_NOT_STICKY
     }
 
-    override fun onBind(intent: Intent?): Boolean = null
+    override fun onBind(intent: Intent?): IBinder? = null
 }
