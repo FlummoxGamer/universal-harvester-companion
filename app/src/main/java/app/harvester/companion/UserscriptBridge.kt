@@ -47,6 +47,19 @@ fun saveBlob(filename: String, mime: String, base64Data: String, pageUrl: String
         }
     }
 }
+
+@JavascriptInterface
+fun openImage(url: String) {
+    android.os.Handler(android.os.Looper.getMainLooper()).post {
+        try {
+            val intent = Intent(ctx, ImagePreviewActivity::class.java).apply {
+                putExtra("url", url)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            ctx.startActivity(intent)
+        } catch (_: Exception) {}
+    }
+}
     
 init {
     prefs.registerOnSharedPreferenceChangeListener(
