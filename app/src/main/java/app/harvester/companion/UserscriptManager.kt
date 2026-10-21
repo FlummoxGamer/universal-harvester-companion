@@ -40,7 +40,6 @@ object UserscriptManager {
         val fileSize: Long
     )
 
-    // loadScripts
     fun loadScripts(ctx: Context): List<Script> {
         cachedScripts?.let { return it }
         val dir = File(ctx.filesDir, "scripts")
@@ -53,14 +52,12 @@ object UserscriptManager {
         return list
     }
 
-    // loadScript
     fun loadScript(ctx: Context, name: String): Script? {
         val f = File(File(ctx.filesDir, "scripts"), "$name.js")
         if (!f.isFile) return null
         return try { parse(name, f.readText(), f.length()) } catch (_: Exception) { null }
     }
 
-    // parse
     fun parse(name: String, body: String, fileSize: Long = 0L): Script {
         var displayName = name
         var namespace = ""
@@ -122,7 +119,6 @@ object UserscriptManager {
         )
     }
 
-    // install
     fun install(ctx: Context, name: String, body: String): Boolean {
         invalidateCache()
         return try {
@@ -138,13 +134,11 @@ object UserscriptManager {
         } catch (_: Exception) { false }
     }
 
-    // requiresDir
     private fun requiresDir(ctx: Context, scriptName: String): File {
         val safe = scriptName.replace(Regex("""[^a-zA-Z0-9_\-]"""), "_").take(80)
         return File(ctx.filesDir, "requires/$safe").apply { mkdirs() }
     }
 
-    // cacheRequires
     private fun cacheRequires(ctx: Context, script: Script) {
         val dir = requiresDir(ctx, script.name)
         try { dir.listFiles()?.forEach { it.delete() } } catch (_: Exception) {}
@@ -175,7 +169,6 @@ object UserscriptManager {
         }
     }
 
-    // decodeDataUrl
     private fun decodeDataUrl(url: String): String? {
         return try {
             val comma = url.indexOf(',')
@@ -190,7 +183,6 @@ object UserscriptManager {
         } catch (_: Exception) { null }
     }
 
-    // loadCachedRequires
     private fun loadCachedRequires(ctx: Context, script: Script): String {
         val dir = requiresDir(ctx, script.name)
         val files = dir.listFiles { f -> f.isFile && f.name.startsWith("req_") }
@@ -206,13 +198,11 @@ object UserscriptManager {
         return sb.toString()
     }
 
-    // installFromText
     fun installFromText(ctx: Context, body: String): Boolean {
         val parsed = parse("script_" + System.currentTimeMillis(), body)
         return install(ctx, parsed.name, body)
     }
 
-    // installFromUrl
     fun installFromUrl(ctx: Context, url: String, callback: (Boolean) -> Unit) {
         Thread {
             try {
@@ -233,7 +223,6 @@ object UserscriptManager {
         }.start()
     }
 
-    // installFromUri
     fun installFromUri(ctx: Context, uri: Uri): Boolean {
         return try {
             val input = ctx.contentResolver.openInputStream(uri) ?: return false
@@ -251,7 +240,6 @@ object UserscriptManager {
         }
     }
 
-    // installFromZipBytes
     private fun installFromZipBytes(ctx: Context, bytes: ByteArray): Boolean {
         return try {
             var n: String? = null
@@ -276,7 +264,6 @@ object UserscriptManager {
         } catch (_: Exception) { false }
     }
 
-    // uninstall
     fun uninstall(ctx: Context, name: String): Boolean {
         invalidateCache()
         return try {
@@ -287,14 +274,12 @@ object UserscriptManager {
         } catch (_: Exception) { false }
     }
 
-    // saveEdited
     fun saveEdited(ctx: Context, name: String, body: String): Boolean {
         invalidateCache()
         MenuCommandStore.clearScript(name)
         return install(ctx, name, body)
     }
 
-    // getAllGmData
     private fun getAllGmData(ctx: Context): String {
         val prefs = ctx.getSharedPreferences("uh_gm", Context.MODE_PRIVATE)
         val root = org.json.JSONObject()
@@ -310,7 +295,6 @@ object UserscriptManager {
         return root.toString()
     }
 
-    // buildInjectionScript
     fun buildInjectionScript(ctx: Context, url: String): String {
         if (isBadUrl(url)) return ""
         val sb = StringBuilder()
@@ -339,7 +323,6 @@ object UserscriptManager {
         return sb.toString()
     }
 
-    // isBadUrl
     private fun isBadUrl(url: String): Boolean {
         if (url.isBlank() || url == "about:blank") return true
         if (url.startsWith("chrome-error://")) return true
@@ -350,7 +333,6 @@ object UserscriptManager {
         return false
     }
 
-    // loadAsset
     private fun loadAsset(ctx: Context, path: String): String {
         synchronized(hookCache) { hookCache[path]?.let { return it } }
         val body = try { ctx.assets.open(path).bufferedReader().use { it.readText() } } catch (_: Exception) { "" }
@@ -358,10 +340,8 @@ object UserscriptManager {
         return body
     }
 
-    // loadHook
     private fun loadHook(ctx: Context, name: String): String = loadAsset(ctx, "hooks/$name.js")
 
-    // prefetchResources
     fun prefetchResources(ctx: Context, script: Script) {
         if (script.resources.isEmpty()) return
         Thread {
@@ -634,18 +614,6 @@ if (!window.__uh_blob_hooked) {
       };
   }
 
-  document.addEventListener('click', function(e) {
-    var target = e.target;
-    if (target.tagName === 'IMG') {
-        e.preventDefault();
-        e.stopPropagation();
-        var src = target.src;
-        if (src) {
-            window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'OPEN_IMAGE', url: src } }, '*');
-        }
-    }
-}, true);
-
   var __lastOverlayState = false;
   document.addEventListener('touchstart', function(e) {
       var isFab = false;
@@ -670,7 +638,6 @@ if (!window.__uh_blob_hooked) {
 })();
 """
 
-    // buildWrapper
     private fun buildWrapper(ctx: Context, script: Script): String {
         synchronized(wrapperCache) { wrapperCache[script.name]?.let { return it } }
         val patsJson = script.patterns.joinToString(",") {
@@ -773,7 +740,6 @@ if (!window.__uh_blob_hooked) {
         return result
     }
 
-    // buildScriptMetaJson
     private fun buildScriptMetaJson(script: Script): String {
         val sb = StringBuilder()
         sb.append("{")
@@ -800,7 +766,6 @@ if (!window.__uh_blob_hooked) {
         return sb.toString()
     }
 
-    // jsonStr
     private fun jsonStr(s: String): String {
         val sb = StringBuilder("\"")
         for (c in s) {
@@ -819,13 +784,11 @@ if (!window.__uh_blob_hooked) {
         return sb.toString()
     }
 
-    // matchesPatterns
     private fun matchesPatterns(patterns: List<String>, url: String): Boolean {
         if (patterns.isEmpty()) return false
         return patterns.any { globMatch(it, url) }
     }
 
-    // globMatch
     private fun globMatch(pattern: String, url: String): Boolean {
         var pi = 0; var ui = 0; var star = -1; var mark = 0
         while (ui < url.length) {
