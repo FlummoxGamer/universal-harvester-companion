@@ -42,9 +42,9 @@ class ExtensionsActivity : AppCompatActivity() {
 
     private fun loadExtensions() {
         val runtime = GeckoEngine.getRuntime(this) ?: return
-        runtime.webExtensionController.list().accept({ list ->
+        runtime.webExtensionController.list().accept({ extList ->
             extensions.clear()
-            val filtered = list?.filter { it.id != "uh-bridge@harvester.app" && !it.isBuiltIn } ?: emptyList()
+            val filtered = extList?.filter { it.id != "uh-bridge@harvester.app" && !it.isBuiltIn } ?: emptyList()
             extensions.addAll(filtered)
             adapter.submit(extensions)
             emptyView.visibility = if (extensions.isEmpty()) View.VISIBLE else View.GONE
@@ -111,24 +111,21 @@ class ExtensionsActivity : AppCompatActivity() {
             h.name.text = meta?.name ?: ext.id
             h.meta.text = "${meta?.version ?: "1.0"} · ${meta?.description ?: "No description"}"
 
-            val extId = ext.id ?: ""
-            val cached = iconCache[extId]
-            if (cached != null) {
-                h.icon.setImageBitmap(cached)
-            } else {
-                h.icon.setImageResource(R.drawable.ic_extension_rounded)
-                if (meta?.iconUrl != null) {
-                    Thread {
-                        val bmp = try {
-                            URL(meta.iconUrl).openStream().use { BitmapFactory.decodeStream(it) }
-                        } catch (_: Exception) { null }
-                        runOnUiThread {
-                            iconCache[extId] = bmp
-                            if (bmp != null) h.icon.setImageBitmap(bmp)
-                        }
-                    }.start()
-                }
+val extId = ext.id ?: ""
+val cached = iconCache[extId]
+if (cached != null) {
+    h.icon.setImageBitmap(cached)
+} else {
+    h.icon.setImageResource(R.drawable.ic_extension_rounded)
+    meta?.icon?.getBitmap(64)?.accept({ bmp ->
+        if (bmp != null) {
+            runOnUiThread {
+                iconCache[extId] = bmp
+                h.icon.setImageBitmap(bmp)
             }
+        }
+    }, { })
+}
 
             h.options.visibility = if (meta?.optionsPageUrl != null) View.VISIBLE else View.GONE
             h.options.setOnClickListener {
