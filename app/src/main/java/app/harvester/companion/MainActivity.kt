@@ -103,15 +103,14 @@ class MainActivity : AppCompatActivity() {
         UHLog.d("main", "onCreate complete")
     }
 
-private fun setupWebExtensionBridge() {
-    val runtime = GeckoEngine.getRuntime(this) ?: return
-    runtime.webExtensionController.ensureBuiltIn(
-        "resource://android/assets/web_extensions/uh_bridge/",
-        "uh-bridge@harvester.app"
-    ).accept({ ext ->
-        if (ext != null) {
-            ext.setMessageDelegate(object : WebExtension.MessageDelegate {
-               
+    private fun setupWebExtensionBridge() {
+        val runtime = GeckoEngine.getRuntime(this) ?: return
+        runtime.webExtensionController.ensureBuiltIn(
+            "resource://android/assets/web_extensions/uh_bridge/",
+            "uh-bridge@harvester.app"
+        ).accept({ ext ->
+            if (ext != null) {
+                ext.setMessageDelegate(object : WebExtension.MessageDelegate {
                     override fun onMessage(nativeApp: String, message: Any, sender: WebExtension.MessageSender): GeckoResult<Any>? {
                         val json = message as? JSONObject ?: return null
                         val type = json.optString("type")
@@ -190,10 +189,11 @@ private fun setupWebExtensionBridge() {
                     }
                 }, "uhApp")
             }
-            }, { error ->
-        UHLog.e("main", "Failed to attach MessageDelegate: ${error?.message}")
-    })
-}
+        }, { error ->
+            UHLog.e("main", "Failed to attach MessageDelegate: ${error?.message}")
+        })
+    }
+
     private fun setupHomeGrid() {
         shortcutAdapter = ShortcutAdapter(
             onOpen = { s -> loadUrlFromHome(s.url) },
@@ -807,23 +807,27 @@ private fun setupWebExtensionBridge() {
 
             override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
                 val parentId = tabs.idForSession(session).takeIf { it > 0L } ?: 0L
-                val parentUrl = tabs.list().firstOrNull { it.id == parentId }?.url ?: currentUrl
-                UHLog.netPopupOpen(parentUrl, true, false)
-                val id = tabs.openBlankTab(parentId = parentId)
-                val newSession = tabs.acquireSession(id) ?: return null
+                val (id, newSession) = tabs.createUnopenedSession(parentId = parentId)
                 popupTabs.add(id)
                 UHLog.netPopupCreated(id)
                 if (tabs.markAttached(newSession)) {
                     installDelegates(newSession)
                 }
-                binding.webContainer.removeAllViews()
-                val gv = GeckoView(this@MainActivity)
-                gv.setSession(newSession)
-                binding.webContainer.addView(gv)
-                binding.homeScreen.visibility = View.GONE
-                currentView = gv
-                currentSession = newSession
-                updateUi()
+                
+                tabs.setCurrentId(id)
+                
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    binding.webContainer.removeAllViews()
+                    val gv = GeckoView(this@MainActivity)
+                    gv.setSession(newSession)
+                    binding.webContainer.addView(gv)
+                    binding.homeScreen.visibility = View.GONE
+                    currentView = gv
+                    currentSession = newSession
+                    currentUrl = "about:blank"
+                    updateUi()
+                }
+                
                 return GeckoResult.fromValue(newSession)
             }
         }
@@ -1271,12 +1275,16 @@ private fun setupWebExtensionBridge() {
     override fun onPause() {
         super.onPause()
         currentSession?.setActive(false)
-        tabs.saveAll()
+        if (::tabs.isInitialized) {
+            tabs.saveAll()
+        }
         UHLog.onActivityPause(this)
     }
 
     override fun onDestroy() {
-        tabs.saveAll()
+        if (::tabs.isInitialized) {
+            tabs.saveAll()
+        }
         MenuCommandStore.listener = null
         suggestJob?.cancel()
         super.onDestroy()
