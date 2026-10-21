@@ -12,7 +12,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Call
 import java.io.File
-import java.io.FileOutputStream
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -25,7 +24,6 @@ object DownloadEngine {
         .followRedirects(true)
         .build()
 
-    // startDownload
     fun startDownload(ctx: Context, url: String, filename: String, mime: String, base64Data: String? = null, userAgent: String? = null, referer: String? = null): String {
         val id = UUID.randomUUID().toString()
         val task = DownloadStore.Task(id, url, filename, mime, base64Data = base64Data, userAgent = userAgent, referer = referer)
@@ -35,17 +33,15 @@ object DownloadEngine {
         return id
     }
 
-    // pauseDownload
-    fun pauseDownload(id: String) {
+    fun pauseDownload(ctx: Context, id: String) {
         calls[id]?.cancel()
         calls.remove(id)
         jobs[id]?.cancel()
         jobs.remove(id)
         DownloadStore.updateTask(id) { it.status = DownloadStore.Status.PAUSED }
-        DownloadService.updateNotification(ctx = UHApp().applicationContext)
+        DownloadService.updateNotification(ctx)
     }
 
-    // cancelDownload
     fun cancelDownload(ctx: Context, id: String) {
         calls[id]?.cancel()
         calls.remove(id)
@@ -60,7 +56,6 @@ object DownloadEngine {
         DownloadService.updateNotification(ctx)
     }
 
-    // resumeDownload
     fun resumeDownload(ctx: Context, id: String) {
         val task = DownloadStore.getTask(id) ?: return
         if (jobs[id]?.isActive == true) return
@@ -87,7 +82,6 @@ object DownloadEngine {
         }
     }
 
-    // handleBlobDownload
     private fun handleBlobDownload(ctx: Context, task: DownloadStore.Task) {
         try {
             val bytes = android.util.Base64.decode(task.base64Data, android.util.Base64.DEFAULT)
@@ -107,7 +101,6 @@ object DownloadEngine {
         }
     }
 
-    // handleNetworkDownload
     private suspend fun handleNetworkDownload(ctx: Context, task: DownloadStore.Task) {
         val requestBuilder = Request.Builder().url(task.url)
         
@@ -181,7 +174,6 @@ object DownloadEngine {
         }
     }
 
-    // saveToMediaStore
     private fun saveToMediaStore(ctx: Context, filename: String, mime: String): Uri {
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
@@ -201,7 +193,6 @@ object DownloadEngine {
         return uri
     }
 
-    // deletePartialFile
     private fun deletePartialFile(ctx: Context, filename: String) {
         try {
             val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
