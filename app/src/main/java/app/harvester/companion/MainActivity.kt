@@ -101,6 +101,9 @@ class MainActivity : AppCompatActivity() {
         }
         attachCurrent()
         applyAddressBarPosition()
+
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ hideSplash() }, 1200)
+
         UHLog.d("main", "onCreate complete")
     }
 
@@ -194,6 +197,17 @@ class MainActivity : AppCompatActivity() {
             UHLog.e("main", "Failed to attach MessageDelegate: ${error?.message}")
         })
     }
+
+private var isSplashHidden = false
+private fun hideSplash() {
+    if (isSplashHidden) return
+    isSplashHidden = true
+    binding.splashScreen.animate()
+        .alpha(0f)
+        .setDuration(400)
+        .withEndAction { binding.splashScreen.visibility = View.GONE }
+        .start()
+}
 
     private fun setupHomeGrid() {
         shortcutAdapter = ShortcutAdapter(
@@ -719,6 +733,7 @@ class MainActivity : AppCompatActivity() {
             override fun onPageStop(session: GeckoSession, success: Boolean) {
                 val url = currentUrl
                 UHLog.d("web", "finish ${url.take(140)}")
+                hideSplash()
                 val id = tabs.idForSession(session)
                 if (id > 0L) tabs.updateUrl(id, url, null)
                 binding.swipeRefresh.isRefreshing = false
@@ -783,9 +798,9 @@ class MainActivity : AppCompatActivity() {
                 session.reload()
             }
 
-            override fun onContextMenu(session: GeckoSession, displayContext: GeckoSession.ContentDelegate.ContextElement): GeckoResult<AllowOrDeny>? {
+            override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, displayContext: GeckoSession.ContentDelegate.ContextElement): GeckoResult<AllowOrDeny>? {
                 if (displayContext.type == GeckoSession.ContentDelegate.ContextElement.TYPE_IMAGE) {
-                    val imageUrl = displayContext.src
+                    val imageUrl = displayContext.uri
                     if (!imageUrl.isNullOrBlank()) {
                         AlertDialog.Builder(this@MainActivity)
                             .setTitle("Image Options")
