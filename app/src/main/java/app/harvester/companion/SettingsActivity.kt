@@ -23,6 +23,9 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<android.view.View>(R.id.settingsScripts).setOnClickListener {
             startActivity(Intent(this, ScriptsActivity::class.java))
         }
+        findViewById<android.view.View>(R.id.settingsExtensions).setOnClickListener {
+            startActivity(Intent(this, ExtensionsActivity::class.java))
+        }
         findViewById<android.view.View>(R.id.settingsVideo).setOnClickListener {
             startActivity(Intent(this, VideoOptionsActivity::class.java))
         }
