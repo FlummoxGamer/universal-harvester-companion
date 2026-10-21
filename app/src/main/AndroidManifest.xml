@@ -51,6 +51,11 @@
             android:label="Capture Tools" />
 
         <activity
+            android:name=".ExtensionsActivity"
+            android:exported="false"
+            android:label="Extensions" />
+
+        <activity
             android:name=".ScriptsActivity"
             android:exported="false"
             android:label="Scripts" />
