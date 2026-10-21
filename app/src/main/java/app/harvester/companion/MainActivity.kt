@@ -202,11 +202,25 @@ private var isSplashHidden = false
 private fun hideSplash() {
     if (isSplashHidden) return
     isSplashHidden = true
-    binding.splashScreen.animate()
-        .alpha(0f)
-        .setDuration(400)
-        .withEndAction { binding.splashScreen.visibility = View.GONE }
+    
+    binding.splashLogo.alpha = 0f
+    binding.splashLogo.scaleX = 0.9f
+    binding.splashLogo.scaleY = 0.9f
+    binding.splashLogo.animate()
+        .alpha(1f)
+        .scaleX(1f)
+        .scaleY(1f)
+        .setDuration(600)
+        .setInterpolator(android.view.animation.DecelerateInterpolator())
         .start()
+
+    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+        binding.splashScreen.animate()
+            .alpha(0f)
+            .setDuration(400)
+            .withEndAction { binding.splashScreen.visibility = View.GONE }
+            .start()
+    }, 1200)
 }
 
     private fun setupHomeGrid() {
