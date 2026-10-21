@@ -80,12 +80,12 @@ object DownloadEngine {
                     }
                 }
 
-                if (targetUri != null) finishMediaStore(ctx, targetUri)
+                targetUri?.let { finishMediaStore(ctx, it) }
                 DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.SUCCESS }
                 DownloadService.notifyComplete(ctx, task.id, task.filename)
                 DownloadStore.removeTask(task.id)
             } catch (e: Exception) {
-                if (targetUri != null) deletePartialFile(ctx, targetUri)
+                targetUri?.let { deletePartialFile(ctx, it) }
                 DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.FAILED; it.error = e.message }
                 DownloadService.notifyFailed(ctx, task.id, task.filename, e.message ?: "Unknown error")
             } finally {
@@ -208,7 +208,7 @@ object DownloadEngine {
                             }
                         }
 
-                        if (targetUri != null) finishMediaStore(ctx, targetUri)
+                        targetUri?.let { finishMediaStore(ctx, it) }
                         DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.SUCCESS }
                         DownloadService.notifyComplete(ctx, task.id, task.filename)
                         DownloadStore.removeTask(task.id)
@@ -218,7 +218,7 @@ object DownloadEngine {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                if (targetUri != null) deletePartialFile(ctx, targetUri)
+                targetUri?.let { deletePartialFile(ctx, it) } 
                 DownloadStore.updateTask(id) { 
                     it.status = DownloadStore.Status.FAILED
                     it.error = e.message 
