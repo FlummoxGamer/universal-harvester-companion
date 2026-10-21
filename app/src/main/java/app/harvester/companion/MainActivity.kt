@@ -789,23 +789,35 @@ private fun hideSplash() {
                 tabs.updateUrl(id, url, title)
             }
 
-            override fun onExternalResponse(session: GeckoSession, response: WebResponse) {
-                val headers = response.headers
-                val disposition = headers["Content-Disposition"] ?: headers["content-disposition"]
-                val contentType = headers["Content-Type"] ?: headers["content-type"]
-                val cleanContentType = contentType?.lowercase()?.trim() ?: ""
+override fun onExternalResponse(session: GeckoSession, response: WebResponse) {
+    val headers = response.headers
+    val disposition = headers["Content-Disposition"] ?: headers["content-disposition"]
+    val contentType = headers["Content-Type"] ?: headers["content-type"]
+    val cleanContentType = contentType?.lowercase()?.trim() ?: ""
 
-                if (cleanContentType.contains("text/html") || cleanContentType.contains("application/xhtml+xml")) {
-                    return
-                }
+    if (cleanContentType.contains("text/html") || cleanContentType.contains("application/xhtml+xml")) {
+        return
+    }
 
-                val filename = extractFilename(disposition) ?: "download_${System.currentTimeMillis()}"
-                if (SettingsPrefs.getBool(this@MainActivity, SettingsPrefs.K_ASK_DL, true)) {
-                    showDownloadConfirmationSheet(response.uri, filename, contentType, headers["User-Agent"])
-                } else {
-                    executeDownload(response.uri, filename, contentType, headers["User-Agent"])
-                }
-            }
+    val filename = extractFilename(disposition) ?: "download_${System.currentTimeMillis()}"
+    val userAgent = headers["User-Agent"] ?: headers["user-agent"]
+    val body = response.body
+    val contentLength = headers["Content-Length"]?.toLongOrNull() ?: headers["content-length"]?.toLongOrNull() ?: -1L
+
+    if (body != null) {
+        if (SettingsPrefs.getBool(this@MainActivity, SettingsPrefs.K_ASK_DL, true)) {
+            showStreamDownloadConfirmationSheet(filename, contentType, userAgent, body, contentLength)
+        } else {
+            DownloadEngine.startStreamDownload(this@MainActivity, filename, contentType ?: "application/octet-stream", body, contentLength, userAgent, currentUrl)
+        }
+    } else {
+        if (SettingsPrefs.getBool(this@MainActivity, SettingsPrefs.K_ASK_DL, true)) {
+            showDownloadConfirmationSheet(response.uri, filename, contentType, userAgent)
+        } else {
+            executeDownload(response.uri, filename, contentType, userAgent)
+        }
+    }
+}
 
             override fun onCrash(session: GeckoSession) {
                 UHLog.e("gecko", "Tab crashed. Reloading.")
@@ -1012,6 +1024,58 @@ override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, di
 
         sheet.show()
     }
+    
+    private fun showStreamDownloadConfirmationSheet(filename: String, mimetype: String?, userAgent: String?, stream: java.io.InputStream, contentLength: Long) {
+    val sheet = BottomSheetDialog(this)
+    val v = layoutInflater.inflate(R.layout.dialog_download_confirmation, null)
+    v.setBackgroundResource(R.drawable.bg_bottom_sheet)
+    sheet.setContentView(v)
+
+    v.findViewById<android.widget.TextView>(R.id.dlFileName).text = filename
+    v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = android.text.format.Formatter.formatShortFileSize(this, contentLength)
+    v.findViewById<android.widget.TextView>(R.id.dlFileUrl).text = "Stream Download"
+    
+    val customUri = SettingsPrefs.getString(this, "custom_download_uri", "")
+    val pathStr = if (customUri.isNotBlank()) {
+         customUri.replace("content://com.android.externalstorage.documents/tree/primary%3A", "/storage/emulated/0/").replace("%2F", "/")
+    } else {
+        "/storage/emulated/0/Download"
+    }
+    v.findViewById<android.widget.TextView>(R.id.dlLocationPath).text = pathStr
+
+    v.findViewById<android.view.View>(R.id.dlLocationRow).setOnClickListener {
+        startActivity(Intent(this, DownloadSettingsActivity::class.java))
+        sheet.dismiss()
+    }
+
+    v.findViewById<android.view.View>(R.id.dlStartBtn).setOnClickListener {
+        sheet.dismiss()
+        val finalName = v.findViewById<android.widget.TextView>(R.id.dlFileName).text.toString()
+        DownloadEngine.startStreamDownload(this, finalName, mimetype ?: "application/octet-stream", stream, contentLength, userAgent, currentUrl)
+    }
+
+    v.findViewById<android.view.View>(R.id.dlEditName).setOnClickListener {
+        val input = EditText(this).apply { setText(filename) }
+        AlertDialog.Builder(this)
+            .setTitle("Rename")
+            .setView(input)
+            .setPositiveButton("OK") { _, _ ->
+                val newName = input.text.toString().trim()
+                if (newName.isNotBlank()) {
+                    v.findViewById<android.widget.TextView>(R.id.dlFileName).text = newName
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    sheet.setOnCancelListener {
+        try { stream.close() } catch (_: Exception) {}
+    }
+
+    sheet.show()
+}
+
 
     private fun executeDownload(url: String, filename: String, mimetype: String?, userAgent: String?) {
         val referer = currentUrl
