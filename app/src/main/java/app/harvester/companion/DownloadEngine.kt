@@ -11,13 +11,14 @@ import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Call
-import java.io.File
+import java.io.InputStream
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 object DownloadEngine {
     private val jobs = mutableMapOf<String, Job>()
     private val calls = mutableMapOf<String, Call>()
+    private val streams = mutableMapOf<String, InputStream>()
     private val client = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -33,13 +34,73 @@ object DownloadEngine {
         return id
     }
 
+    fun startStreamDownload(ctx: Context, filename: String, mime: String, stream: InputStream, contentLength: Long, userAgent: String?, referer: String?): String {
+        val id = UUID.randomUUID().toString()
+        val task = DownloadStore.Task(id, "stream", filename, mime, userAgent = userAgent, referer = referer)
+        task.totalBytes = contentLength
+        DownloadStore.addTask(task)
+        streams[id] = stream
+        DownloadService.start(ctx)
+        
+        jobs[id] = CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val uri = saveToMediaStore(ctx, task.filename, task.mime)
+                val outputStream = ctx.contentResolver.openOutputStream(uri) ?: throw Exception("Cannot open file")
+                
+                val buffer = ByteArray(8192)
+                var bytesRead: Int
+                var lastUpdate = System.currentTimeMillis()
+                var bytesSinceLastUpdate = 0L
+
+                outputStream.use { out ->
+                    stream.use { input ->
+                        while (currentCoroutineContext().isActive) {
+                            bytesRead = input.read(buffer)
+                            if (bytesRead == -1) break
+                            out.write(buffer, 0, bytesRead)
+                            task.bytesDownloaded += bytesRead
+                            bytesSinceLastUpdate += bytesRead
+
+                            val now = System.currentTimeMillis()
+                            if (now - lastUpdate > 500) {
+                                val speed = (bytesSinceLastUpdate * 1000) / (now - lastUpdate)
+                                val eta = if (speed > 0 && task.totalBytes > 0) (task.totalBytes - task.bytesDownloaded) / speed else -1L
+                                
+                                DownloadStore.updateTask(task.id) {
+                                    it.speed = speed
+                                    it.etaSeconds = eta
+                                }
+                                DownloadService.updateNotification(ctx, task.id)
+                                
+                                lastUpdate = now
+                                bytesSinceLastUpdate = 0L
+                            }
+                        }
+                    }
+                }
+
+                DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.SUCCESS }
+                DownloadService.notifyComplete(ctx, task.id, task.filename)
+                DownloadStore.removeTask(task.id)
+            } catch (e: Exception) {
+                DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.FAILED; it.error = e.message }
+                DownloadService.notifyFailed(ctx, task.id, task.filename, e.message ?: "Unknown error")
+            } finally {
+                streams.remove(id)
+            }
+        }
+        return id
+    }
+
     fun pauseDownload(ctx: Context, id: String) {
         calls[id]?.cancel()
         calls.remove(id)
         jobs[id]?.cancel()
         jobs.remove(id)
+        streams[id]?.close()
+        streams.remove(id)
         DownloadStore.updateTask(id) { it.status = DownloadStore.Status.PAUSED }
-        DownloadService.updateNotification(ctx)
+        DownloadService.updateNotification(ctx, id)
     }
 
     fun cancelDownload(ctx: Context, id: String) {
@@ -47,13 +108,16 @@ object DownloadEngine {
         calls.remove(id)
         jobs[id]?.cancel()
         jobs.remove(id)
+        streams[id]?.close()
+        streams.remove(id)
+        
         DownloadStore.updateTask(id) { it.status = DownloadStore.Status.CANCELLED }
         val task = DownloadStore.getTask(id)
         if (task != null) {
             deletePartialFile(ctx, task.filename)
             DownloadStore.removeTask(id)
         }
-        DownloadService.updateNotification(ctx)
+        DownloadService.cancelNotification(ctx, id)
     }
 
     fun resumeDownload(ctx: Context, id: String) {
@@ -61,7 +125,7 @@ object DownloadEngine {
         if (jobs[id]?.isActive == true) return
 
         DownloadStore.updateTask(id) { it.status = DownloadStore.Status.RUNNING }
-        DownloadService.updateNotification(ctx)
+        DownloadService.updateNotification(ctx, id)
 
         jobs[id] = CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -77,7 +141,7 @@ object DownloadEngine {
                     it.status = DownloadStore.Status.FAILED
                     it.error = e.message 
                 }
-                DownloadService.updateNotification(ctx)
+                DownloadService.notifyFailed(ctx, id, task.filename, e.message ?: "Unknown error")
             }
         }
     }
@@ -96,7 +160,7 @@ object DownloadEngine {
         } catch (e: Exception) {
             DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.FAILED; it.error = e.message }
         } finally {
-            DownloadService.updateNotification(ctx)
+            DownloadService.notifyComplete(ctx, task.id, task.filename)
             DownloadStore.removeTask(task.id)
         }
     }
@@ -157,7 +221,7 @@ object DownloadEngine {
                                 it.speed = speed
                                 it.etaSeconds = eta
                             }
-                            DownloadService.updateNotification(ctx)
+                            DownloadService.updateNotification(ctx, task.id)
                             
                             lastUpdate = now
                             bytesSinceLastUpdate = 0L
@@ -167,9 +231,8 @@ object DownloadEngine {
             }
 
             DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.SUCCESS }
-            DownloadService.updateNotification(ctx)
+            DownloadService.notifyComplete(ctx, task.id, task.filename)
             DownloadStore.removeTask(task.id)
-            DownloadService.notifyComplete(ctx, task.filename)
             calls.remove(task.id)
         }
     }
