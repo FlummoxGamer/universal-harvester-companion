@@ -800,7 +800,7 @@ private fun hideSplash() {
 
 override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, displayContext: GeckoSession.ContentDelegate.ContextElement) {
     if (displayContext.type == GeckoSession.ContentDelegate.ContextElement.TYPE_IMAGE) {
-        val imageUrl = displayContext.src
+        val imageUrl = displayContext.srcUri
         if (!imageUrl.isNullOrBlank()) {
             AlertDialog.Builder(this@MainActivity)
                 .setTitle("Image Options")
