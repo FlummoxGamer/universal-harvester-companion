@@ -320,11 +320,12 @@
                 android:src="@mipmap/ic_launcher" />
 
             <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="40dp"
-                android:orientation="vertical"
-                android:gravity="center">
+               android:layout_width="wrap_content"
+               android:layout_height="wrap_content"
+               android:layout_marginTop="40dp"
+               android:layout_marginBottom="80dp"
+               android:orientation="vertical"
+               android:gravity="center">
 
                 <TextView
                     android:layout_width="wrap_content"
