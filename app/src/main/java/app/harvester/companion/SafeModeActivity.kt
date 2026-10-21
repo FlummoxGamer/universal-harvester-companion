@@ -2,12 +2,14 @@ package app.harvester.companion
 
 import android.content.Intent
 import android.os.Bundle
+import android.os.Process
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.work.WorkManager
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -41,7 +43,7 @@ class SafeModeActivity : AppCompatActivity() {
         tv.setPadding(16, 16, 16, 16)
         tv.setTextIsSelectable(true)
         scroll.addView(tv)
-        content.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 600))
+        content.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 550))
 
         val btnSave = Button(this).apply {
             text = "Save Crash Log"
@@ -59,28 +61,42 @@ class SafeModeActivity : AppCompatActivity() {
         }
         content.addView(btnSave)
 
+        val btnRestartKeep = Button(this).apply {
+            text = "Restart Browser (Keep Data)"
+            setOnClickListener {
+                stopAllProcesses()
+                val prefs = getSharedPreferences("uh_safe_mode", MODE_PRIVATE)
+                prefs.edit().putBoolean("force_safe_mode", false).apply()
+                
+                val bootMarker = File(filesDir, "boot_marker.tmp")
+                if (bootMarker.exists()) bootMarker.delete()
+                
+                val intent = packageManager.getLaunchIntentForPackage(packageName)
+                intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                startActivity(intent)
+                finishAffinity()
+                Process.killProcess(Process.myPid())
+            }
+        }
+        content.addView(btnRestartKeep)
+
         val btnReset = Button(this).apply {
             text = "Clear Data & Restart"
             setOnClickListener {
-                try {
-                    val prefs = getSharedPreferences("uh_safe_mode", MODE_PRIVATE)
-                    prefs.edit().clear().apply()
-                    
-                    val bootMarker = File(filesDir, "boot_marker.tmp")
-                    if (bootMarker.exists()) bootMarker.delete()
-                    
-                    crashDir.deleteRecursively()
-                    
-                    DownloadStore.activeDownloads.value.forEach { DownloadEngine.cancelDownload(this@SafeModeActivity, it.id) }
-                    stopService(Intent(this@SafeModeActivity, DownloadService::class.java))
-                    
-                    val intent = packageManager.getLaunchIntentForPackage(packageName)
-                    intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                    startActivity(intent)
-                    Runtime.getRuntime().exit(0)
-                } catch (e: Exception) {
-                    Toast.makeText(this@SafeModeActivity, "Reset failed", Toast.LENGTH_SHORT).show()
-                }
+                stopAllProcesses()
+                val prefs = getSharedPreferences("uh_safe_mode", MODE_PRIVATE)
+                prefs.edit().clear().apply()
+                
+                val bootMarker = File(filesDir, "boot_marker.tmp")
+                if (bootMarker.exists()) bootMarker.delete()
+                
+                crashDir.deleteRecursively()
+                
+                val intent = packageManager.getLaunchIntentForPackage(packageName)
+                intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                startActivity(intent)
+                finishAffinity()
+                Process.killProcess(Process.myPid())
             }
         }
         content.addView(btnReset)
@@ -90,5 +106,14 @@ class SafeModeActivity : AppCompatActivity() {
             setOnClickListener { finishAffinity() }
         }
         content.addView(btnExit)
+    }
+
+    private fun stopAllProcesses() {
+        try {
+            DownloadStore.activeDownloads.value.forEach { DownloadEngine.cancelDownload(this, it.id) }
+            stopService(Intent(this, DownloadService::class.java))
+            stopService(Intent(this, SessionService::class.java))
+            WorkManager.getInstance(this).cancelAllWork()
+        } catch (_: Exception) {}
     }
 }
