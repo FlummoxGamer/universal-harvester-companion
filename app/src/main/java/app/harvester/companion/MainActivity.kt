@@ -38,6 +38,7 @@ import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.WebResponse
+import org.mozilla.geckoview.WebExtension
 
 class MainActivity : AppCompatActivity() {
 
@@ -81,6 +82,7 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         tabs = TabManager.get(this)
+        setupWebExtensionBridge()
 
         MenuCommandStore.listener = { runOnUiThread { updateUi() } }
 
@@ -99,6 +101,94 @@ class MainActivity : AppCompatActivity() {
         attachCurrent()
         applyAddressBarPosition()
         UHLog.d("main", "onCreate complete")
+    }
+
+    private fun setupWebExtensionBridge() {
+        val runtime = GeckoEngine.getRuntime(this) ?: return
+        runtime.webExtensionController.get("uh-bridge@harvester.app").accept({ ext ->
+            if (ext != null) {
+                ext.setMessageDelegate(object : WebExtension.MessageDelegate {
+                    override fun onMessage(nativeApp: String, message: Any, sender: WebExtension.MessageSender): GeckoResult<Any>? {
+                        val json = message as? JSONObject ?: return null
+                        val type = json.optString("type")
+                        when (type) {
+                            "GET_SCRIPTS" -> {
+                                val url = json.optString("url")
+                                val code = UserscriptManager.buildInjectionScript(this@MainActivity, url)
+                                val res = JSONObject()
+                                res.put("scripts", code)
+                                return GeckoResult.fromValue(res.toString())
+                            }
+                            "SAVE_BLOB" -> {
+                                val filename = json.optString("filename")
+                                val mime = json.optString("mime")
+                                val base64 = json.optString("base64")
+                                DownloadEngine.startDownload(this@MainActivity, "", filename, mime, base64, null, currentUrl)
+                                return GeckoResult.fromValue("ok")
+                            }
+                            "GM_setValue" -> {
+                                val script = json.optString("script")
+                                val key = json.optString("key")
+                                val value = json.optString("value")
+                                getSharedPreferences("uh_gm", Context.MODE_PRIVATE).edit().putString("$script::$key", value).apply()
+                                return GeckoResult.fromValue("ok")
+                            }
+                            "GM_deleteValue" -> {
+                                val script = json.optString("script")
+                                val key = json.optString("key")
+                                getSharedPreferences("uh_gm", Context.MODE_PRIVATE).edit().remove("$script::$key").apply()
+                                return GeckoResult.fromValue("ok")
+                            }
+                            "GM_log" -> {
+                                UHLog.d("userscript", json.optString("message"))
+                                return GeckoResult.fromValue("ok")
+                            }
+                            "GM_setClipboard" -> {
+                                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                cm.setPrimaryClip(android.content.ClipData.newPlainText("userscript", json.optString("text")))
+                                return GeckoResult.fromValue("ok")
+                            }
+                            "GM_notification" -> {
+                                val nm = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                                val chId = "uh_userscript"
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                    if (nm.getNotificationChannel(chId) == null) {
+                                        nm.createNotificationChannel(android.app.NotificationChannel(chId, "Userscripts", android.app.NotificationManager.IMPORTANCE_DEFAULT))
+                                    }
+                                }
+                                val n = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O)
+                                    android.app.Notification.Builder(this@MainActivity, chId)
+                                else @Suppress("DEPRECATION") android.app.Notification.Builder(this@MainActivity)
+                                n.setContentTitle(json.optString("title", "Harvester"))
+                                n.setContentText(json.optString("text"))
+                                n.setSmallIcon(android.R.drawable.ic_dialog_info)
+                                nm.notify(System.currentTimeMillis().toInt(), n.build())
+                                return GeckoResult.fromValue("ok")
+                            }
+                            "OPEN_IMAGE" -> {
+                                try {
+                                    val intent = Intent(this@MainActivity, ImagePreviewActivity::class.java).apply {
+                                        putExtra("url", json.optString("url"))
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    startActivity(intent)
+                                } catch (_: Exception) {}
+                                return GeckoResult.fromValue("ok")
+                            }
+                            "OVERLAY_STATE" -> {
+                                val active = json.optBoolean("active")
+                                val bridge = currentView?.tag as? UserscriptBridge
+                                bridge?.overlayActive = active
+                                return GeckoResult.fromValue("ok")
+                            }
+                        }
+                        return GeckoResult.fromValue("ok")
+                    }
+                }, "uhApp")
+            }
+        }, { error ->
+            UHLog.e("main", "Failed to attach MessageDelegate: ${error.message}")
+        })
     }
 
     private fun setupHomeGrid() {
@@ -254,25 +344,25 @@ class MainActivity : AppCompatActivity() {
         binding.btnScriptMenu.setOnClickListener { showScriptMenuSheet() }
     }
 
-private fun navigateInput(typed: String): Boolean {
-    val target = normalize(typed)
-    if (target.isBlank()) return false
-    val isSearch = !target.startsWith("http")
-    if (isSearch) HistoryStore.get(this).recordSearch(typed)
-    var session = currentSession
-    if (session == null || tabs.list().isEmpty() || tabs.currentId() < 0L) {
-        tabs.openNew(target)
-        attachCurrent()
-        session = currentSession
-    } else {
-        currentUrl = target
-        binding.urlText.text = target
-        updateHomeVisibility()
-        session.loadUri(target)
+    private fun navigateInput(typed: String): Boolean {
+        val target = normalize(typed)
+        if (target.isBlank()) return false
+        val isSearch = !target.startsWith("http")
+        if (isSearch) HistoryStore.get(this).recordSearch(typed)
+        var session = currentSession
+        if (session == null || tabs.list().isEmpty() || tabs.currentId() < 0L) {
+            tabs.openNew(target)
+            attachCurrent()
+            session = currentSession
+        } else {
+            currentUrl = target
+            binding.urlText.text = target
+            updateHomeVisibility()
+            session.loadUri(target)
+        }
+        exitEditMode()
+        return true
     }
-    exitEditMode()
-    return true
-}
 
     private fun setupBackDispatcher() {
         onBackPressedDispatcher.addCallback(this) {
@@ -605,214 +695,136 @@ private fun navigateInput(typed: String): Boolean {
         popupTabs.retainAll(live)
     }
 
-    private fun isStaticAsset(url: String, headers: Map<String, String>?): Boolean {
-        val accept = headers?.entries?.firstOrNull { it.key.equals("Accept", true) }?.value ?: ""
-        if (accept.contains("image/") || accept.contains("text/css") || accept.contains("font/")) return true
-        
-        val path = url.substringBefore('?').substringBefore('#')
-        val dot = path.lastIndexOf('.')
-        if (dot == -1 || path.length - dot > 6) return false
-        val ext = path.substring(dot + 1)
-        if (ext.length < 2) return false
-        val c0 = ext[0].lowercaseChar()
-        if (c0 == 'j') return ext.equals("js", true) || ext.equals("jpg", true) || ext.equals("jpeg", true)
-        if (c0 == 'c') return ext.equals("css", true)
-        if (c0 == 'p') return ext.equals("png", true)
-        if (c0 == 'w') return ext.equals("woff", true) || ext.equals("woff2", true) || ext.equals("webp", true)
-        if (c0 == 't') return ext.equals("ttf", true)
-        if (c0 == 'o') return ext.equals("otf", true)
-        if (c0 == 'e') return ext.equals("eot", true)
-        if (c0 == 's') return ext.equals("svg", true)
-        if (c0 == 'g') return ext.equals("gif", true)
-        if (c0 == 'i') return ext.equals("ico", true)
-        if (c0 == 'm') return ext.equals("mjs", true) || ext.equals("map", true)
-        if (c0 == 'a') return ext.equals("avif", true)
-        if (c0 == 'b') return ext.equals("bmp", true)
-        return false
-    }
-
-    private fun isBeaconHost(url: String): Boolean {
-        val host = try { java.net.URI(url).host?.lowercase() ?: return false } catch (_: Exception) { return false }
-        if (host.endsWith(".googletagmanager.com") || host == "googletagmanager.com") return true
-        if (host.endsWith(".google-analytics.com") || host == "google-analytics.com") return true
-        if (host == "improving.duckduckgo.com") return true
-        if (host == "my.rtmark.net") return true
-        if (host.endsWith(".cloudflareinsights.com")) return true
-        if (host.endsWith(".sentry.io")) return true
-        return false
-    }
-
-    private fun recordUrlOnce(url: String): Boolean {
-        val key = url.substringBefore('?').substringBefore('#')
-        val now = System.currentTimeMillis()
-        synchronized(recentUrls) {
-            val it = recentUrls.entries.iterator()
-            while (it.hasNext()) if (now - it.next().value > 2000L) it.remove()
-            val last = recentUrls[key]
-            recentUrls[key] = now
-            return !(last != null && now - last < 1000L)
-        }
-    }
-
-    private fun collect3p(session: GeckoSession, url: String) {
-        val host = try { java.net.URI(url).host?.lowercase() ?: return } catch (_: Exception) { return }
-        val viewUrl = currentUrl
-        val viewHost = try { java.net.URI(viewUrl).host?.lowercase() ?: return } catch (_: Exception) { return }
-        if (host == viewHost) return
-        val id = tabs.idForSession(session)
-        if (id <= 0L) return
-        synchronized(page3p) { page3p.getOrPut(id) { mutableSetOf() }.add(host) }
-    }
-
-    private fun flush3p(session: GeckoSession, pageUrl: String) {
-        val id = tabs.idForSession(session)
-        if (id <= 0L) return
-        val hosts = synchronized(page3p) { page3p.remove(id)?.toList() } ?: return
-        if (hosts.isNotEmpty()) UHLog.net3p(pageUrl, hosts)
-    }
-
-    private fun clear3p(session: GeckoSession) {
-        val id = tabs.idForSession(session)
-        if (id <= 0L) return
-        synchronized(page3p) { page3p.remove(id) }
-    }
-
- private fun installDelegates(session: GeckoSession) {
-    session.progressDelegate = object : GeckoSession.ProgressDelegate {
-        override fun onPageStart(session: GeckoSession, url: String) {
-            UHLog.d("web", "start ${url.take(140)}")
-            val id = tabs.idForSession(session)
-            if (id > 0L) tabs.updateUrl(id, url, null)
-            if (session === currentSession) {
-                val isEmpty = url.isBlank() || url == "about:blank"
-                binding.urlText.text = if (isEmpty) "Search or type URL" else url
-                binding.urlText.setTextColor(ContextCompat.getColor(
-                    this@MainActivity, if (isEmpty) R.color.subtext else R.color.text))
-                updateSearchEngineIcon()
+    private fun installDelegates(session: GeckoSession) {
+        session.progressDelegate = object : GeckoSession.ProgressDelegate {
+            override fun onPageStart(session: GeckoSession, url: String) {
+                UHLog.d("web", "start ${url.take(140)}")
+                val id = tabs.idForSession(session)
+                if (id > 0L) tabs.updateUrl(id, url, null)
+                if (session === currentSession) {
+                    val isEmpty = url.isBlank() || url == "about:blank"
+                    binding.urlText.text = if (isEmpty) "Search or type URL" else url
+                    binding.urlText.setTextColor(ContextCompat.getColor(
+                        this@MainActivity, if (isEmpty) R.color.subtext else R.color.text))
+                    updateSearchEngineIcon()
+                }
+                if (id in popupTabs) UHLog.netPopupLoad(url)
+                if (session === currentSession) updateHomeVisibility()
             }
-            if (id in popupTabs) UHLog.netPopupLoad(url)
-            if (url != "about:blank" && !url.startsWith("chrome-error://")) {
-                UserscriptManager.injectOnPageStart(session, this@MainActivity, url)
+
+            override fun onPageStop(session: GeckoSession, success: Boolean) {
+                val url = currentUrl
+                UHLog.d("web", "finish ${url.take(140)}")
+                val id = tabs.idForSession(session)
+                if (id > 0L) tabs.updateUrl(id, url, null)
+                binding.swipeRefresh.isRefreshing = false
+                if (url != "about:blank") {
+                    val entity = tabs.list().firstOrNull { it.id == id }
+                    if (entity?.incognito != true) {
+                        HistoryStore.get(this@MainActivity).record(url, entity?.title ?: "")
+                    }
+                }
+                if (session === currentSession) updateUi()
             }
-            if (session === currentSession) updateHomeVisibility()
+
+            override fun onProgressChange(session: GeckoSession, progress: Int) {
+                if (session !== currentSession) return
+                binding.loadingBar.visibility =
+                    if (progress in 1..99) View.VISIBLE else View.GONE
+                binding.loadingBar.progress = progress
+            }
+
+            override fun onSecurityChange(session: GeckoSession, securityInfo: GeckoSession.ProgressDelegate.SecurityInformation) {
+            }
         }
 
-        override fun onPageStop(session: GeckoSession, success: Boolean) {
-            val url = currentUrl
-            UHLog.d("web", "finish ${url.take(140)}")
-            val id = tabs.idForSession(session)
-            if (id > 0L) tabs.updateUrl(id, url, null)
-            flush3p(session, url)
-            binding.swipeRefresh.isRefreshing = false
-            if (url != "about:blank") {
-                UserscriptManager.injectOnPageFinished(this@MainActivity, session, url)
+        session.contentDelegate = object : GeckoSession.ContentDelegate {
+            override fun onTitleChange(session: GeckoSession, title: String?) {
+                if (title.isNullOrBlank()) return
+                val id = tabs.idForSession(session)
+                if (id <= 0L) return
                 val entity = tabs.list().firstOrNull { it.id == id }
-                if (entity?.incognito != true) {
-                    HistoryStore.get(this@MainActivity).record(url, entity?.title ?: "")
+                val url = entity?.url ?: ""
+                tabs.updateUrl(id, url, title)
+            }
+
+            override fun onExternalResponse(session: GeckoSession, response: WebResponse) {
+                val headers = response.headers
+                val disposition = headers["Content-Disposition"] ?: headers["content-disposition"]
+                val contentType = headers["Content-Type"] ?: headers["content-type"]
+                val cleanContentType = contentType?.lowercase()?.trim() ?: ""
+
+                if (cleanContentType.contains("text/html") || cleanContentType.contains("application/xhtml+xml")) {
+                    return
+                }
+
+                val filename = extractFilename(disposition) ?: "download_${System.currentTimeMillis()}"
+                if (SettingsPrefs.getBool(this@MainActivity, SettingsPrefs.K_ASK_DL, true)) {
+                    showDownloadConfirmationSheet(response.uri, filename, contentType, headers["User-Agent"])
+                } else {
+                    executeDownload(response.uri, filename, contentType, headers["User-Agent"])
                 }
             }
-            if (session === currentSession) updateUi()
+
+            override fun onCrash(session: GeckoSession) {
+                UHLog.e("gecko", "Tab crashed. Reloading.")
+                session.reload()
+            }
         }
 
-        override fun onProgressChange(session: GeckoSession, progress: Int) {
-            if (session !== currentSession) return
-            binding.loadingBar.visibility =
-                if (progress in 1..99) View.VISIBLE else View.GONE
-            binding.loadingBar.progress = progress
-        }
+        session.navigationDelegate = object : GeckoSession.NavigationDelegate {
+            override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) {
+                tabs.setNav(session, canGoBack, tabs.canGoForward(session))
+            }
 
-        override fun onSecurityChange(session: GeckoSession, securityInfo: GeckoSession.ProgressDelegate.SecurityInformation) {
-            // no-op
+            override fun onCanGoForward(session: GeckoSession, canGoForward: Boolean) {
+                tabs.setNav(session, tabs.canGoBack(session), canGoForward)
+            }
+
+            override fun onLocationChange(session: GeckoSession, url: String?, permissions: MutableList<GeckoSession.PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
+                if (url != null) {
+                    currentUrl = url
+                }
+            }
+
+            override fun onLoadRequest(session: GeckoSession, request: GeckoSession.NavigationDelegate.LoadRequest): GeckoResult<AllowOrDeny>? {
+                val url = request.uri
+                val scheme = Uri.parse(url).scheme ?: ""
+                if (scheme == "intent") { 
+                    handleIntentUrl(url)
+                    return GeckoResult.fromValue(AllowOrDeny.DENY)
+                }
+                if (scheme != "http" && scheme != "https" && scheme != "about" && scheme != "data" && scheme != "blob" && scheme != "file" && scheme != "javascript" && scheme != "moz-extension") {
+                    UHLog.netScheme(url, "dialog")
+                    askOpenExternal(session, url)
+                    return GeckoResult.fromValue(AllowOrDeny.DENY)
+                }
+                return GeckoResult.fromValue(AllowOrDeny.ALLOW)
+            }
+
+            override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
+                val parentId = tabs.idForSession(session).takeIf { it > 0L } ?: 0L
+                val parentUrl = tabs.list().firstOrNull { it.id == parentId }?.url ?: currentUrl
+                UHLog.netPopupOpen(parentUrl, true, false)
+                val id = tabs.openBlankTab(parentId = parentId)
+                val newSession = tabs.acquireSession(id) ?: return null
+                popupTabs.add(id)
+                UHLog.netPopupCreated(id)
+                if (tabs.markAttached(newSession)) {
+                    installDelegates(newSession)
+                }
+                binding.webContainer.removeAllViews()
+                val gv = GeckoView(this@MainActivity)
+                gv.setSession(newSession)
+                binding.webContainer.addView(gv)
+                binding.homeScreen.visibility = View.GONE
+                currentView = gv
+                currentSession = newSession
+                updateUi()
+                return GeckoResult.fromValue(newSession)
+            }
         }
     }
-
-    session.contentDelegate = object : GeckoSession.ContentDelegate {
-        override fun onTitleChange(session: GeckoSession, title: String?) {
-            if (title.isNullOrBlank()) return
-            val id = tabs.idForSession(session)
-            if (id <= 0L) return
-            val entity = tabs.list().firstOrNull { it.id == id }
-            val url = entity?.url ?: ""
-            tabs.updateUrl(id, url, title)
-        }
-
-        override fun onExternalResponse(session: GeckoSession, response: WebResponse) {
-            val headers = response.headers
-            val disposition = headers["Content-Disposition"] ?: headers["content-disposition"]
-            val contentType = headers["Content-Type"] ?: headers["content-type"]
-            val cleanContentType = contentType?.lowercase()?.trim() ?: ""
-
-            if (cleanContentType.contains("text/html") || cleanContentType.contains("application/xhtml+xml")) {
-                return
-            }
-
-            val filename = extractFilename(disposition) ?: "download_${System.currentTimeMillis()}"
-            if (SettingsPrefs.getBool(this@MainActivity, SettingsPrefs.K_ASK_DL, true)) {
-                showDownloadConfirmationSheet(response.uri, filename, contentType, headers["User-Agent"])
-            } else {
-                executeDownload(response.uri, filename, contentType, headers["User-Agent"])
-            }
-        }
-
-        override fun onCrash(session: GeckoSession) {
-            UHLog.e("gecko", "Tab crashed. Reloading.")
-            session.reload()
-        }
-    }
-
-    session.navigationDelegate = object : GeckoSession.NavigationDelegate {
-        override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) {
-            tabs.setNav(session, canGoBack, tabs.canGoForward(session))
-        }
-
-        override fun onCanGoForward(session: GeckoSession, canGoForward: Boolean) {
-            tabs.setNav(session, tabs.canGoBack(session), canGoForward)
-        }
-
-        override fun onLocationChange(session: GeckoSession, url: String?, permissions: MutableList<GeckoSession.PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
-            if (url != null) {
-                currentUrl = url
-            }
-        }
-
-        override fun onLoadRequest(session: GeckoSession, request: GeckoSession.NavigationDelegate.LoadRequest): GeckoResult<AllowOrDeny>? {
-            val url = request.uri
-            val scheme = Uri.parse(url).scheme ?: ""
-            if (scheme == "intent") { 
-                handleIntentUrl(url)
-                return GeckoResult.fromValue(AllowOrDeny.DENY)
-            }
-            if (scheme != "http" && scheme != "https" && scheme != "about" && scheme != "data" && scheme != "blob" && scheme != "file" && scheme != "javascript" && scheme != "moz-extension") {
-                UHLog.netScheme(url, "dialog")
-                askOpenExternal(session, url)
-                return GeckoResult.fromValue(AllowOrDeny.DENY)
-            }
-            return GeckoResult.fromValue(AllowOrDeny.ALLOW)
-        }
-
-        override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
-            val parentId = tabs.idForSession(session).takeIf { it > 0L } ?: 0L
-            val parentUrl = tabs.list().firstOrNull { it.id == parentId }?.url ?: currentUrl
-            UHLog.netPopupOpen(parentUrl, true, false)
-            val id = tabs.openBlankTab(parentId = parentId)
-            val newSession = tabs.acquireSession(id) ?: return null
-            popupTabs.add(id)
-            UHLog.netPopupCreated(id)
-            if (tabs.markAttached(newSession)) {
-                installDelegates(newSession)
-            }
-            binding.webContainer.removeAllViews()
-            val gv = GeckoView(this@MainActivity)
-            gv.setSession(newSession)
-            binding.webContainer.addView(gv)
-            binding.homeScreen.visibility = View.GONE
-            currentView = gv
-            currentSession = newSession
-            updateUi()
-            return GeckoResult.fromValue(newSession)
-        }
-    }
- }
 
     private fun showDownloadConfirmationSheet(url: String, filename: String, mimetype: String?, userAgent: String?) {
         val sheet = BottomSheetDialog(this)
@@ -1029,8 +1041,7 @@ private fun navigateInput(typed: String): Boolean {
                     val cv = layoutInflater.inflate(R.layout.item_script_menu_command, cmds, false)
                     cv.findViewById<android.widget.TextView>(R.id.smcLabel).text = cmd.name
                     cv.setOnClickListener {
-                        val result = GeckoResult<String>()
-                        currentSession?.evaluateJS("try{window.__uh_runMenuCommand('${cmd.id}')}catch(e){}\nvoid 0;", result)
+                        currentSession?.loadUri("javascript:try{window.__uh_runMenuCommand('${cmd.id}')}catch(e){}")
                         list.postDelayed({ populateScriptSheet(list, sheet) }, 400)
                     }
                     cmds.addView(cv)
