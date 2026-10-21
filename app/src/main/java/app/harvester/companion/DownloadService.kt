@@ -18,14 +18,12 @@ class DownloadService : Service() {
         const val ACTION_RESUME = "app.harvester.companion.RESUME"
         const val ACTION_CANCEL = "app.harvester.companion.CANCEL"
 
-        // start
         fun start(ctx: Context) {
             val intent = Intent(ctx, DownloadService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(intent)
             else ctx.startService(intent)
         }
 
-        // updateNotification
         fun updateNotification(ctx: Context) {
             val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
             val active = DownloadStore.activeDownloads.value
@@ -38,7 +36,6 @@ class DownloadService : Service() {
             nm.notify(NOTIFICATION_ID, buildNotification(ctx, active))
         }
 
-        // notifyComplete
         fun notifyComplete(ctx: Context, filename: String) {
             val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
             val openIntent = Intent(ctx, DownloadsActivity::class.java)
@@ -53,7 +50,6 @@ class DownloadService : Service() {
             nm.notify(System.currentTimeMillis().toInt(), n)
         }
 
-        // buildNotification
         private fun buildNotification(ctx: Context, tasks: List<DownloadStore.Task>): android.app.Notification {
             val openIntent = Intent(ctx, DownloadsActivity::class.java)
             val piOpen = PendingIntent.getActivity(ctx, 0, openIntent, PendingIntent.FLAG_IMMUTABLE)
@@ -106,10 +102,8 @@ class DownloadService : Service() {
                 .build()
         }
 
-        // formatSpeed
         private fun formatSpeed(b: Long): String = if (b <= 0) "0 B/s" else "${formatSize(b)}/s"
 
-        // formatSize
         private fun formatSize(b: Long): String = when {
             b < 0 -> "?"
             b < 1024 -> "$b B"
@@ -131,7 +125,7 @@ class DownloadService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val id = intent?.getStringExtra("id")
         when (intent?.action) {
-            ACTION_PAUSE -> if (id != null) DownloadEngine.pauseDownload(id)
+            ACTION_PAUSE -> if (id != null) DownloadEngine.pauseDownload(this, id)
             ACTION_RESUME -> if (id != null) DownloadEngine.resumeDownload(this, id)
             ACTION_CANCEL -> if (id != null) DownloadEngine.cancelDownload(this, id)
         }
