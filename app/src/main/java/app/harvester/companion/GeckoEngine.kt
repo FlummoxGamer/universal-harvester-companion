@@ -42,7 +42,7 @@ object GeckoEngine {
                                 rt.webExtensionController.enable(ext, org.mozilla.geckoview.WebExtensionController.EnableSource.APP)
                             }
                         }, { error ->
-                            UHLog.e("gecko", "Failed to load UH Bridge extension: ${error.message}")
+                            UHLog.e("gecko", "Failed to load UH Bridge extension: ${error?.message}")
                         })
                         
                     } catch (e: Throwable) {
