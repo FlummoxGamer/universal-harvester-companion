@@ -79,13 +79,13 @@ private fun observeActiveDownloads() {
                         when (task.status) {
                             DownloadStore.Status.RUNNING -> {
                                 btnToggle.setImageResource(android.R.drawable.ic_media_pause)
-                                btnToggle.setOnClickListener { DownloadEngine.pauseDownload(task.id) }
+                                btnToggle.setOnClickListener { DownloadEngine.pauseDownload(this@DownloadsActivity, task.id) }
                             }
                             DownloadStore.Status.PAUSED -> {
                                 btnToggle.setImageResource(android.R.drawable.ic_media_play)
                                 btnToggle.setOnClickListener { DownloadEngine.resumeDownload(this@DownloadsActivity, task.id) }
                             }
-                                DownloadStore.Status.FAILED -> {
+                            DownloadStore.Status.FAILED -> {
                                 btnToggle.setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
                                 btnToggle.setOnClickListener { DownloadEngine.cancelDownload(this@DownloadsActivity, task.id) }
                             }
