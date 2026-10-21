@@ -103,11 +103,15 @@ class MainActivity : AppCompatActivity() {
         UHLog.d("main", "onCreate complete")
     }
 
-    private fun setupWebExtensionBridge() {
-        val runtime = GeckoEngine.getRuntime(this) ?: return
-        runtime.webExtensionController.get("uh-bridge@harvester.app").accept({ ext ->
-            if (ext != null) {
-                ext.setMessageDelegate(object : WebExtension.MessageDelegate {
+private fun setupWebExtensionBridge() {
+    val runtime = GeckoEngine.getRuntime(this) ?: return
+    runtime.webExtensionController.ensureBuiltIn(
+        "resource://android/assets/web_extensions/uh_bridge/",
+        "uh-bridge@harvester.app"
+    ).accept({ ext ->
+        if (ext != null) {
+            ext.setMessageDelegate(object : WebExtension.MessageDelegate {
+               
                     override fun onMessage(nativeApp: String, message: Any, sender: WebExtension.MessageSender): GeckoResult<Any>? {
                         val json = message as? JSONObject ?: return null
                         val type = json.optString("type")
@@ -186,11 +190,10 @@ class MainActivity : AppCompatActivity() {
                     }
                 }, "uhApp")
             }
-        }, { error ->
-            UHLog.e("main", "Failed to attach MessageDelegate: ${error.message}")
-        })
-    }
-
+            }, { error ->
+        UHLog.e("main", "Failed to attach MessageDelegate: ${error?.message}")
+    })
+}
     private fun setupHomeGrid() {
         shortcutAdapter = ShortcutAdapter(
             onOpen = { s -> loadUrlFromHome(s.url) },
