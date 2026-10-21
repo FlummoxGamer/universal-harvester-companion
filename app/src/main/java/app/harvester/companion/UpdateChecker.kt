@@ -114,60 +114,19 @@ object UpdateChecker {
         }
     }
 
-    private fun downloadAndInstall(activity: Activity, info: Manifest) {
-        val progress = ProgressDialog(activity).apply {
-            setTitle("Downloading update")
-            setMessage("v${info.versionName}")
-            isIndeterminate = false
-            max = 100
-            setCancelable(false)
-            show()
-        }
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val url = URL(info.apkUrl)
-                val conn = url.openConnection() as HttpURLConnection
-                conn.connectTimeout = 15000
-                conn.readTimeout = 120000
-                conn.requestMethod = "GET"
-                conn.connect()
-                if (conn.responseCode !in 200..299) throw Exception("HTTP ${conn.responseCode}")
-                val total = conn.contentLengthLong
-                val dir = File(activity.cacheDir, "updates").apply { mkdirs() }
-                val out = File(dir, "update.apk")
-                conn.inputStream.use { input ->
-                    out.outputStream().use { output ->
-                        val buf = ByteArray(64 * 1024)
-                        var read: Long = 0
-                        while (true) {
-                            val n = input.read(buf)
-                            if (n < 0) break
-                            output.write(buf, 0, n)
-                            read += n
-                            if (total > 0) {
-                                val pct = ((read * 100) / total).toInt()
-                                withContext(Dispatchers.Main) { progress.progress = pct }
-                            }
-                        }
-                    }
-                }
-                conn.disconnect()
-                withContext(Dispatchers.Main) { progress.dismiss() }
-                UHLog.d("update", "downloaded ${out.length()}b")
-                withContext(Dispatchers.Main) { installApk(activity, out) }
-            } catch (e: Exception) {
-                UHLog.throwable("update", "download failed", e)
-                withContext(Dispatchers.Main) {
-                    progress.dismiss()
-                    AlertDialog.Builder(activity)
-                        .setTitle("Update failed")
-                        .setMessage(e.message ?: "unknown error")
-                        .setPositiveButton("OK", null)
-                        .show()
-                }
-            }
-        }
-    }
+private fun downloadAndInstall(activity: Activity, info: Manifest) {
+    val request = android.app.DownloadManager.Request(Uri.parse(info.apkUrl))
+    request.setTitle("Universal Harvester Update")
+    request.setDescription("Downloading v${info.versionName}")
+    request.setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE)
+    request.setDestinationInExternalFilesDir(activity, android.os.Environment.DIRECTORY_DOWNLOADS, "uh_update.apk")
+    request.setMimeType("application/vnd.android.package-archive")
+
+    val dm = activity.getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+    dm.enqueue(request)
+    
+    android.widget.Toast.makeText(activity, "Downloading update...", android.widget.Toast.LENGTH_LONG).show()
+}
 
     private fun installApk(activity: Activity, apk: File) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
