@@ -579,6 +579,31 @@ if (!window.__uh_blob_hooked) {
           if (obj instanceof Blob) window.__uh_blobs[url] = obj;
           return url;
       };
+      window.__uh_force_download = function(url, name, mime) {
+          var b64 = null;
+          if (url.startsWith('blob:')) {
+              var blob = window.__uh_blobs && window.__uh_blobs[url];
+              if (blob) {
+                  var reader = new FileReader();
+                  reader.onload = function() {
+                      window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'SAVE_BLOB', filename: name, mime: blob.type || 'application/octet-stream', base64: reader.result.split(',')[1] } }, '*');
+                  };
+                  reader.readAsDataURL(blob);
+                  return;
+              }
+          }
+          if (url.startsWith('data:')) {
+              var parts = url.split(',');
+              var meta = parts[0];
+              var data = parts[1];
+              var mimeMatch = meta.match(/data:([^;]+)/);
+              var mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+              var isBase64 = meta.indexOf('base64') !== -1;
+              window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'SAVE_BLOB', filename: name, mime: mime, base64: isBase64 ? data : btoa(data) } }, '*');
+              return;
+          }
+          window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'GM_download', script: 'system', url: url, name: name } }, '*');
+      };
       var origRevoke = URL.revokeObjectURL;
       URL.revokeObjectURL = function(url) {
           delete window.__uh_blobs[url];
