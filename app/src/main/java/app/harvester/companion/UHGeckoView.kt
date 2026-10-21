@@ -6,7 +6,6 @@ import android.view.MotionEvent
 import androidx.core.view.NestedScrollingChild
 import androidx.core.view.NestedScrollingChildHelper
 import androidx.core.view.ViewCompat
-import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.PanZoomController
 
@@ -17,31 +16,23 @@ class UHGeckoView(context: Context) : GeckoView(context), NestedScrollingChild {
     private val scrollConsumed = IntArray(2)
     private var gestureCanReachParent = true
 
-    enum class InitialScrollDirection { NOT_YET, DOWN, UP }
+    private enum class InitialScrollDirection { NOT_YET, DOWN, UP }
     private var initialScrollDirection = InitialScrollDirection.NOT_YET
     private var initialDownY: Float = 0f
     private var nestedOffsetY: Int = 0
-    private var childHelper: NestedScrollingChildHelper = NestedScrollingChildHelper(this)
+    private val childHelper: NestedScrollingChildHelper = NestedScrollingChildHelper(this)
 
-private var cachedHandledResult: Int = 0
-private var cachedScrollableDirections: Int = 0
-private var cachedOverscrollDirections: Int = 0
+    private var handledResult: Int = 0
+    private var scrollableDirections: Int = 0
+    private var overscrollDirections: Int = 0
 
-init {
-    isNestedScrollingEnabled = true
-}
+    init {
+        isNestedScrollingEnabled = true
+    }
 
-private fun canOverscrollTop(): Boolean {
-    return (cachedOverscrollDirections and 1) != 0
-}
-
-private fun isTouchHandledByWebsite(): Boolean {
-    return (cachedHandledResult and PanZoomController.INPUT_RESULT_HANDLED_CONTENT) != 0
-}
-
-private fun isTouchHandledByBrowser(): Boolean {
-    return (cachedHandledResult and PanZoomController.INPUT_RESULT_HANDLED) != 0
-}
+    private fun canOverscrollTop(): Boolean = (overscrollDirections and 1) != 0
+    private fun isTouchHandledByWebsite(): Boolean = (handledResult and PanZoomController.INPUT_RESULT_HANDLED_CONTENT) != 0
+    private fun isTouchHandledByBrowser(): Boolean = (handledResult and PanZoomController.INPUT_RESULT_HANDLED) != 0
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(ev: MotionEvent): Boolean {
@@ -86,9 +77,9 @@ private fun isTouchHandledByBrowser(): Boolean {
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                cachedHandledResult = 0
-                cachedScrollableDirections = 0
-                cachedOverscrollDirections = 0
+                handledResult = 0
+                scrollableDirections = 0
+                overscrollDirections = 0
                 stopNestedScroll()
                 parent?.requestDisallowInterceptTouchEvent(false)
                 gestureCanReachParent = true
@@ -105,9 +96,9 @@ private fun isTouchHandledByBrowser(): Boolean {
         super.onTouchEventForDetailResult(event).accept { detail ->
             if (!gestureCanReachParent || detail == null) return@accept
 
-            cachedHandledResult = detail.handledResult()
-            cachedScrollableDirections = detail.scrollableDirections()
-            cachedOverscrollDirections = detail.overscrollDirections()
+            handledResult = detail.handledResult
+            scrollableDirections = detail.scrollableDirections
+            overscrollDirections = detail.overscrollDirections
 
             if (eventAction == MotionEvent.ACTION_DOWN) {
                 gestureCanReachParent = canOverscrollTop()
@@ -131,16 +122,10 @@ private fun isTouchHandledByBrowser(): Boolean {
         }
     }
 
-    override fun setNestedScrollingEnabled(enabled: Boolean) {
-        childHelper.isNestedScrollingEnabled = enabled
-    }
-
+    override fun setNestedScrollingEnabled(enabled: Boolean) { childHelper.isNestedScrollingEnabled = enabled }
     override fun isNestedScrollingEnabled(): Boolean = childHelper.isNestedScrollingEnabled
-
     override fun startNestedScroll(axes: Int): Boolean = childHelper.startNestedScroll(axes)
-
     override fun stopNestedScroll() = childHelper.stopNestedScroll()
-
     override fun hasNestedScrollingParent(): Boolean = childHelper.hasNestedScrollingParent()
 
     override fun dispatchNestedScroll(dxConsumed: Int, dyConsumed: Int, dxUnconsumed: Int, dyUnconsumed: Int, offsetInWindow: IntArray?): Boolean {
