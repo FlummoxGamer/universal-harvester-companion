@@ -188,7 +188,7 @@ class MainActivity : AppCompatActivity() {
                             }
                             "OVERLAY_STATE" -> {
                                 val active = json.optBoolean("active")
-                                val bridge = currentView?.tag as? UserscriptBridge
+                                val bridge = mainGeckoView.tag as? UserscriptBridge
                                 bridge?.overlayActive = active
                                 return GeckoResult.fromValue("ok")
                             }
