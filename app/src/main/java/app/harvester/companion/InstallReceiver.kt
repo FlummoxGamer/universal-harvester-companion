@@ -4,6 +4,7 @@ import android.app.NotificationManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import java.io.File
 
 class InstallReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -11,8 +12,8 @@ class InstallReceiver : BroadcastReceiver() {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             nm.cancel(9001)
             
-            val cacheDir = context.cacheDir
-            cacheDir.listFiles()?.forEach { 
+            val dir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)
+            dir?.listFiles()?.forEach { 
                 if (it.name.endsWith(".apk")) it.delete()
             }
         }
