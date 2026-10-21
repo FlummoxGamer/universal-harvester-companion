@@ -29,3 +29,10 @@ window.addEventListener('message', (event) => {
             });
     }
 });
+
+window.addEventListener('contextmenu', function(e) {
+    if (e.target.tagName === 'IMG') {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+}, true);
