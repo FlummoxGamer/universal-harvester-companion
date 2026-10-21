@@ -122,7 +122,7 @@ private fun downloadAndInstall(activity: Activity, info: Manifest) {
     request.setDestinationInExternalFilesDir(activity, android.os.Environment.DIRECTORY_DOWNLOADS, "uh_update.apk")
     request.setMimeType("application/vnd.android.package-archive")
 
-    val dm = activity.getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+    val dm = activity.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
     dm.enqueue(request)
     
     android.widget.Toast.makeText(activity, "Downloading update...", android.widget.Toast.LENGTH_LONG).show()
