@@ -1,6 +1,5 @@
 const api = typeof browser !== "undefined" ? browser : chrome;
 
-// requestScripts
 api.runtime.sendNativeMessage('uhApp', { type: 'GET_SCRIPTS', url: window.location.href })
     .then((response) => {
         if (response && response.scripts) {
@@ -12,7 +11,6 @@ api.runtime.sendNativeMessage('uhApp', { type: 'GET_SCRIPTS', url: window.locati
     })
     .catch((e) => console.error('UH Bridge failed to get scripts:', e));
 
-// listenNativeCalls
 window.addEventListener('message', (event) => {
     if (event.source !== window || !event.data) return;
     if (event.data.type === 'UH_NATIVE_CALL') {
