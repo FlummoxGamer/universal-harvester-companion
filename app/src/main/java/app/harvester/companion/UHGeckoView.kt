@@ -32,7 +32,7 @@ init {
 }
 
 private fun canOverscrollTop(): Boolean {
-    return (cachedOverscrollDirections and PanZoomController.OVERSCROLL_DIRECTION_TOP) != 0
+    return (cachedOverscrollDirections and 1) != 0
 }
 
 private fun isTouchHandledByWebsite(): Boolean {
