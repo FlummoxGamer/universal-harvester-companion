@@ -46,8 +46,9 @@ object DownloadEngine {
         jobs[id] = CoroutineScope(Dispatchers.IO).launch {
             var targetUri: Uri? = null
             try {
-                targetUri = saveToMediaStore(ctx, task.filename, task.mime)
-                val outputStream = ctx.contentResolver.openOutputStream(targetUri) ?: throw Exception("Cannot open file")
+                val currentUri = saveToMediaStore(ctx, task.filename, task.mime)
+                targetUri = currentUri
+                val outputStream = ctx.contentResolver.openOutputStream(currentUri) ?: throw Exception("Cannot open file")
                 
                 val buffer = ByteArray(8192)
                 var bytesRead: Int
@@ -81,12 +82,12 @@ object DownloadEngine {
                     }
                 }
 
-                targetUri?.let { finishMediaStore(ctx, it) }
+                finishMediaStore(ctx, currentUri)
                 DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.SUCCESS }
                 DownloadService.notifyComplete(ctx, task.id, task.filename)
                 DownloadStore.removeTask(task.id)
             } catch (e: Exception) {
-                if (targetUri != null) deletePartialFile(ctx, targetUri)
+                targetUri?.let { deletePartialFile(ctx, it) }
                 if (DownloadStore.getTask(task.id)?.status != DownloadStore.Status.PAUSED) {
                     DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.FAILED; it.error = e.message }
                     DownloadService.notifyFailed(ctx, task.id, task.filename, e.message ?: "Unknown error")
@@ -174,8 +175,9 @@ object DownloadEngine {
                         val total = if (response.code == 206) task.bytesDownloaded + body.contentLength() else body.contentLength()
                         DownloadStore.updateTask(task.id) { it.totalBytes = total }
 
-                        targetUri = saveToMediaStore(ctx, task.filename, task.mime)
-                        val outputStream = ctx.contentResolver.openOutputStream(targetUri, if (task.bytesDownloaded > 0) "wa" else "w")
+                        val currentUri = saveToMediaStore(ctx, task.filename, task.mime)
+                        targetUri = currentUri
+                        val outputStream = ctx.contentResolver.openOutputStream(currentUri, if (task.bytesDownloaded > 0) "wa" else "w")
                             ?: throw Exception("Cannot open file")
 
                         val inputStream = body.byteStream()
@@ -211,7 +213,7 @@ object DownloadEngine {
                             }
                         }
 
-                        targetUri?.let { finishMediaStore(ctx, it) }
+                        finishMediaStore(ctx, currentUri)
                         DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.SUCCESS }
                         DownloadService.notifyComplete(ctx, task.id, task.filename)
                         DownloadStore.removeTask(task.id)
@@ -221,7 +223,7 @@ object DownloadEngine {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                if (targetUri != null) deletePartialFile(ctx, targetUri)
+                targetUri?.let { deletePartialFile(ctx, it) }
                 if (DownloadStore.getTask(task.id)?.status != DownloadStore.Status.PAUSED) {
                     DownloadStore.updateTask(id) { 
                         it.status = DownloadStore.Status.FAILED
