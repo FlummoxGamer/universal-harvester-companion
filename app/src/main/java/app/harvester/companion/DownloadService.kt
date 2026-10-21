@@ -36,22 +36,25 @@ class DownloadService : Service() {
             nm.notify(notificationId, buildNotification(ctx, task))
         }
 
-        fun notifyComplete(ctx: Context, id: String, filename: String) {
-            val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
-            val notificationId = id.hashCode()
-            nm.cancel(notificationId)
-            
-            val openIntent = Intent(ctx, DownloadsActivity::class.java)
-            val piOpen = PendingIntent.getActivity(ctx, notificationId, openIntent, PendingIntent.FLAG_IMMUTABLE)
-            val n = NotificationCompat.Builder(ctx, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_downloads)
-                .setContentTitle(filename)
-                .setContentText("Download complete")
-                .setContentIntent(piOpen)
-                .setAutoCancel(true)
-                .build()
-            nm.notify(System.currentTimeMillis().toInt(), n)
-        }
+fun notifyComplete(ctx: Context, id: String, filename: String) {
+    val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+    val notificationId = id.hashCode()
+    nm.cancel(notificationId)
+    
+    val openIntent = Intent(ctx, DownloadsActivity::class.java)
+    val piOpen = PendingIntent.getActivity(ctx, notificationId, openIntent, PendingIntent.FLAG_IMMUTABLE)
+    
+    val n = NotificationCompat.Builder(ctx, CHANNEL_ID)
+        .setSmallIcon(R.drawable.ic_downloads)
+        .setContentTitle("Download Complete")
+        .setContentText(filename)
+        .setContentIntent(piOpen)
+        .setAutoCancel(true)
+        .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+        .build()
+        
+    nm.notify(notificationId, n)
+}
 
         fun notifyFailed(ctx: Context, id: String, filename: String, error: String) {
             val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
