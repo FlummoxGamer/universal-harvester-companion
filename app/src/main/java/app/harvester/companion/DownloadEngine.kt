@@ -11,6 +11,7 @@ import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Call
+import java.io.File
 import java.io.InputStream
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -85,9 +86,11 @@ object DownloadEngine {
                 DownloadService.notifyComplete(ctx, task.id, task.filename)
                 DownloadStore.removeTask(task.id)
             } catch (e: Exception) {
-                targetUri?.let { deletePartialFile(ctx, it) }
-                DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.FAILED; it.error = e.message }
-                DownloadService.notifyFailed(ctx, task.id, task.filename, e.message ?: "Unknown error")
+                if (targetUri != null) deletePartialFile(ctx, targetUri)
+                if (DownloadStore.getTask(task.id)?.status != DownloadStore.Status.PAUSED) {
+                    DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.FAILED; it.error = e.message }
+                    DownloadService.notifyFailed(ctx, task.id, task.filename, e.message ?: "Unknown error")
+                }
             } finally {
                 streams.remove(id)
             }
@@ -218,12 +221,14 @@ object DownloadEngine {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                targetUri?.let { deletePartialFile(ctx, it) } 
-                DownloadStore.updateTask(id) { 
-                    it.status = DownloadStore.Status.FAILED
-                    it.error = e.message 
+                if (targetUri != null) deletePartialFile(ctx, targetUri)
+                if (DownloadStore.getTask(task.id)?.status != DownloadStore.Status.PAUSED) {
+                    DownloadStore.updateTask(id) { 
+                        it.status = DownloadStore.Status.FAILED
+                        it.error = e.message 
+                    }
+                    DownloadService.notifyFailed(ctx, id, task.filename, e.message ?: "Unknown error")
                 }
-                DownloadService.notifyFailed(ctx, id, task.filename, e.message ?: "Unknown error")
             }
         }
     }
