@@ -115,15 +115,9 @@ object UpdateChecker {
     }
 
 private fun downloadAndInstall(activity: Activity, info: Manifest) {
-    val request = android.app.DownloadManager.Request(Uri.parse(info.apkUrl))
-    request.setTitle("Universal Harvester Update")
-    request.setDescription("Downloading v${info.versionName}")
-    request.setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE)
-    request.setDestinationInExternalFilesDir(activity, android.os.Environment.DIRECTORY_DOWNLOADS, "uh_update.apk")
-    request.setMimeType("application/vnd.android.package-archive")
-
-    val dm = activity.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
-    dm.enqueue(request)
+    val dir = File(activity.cacheDir, "updates").apply { mkdirs() }
+    val out = File(dir, "uh_update.apk")
+    val id = DownloadEngine.startDownload(activity, info.apkUrl, "uh_update.apk", "application/vnd.android.package-archive")
     
     android.widget.Toast.makeText(activity, "Downloading update...", android.widget.Toast.LENGTH_LONG).show()
 }
