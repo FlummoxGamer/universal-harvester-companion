@@ -84,8 +84,7 @@ class MainActivity : AppCompatActivity() {
         tabs = TabManager.get(this)
         setupWebExtensionBridge()
 
-        mainGeckoView = NestedGeckoView(this)
-        binding.webContainer.addView(mainGeckoView)
+        mainGeckoView = binding.webContainer.geckoView
 
         MenuCommandStore.listener = { runOnUiThread { updateUi() } }
 
@@ -246,6 +245,7 @@ private fun hideSplash() {
         binding.swipeRefresh.setProgressBackgroundColorSchemeColor(
             ContextCompat.getColor(this, R.color.surface)
         )
+        binding.swipeRefresh.setOnChildScrollUpCallback { _, _ -> mainGeckoView.canScrollUp() }
     }
 
     private fun setupSuggestions() {
@@ -790,7 +790,10 @@ private fun hideSplash() {
                 val contentType = headers["Content-Type"] ?: headers["content-type"]
                 val cleanContentType = contentType?.lowercase()?.trim() ?: ""
 
-                if (cleanContentType.contains("text/html") || cleanContentType.contains("application/xhtml+xml")) {
+                val isHtml = cleanContentType.contains("text/html") || cleanContentType.contains("application/xhtml+xml")
+                val isAttachment = disposition?.contains("attachment", ignoreCase = true) == true
+                val hasFilename = disposition?.let { Regex("""filename\s*=""", RegexOption.IGNORE_CASE).containsMatchIn(it) } ?: false
+                if (isHtml && !isAttachment && !hasFilename) {
                     return
                 }
 
@@ -831,6 +834,8 @@ private fun hideSplash() {
                                         val filename = "image_${System.currentTimeMillis()}.jpg"
                                         if (imageUrl.startsWith("blob:") || imageUrl.startsWith("data:")) {
                                             currentSession?.loadUri("javascript:fetch('$imageUrl').then(r=>r.blob()).then(b=>{var reader=new FileReader();reader.onload=function(){window.postMessage({type:'UH_NATIVE_CALL',payload:{type:'SAVE_BLOB',filename:'$filename',mime:b.type,base64:reader.result.split(',')[1]}},'*')};reader.readAsDataURL(b);})")
+                                        } else if (SettingsPrefs.getBool(this@MainActivity, SettingsPrefs.K_ASK_DL, true)) {
+                                            showDownloadConfirmationSheet(imageUrl, filename, "image/jpeg", null)
                                         } else {
                                             executeDownload(imageUrl, filename, "image/jpeg", null)
                                         }
@@ -912,7 +917,12 @@ private fun hideSplash() {
             override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
                 val lower = uri.lowercase()
                 if (lower.contains(".jpg") || lower.contains(".png") || lower.contains(".jpeg") || lower.contains(".webp")) {
-                    executeDownload(uri, "image_${System.currentTimeMillis()}.jpg", "image/jpeg", null)
+                    val filename = "image_${System.currentTimeMillis()}.jpg"
+                    if (SettingsPrefs.getBool(this@MainActivity, SettingsPrefs.K_ASK_DL, true)) {
+                        showDownloadConfirmationSheet(uri, filename, "image/jpeg", null)
+                    } else {
+                        executeDownload(uri, filename, "image/jpeg", null)
+                    }
                     return GeckoResult.fromValue(null)
                 }
 
