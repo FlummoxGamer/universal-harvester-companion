@@ -10,6 +10,9 @@ function injectViewport() {
 }
 injectViewport();
 document.addEventListener('DOMContentLoaded', injectViewport);
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') injectViewport();
+});
 
 const injectScript = document.createElement('script');
 injectScript.src = api.runtime.getURL('inject.js');
