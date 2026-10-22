@@ -28,10 +28,6 @@ class GeckoEngineView @JvmOverloads constructor(
         isNestedScrollingEnabled = true
     }
 
-    fun setSession(session: GeckoSession) {
-        geckoView.setSession(session)
-    }
-
     fun releaseSession() {
         geckoView.releaseSession()
     }
