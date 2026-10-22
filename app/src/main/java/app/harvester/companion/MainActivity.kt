@@ -33,7 +33,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.URL
-import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.AllowOrDeny
@@ -46,7 +45,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tabs: TabManager
     private lateinit var shortcutAdapter: ShortcutAdapter
     private lateinit var suggestionsAdapter: SuggestionAdapter
-    private lateinit var mainGeckoView: UHGeckoView
+    private lateinit var mainGeckoView: NestedGeckoView
     private var currentSession: GeckoSession? = null
     private var currentUrl: String = ""
 
@@ -60,10 +59,10 @@ class MainActivity : AppCompatActivity() {
     private var urlTextWatcher: android.text.TextWatcher? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
-    setTheme(R.style.Theme_UHCompanion)
-    super.onCreate(savedInstanceState)
-    
-    val safePrefs = getSharedPreferences("uh_safe_mode", MODE_PRIVATE)
+        setTheme(R.style.Theme_UHCompanion)
+        super.onCreate(savedInstanceState)
+        
+        val safePrefs = getSharedPreferences("uh_safe_mode", MODE_PRIVATE)
         if (safePrefs.getBoolean("force_safe_mode", false)) {
             startActivity(Intent(this, SafeModeActivity::class.java))
             finish()
@@ -85,7 +84,7 @@ class MainActivity : AppCompatActivity() {
         tabs = TabManager.get(this)
         setupWebExtensionBridge()
 
-        mainGeckoView = UHGeckoView(this)
+        mainGeckoView = NestedGeckoView(this)
         binding.webContainer.addView(mainGeckoView)
 
         MenuCommandStore.listener = { runOnUiThread { updateUi() } }
@@ -689,27 +688,27 @@ private fun hideSplash() {
         updateHomeVisibility()
     }
 
-private fun attachCurrent() {
-    val session = tabs.currentSession() ?: return
-    if (session === currentSession) { updateHomeVisibility(); return }
-    
-    tabs.pushHistory(tabs.currentId())
-    
-    if (currentSession != null) {
-        currentSession?.setActive(false)
+    private fun attachCurrent() {
+        val session = tabs.currentSession() ?: return
+        if (session === currentSession) { updateHomeVisibility(); return }
+        
+        tabs.pushHistory(tabs.currentId())
+        
+        if (currentSession != null) {
+            currentSession?.setActive(false)
+        }
+        
+        mainGeckoView.setSession(session)
+        currentSession = session
+        session.setActive(true)
+        
+        currentUrl = tabs.list().firstOrNull { it.id == tabs.currentId() }?.url ?: ""
+        
+        if (tabs.markAttached(session)) {
+            installDelegates(session)
+        }
+        updateUi()
     }
-    
-    mainGeckoView.setSession(session)
-    currentSession = session
-    session.setActive(true)
-    
-    currentUrl = tabs.list().firstOrNull { it.id == tabs.currentId() }?.url ?: ""
-    
-    if (tabs.markAttached(session)) {
-        installDelegates(session)
-    }
-    updateUi()
-}
 
     private fun updateHomeVisibility() {
         val id = tabs.currentId()
@@ -785,76 +784,75 @@ private fun attachCurrent() {
                 tabs.updateUrl(id, url, title)
             }
 
-override fun onExternalResponse(session: GeckoSession, response: WebResponse) {
-    val headers = response.headers
-    val disposition = headers["Content-Disposition"] ?: headers["content-disposition"]
-    val contentType = headers["Content-Type"] ?: headers["content-type"]
-    val cleanContentType = contentType?.lowercase()?.trim() ?: ""
+            override fun onExternalResponse(session: GeckoSession, response: WebResponse) {
+                val headers = response.headers
+                val disposition = headers["Content-Disposition"] ?: headers["content-disposition"]
+                val contentType = headers["Content-Type"] ?: headers["content-type"]
+                val cleanContentType = contentType?.lowercase()?.trim() ?: ""
 
-    if (cleanContentType.contains("text/html") || cleanContentType.contains("application/xhtml+xml")) {
-        return
-    }
+                if (cleanContentType.contains("text/html") || cleanContentType.contains("application/xhtml+xml")) {
+                    return
+                }
 
-    val filename = extractFilename(disposition) ?: "download_${System.currentTimeMillis()}"
-    val userAgent = headers["User-Agent"] ?: headers["user-agent"]
-    val body = response.body
-    val contentLength = headers["Content-Length"]?.toLongOrNull() ?: headers["content-length"]?.toLongOrNull() ?: -1L
+                val filename = extractFilename(disposition) ?: "download_${System.currentTimeMillis()}"
+                val userAgent = headers["User-Agent"] ?: headers["user-agent"]
+                val body = response.body
+                val contentLength = headers["Content-Length"]?.toLongOrNull() ?: headers["content-length"]?.toLongOrNull() ?: -1L
 
-    if (body != null) {
-        if (SettingsPrefs.getBool(this@MainActivity, SettingsPrefs.K_ASK_DL, true)) {
-            showStreamDownloadConfirmationSheet(filename, contentType, userAgent, body, contentLength)
-        } else {
-            DownloadEngine.startStreamDownload(this@MainActivity, filename, contentType ?: "application/octet-stream", body, contentLength, userAgent, currentUrl)
-        }
-    } else {
-        if (SettingsPrefs.getBool(this@MainActivity, SettingsPrefs.K_ASK_DL, true)) {
-            showDownloadConfirmationSheet(response.uri, filename, contentType, userAgent)
-        } else {
-            executeDownload(response.uri, filename, contentType, userAgent)
-        }
-    }
-}
-
-override fun onCrash(session: GeckoSession) {
-    UHLog.e("gecko", "Tab crashed. Reloading.")
-    session.reload()
-}
-
-override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, displayContext: GeckoSession.ContentDelegate.ContextElement) {
-    if (displayContext.type == GeckoSession.ContentDelegate.ContextElement.TYPE_IMAGE) {
-        val imageUrl = displayContext.srcUri
-        if (!imageUrl.isNullOrBlank()) {
-            AlertDialog.Builder(this@MainActivity)
-                .setTitle("Image Options")
-                .setItems(arrayOf("Download Image", "Share Image", "Copy Image Link", "Open Image")) { _, which ->
-                    when (which) {
-                        0 -> {
-                            val filename = "image_${System.currentTimeMillis()}.jpg"
-                            if (imageUrl.startsWith("blob:") || imageUrl.startsWith("data:")) {
-                                currentSession?.loadUri("javascript:fetch('$imageUrl').then(r=>r.blob()).then(b=>{var reader=new FileReader();reader.onload=function(){window.postMessage({type:'UH_NATIVE_CALL',payload:{type:'SAVE_BLOB',filename:'$filename',mime:b.type,base64:reader.result.split(',')[1]}},'*')};reader.readAsDataURL(b);})")
-                            } else {
-                                executeDownload(imageUrl, filename, "image/jpeg", null)
-                            }
-                        }
-                        1 -> {
-                            val intent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, imageUrl)
-                            }
-                            startActivity(Intent.createChooser(intent, "Share Image Link"))
-                        }
-                        2 -> {
-                            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                            cm.setPrimaryClip(android.content.ClipData.newPlainText("Image URL", imageUrl))
-                            Toast.makeText(this@MainActivity, "Link copied", Toast.LENGTH_SHORT).show()
-                        }
-                        3 -> currentSession?.loadUri(imageUrl)
+                if (body != null) {
+                    if (SettingsPrefs.getBool(this@MainActivity, SettingsPrefs.K_ASK_DL, true)) {
+                        showStreamDownloadConfirmationSheet(filename, contentType, userAgent, body, contentLength)
+                    } else {
+                        DownloadEngine.startStreamDownload(this@MainActivity, filename, contentType ?: "application/octet-stream", body, contentLength, userAgent, currentUrl)
+                    }
+                } else {
+                    if (SettingsPrefs.getBool(this@MainActivity, SettingsPrefs.K_ASK_DL, true)) {
+                        showDownloadConfirmationSheet(response.uri, filename, contentType, userAgent)
+                    } else {
+                        executeDownload(response.uri, filename, contentType, userAgent)
                     }
                 }
-                .show()
-        }
-    }
-}
+            }
+
+            override fun onCrash(session: GeckoSession) {
+                UHLog.e("gecko", "Tab crashed. Reloading.")
+                session.reload()
+            }
+
+            override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, displayContext: GeckoSession.ContentDelegate.ContextElement) {
+                if (displayContext.type == GeckoSession.ContentDelegate.ContextElement.TYPE_IMAGE) {
+                    val imageUrl = displayContext.srcUri
+                    if (!imageUrl.isNullOrBlank()) {
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle("Image Options")
+                            .setItems(arrayOf("Download Image", "Share Image", "Copy Image Link")) { _, which ->
+                                when (which) {
+                                    0 -> {
+                                        val filename = "image_${System.currentTimeMillis()}.jpg"
+                                        if (imageUrl.startsWith("blob:") || imageUrl.startsWith("data:")) {
+                                            currentSession?.loadUri("javascript:fetch('$imageUrl').then(r=>r.blob()).then(b=>{var reader=new FileReader();reader.onload=function(){window.postMessage({type:'UH_NATIVE_CALL',payload:{type:'SAVE_BLOB',filename:'$filename',mime:b.type,base64:reader.result.split(',')[1]}},'*')};reader.readAsDataURL(b);})")
+                                        } else {
+                                            executeDownload(imageUrl, filename, "image/jpeg", null)
+                                        }
+                                    }
+                                    1 -> {
+                                        val intent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(Intent.EXTRA_TEXT, imageUrl)
+                                        }
+                                        startActivity(Intent.createChooser(intent, "Share Image Link"))
+                                    }
+                                    2 -> {
+                                        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                        cm.setPrimaryClip(android.content.ClipData.newPlainText("Image URL", imageUrl))
+                                        Toast.makeText(this@MainActivity, "Link copied", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                            .show()
+                    }
+                }
+            }
         }
 
         session.promptDelegate = object : GeckoSession.PromptDelegate {
@@ -911,29 +909,86 @@ override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, di
                 return GeckoResult.fromValue(AllowOrDeny.ALLOW)
             }
 
-override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
-    val parentId = tabs.idForSession(session).takeIf { it > 0L } ?: 0L
-    val (id, newSession) = tabs.createUnopenedSession(parentId = parentId)
-    popupTabs.add(id)
-    UHLog.netPopupCreated(id)
-    if (tabs.markAttached(newSession)) {
-        installDelegates(newSession)
-    }
-    
-    tabs.setCurrentId(id)
-    
-    android.os.Handler(android.os.Looper.getMainLooper()).post {
-        currentSession?.setActive(false)
-        mainGeckoView.setSession(newSession)
-        currentSession = newSession
-        currentUrl = "about:blank"
-        binding.homeScreen.visibility = View.GONE
-        updateUi()
-    }
-    
-    return GeckoResult.fromValue(newSession)
+            override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
+                val lower = uri.lowercase()
+                if (lower.contains(".jpg") || lower.contains(".png") || lower.contains(".jpeg") || lower.contains(".webp")) {
+                    executeDownload(uri, "image_${System.currentTimeMillis()}.jpg", "image/jpeg", null)
+                    return GeckoResult.fromValue(null)
+                }
+
+                val parentId = tabs.idForSession(session).takeIf { it > 0L } ?: 0L
+                val (id, newSession) = tabs.createUnopenedSession(parentId = parentId)
+                popupTabs.add(id)
+                UHLog.netPopupCreated(id)
+                if (tabs.markAttached(newSession)) {
+                    installDelegates(newSession)
+                }
+                
+                tabs.setCurrentId(id)
+                
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    currentSession?.setActive(false)
+                    mainGeckoView.setSession(newSession)
+                    currentSession = newSession
+                    currentUrl = "about:blank"
+                    binding.homeScreen.visibility = View.GONE
+                    updateUi()
+                }
+                
+                return GeckoResult.fromValue(newSession)
+            }
         }
+    }
+
+    private fun showStreamDownloadConfirmationSheet(filename: String, mimetype: String?, userAgent: String?, stream: java.io.InputStream, contentLength: Long) {
+        val sheet = BottomSheetDialog(this)
+        val v = layoutInflater.inflate(R.layout.dialog_download_confirmation, null)
+        v.setBackgroundResource(R.drawable.bg_bottom_sheet)
+        sheet.setContentView(v)
+
+        v.findViewById<android.widget.TextView>(R.id.dlFileName).text = filename
+        v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = android.text.format.Formatter.formatShortFileSize(this, contentLength)
+        v.findViewById<android.widget.TextView>(R.id.dlFileUrl).text = "Stream Download"
+        
+        val customUri = SettingsPrefs.getString(this, "custom_download_uri", "")
+        val pathStr = if (customUri.isNotBlank()) {
+             customUri.replace("content://com.android.externalstorage.documents/tree/primary%3A", "/storage/emulated/0/").replace("%2F", "/")
+        } else {
+            "/storage/emulated/0/Download"
         }
+        v.findViewById<android.widget.TextView>(R.id.dlLocationPath).text = pathStr
+
+        v.findViewById<android.view.View>(R.id.dlLocationRow).setOnClickListener {
+            startActivity(Intent(this, DownloadSettingsActivity::class.java))
+            sheet.dismiss()
+        }
+
+        v.findViewById<android.view.View>(R.id.dlStartBtn).setOnClickListener {
+            sheet.dismiss()
+            val finalName = v.findViewById<android.widget.TextView>(R.id.dlFileName).text.toString()
+            DownloadEngine.startStreamDownload(this, finalName, mimetype ?: "application/octet-stream", stream, contentLength, userAgent, currentUrl)
+        }
+
+        v.findViewById<android.view.View>(R.id.dlEditName).setOnClickListener {
+            val input = EditText(this).apply { setText(filename) }
+            AlertDialog.Builder(this)
+                .setTitle("Rename")
+                .setView(input)
+                .setPositiveButton("OK") { _, _ ->
+                    val newName = input.text.toString().trim()
+                    if (newName.isNotBlank()) {
+                        v.findViewById<android.widget.TextView>(R.id.dlFileName).text = newName
+                    }
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+
+        sheet.setOnCancelListener {
+            try { stream.close() } catch (_: Exception) {}
+        }
+
+        sheet.show()
     }
 
     private fun showDownloadConfirmationSheet(url: String, filename: String, mimetype: String?, userAgent: String?) {
@@ -984,7 +1039,7 @@ override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<Gecko
             try {
                 val client = okhttp3.OkHttpClient.Builder().connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS).build()
                 val reqBuilder = okhttp3.Request.Builder().url(url)
-                    .header("User-Agent", userAgent ?: "Mozilla/5.0")
+                    .header("User-Agent", userAgent ?: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
                     .header("Range", "bytes=0-0")
                     .header("Accept-Encoding", "identity")
                 val referer = currentUrl
@@ -1017,58 +1072,6 @@ override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<Gecko
 
         sheet.show()
     }
-    
-    private fun showStreamDownloadConfirmationSheet(filename: String, mimetype: String?, userAgent: String?, stream: java.io.InputStream, contentLength: Long) {
-    val sheet = BottomSheetDialog(this)
-    val v = layoutInflater.inflate(R.layout.dialog_download_confirmation, null)
-    v.setBackgroundResource(R.drawable.bg_bottom_sheet)
-    sheet.setContentView(v)
-
-    v.findViewById<android.widget.TextView>(R.id.dlFileName).text = filename
-    v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = android.text.format.Formatter.formatShortFileSize(this, contentLength)
-    v.findViewById<android.widget.TextView>(R.id.dlFileUrl).text = "Stream Download"
-    
-    val customUri = SettingsPrefs.getString(this, "custom_download_uri", "")
-    val pathStr = if (customUri.isNotBlank()) {
-         customUri.replace("content://com.android.externalstorage.documents/tree/primary%3A", "/storage/emulated/0/").replace("%2F", "/")
-    } else {
-        "/storage/emulated/0/Download"
-    }
-    v.findViewById<android.widget.TextView>(R.id.dlLocationPath).text = pathStr
-
-    v.findViewById<android.view.View>(R.id.dlLocationRow).setOnClickListener {
-        startActivity(Intent(this, DownloadSettingsActivity::class.java))
-        sheet.dismiss()
-    }
-
-    v.findViewById<android.view.View>(R.id.dlStartBtn).setOnClickListener {
-        sheet.dismiss()
-        val finalName = v.findViewById<android.widget.TextView>(R.id.dlFileName).text.toString()
-        DownloadEngine.startStreamDownload(this, finalName, mimetype ?: "application/octet-stream", stream, contentLength, userAgent, currentUrl)
-    }
-
-    v.findViewById<android.view.View>(R.id.dlEditName).setOnClickListener {
-        val input = EditText(this).apply { setText(filename) }
-        AlertDialog.Builder(this)
-            .setTitle("Rename")
-            .setView(input)
-            .setPositiveButton("OK") { _, _ ->
-                val newName = input.text.toString().trim()
-                if (newName.isNotBlank()) {
-                    v.findViewById<android.widget.TextView>(R.id.dlFileName).text = newName
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    sheet.setOnCancelListener {
-        try { stream.close() } catch (_: Exception) {}
-    }
-
-    sheet.show()
-}
-
 
     private fun executeDownload(url: String, filename: String, mimetype: String?, userAgent: String?) {
         val referer = currentUrl
@@ -1082,12 +1085,12 @@ override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<Gecko
         return m.groupValues[1].trim().trim('"', '\'')
     }
 
-private fun switchTab(id: Long) {
-    tabs.saveCurrentState()
-    tabs.acquireSession(id)
-    attachCurrent()
-    updateUi()
-}
+    private fun switchTab(id: Long) {
+        tabs.saveCurrentState()
+        tabs.acquireSession(id)
+        attachCurrent()
+        updateUi()
+    }
 
     private fun updateUi() {
         prunePopupTabs()
