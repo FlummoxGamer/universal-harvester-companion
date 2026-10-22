@@ -15,14 +15,20 @@ class GeckoEngineView @JvmOverloads constructor(
 
     var session: GeckoSession?
         get() = geckoView.session
-        set(value) { geckoView.setSession(value) }
+        set(value) {
+            if (value != null) {
+                geckoView.setSession(value)
+            } else {
+                geckoView.releaseSession()
+            }
+        }
 
     init {
         addView(geckoView)
         isNestedScrollingEnabled = true
     }
 
-    fun setSession(session: GeckoSession?) {
+    fun setSession(session: GeckoSession) {
         geckoView.setSession(session)
     }
 
