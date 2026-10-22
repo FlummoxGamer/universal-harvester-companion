@@ -7,11 +7,11 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.webkit.CookieManager
+import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Call
-import java.io.File
 import java.io.InputStream
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -45,10 +45,15 @@ object DownloadEngine {
         
         jobs[id] = CoroutineScope(Dispatchers.IO).launch {
             var targetUri: Uri? = null
+            var targetDoc: DocumentFile? = null
             try {
-                val currentUri = saveToMediaStore(ctx, task.filename, task.mime)
-                targetUri = currentUri
-                val outputStream = ctx.contentResolver.openOutputStream(currentUri) ?: throw Exception("Cannot open file")
+                val result = getDestination(ctx, task.filename, task.mime)
+                targetUri = result.first
+                targetDoc = result.second
+                
+                val outputStream = if (targetUri != null) ctx.contentResolver.openOutputStream(targetUri)
+                else ctx.contentResolver.openOutputStream(targetDoc!!.uri)
+                ?: throw Exception("Cannot open file")
                 
                 val buffer = ByteArray(8192)
                 var bytesRead: Int
@@ -82,13 +87,15 @@ object DownloadEngine {
                     }
                 }
 
-                finishMediaStore(ctx, currentUri)
+                if (targetUri != null) finishMediaStore(ctx, targetUri)
                 DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.SUCCESS }
                 DownloadService.notifyComplete(ctx, task.id, task.filename)
                 DownloadStore.removeTask(task.id)
             } catch (e: Exception) {
-                targetUri?.let { deletePartialFile(ctx, it) }
-                if (DownloadStore.getTask(task.id)?.status != DownloadStore.Status.PAUSED) {
+                if (targetUri != null) deletePartialFile(ctx, targetUri)
+                if (targetDoc != null) targetDoc?.delete()
+                val currentTask = DownloadStore.getTask(task.id)
+                if (currentTask?.status != DownloadStore.Status.CANCELLED && currentTask?.status != DownloadStore.Status.PAUSED) {
                     DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.FAILED; it.error = e.message }
                     DownloadService.notifyFailed(ctx, task.id, task.filename, e.message ?: "Unknown error")
                 }
@@ -111,6 +118,7 @@ object DownloadEngine {
     }
 
     fun cancelDownload(ctx: Context, id: String) {
+        DownloadStore.updateTask(id) { it.status = DownloadStore.Status.CANCELLED }
         calls[id]?.cancel()
         calls.remove(id)
         jobs[id]?.cancel()
@@ -118,7 +126,6 @@ object DownloadEngine {
         streams[id]?.close()
         streams.remove(id)
         
-        DownloadStore.updateTask(id) { it.status = DownloadStore.Status.CANCELLED }
         val task = DownloadStore.getTask(id)
         if (task != null) {
             DownloadStore.removeTask(id)
@@ -129,17 +136,26 @@ object DownloadEngine {
     fun resumeDownload(ctx: Context, id: String) {
         val task = DownloadStore.getTask(id) ?: return
         if (jobs[id]?.isActive == true) return
+        if (task.status == DownloadStore.Status.CANCELLED) return
 
         DownloadStore.updateTask(id) { it.status = DownloadStore.Status.RUNNING }
         DownloadService.updateNotification(ctx, id)
 
         jobs[id] = CoroutineScope(Dispatchers.IO).launch {
             var targetUri: Uri? = null
+            var targetDoc: DocumentFile? = null
             try {
                 if (task.base64Data != null) {
                     val bytes = android.util.Base64.decode(task.base64Data, android.util.Base64.DEFAULT)
-                    targetUri = saveToMediaStore(ctx, task.filename, task.mime)
-                    ctx.contentResolver.openOutputStream(targetUri)?.use { it.write(bytes) }
+                    val result = getDestination(ctx, task.filename, task.mime)
+                    targetUri = result.first
+                    targetDoc = result.second
+                    
+                    val outputStream = if (targetUri != null) ctx.contentResolver.openOutputStream(targetUri)
+                    else ctx.contentResolver.openOutputStream(targetDoc!!.uri)
+                    
+                    outputStream?.use { it.write(bytes) }
+                    
                     if (targetUri != null) finishMediaStore(ctx, targetUri)
                     DownloadStore.updateTask(task.id) {
                         it.bytesDownloaded = bytes.size.toLong()
@@ -153,7 +169,7 @@ object DownloadEngine {
                     val cookie = CookieManager.getInstance().getCookie(task.url)
                     if (!cookie.isNullOrBlank()) requestBuilder.addHeader("Cookie", cookie)
                     if (!task.userAgent.isNullOrBlank()) requestBuilder.addHeader("User-Agent", task.userAgent)
-                    else requestBuilder.addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 10)")
+                    else requestBuilder.addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
                     if (!task.referer.isNullOrBlank()) requestBuilder.addHeader("Referer", task.referer)
 
                     if (task.bytesDownloaded > 0) {
@@ -175,10 +191,15 @@ object DownloadEngine {
                         val total = if (response.code == 206) task.bytesDownloaded + body.contentLength() else body.contentLength()
                         DownloadStore.updateTask(task.id) { it.totalBytes = total }
 
-                        val currentUri = saveToMediaStore(ctx, task.filename, task.mime)
-                        targetUri = currentUri
-                        val outputStream = ctx.contentResolver.openOutputStream(currentUri, if (task.bytesDownloaded > 0) "wa" else "w")
-                            ?: throw Exception("Cannot open file")
+                        val result = getDestination(ctx, task.filename, task.mime)
+                        targetUri = result.first
+                        targetDoc = result.second
+                        
+                        val outputStream = if (targetUri != null) {
+                            ctx.contentResolver.openOutputStream(targetUri, if (task.bytesDownloaded > 0) "wa" else "w")
+                        } else {
+                            ctx.contentResolver.openOutputStream(targetDoc!!.uri, if (task.bytesDownloaded > 0) "wa" else "w")
+                        } ?: throw Exception("Cannot open file")
 
                         val inputStream = body.byteStream()
                         val buffer = ByteArray(8192)
@@ -213,7 +234,7 @@ object DownloadEngine {
                             }
                         }
 
-                        finishMediaStore(ctx, currentUri)
+                        if (targetUri != null) finishMediaStore(ctx, targetUri)
                         DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.SUCCESS }
                         DownloadService.notifyComplete(ctx, task.id, task.filename)
                         DownloadStore.removeTask(task.id)
@@ -223,8 +244,10 @@ object DownloadEngine {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                targetUri?.let { deletePartialFile(ctx, it) }
-                if (DownloadStore.getTask(task.id)?.status != DownloadStore.Status.PAUSED) {
+                if (targetUri != null) deletePartialFile(ctx, targetUri)
+                if (targetDoc != null) targetDoc?.delete()
+                val currentTask = DownloadStore.getTask(task.id)
+                if (currentTask?.status != DownloadStore.Status.CANCELLED && currentTask?.status != DownloadStore.Status.PAUSED) {
                     DownloadStore.updateTask(id) { 
                         it.status = DownloadStore.Status.FAILED
                         it.error = e.message 
@@ -235,17 +258,28 @@ object DownloadEngine {
         }
     }
 
-    private fun saveToMediaStore(ctx: Context, filename: String, mime: String): Uri {
+    private fun getDestination(ctx: Context, filename: String, mime: String): Pair<Uri?, DocumentFile?> {
+        val customUriStr = SettingsPrefs.getString(ctx, "custom_download_uri", "")
+        if (customUriStr.isNotBlank()) {
+            val treeUri = Uri.parse(customUriStr)
+            val parent = DocumentFile.fromTreeUri(ctx, treeUri)
+            if (parent != null) {
+                val file = parent.createFile(mime, filename)
+                if (file != null) return Pair(null, file)
+            }
+        }
+        
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
             put(MediaStore.MediaColumns.MIME_TYPE, mime)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Harvester")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
         }
         val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-        return ctx.contentResolver.insert(collection, values) ?: throw Exception("MediaStore insert failed")
+        val uri = ctx.contentResolver.insert(collection, values) ?: throw Exception("MediaStore insert failed")
+        return Pair(uri, null)
     }
 
     private fun finishMediaStore(ctx: Context, uri: Uri) {
