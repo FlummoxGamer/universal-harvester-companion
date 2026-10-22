@@ -30,7 +30,7 @@
             android:layout_width="32dp"
             android:layout_height="32dp"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_media_pause"
+            android:src="@android:drawable/ic_media_pause"
             app:tint="@color/accent" />
             
         <ImageButton
