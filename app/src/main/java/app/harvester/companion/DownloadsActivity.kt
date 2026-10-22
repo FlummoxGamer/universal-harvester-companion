@@ -73,11 +73,12 @@ private fun observeActiveDownloads() {
                         }
                         
                         status.text = when (task.status) {
+                            DownloadStore.Status.PENDING -> "Queued..."
                             DownloadStore.Status.PAUSED -> "Paused • $size"
                             DownloadStore.Status.FAILED -> "Failed • $size"
                             else -> "$size • $speed • $eta"
                         }
-                        
+
                         pb.max = 100
                         pb.progress = if (task.totalBytes > 0) ((task.bytesDownloaded * 100) / task.totalBytes).toInt() else 0
 
@@ -90,7 +91,7 @@ private fun observeActiveDownloads() {
                                 btnToggle.setImageResource(android.R.drawable.ic_media_play)
                                 btnToggle.setOnClickListener { DownloadEngine.resumeDownload(this@DownloadsActivity, task.id) }
                             }
-                            DownloadStore.Status.FAILED -> {
+                            DownloadStore.Status.PENDING, DownloadStore.Status.FAILED -> {
                                 btnToggle.setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
                                 btnToggle.setOnClickListener { DownloadEngine.cancelDownload(this@DownloadsActivity, task.id) }
                             }
