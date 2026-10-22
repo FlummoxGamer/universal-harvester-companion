@@ -740,6 +740,8 @@ private fun attachCurrent() {
                     binding.urlText.setTextColor(ContextCompat.getColor(
                         this@MainActivity, if (isEmpty) R.color.subtext else R.color.text))
                     updateSearchEngineIcon()
+                    binding.loadingBar.visibility = View.VISIBLE
+                    binding.loadingBar.progress = 0
                 }
                 if (id in popupTabs) UHLog.netPopupLoad(url)
                 if (session === currentSession) updateHomeVisibility()
@@ -749,6 +751,7 @@ private fun attachCurrent() {
                 val url = currentUrl
                 UHLog.d("web", "finish ${url.take(140)}")
                 hideSplash()
+                binding.loadingBar.visibility = View.GONE
                 val id = tabs.idForSession(session)
                 if (id > 0L) tabs.updateUrl(id, url, null)
                 binding.swipeRefresh.isRefreshing = false
@@ -812,10 +815,46 @@ override fun onExternalResponse(session: GeckoSession, response: WebResponse) {
     }
 }
 
-            override fun onCrash(session: GeckoSession) {
-                UHLog.e("gecko", "Tab crashed. Reloading.")
-                session.reload()
-            }
+override fun onCrash(session: GeckoSession) {
+    UHLog.e("gecko", "Tab crashed. Reloading.")
+    session.reload()
+}
+
+override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, displayContext: GeckoSession.ContentDelegate.ContextElement) {
+    if (displayContext.type == GeckoSession.ContentDelegate.ContextElement.TYPE_IMAGE) {
+        val imageUrl = displayContext.srcUri
+        if (!imageUrl.isNullOrBlank()) {
+            AlertDialog.Builder(this@MainActivity)
+                .setTitle("Image Options")
+                .setItems(arrayOf("Download Image", "Share Image", "Copy Image Link", "Open Image")) { _, which ->
+                    when (which) {
+                        0 -> {
+                            val filename = "image_${System.currentTimeMillis()}.jpg"
+                            if (imageUrl.startsWith("blob:") || imageUrl.startsWith("data:")) {
+                                currentSession?.loadUri("javascript:fetch('$imageUrl').then(r=>r.blob()).then(b=>{var reader=new FileReader();reader.onload=function(){window.postMessage({type:'UH_NATIVE_CALL',payload:{type:'SAVE_BLOB',filename:'$filename',mime:b.type,base64:reader.result.split(',')[1]}},'*')};reader.readAsDataURL(b);})")
+                            } else {
+                                executeDownload(imageUrl, filename, "image/jpeg", null)
+                            }
+                        }
+                        1 -> {
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, imageUrl)
+                            }
+                            startActivity(Intent.createChooser(intent, "Share Image Link"))
+                        }
+                        2 -> {
+                            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            cm.setPrimaryClip(android.content.ClipData.newPlainText("Image URL", imageUrl))
+                            Toast.makeText(this@MainActivity, "Link copied", Toast.LENGTH_SHORT).show()
+                        }
+                        3 -> currentSession?.loadUri(imageUrl)
+                    }
+                }
+                .show()
+        }
+    }
+}
 
 override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, displayContext: GeckoSession.ContentDelegate.ContextElement) {
     if (displayContext.type == GeckoSession.ContentDelegate.ContextElement.TYPE_IMAGE) {
@@ -1262,15 +1301,6 @@ private fun switchTab(id: Long) {
         v.findViewById<View>(R.id.menuPlaylist)?.setOnClickListener { sheet.dismiss(); toast("Playlist coming soon") }
         v.findViewById<View>(R.id.menuSettings)?.setOnClickListener {
             sheet.dismiss(); startActivity(Intent(this, SettingsActivity::class.java))
-        }
-        v.findViewById<View>(R.id.menuScripts)?.setOnClickListener {
-            sheet.dismiss(); startActivity(Intent(this, ScriptsActivity::class.java))
-        }
-        v.findViewById<View>(R.id.menuTools)?.setOnClickListener {
-            sheet.dismiss(); startActivity(Intent(this, ToolsActivity::class.java))
-        }
-        v.findViewById<View>(R.id.menuLogs)?.setOnClickListener {
-            sheet.dismiss(); startActivity(Intent(this, LogsActivity::class.java))
         }
         
         v.findViewById<View>(R.id.menuBottomHome)?.setOnClickListener {
