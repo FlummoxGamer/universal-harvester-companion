@@ -48,149 +48,35 @@ object DownloadEngine {
         return id
     }
 
-    fun processQueue(ctx: Context) {
-        if (DownloadStore.getRunningCount() >= DownloadStore.MAX_PARALLEL) return
-        val next = DownloadStore.getPendingTask() ?: return
-        DownloadStore.updateTask(next.id) { it.status = DownloadStore.Status.RUNNING }
-        resumeDownload(ctx, next.id)
-        if (DownloadStore.getRunningCount() < DownloadStore.MAX_PARALLEL) processQueue(ctx)
-    }
-
     fun startStreamDownload(ctx: Context, filename: String, mime: String, stream: InputStream, contentLength: Long, userAgent: String?, referer: String?): String {
         val id = UUID.randomUUID().toString()
         val task = DownloadStore.Task(id, "stream", filename, mime, userAgent = userAgent, referer = referer)
         task.totalBytes = contentLength
-        task.status = DownloadStore.Status.RUNNING
         DownloadStore.addTask(task)
         streams[id] = stream
         DownloadService.start(ctx)
-
-        jobs[id] = CoroutineScope(Dispatchers.IO).launch {
-            var targetUri: Uri? = null
-            var targetDoc: DocumentFile? = null
-            try {
-                val result = getDestination(ctx, task.filename, task.mime)
-                targetUri = result.first
-                targetDoc = result.second
-
-                val streamResult = if (targetUri != null) {
-                    ctx.contentResolver.openOutputStream(targetUri)
-                } else {
-                    ctx.contentResolver.openOutputStream(targetDoc!!.uri)
-                }
-                val outputStream = streamResult ?: throw Exception("Cannot open file")
-
-                val buffer = ByteArray(8192)
-                var bytesRead: Int
-                var lastUpdate = System.currentTimeMillis()
-                var bytesSinceLastUpdate = 0L
-
-                outputStream.use { out ->
-                    stream.use { input ->
-                        while (currentCoroutineContext().isActive) {
-                            bytesRead = input.read(buffer)
-                            if (bytesRead == -1) break
-                            out.write(buffer, 0, bytesRead)
-                            task.bytesDownloaded += bytesRead
-                            bytesSinceLastUpdate += bytesRead
-
-                            val now = System.currentTimeMillis()
-                            if (now - lastUpdate > 500) {
-                                val speed = (bytesSinceLastUpdate * 1000) / (now - lastUpdate)
-                                val eta = if (speed > 0 && task.totalBytes > 0) (task.totalBytes - task.bytesDownloaded) / speed else -1L
-                                val currentBytes = task.bytesDownloaded
-                                DownloadStore.updateTask(task.id) {
-                                    it.bytesDownloaded = currentBytes
-                                    it.speed = speed
-                                    it.etaSeconds = eta
-                                }
-                                DownloadService.updateNotification(ctx, task.id)
-                                lastUpdate = now
-                                bytesSinceLastUpdate = 0L
-                            }
-                        }
-                    }
-                }
-
-                targetUri?.let { finishMediaStore(ctx, it) }
-                DownloadStore.updateTask(task.id) {
-                    it.bytesDownloaded = task.bytesDownloaded
-                    it.totalBytes = task.totalBytes
-                    it.status = DownloadStore.Status.SUCCESS
-                }
-                DownloadService.notifyComplete(ctx, task.id, task.filename)
-                DownloadStore.removeTask(task.id)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                targetUri?.let { deletePartialFile(ctx, it) }
-                if (targetDoc != null) targetDoc?.delete()
-                val currentTask = DownloadStore.getTask(task.id) ?: return@launch
-                if (currentTask.status != DownloadStore.Status.CANCELLED && currentTask.status != DownloadStore.Status.PAUSED) {
-                    DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.FAILED; it.error = e.message }
-                    DownloadService.notifyFailed(ctx, task.id, task.filename, e.message ?: "Unknown error")
-                }
-            } finally {
-                streams.remove(id)
-                processQueue(ctx)
-            }
-        }
+        processQueue(ctx)
         return id
     }
 
-    fun pauseDownload(ctx: Context, id: String) {
-        calls[id]?.cancel()
-        calls.remove(id)
-        jobs[id]?.cancel()
-        jobs.remove(id)
-        streams[id]?.close()
-        streams.remove(id)
-        DownloadStore.updateTask(id) { it.status = DownloadStore.Status.PAUSED }
-        DownloadService.updateNotification(ctx, id)
-        processQueue(ctx)
+    fun processQueue(ctx: Context) {
+        val active = DownloadStore.activeDownloads.value
+        val running = active.count { it.status == DownloadStore.Status.RUNNING }
+        if (running >= DownloadStore.MAX_PARALLEL) return
+        val next = active.firstOrNull { it.status == DownloadStore.Status.PENDING } ?: return
+        DownloadStore.updateTask(next.id) { it.status = DownloadStore.Status.RUNNING }
+        
+        if (next.url == "stream") {
+            executeStream(ctx, next)
+        } else {
+            executeHttp(ctx, next)
+        }
+        
+        if (running + 1 < DownloadStore.MAX_PARALLEL) processQueue(ctx)
     }
 
-    fun cancelDownload(ctx: Context, id: String) {
-        DownloadStore.updateTask(id) { it.status = DownloadStore.Status.CANCELLED }
-        calls[id]?.cancel()
-        calls.remove(id)
-        jobs[id]?.cancel()
-        jobs.remove(id)
-        streams[id]?.close()
-        streams.remove(id)
-        
-        val task = DownloadStore.getTask(id)
-        if (task != null) {
-            val uriStr = SettingsPrefs.getString(ctx, "custom_download_uri", "")
-            if (uriStr.isNotBlank()) {
-                val parent = DocumentFile.fromTreeUri(ctx, Uri.parse(uriStr))
-                parent?.findFile(task.filename)?.delete()
-            } else {
-                val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
-                ctx.contentResolver.delete(collection, selection, arrayOf(task.filename))
-            }
-            DownloadStore.removeTask(id)
-        }
-        DownloadService.cancelNotification(ctx, id)
-        processQueue(ctx)
-        
-        if (DownloadStore.activeDownloads.value.none { it.status == DownloadStore.Status.RUNNING || it.status == DownloadStore.Status.PENDING }) {
-            try { ctx.stopService(Intent(ctx, DownloadService::class.java)) } catch (_: Exception) {}
-        }
-    }
-
-    fun resumeDownload(ctx: Context, id: String) {
-        val task = DownloadStore.getTask(id) ?: return
-        if (jobs[id]?.isActive == true) return
-        if (task.status == DownloadStore.Status.CANCELLED) return
-        if (task.status == DownloadStore.Status.PAUSED) {
-            DownloadStore.updateTask(id) { it.status = DownloadStore.Status.RUNNING }
-        }
-
-        DownloadService.updateNotification(ctx, id)
-
-        jobs[id] = CoroutineScope(Dispatchers.IO).launch {
+    private fun executeHttp(ctx: Context, task: DownloadStore.Task) {
+        jobs[task.id] = CoroutineScope(Dispatchers.IO).launch {
             var targetUri: Uri? = null
             var targetDoc: DocumentFile? = null
             try {
@@ -302,15 +188,158 @@ object DownloadEngine {
                 if (currentTask.status != DownloadStore.Status.CANCELLED && currentTask.status != DownloadStore.Status.PAUSED) {
                     targetUri?.let { deletePartialFile(ctx, it) }
                     if (targetDoc != null) targetDoc?.delete()
-                    DownloadStore.updateTask(id) {
+                    DownloadStore.updateTask(task.id) {
                         it.status = DownloadStore.Status.FAILED
                         it.error = e.message
                     }
-                    DownloadService.notifyFailed(ctx, id, task.filename, e.message ?: "Unknown error")
+                    DownloadService.notifyFailed(ctx, task.id, task.filename, e.message ?: "Unknown error")
                 }
             } finally {
-                processQueue(ctx)
+                if (DownloadStore.getTask(task.id)?.status != DownloadStore.Status.PAUSED) {
+                    processQueue(ctx)
+                }
             }
+        }
+    }
+
+    private fun executeStream(ctx: Context, task: DownloadStore.Task) {
+        val stream = streams[task.id] ?: run {
+            DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.FAILED; it.error = "Stream lost" }
+            processQueue(ctx)
+            return
+        }
+
+        jobs[task.id] = CoroutineScope(Dispatchers.IO).launch {
+            var targetUri: Uri? = null
+            var targetDoc: DocumentFile? = null
+            try {
+                val result = getDestination(ctx, task.filename, task.mime)
+                targetUri = result.first
+                targetDoc = result.second
+
+                val streamResult = if (targetUri != null) {
+                    ctx.contentResolver.openOutputStream(targetUri)
+                } else {
+                    ctx.contentResolver.openOutputStream(targetDoc!!.uri)
+                }
+                val outputStream = streamResult ?: throw Exception("Cannot open file")
+
+                val buffer = ByteArray(8192)
+                var bytesRead: Int
+                var lastUpdate = System.currentTimeMillis()
+                var bytesSinceLastUpdate = 0L
+
+                outputStream.use { out ->
+                    stream.use { input ->
+                        while (currentCoroutineContext().isActive) {
+                            if (task.isPaused) {
+                                delay(500)
+                                continue
+                            }
+                            bytesRead = input.read(buffer)
+                            if (bytesRead == -1) break
+                            out.write(buffer, 0, bytesRead)
+                            task.bytesDownloaded += bytesRead
+                            bytesSinceLastUpdate += bytesRead
+
+                            val now = System.currentTimeMillis()
+                            if (now - lastUpdate > 500) {
+                                val speed = (bytesSinceLastUpdate * 1000) / (now - lastUpdate)
+                                val eta = if (speed > 0 && task.totalBytes > 0) (task.totalBytes - task.bytesDownloaded) / speed else -1L
+                                val currentBytes = task.bytesDownloaded
+                                DownloadStore.updateTask(task.id) {
+                                    it.bytesDownloaded = currentBytes
+                                    it.speed = speed
+                                    it.etaSeconds = eta
+                                }
+                                DownloadService.updateNotification(ctx, task.id)
+                                lastUpdate = now
+                                bytesSinceLastUpdate = 0L
+                            }
+                        }
+                    }
+                }
+
+                targetUri?.let { finishMediaStore(ctx, it) }
+                DownloadStore.updateTask(task.id) {
+                    it.bytesDownloaded = task.bytesDownloaded
+                    it.totalBytes = task.totalBytes
+                    it.status = DownloadStore.Status.SUCCESS
+                }
+                DownloadService.notifyComplete(ctx, task.id, task.filename)
+                DownloadStore.removeTask(task.id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val currentTask = DownloadStore.getTask(task.id) ?: return@launch
+                if (currentTask.status != DownloadStore.Status.CANCELLED && currentTask.status != DownloadStore.Status.PAUSED) {
+                    targetUri?.let { deletePartialFile(ctx, it) }
+                    if (targetDoc != null) targetDoc?.delete()
+                    DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.FAILED; it.error = e.message }
+                    DownloadService.notifyFailed(ctx, task.id, task.filename, e.message ?: "Unknown error")
+                }
+            } finally {
+                streams.remove(task.id)
+                if (DownloadStore.getTask(task.id)?.status != DownloadStore.Status.PAUSED) {
+                    processQueue(ctx)
+                }
+            }
+        }
+    }
+
+    fun pauseDownload(ctx: Context, id: String) {
+        val task = DownloadStore.getTask(id) ?: return
+        if (task.url == "stream") {
+            DownloadStore.updateTask(id) { it.isPaused = true; it.status = DownloadStore.Status.PAUSED }
+        } else {
+            calls[id]?.cancel()
+            calls.remove(id)
+            jobs[id]?.cancel()
+            jobs.remove(id)
+            DownloadStore.updateTask(id) { it.status = DownloadStore.Status.PAUSED }
+        }
+        DownloadService.updateNotification(ctx, id)
+        processQueue(ctx)
+    }
+
+    fun resumeDownload(ctx: Context, id: String) {
+        val task = DownloadStore.getTask(id) ?: return
+        if (task.url == "stream") {
+            DownloadStore.updateTask(id) { it.isPaused = false; it.status = DownloadStore.Status.RUNNING }
+            DownloadService.updateNotification(ctx, id)
+        } else {
+            DownloadStore.updateTask(id) { it.status = DownloadStore.Status.PENDING }
+            processQueue(ctx)
+        }
+    }
+
+    fun cancelDownload(ctx: Context, id: String) {
+        DownloadStore.updateTask(id) { it.status = DownloadStore.Status.CANCELLED }
+        calls[id]?.cancel()
+        calls.remove(id)
+        jobs[id]?.cancel()
+        jobs.remove(id)
+        streams[id]?.close()
+        streams.remove(id)
+        
+        val task = DownloadStore.getTask(id)
+        if (task != null) {
+            val uriStr = SettingsPrefs.getString(ctx, "custom_download_uri", "")
+            if (uriStr.isNotBlank()) {
+                val parent = DocumentFile.fromTreeUri(ctx, Uri.parse(uriStr))
+                parent?.findFile(task.filename)?.delete()
+            } else {
+                val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
+                ctx.contentResolver.delete(collection, selection, arrayOf(task.filename))
+            }
+            DownloadStore.removeTask(id)
+        }
+        DownloadService.cancelNotification(ctx, id)
+        processQueue(ctx)
+        
+        if (DownloadStore.activeDownloads.value.none { it.status == DownloadStore.Status.RUNNING || it.status == DownloadStore.Status.PENDING }) {
+            try { ctx.stopService(Intent(ctx, DownloadService::class.java)) } catch (_: Exception) {}
         }
     }
 
