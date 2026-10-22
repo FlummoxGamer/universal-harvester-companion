@@ -4,12 +4,12 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
-import android.provider.MediaStore
-import android.content.ContentUris
 import android.os.Build
 import android.os.IBinder
+import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
 
 class DownloadService : Service() {
@@ -38,50 +38,64 @@ class DownloadService : Service() {
             nm.notify(notificationId, buildNotification(ctx, task))
         }
 
-    fun notifyComplete(ctx: Context, id: String, filename: String) {
-    val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
-    val notificationId = id.hashCode()
-    nm.cancel(notificationId)
-    
-    val downloadUri = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-    val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
-    val cursor = ctx.contentResolver.query(downloadUri, null, selection, arrayOf(filename), null)
-    var fileUri: android.net.Uri? = null
-    var mimeType = "*/*"
-    cursor?.use {
-        if (it.moveToFirst()) {
-            val uriIndex = it.getColumnIndex(MediaStore.MediaColumns._ID)
-            if (uriIndex != -1) {
-                fileUri = android.content.ContentUris.withAppendedId(downloadUri, it.getLong(uriIndex))
+        fun notifyComplete(ctx: Context, id: String, filename: String) {
+            val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+            val notificationId = id.hashCode()
+            nm.cancel(notificationId)
+            
+            val downloadUri = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
+            val cursor = ctx.contentResolver.query(downloadUri, null, selection, arrayOf(filename), null)
+            var fileUri: android.net.Uri? = null
+            var mimeType = "*/*"
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val uriIndex = it.getColumnIndex(MediaStore.MediaColumns._ID)
+                    if (uriIndex != -1) {
+                        fileUri = ContentUris.withAppendedId(downloadUri, it.getLong(uriIndex))
+                    }
+                    val mimeIndex = it.getColumnIndex(MediaStore.MediaColumns.MIME_TYPE)
+                    if (mimeIndex != -1) mimeType = it.getString(mimeIndex)
+                }
             }
-            val mimeIndex = it.getColumnIndex(MediaStore.MediaColumns.MIME_TYPE)
-            if (mimeIndex != -1) mimeType = it.getString(mimeIndex)
-        }
-    }
+            
+            if (fileUri == null) {
+                val customUriStr = SettingsPrefs.getString(ctx, "custom_download_uri", "")
+                if (customUriStr.isNotBlank()) {
+                    val treeUri = android.net.Uri.parse(customUriStr)
+                    val parent = androidx.documentfile.provider.DocumentFile.fromTreeUri(ctx, treeUri)
+                    val doc = parent?.findFile(filename)
+                    if (doc != null) {
+                        fileUri = doc.uri
+                        mimeType = doc.type ?: "*/*"
+                    }
+                }
+            }
 
-    val openIntent = if (fileUri != null) {
-        Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(fileUri, mimeType)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            val openIntent = if (fileUri != null) {
+                Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(fileUri, mimeType)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            } else {
+                Intent(ctx, DownloadsActivity::class.java)
+            }
+            
+            val piOpen = PendingIntent.getActivity(ctx, notificationId, openIntent, PendingIntent.FLAG_IMMUTABLE)
+            
+            val n = NotificationCompat.Builder(ctx, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_downloads)
+                .setContentTitle("Download Complete")
+                .setContentText(filename)
+                .setContentIntent(piOpen)
+                .setAutoCancel(true)
+                .setOngoing(false)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .build()
+                
+            nm.notify(notificationId, n)
         }
-    } else {
-        Intent(ctx, DownloadsActivity::class.java)
-    }
-    
-    val piOpen = PendingIntent.getActivity(ctx, notificationId, openIntent, PendingIntent.FLAG_IMMUTABLE)
-    
-    val n = NotificationCompat.Builder(ctx, CHANNEL_ID)
-        .setSmallIcon(R.drawable.ic_downloads)
-        .setContentTitle("Download Complete")
-        .setContentText(filename)
-        .setContentIntent(piOpen)
-        .setAutoCancel(true)
-        .setOngoing(false)
-        .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-        .build()
-        
-    nm.notify(notificationId, n)
-        }
+
         fun notifyFailed(ctx: Context, id: String, filename: String, error: String) {
             val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
             val notificationId = id.hashCode()
@@ -89,6 +103,7 @@ class DownloadService : Service() {
             
             val openIntent = Intent(ctx, DownloadsActivity::class.java)
             val piOpen = PendingIntent.getActivity(ctx, notificationId, openIntent, PendingIntent.FLAG_IMMUTABLE)
+            
             val n = NotificationCompat.Builder(ctx, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_notify_error)
                 .setContentTitle(filename)
@@ -96,8 +111,10 @@ class DownloadService : Service() {
                 .setStyle(NotificationCompat.BigTextStyle().bigText("Download failed: $error"))
                 .setContentIntent(piOpen)
                 .setAutoCancel(true)
+                .setOngoing(false)
                 .build()
-            nm.notify(System.currentTimeMillis().toInt(), n)
+                
+            nm.notify(notificationId, n)
         }
 
         fun cancelNotification(ctx: Context, id: String) {
@@ -125,7 +142,7 @@ class DownloadService : Service() {
             val piCancel = PendingIntent.getService(ctx, notificationId + 2, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
             val speed = formatSpeed(task.speed)
-            val eta = if (task.etaSeconds > 0) "${task.etaSeconds}s left" else "Calculating..."
+            val eta = formatEta(task.etaSeconds)
             val size = "${formatSize(task.bytesDownloaded)} / ${formatSize(task.totalBytes)}"
             val text = if (isPaused) "Paused • $size" else "$size • $speed • $eta"
 
@@ -154,6 +171,15 @@ class DownloadService : Service() {
             b < 1024L * 1024 * 1024 -> "%.1f MB".format(b / (1024.0 * 1024))
             else -> "%.1f GB".format(b / (1024.0 * 1024 * 1024))
         }
+
+        private fun formatEta(seconds: Long): String {
+            if (seconds <= 0) return "Calculating..."
+            return when {
+                seconds < 60 -> "${seconds}s left"
+                seconds < 3600 -> "${seconds / 60}m left"
+                else -> "${seconds / 3600}h left"
+            }
+        }
     }
 
     override fun onCreate() {
@@ -165,24 +191,25 @@ class DownloadService : Service() {
         }
     }
 
-override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    val id = intent?.getStringExtra("id")
-    when (intent?.action) {
-        ACTION_PAUSE -> if (id != null) DownloadEngine.pauseDownload(this, id)
-        ACTION_RESUME -> if (id != null) DownloadEngine.resumeDownload(this, id)
-        ACTION_CANCEL -> if (id != null) DownloadEngine.cancelDownload(this, id)
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val id = intent?.getStringExtra("id")
+        when (intent?.action) {
+            ACTION_PAUSE -> if (id != null) DownloadEngine.pauseDownload(this, id)
+            ACTION_RESUME -> if (id != null) DownloadEngine.resumeDownload(this, id)
+            ACTION_CANCEL -> if (id != null) DownloadEngine.cancelDownload(this, id)
+        }
+        
+        val active = DownloadStore.activeDownloads.value
+        if (active.isEmpty()) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        } else {
+            val firstTask = active.first()
+            startForeground(firstTask.id.hashCode(), buildNotification(this, firstTask))
+        }
+        
+        return START_NOT_STICKY
     }
-    
-    val active = DownloadStore.activeDownloads.value
-    if (active.isEmpty()) {
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
-    } else {
-        val firstTask = active.first()
-        startForeground(firstTask.id.hashCode(), buildNotification(this, firstTask))
-    }
-    
-    return START_NOT_STICKY
-}
+
     override fun onBind(intent: Intent?): IBinder? = null
 }
