@@ -81,28 +81,36 @@ class TabManager private constructor(private val ctx: Context) {
     fun openBlankTab(incognito: Boolean = false, groupId: Long = 0L, parentId: Long = 0L): Long =
         openNew("about:blank", incognito, groupId, parentId)
 
-    fun acquireSession(id: Long): GeckoSession? {
-        synchronized(lock) {
-            alive[id]?.let { currentId = id; return it.session }
-            val entity = db.list().firstOrNull { it.id == id }
-            val incognito = entity?.incognito ?: false
-            val runtime = GeckoEngine.getRuntime(ctx) ?: return null
-            
-            val settings = GeckoSessionSettings.Builder()
-                .usePrivateMode(incognito)
-                .userAgentMode(GeckoSessionSettings.USER_AGENT_MODE_DESKTOP)
-                .viewportMode(GeckoSessionSettings.VIEWPORT_MODE_MOBILE)
-                .build()
-            val session = GeckoSession(settings)
-            session.open(runtime)
-            
-            alive[id] = Slot(session, incognito)
-            currentId = id
-            val fallback = entity?.url
-            if (!fallback.isNullOrBlank() && fallback != "about:blank") session.loadUri(fallback)
-            return session
+fun acquireSession(id: Long): GeckoSession? {
+    synchronized(lock) {
+        alive[id]?.let { currentId = id; return it.session }
+        val entity = db.list().firstOrNull { it.id == id }
+        val incognito = entity?.incognito ?: false
+        val runtime = GeckoEngine.getRuntime(ctx) ?: return null
+        
+        val settings = GeckoSessionSettings.Builder()
+            .usePrivateMode(incognito)
+            .userAgentMode(GeckoSessionSettings.USER_AGENT_MODE_DESKTOP)
+            .viewportMode(GeckoSessionSettings.VIEWPORT_MODE_MOBILE)
+            .build()
+        val session = GeckoSession(settings)
+        session.open(runtime)
+        
+        alive[id] = Slot(session, incognito)
+        currentId = id
+        
+        val savedState = db.loadState(id)
+        if (savedState != null) {
+            try {
+                session.restoreState(org.mozilla.geckoview.GeckoSession.SessionState.fromString(savedState))
+            } catch (_: Exception) {}
         }
+        
+        val fallback = entity?.url
+        if (!fallback.isNullOrBlank() && fallback != "about:blank") session.loadUri(fallback)
+        return session
     }
+}
 
     fun currentId(): Long = synchronized(lock) { currentId }
     
@@ -139,6 +147,8 @@ class TabManager private constructor(private val ctx: Context) {
     fun hasIncognito(): Boolean = listIncognito().isNotEmpty()
 
     fun updateUrl(id: Long, url: String, title: String?) = db.update(id, url, title)
+
+    fun saveState(id: Long, stateStr: String) = db.saveState(id, stateStr)
 
     fun updateGroup(id: Long, groupId: Long) {
         try {
