@@ -65,7 +65,12 @@ private fun observeActiveDownloads() {
                         name.text = task.filename
                         val size = "${formatSize(task.bytesDownloaded)} / ${formatSize(task.totalBytes)}"
                         val speed = "${formatSize(task.speed)}/s"
-                        val eta = if (task.etaSeconds > 0) "${task.etaSeconds} sec left" else "Calculating..."
+                        val eta = when {
+                            task.etaSeconds < 0 -> "Calculating..."
+                            task.etaSeconds < 60 -> "${task.etaSeconds}s left"
+                            task.etaSeconds < 3600 -> "${task.etaSeconds / 60}m left"
+                            else -> "${task.etaSeconds / 3600}h left"
+                        }
                         
                         status.text = when (task.status) {
                             DownloadStore.Status.PAUSED -> "Paused • $size"
@@ -99,6 +104,7 @@ private fun observeActiveDownloads() {
         }
     }
 }
+
     override fun onResume() {
         super.onResume()
         reload()
