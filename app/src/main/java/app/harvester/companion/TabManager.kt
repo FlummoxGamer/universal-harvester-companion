@@ -50,6 +50,7 @@ class TabManager private constructor(private val ctx: Context) {
             val id = db.insert("about:blank", incognito, groupId, parentId)
             val settings = GeckoSessionSettings.Builder()
                 .usePrivateMode(incognito)
+                .userAgentOverride("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
                 .build()
             val session = GeckoSession(settings)
             alive[id] = Slot(session, incognito)
@@ -216,6 +217,5 @@ class TabManager private constructor(private val ctx: Context) {
     }
 
     fun saveCurrentState() {}
-    
     fun saveAll() {}
 }
