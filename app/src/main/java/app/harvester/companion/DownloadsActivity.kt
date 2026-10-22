@@ -99,7 +99,6 @@ private fun observeActiveDownloads() {
         }
     }
 }
-
     override fun onResume() {
         super.onResume()
         reload()
