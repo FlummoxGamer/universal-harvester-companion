@@ -146,6 +146,10 @@ object DownloadEngine {
                         outputStream.use { out ->
                             inputStream.use { input ->
                                 while (currentCoroutineContext().isActive) {
+                                    if (DownloadStore.getTask(task.id)?.isPaused == true) {
+                                        delay(500)
+                                        continue
+                                    }
                                     bytesRead = input.read(buffer)
                                     if (bytesRead == -1) break
                                     out.write(buffer, 0, bytesRead)
@@ -169,6 +173,9 @@ object DownloadEngine {
                                 }
                             }
                         }
+
+                        val currentTask = DownloadStore.getTask(task.id)
+                        if (currentTask == null || currentTask.status == DownloadStore.Status.CANCELLED) return@launch
 
                         targetUri?.let { finishMediaStore(ctx, it) }
                         DownloadStore.updateTask(task.id) {
@@ -232,7 +239,7 @@ object DownloadEngine {
                 outputStream.use { out ->
                     stream.use { input ->
                         while (currentCoroutineContext().isActive) {
-                            if (task.isPaused) {
+                            if (DownloadStore.getTask(task.id)?.isPaused == true) {
                                 delay(500)
                                 continue
                             }
@@ -259,6 +266,9 @@ object DownloadEngine {
                         }
                     }
                 }
+
+                val currentTask = DownloadStore.getTask(task.id)
+                if (currentTask == null || currentTask.status == DownloadStore.Status.CANCELLED) return@launch
 
                 targetUri?.let { finishMediaStore(ctx, it) }
                 DownloadStore.updateTask(task.id) {
@@ -288,26 +298,16 @@ object DownloadEngine {
     }
 
     fun pauseDownload(ctx: Context, id: String) {
-        val task = DownloadStore.getTask(id) ?: return
-        if (task.url == "stream") {
-            DownloadStore.updateTask(id) { it.isPaused = true; it.status = DownloadStore.Status.PAUSED }
-        } else {
-            calls[id]?.cancel()
-            calls.remove(id)
-            jobs[id]?.cancel()
-            jobs.remove(id)
-            DownloadStore.updateTask(id) { it.status = DownloadStore.Status.PAUSED }
-        }
+        DownloadStore.updateTask(id) { it.isPaused = true; it.status = DownloadStore.Status.PAUSED }
         DownloadService.updateNotification(ctx, id)
         processQueue(ctx)
     }
 
     fun resumeDownload(ctx: Context, id: String) {
         val task = DownloadStore.getTask(id) ?: return
-        if (task.url == "stream") {
-            DownloadStore.updateTask(id) { it.isPaused = false; it.status = DownloadStore.Status.RUNNING }
-            DownloadService.updateNotification(ctx, id)
-        } else {
+        DownloadStore.updateTask(id) { it.isPaused = false; it.status = DownloadStore.Status.RUNNING }
+        DownloadService.updateNotification(ctx, id)
+        if (jobs[id]?.isActive != true) {
             DownloadStore.updateTask(id) { it.status = DownloadStore.Status.PENDING }
             processQueue(ctx)
         }
