@@ -63,6 +63,7 @@ class TabManager private constructor(private val ctx: Context) {
             val runtime = GeckoEngine.getRuntime(ctx) ?: return id
             val settings = GeckoSessionSettings.Builder()
                 .usePrivateMode(incognito)
+                .userAgentOverride("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
                 .build()
             val session = GeckoSession(settings)
             session.open(runtime)
@@ -86,6 +87,7 @@ class TabManager private constructor(private val ctx: Context) {
             
             val settings = GeckoSessionSettings.Builder()
                 .usePrivateMode(incognito)
+                .userAgentOverride("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
                 .build()
             val session = GeckoSession(settings)
             session.open(runtime)
