@@ -8,7 +8,6 @@ object GeckoEngine {
     @Volatile
     private var runtime: GeckoRuntime? = null
 
-    // getRuntime
     fun getRuntime(ctx: Context): GeckoRuntime? {
         if (runtime == null) {
             synchronized(this) {
@@ -21,9 +20,12 @@ object GeckoEngine {
                     }
                     
                     try {
+                        val desktopUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                        
                         val settings = GeckoRuntimeSettings.Builder()
                             .consoleOutput(true)
                             .debugLogging(true)
+                            .customUserAgent(desktopUA)
                             .build()
                             
                         val rt = GeckoRuntime.create(ctx, settings)
@@ -45,6 +47,17 @@ object GeckoEngine {
                             UHLog.e("gecko", "Failed to load UH Bridge extension: ${error?.message}")
                         })
                         
+                        rt.webExtensionController.ensureBuiltIn(
+                            "resource://android/assets/web_extensions/header_injector/",
+                            "header-injector@harvester.app"
+                        ).accept({ ext ->
+                            if (ext != null) {
+                                rt.webExtensionController.enable(ext, org.mozilla.geckoview.WebExtensionController.EnableSource.APP)
+                            }
+                        }, { error ->
+                            UHLog.e("gecko", "Failed to load header injector: ${error?.message}")
+                        })
+                        
                     } catch (e: Throwable) {
                         UHLog.e("gecko", "GeckoRuntime init failed: ${e.message}")
                         UHLog.throwable("gecko", "GeckoRuntime init failed", e)
@@ -56,7 +69,6 @@ object GeckoEngine {
         return runtime
     }
 
-    // clearBootMarker
     fun clearBootMarker(ctx: Context) {
         try {
             val bootMarker = java.io.File(ctx.filesDir, "boot_marker.tmp")
