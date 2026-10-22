@@ -51,9 +51,12 @@ object DownloadEngine {
                 targetUri = result.first
                 targetDoc = result.second
                 
-                val outputStream = if (targetUri != null) ctx.contentResolver.openOutputStream(targetUri)
-                else ctx.contentResolver.openOutputStream(targetDoc!!.uri)
-                ?: throw Exception("Cannot open file")
+                val streamResult = if (targetUri != null) {
+                    ctx.contentResolver.openOutputStream(targetUri)
+                } else {
+                    ctx.contentResolver.openOutputStream(targetDoc!!.uri)
+                }
+                val outputStream = streamResult ?: throw Exception("Cannot open file")
                 
                 val buffer = ByteArray(8192)
                 var bytesRead: Int
@@ -87,12 +90,12 @@ object DownloadEngine {
                     }
                 }
 
-                if (targetUri != null) finishMediaStore(ctx, targetUri)
+                targetUri?.let { finishMediaStore(ctx, it) }
                 DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.SUCCESS }
                 DownloadService.notifyComplete(ctx, task.id, task.filename)
                 DownloadStore.removeTask(task.id)
             } catch (e: Exception) {
-                if (targetUri != null) deletePartialFile(ctx, targetUri)
+                targetUri?.let { deletePartialFile(ctx, it) }
                 if (targetDoc != null) targetDoc?.delete()
                 val currentTask = DownloadStore.getTask(task.id)
                 if (currentTask?.status != DownloadStore.Status.CANCELLED && currentTask?.status != DownloadStore.Status.PAUSED) {
@@ -151,12 +154,12 @@ object DownloadEngine {
                     targetUri = result.first
                     targetDoc = result.second
                     
-                    val outputStream = if (targetUri != null) ctx.contentResolver.openOutputStream(targetUri)
+                    val streamResult = if (targetUri != null) ctx.contentResolver.openOutputStream(targetUri)
                     else ctx.contentResolver.openOutputStream(targetDoc!!.uri)
                     
-                    outputStream?.use { it.write(bytes) }
+                    streamResult?.use { it.write(bytes) }
                     
-                    if (targetUri != null) finishMediaStore(ctx, targetUri)
+                    targetUri?.let { finishMediaStore(ctx, it) }
                     DownloadStore.updateTask(task.id) {
                         it.bytesDownloaded = bytes.size.toLong()
                         it.totalBytes = bytes.size.toLong()
@@ -195,11 +198,12 @@ object DownloadEngine {
                         targetUri = result.first
                         targetDoc = result.second
                         
-                        val outputStream = if (targetUri != null) {
+                        val streamResult = if (targetUri != null) {
                             ctx.contentResolver.openOutputStream(targetUri, if (task.bytesDownloaded > 0) "wa" else "w")
                         } else {
                             ctx.contentResolver.openOutputStream(targetDoc!!.uri, if (task.bytesDownloaded > 0) "wa" else "w")
-                        } ?: throw Exception("Cannot open file")
+                        }
+                        val outputStream = streamResult ?: throw Exception("Cannot open file")
 
                         val inputStream = body.byteStream()
                         val buffer = ByteArray(8192)
@@ -234,7 +238,7 @@ object DownloadEngine {
                             }
                         }
 
-                        if (targetUri != null) finishMediaStore(ctx, targetUri)
+                        targetUri?.let { finishMediaStore(ctx, it) }
                         DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.SUCCESS }
                         DownloadService.notifyComplete(ctx, task.id, task.filename)
                         DownloadStore.removeTask(task.id)
@@ -244,7 +248,7 @@ object DownloadEngine {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                if (targetUri != null) deletePartialFile(ctx, targetUri)
+                targetUri?.let { deletePartialFile(ctx, it) }
                 if (targetDoc != null) targetDoc?.delete()
                 val currentTask = DownloadStore.getTask(task.id)
                 if (currentTask?.status != DownloadStore.Status.CANCELLED && currentTask?.status != DownloadStore.Status.PAUSED) {
