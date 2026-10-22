@@ -445,12 +445,22 @@ private fun hideSplash() {
                 return@addCallback
             }
 
-            if (v != null) {
-                v.loadUri("about:blank")
-                return@addCallback
+            val all = tabs.list()
+            if (all.size > 1) {
+                popupTabs.remove(id)
+                tabs.close(id)
+                val remaining = tabs.list()
+                if (remaining.isNotEmpty()) {
+                    tabs.acquireSession(remaining.last().id)
+                    attachCurrent()
+                    updateUi()
+                }
+            } else {
+                if (v != null) {
+                    v.loadUri("about:blank")
+                }
             }
-
-            finish()
+            return@addCallback
         }
     }
 
@@ -804,11 +814,11 @@ private fun hideSplash() {
 
                 if (body != null) {
                     if (SettingsPrefs.getBool(this@MainActivity, SettingsPrefs.K_ASK_DL, true)) {
-                        showStreamDownloadConfirmationSheet(filename, contentType, userAgent, body, contentLength)
+                        showStreamDownloadConfirmationSheet(response.uri, filename, contentType, userAgent, body, contentLength)
                     } else {
                         DownloadEngine.startStreamDownload(this@MainActivity, filename, contentType ?: "application/octet-stream", body, contentLength, userAgent, currentUrl)
                     }
-                } else {
+                    } else {
                     if (SettingsPrefs.getBool(this@MainActivity, SettingsPrefs.K_ASK_DL, true)) {
                         showDownloadConfirmationSheet(response.uri, filename, contentType, userAgent)
                     } else {
@@ -900,6 +910,9 @@ private fun hideSplash() {
             }
 
             override fun onLoadRequest(session: GeckoSession, request: GeckoSession.NavigationDelegate.LoadRequest): GeckoResult<AllowOrDeny>? {
+                if (request.target == GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW && !request.hasUserGesture) {
+                    return GeckoResult.fromValue(AllowOrDeny.DENY)
+                }
                 val url = request.uri
                 val scheme = Uri.parse(url).scheme ?: ""
                 if (scheme == "intent") { 
@@ -950,22 +963,60 @@ private fun hideSplash() {
         }
     }
 
-    private fun showStreamDownloadConfirmationSheet(filename: String, mimetype: String?, userAgent: String?, stream: java.io.InputStream, contentLength: Long) {
-        val sheet = BottomSheetDialog(this)
-        val v = layoutInflater.inflate(R.layout.dialog_download_confirmation, null)
-        v.setBackgroundResource(R.drawable.bg_bottom_sheet)
-        sheet.setContentView(v)
+private fun showStreamDownloadConfirmationSheet(url: String, filename: String, mimetype: String?, userAgent: String?, stream: java.io.InputStream, contentLength: Long) {
+    val sheet = BottomSheetDialog(this)
+    val v = layoutInflater.inflate(R.layout.dialog_download_confirmation, null)
+    v.setBackgroundResource(R.drawable.bg_bottom_sheet)
+    sheet.setContentView(v)
 
-        v.findViewById<android.widget.TextView>(R.id.dlFileName).text = filename
-        v.findViewById<android.widget.TextView>(R.id.dlFileSize).text = android.text.format.Formatter.formatShortFileSize(this, contentLength)
-        v.findViewById<android.widget.TextView>(R.id.dlFileUrl).text = "Stream Download"
-        
-        val customUri = SettingsPrefs.getString(this, "custom_download_uri", "")
-        val pathStr = if (customUri.isNotBlank()) {
-             customUri.replace("content://com.android.externalstorage.documents/tree/primary%3A", "/storage/emulated/0/").replace("%2F", "/")
-        } else {
-            "/storage/emulated/0/Download"
+    v.findViewById<android.widget.TextView>(R.id.dlFileName).text = filename
+    
+    val sizeText = v.findViewById<android.widget.TextView>(R.id.dlFileSize)
+    if (contentLength > 0) {
+        sizeText.text = android.text.format.Formatter.formatShortFileSize(this, contentLength)
+    } else {
+        sizeText.visibility = View.GONE
+        if (url.isNotBlank() && url != "stream") {
+            Thread {
+                try {
+                    val client = okhttp3.OkHttpClient.Builder().connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS).build()
+                    val reqBuilder = okhttp3.Request.Builder().url(url)
+                        .header("User-Agent", userAgent ?: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
+                        .header("Range", "bytes=0-0")
+                        .header("Accept-Encoding", "identity")
+                    val referer = currentUrl
+                    if (!referer.isNullOrBlank()) reqBuilder.addHeader("Referer", referer)
+                    val cookie = android.webkit.CookieManager.getInstance().getCookie(url)
+                    if (!cookie.isNullOrBlank()) reqBuilder.addHeader("Cookie", cookie)
+                    
+                    client.newCall(reqBuilder.build()).execute().use { resp ->
+                        var size = -1L
+                        val contentRange = resp.header("Content-Range")
+                        if (contentRange != null && contentRange.contains("/")) {
+                            size = contentRange.substringAfterLast("/").toLongOrNull() ?: -1L
+                        } else {
+                            size = resp.header("Content-Length")?.toLongOrNull() ?: -1L
+                        }
+                        runOnUiThread {
+                            if (size > 0) {
+                                sizeText.text = android.text.format.Formatter.formatShortFileSize(this@MainActivity, size)
+                                sizeText.visibility = View.VISIBLE
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }.start()
         }
+    }
+    
+    v.findViewById<android.widget.TextView>(R.id.dlFileUrl).text = if (url == "stream") "Stream Download" else url
+    
+    val customUri = SettingsPrefs.getString(this, "custom_download_uri", "")
+    val pathStr = if (customUri.isNotBlank()) {
+         customUri.replace("content://com.android.externalstorage.documents/tree/primary%3A", "/storage/emulated/0/").replace("%2F", "/")
+    } else {
+        "/storage/emulated/0/Download"
+    }
         v.findViewById<android.widget.TextView>(R.id.dlLocationPath).text = pathStr
 
         v.findViewById<android.view.View>(R.id.dlLocationRow).setOnClickListener {
@@ -1423,22 +1474,24 @@ private fun hideSplash() {
         attachCurrent(); updateUi()
     }
 
-    override fun onResume() {
-        super.onResume()
-        UpdateChecker.resumePendingInstallIfPossible(this)
-        applyAddressBarPosition()
-        currentSession?.setActive(true)
-        updateUi()
-    }
+override fun onResume() {
+    super.onResume()
+    UpdateChecker.resumePendingInstallIfPossible(this)
+    applyAddressBarPosition()
+    currentSession?.setActive(true)
+    currentSession?.setFocused(true)
+    updateUi()
+}
 
-    override fun onPause() {
-        super.onPause()
-        currentSession?.setActive(false)
-        if (::tabs.isInitialized) {
-            tabs.saveAll()
-        }
-        UHLog.onActivityPause(this)
+override fun onPause() {
+    super.onPause()
+    currentSession?.setActive(false)
+    currentSession?.setFocused(false)
+    if (::tabs.isInitialized) {
+        tabs.saveAll()
     }
+    UHLog.onActivityPause(this)
+}
 
     override fun onDestroy() {
         if (::tabs.isInitialized) {
