@@ -325,13 +325,13 @@ class DownloadsActivity : AppCompatActivity() {
         }
     }
 
-        companion object {
-            fun formatSize(b: Long): String = when {
-                b <= 0 -> "?"
-                b < 1024 -> "$b B"
-                b < 1024 * 1024 -> "%.1f KB".format(b / 1024.0)
-                b < 1024L * 1024 * 1024 -> "%.1f MB".format(b / (1024.0 * 1024))
-                else -> "%.1f GB".format(b / (1024.0 * 1024 * 1024))
-            }
+    companion object {
+        fun formatSize(b: Long): String = when {
+            b <= 0 -> "?"
+            b < 1024 -> "$b B"
+            b < 1024 * 1024 -> "%.1f KB".format(b / 1024.0)
+            b < 1024L * 1024 * 1024 -> "%.1f MB".format(b / (1024.0 * 1024))
+            else -> "%.1f GB".format(b / (1024.0 * 1024 * 1024))
         }
-   }
+    }
+}
