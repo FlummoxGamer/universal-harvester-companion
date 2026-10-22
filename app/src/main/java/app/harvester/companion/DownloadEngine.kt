@@ -41,19 +41,21 @@ object DownloadEngine {
 
     fun startDownload(ctx: Context, url: String, filename: String, mime: String, base64Data: String? = null, userAgent: String? = null, referer: String? = null): String {
         val id = UUID.randomUUID().toString()
-        val task = DownloadStore.Task(id, url, filename, mime, base64Data = base64Data, userAgent = userAgent, referer = referer)
+        val task = DownloadStore.Task(id, url, filename, mime, base64Data = base64Data, userAgent = userAgent, referer = referer, realUrl = url)
         DownloadStore.addTask(task)
         DownloadService.start(ctx)
         processQueue(ctx)
         return id
     }
 
-    fun startStreamDownload(ctx: Context, filename: String, mime: String, stream: InputStream, contentLength: Long, userAgent: String?, referer: String?): String {
+    fun startStreamDownload(ctx: Context, filename: String, mime: String, stream: InputStream, contentLength: Long, userAgent: String?, referer: String?, realUrl: String?): String {
         val id = UUID.randomUUID().toString()
-        val task = DownloadStore.Task(id, "stream", filename, mime, userAgent = userAgent, referer = referer)
+        val task = DownloadStore.Task(id, "stream", filename, mime, userAgent = userAgent, referer = referer, realUrl = realUrl)
         task.totalBytes = contentLength
         DownloadStore.addTask(task)
-        streams[id] = stream
+        if (realUrl == null) {
+            streams[id] = stream
+        }
         DownloadService.start(ctx)
         processQueue(ctx)
         return id
@@ -66,7 +68,7 @@ object DownloadEngine {
         val next = active.firstOrNull { it.status == DownloadStore.Status.PENDING } ?: return
         DownloadStore.updateTask(next.id) { it.status = DownloadStore.Status.RUNNING }
         
-        if (next.url == "stream") {
+        if (next.url == "stream" && next.realUrl == null) {
             executeStream(ctx, next)
         } else {
             executeHttp(ctx, next)
@@ -100,8 +102,9 @@ object DownloadEngine {
                     DownloadService.notifyComplete(ctx, task.id, task.filename)
                     DownloadStore.removeTask(task.id)
                 } else {
-                    val requestBuilder = Request.Builder().url(task.url)
-                    val cookie = CookieManager.getInstance().getCookie(task.url)
+                    val downloadUrl = task.realUrl ?: task.url
+                    val requestBuilder = Request.Builder().url(downloadUrl)
+                    val cookie = CookieManager.getInstance().getCookie(downloadUrl)
                     if (!cookie.isNullOrBlank()) requestBuilder.addHeader("Cookie", cookie)
                     if (!task.userAgent.isNullOrBlank()) requestBuilder.addHeader("User-Agent", task.userAgent)
                     else requestBuilder.addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
@@ -124,7 +127,7 @@ object DownloadEngine {
                         }
 
                         val total = if (response.code == 206) task.bytesDownloaded + body.contentLength() else body.contentLength()
-                        DownloadStore.updateTask(task.id) { it.totalBytes = total }
+                        if (total > 0) DownloadStore.updateTask(task.id) { it.totalBytes = total }
 
                         val result = getDestination(ctx, task.filename, task.mime)
                         targetUri = result.first
@@ -146,10 +149,6 @@ object DownloadEngine {
                         outputStream.use { out ->
                             inputStream.use { input ->
                                 while (currentCoroutineContext().isActive) {
-                                    if (DownloadStore.getTask(task.id)?.isPaused == true) {
-                                        delay(500)
-                                        continue
-                                    }
                                     bytesRead = input.read(buffer)
                                     if (bytesRead == -1) break
                                     out.write(buffer, 0, bytesRead)
@@ -239,10 +238,6 @@ object DownloadEngine {
                 outputStream.use { out ->
                     stream.use { input ->
                         while (currentCoroutineContext().isActive) {
-                            if (DownloadStore.getTask(task.id)?.isPaused == true) {
-                                delay(500)
-                                continue
-                            }
                             bytesRead = input.read(buffer)
                             if (bytesRead == -1) break
                             out.write(buffer, 0, bytesRead)
@@ -297,30 +292,22 @@ object DownloadEngine {
         }
     }
 
-fun pauseDownload(ctx: Context, id: String) {
-    val task = DownloadStore.getTask(id) ?: return
-    if (task.url == "stream") {
-        DownloadStore.updateTask(id) { it.isPaused = true; it.status = DownloadStore.Status.PAUSED }
-    } else {
+    fun pauseDownload(ctx: Context, id: String) {
         calls[id]?.cancel()
         calls.remove(id)
         jobs[id]?.cancel()
         jobs.remove(id)
+        streams[id]?.close()
+        streams.remove(id)
         DownloadStore.updateTask(id) { it.status = DownloadStore.Status.PAUSED }
-    }
-    DownloadService.updateNotification(ctx, id)
-    processQueue(ctx)
-}
-fun resumeDownload(ctx: Context, id: String) {
-    val task = DownloadStore.getTask(id) ?: return
-    if (task.url == "stream") {
-        DownloadStore.updateTask(id) { it.isPaused = false; it.status = DownloadStore.Status.RUNNING }
         DownloadService.updateNotification(ctx, id)
-    } else {
+    }
+
+    fun resumeDownload(ctx: Context, id: String) {
         DownloadStore.updateTask(id) { it.status = DownloadStore.Status.PENDING }
+        DownloadService.updateNotification(ctx, id)
         processQueue(ctx)
     }
-}
 
     fun cancelDownload(ctx: Context, id: String) {
         DownloadStore.updateTask(id) { it.status = DownloadStore.Status.CANCELLED }
