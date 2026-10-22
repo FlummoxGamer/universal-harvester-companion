@@ -2,6 +2,7 @@ package app.harvester.companion
 
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -42,7 +43,7 @@ object DownloadEngine {
         DownloadStore.addTask(task)
         streams[id] = stream
         DownloadService.start(ctx)
-        
+
         jobs[id] = CoroutineScope(Dispatchers.IO).launch {
             var targetUri: Uri? = null
             var targetDoc: DocumentFile? = null
@@ -50,14 +51,14 @@ object DownloadEngine {
                 val result = getDestination(ctx, task.filename, task.mime)
                 targetUri = result.first
                 targetDoc = result.second
-                
+
                 val streamResult = if (targetUri != null) {
                     ctx.contentResolver.openOutputStream(targetUri)
                 } else {
                     ctx.contentResolver.openOutputStream(targetDoc!!.uri)
                 }
                 val outputStream = streamResult ?: throw Exception("Cannot open file")
-                
+
                 val buffer = ByteArray(8192)
                 var bytesRead: Int
                 var lastUpdate = System.currentTimeMillis()
@@ -76,13 +77,13 @@ object DownloadEngine {
                             if (now - lastUpdate > 500) {
                                 val speed = (bytesSinceLastUpdate * 1000) / (now - lastUpdate)
                                 val eta = if (speed > 0 && task.totalBytes > 0) (task.totalBytes - task.bytesDownloaded) / speed else -1L
-                                
+                                val currentBytes = task.bytesDownloaded
                                 DownloadStore.updateTask(task.id) {
+                                    it.bytesDownloaded = currentBytes
                                     it.speed = speed
                                     it.etaSeconds = eta
                                 }
                                 DownloadService.updateNotification(ctx, task.id)
-                                
                                 lastUpdate = now
                                 bytesSinceLastUpdate = 0L
                             }
@@ -91,14 +92,20 @@ object DownloadEngine {
                 }
 
                 targetUri?.let { finishMediaStore(ctx, it) }
-                DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.SUCCESS }
+                DownloadStore.updateTask(task.id) {
+                    it.bytesDownloaded = task.bytesDownloaded
+                    it.totalBytes = task.totalBytes
+                    it.status = DownloadStore.Status.SUCCESS
+                }
                 DownloadService.notifyComplete(ctx, task.id, task.filename)
                 DownloadStore.removeTask(task.id)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 targetUri?.let { deletePartialFile(ctx, it) }
                 if (targetDoc != null) targetDoc?.delete()
-                val currentTask = DownloadStore.getTask(task.id)
-                if (currentTask?.status != DownloadStore.Status.CANCELLED && currentTask?.status != DownloadStore.Status.PAUSED) {
+                val currentTask = DownloadStore.getTask(task.id) ?: return@launch
+                if (currentTask.status != DownloadStore.Status.CANCELLED && currentTask.status != DownloadStore.Status.PAUSED) {
                     DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.FAILED; it.error = e.message }
                     DownloadService.notifyFailed(ctx, task.id, task.filename, e.message ?: "Unknown error")
                 }
@@ -128,12 +135,14 @@ object DownloadEngine {
         jobs.remove(id)
         streams[id]?.close()
         streams.remove(id)
-        
         val task = DownloadStore.getTask(id)
         if (task != null) {
             DownloadStore.removeTask(id)
         }
         DownloadService.cancelNotification(ctx, id)
+        if (DownloadStore.activeDownloads.value.isEmpty()) {
+            try { ctx.stopService(Intent(ctx, DownloadService::class.java)) } catch (_: Exception) {}
+        }
     }
 
     fun resumeDownload(ctx: Context, id: String) {
@@ -153,12 +162,12 @@ object DownloadEngine {
                     val result = getDestination(ctx, task.filename, task.mime)
                     targetUri = result.first
                     targetDoc = result.second
-                    
+
                     val streamResult = if (targetUri != null) ctx.contentResolver.openOutputStream(targetUri)
                     else ctx.contentResolver.openOutputStream(targetDoc!!.uri)
-                    
+
                     streamResult?.use { it.write(bytes) }
-                    
+
                     targetUri?.let { finishMediaStore(ctx, it) }
                     DownloadStore.updateTask(task.id) {
                         it.bytesDownloaded = bytes.size.toLong()
@@ -184,9 +193,9 @@ object DownloadEngine {
 
                     call.execute().use { response ->
                         if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
-                        
+
                         val body = response.body ?: throw Exception("Empty body")
-                        
+
                         if (response.code == 200 && task.bytesDownloaded > 0) {
                             task.bytesDownloaded = 0
                         }
@@ -197,7 +206,7 @@ object DownloadEngine {
                         val result = getDestination(ctx, task.filename, task.mime)
                         targetUri = result.first
                         targetDoc = result.second
-                        
+
                         val streamResult = if (targetUri != null) {
                             ctx.contentResolver.openOutputStream(targetUri, if (task.bytesDownloaded > 0) "wa" else "w")
                         } else {
@@ -224,13 +233,13 @@ object DownloadEngine {
                                     if (now - lastUpdate > 500) {
                                         val speed = (bytesSinceLastUpdate * 1000) / (now - lastUpdate)
                                         val eta = if (speed > 0 && total > 0) (total - task.bytesDownloaded) / speed else -1L
-                                        
+                                        val currentBytes = task.bytesDownloaded
                                         DownloadStore.updateTask(task.id) {
+                                            it.bytesDownloaded = currentBytes
                                             it.speed = speed
                                             it.etaSeconds = eta
                                         }
                                         DownloadService.updateNotification(ctx, task.id)
-                                        
                                         lastUpdate = now
                                         bytesSinceLastUpdate = 0L
                                     }
@@ -239,7 +248,11 @@ object DownloadEngine {
                         }
 
                         targetUri?.let { finishMediaStore(ctx, it) }
-                        DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.SUCCESS }
+                        DownloadStore.updateTask(task.id) {
+                            it.bytesDownloaded = task.bytesDownloaded
+                            it.totalBytes = task.totalBytes
+                            it.status = DownloadStore.Status.SUCCESS
+                        }
                         DownloadService.notifyComplete(ctx, task.id, task.filename)
                         DownloadStore.removeTask(task.id)
                         calls.remove(task.id)
@@ -250,11 +263,11 @@ object DownloadEngine {
             } catch (e: Exception) {
                 targetUri?.let { deletePartialFile(ctx, it) }
                 if (targetDoc != null) targetDoc?.delete()
-                val currentTask = DownloadStore.getTask(task.id)
-                if (currentTask?.status != DownloadStore.Status.CANCELLED && currentTask?.status != DownloadStore.Status.PAUSED) {
-                    DownloadStore.updateTask(id) { 
+                val currentTask = DownloadStore.getTask(task.id) ?: return@launch
+                if (currentTask.status != DownloadStore.Status.CANCELLED && currentTask.status != DownloadStore.Status.PAUSED) {
+                    DownloadStore.updateTask(id) {
                         it.status = DownloadStore.Status.FAILED
-                        it.error = e.message 
+                        it.error = e.message
                     }
                     DownloadService.notifyFailed(ctx, id, task.filename, e.message ?: "Unknown error")
                 }
@@ -272,7 +285,7 @@ object DownloadEngine {
                 if (file != null) return Pair(null, file)
             }
         }
-        
+
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
             put(MediaStore.MediaColumns.MIME_TYPE, mime)
