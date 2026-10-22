@@ -456,9 +456,7 @@ private fun hideSplash() {
                     updateUi()
                 }
             } else {
-                if (v != null) {
-                    v.loadUri("about:blank")
-                }
+                finish()
             }
             return@addCallback
         }
@@ -780,9 +778,16 @@ private fun hideSplash() {
                 binding.loadingBar.progress = progress
             }
 
-            override fun onSecurityChange(session: GeckoSession, securityInfo: GeckoSession.ProgressDelegate.SecurityInformation) {
-            }
-        }
+override fun onSecurityChange(session: GeckoSession, securityInfo: GeckoSession.ProgressDelegate.SecurityInformation) {
+}
+
+override fun onSessionStateChange(session: GeckoSession, sessionState: GeckoSession.SessionState) {
+    val id = tabs.idForSession(session)
+    if (id > 0L) {
+        tabs.saveState(id, sessionState.toString())
+    }
+}
+}
 
         session.contentDelegate = object : GeckoSession.ContentDelegate {
             override fun onTitleChange(session: GeckoSession, title: String?) {
