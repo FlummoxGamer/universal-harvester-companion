@@ -6,6 +6,7 @@ import android.view.MotionEvent
 import androidx.core.view.NestedScrollingChild
 import androidx.core.view.NestedScrollingChildHelper
 import androidx.core.view.ViewCompat
+import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.PanZoomController
 
@@ -22,25 +23,33 @@ class NestedGeckoView(context: Context) : GeckoView(context), NestedScrollingChi
     private var nestedOffsetY: Int = 0
     private val childHelper: NestedScrollingChildHelper = NestedScrollingChildHelper(this)
 
-    private var handledResult: Int = 0
+    private var handledResult: Int = PanZoomController.INPUT_RESULT_HANDLED
     private var scrollableDirections: Int = 0
     private var overscrollDirections: Int = 0
+
+    private var currentScrollY: Float = 0f
+    private var trackedSession: GeckoSession? = null
 
     init {
         isNestedScrollingEnabled = true
     }
 
-    private fun canOverscrollTop(): Boolean {
-        return (overscrollDirections and 1) != 0
+    override fun setSession(session: GeckoSession?) {
+        trackedSession?.compositorScrollDelegate = null
+        trackedSession = null
+        currentScrollY = 0f
+        super.setSession(session)
+        trackedSession = session
+        session?.compositorScrollDelegate = GeckoSession.CompositorScrollDelegate { _, update ->
+            currentScrollY = update.scrollY * update.zoom
+        }
     }
 
-    private fun isTouchHandledByWebsite(): Boolean {
-        return (handledResult and PanZoomController.INPUT_RESULT_HANDLED_CONTENT) != 0
-    }
+    fun canScrollUp(): Boolean = currentScrollY > 0.5f
 
-    private fun isTouchHandledByBrowser(): Boolean {
-        return (handledResult and PanZoomController.INPUT_RESULT_HANDLED) != 0
-    }
+    private fun canOverscrollTop(): Boolean = (overscrollDirections and 1) != 0
+    private fun isTouchHandledByWebsite(): Boolean = (handledResult and PanZoomController.INPUT_RESULT_HANDLED_CONTENT) != 0
+    private fun isTouchHandledByBrowser(): Boolean = (handledResult and PanZoomController.INPUT_RESULT_HANDLED) != 0
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(ev: MotionEvent): Boolean {
@@ -85,7 +94,7 @@ class NestedGeckoView(context: Context) : GeckoView(context), NestedScrollingChi
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                handledResult = 0
+                handledResult = PanZoomController.INPUT_RESULT_HANDLED
                 scrollableDirections = 0
                 overscrollDirections = 0
                 stopNestedScroll()
