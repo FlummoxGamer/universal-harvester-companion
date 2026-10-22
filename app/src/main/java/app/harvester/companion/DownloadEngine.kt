@@ -180,7 +180,7 @@ object DownloadEngine {
                         targetUri?.let { finishMediaStore(ctx, it) }
                         DownloadStore.updateTask(task.id) {
                             it.bytesDownloaded = task.bytesDownloaded
-                            it.totalBytes = task.totalBytes
+                            if (it.totalBytes <= 0) it.totalBytes = it.bytesDownloaded
                             it.status = DownloadStore.Status.SUCCESS
                         }
                         DownloadService.notifyComplete(ctx, task.id, task.filename)
@@ -273,7 +273,7 @@ object DownloadEngine {
                 targetUri?.let { finishMediaStore(ctx, it) }
                 DownloadStore.updateTask(task.id) {
                     it.bytesDownloaded = task.bytesDownloaded
-                    it.totalBytes = task.totalBytes
+                    if (it.totalBytes <= 0) it.totalBytes = it.bytesDownloaded
                     it.status = DownloadStore.Status.SUCCESS
                 }
                 DownloadService.notifyComplete(ctx, task.id, task.filename)
@@ -297,21 +297,30 @@ object DownloadEngine {
         }
     }
 
-    fun pauseDownload(ctx: Context, id: String) {
+fun pauseDownload(ctx: Context, id: String) {
+    val task = DownloadStore.getTask(id) ?: return
+    if (task.url == "stream") {
         DownloadStore.updateTask(id) { it.isPaused = true; it.status = DownloadStore.Status.PAUSED }
-        DownloadService.updateNotification(ctx, id)
-        processQueue(ctx)
+    } else {
+        calls[id]?.cancel()
+        calls.remove(id)
+        jobs[id]?.cancel()
+        jobs.remove(id)
+        DownloadStore.updateTask(id) { it.status = DownloadStore.Status.PAUSED }
     }
-
-    fun resumeDownload(ctx: Context, id: String) {
-        val task = DownloadStore.getTask(id) ?: return
+    DownloadService.updateNotification(ctx, id)
+    processQueue(ctx)
+}
+fun resumeDownload(ctx: Context, id: String) {
+    val task = DownloadStore.getTask(id) ?: return
+    if (task.url == "stream") {
         DownloadStore.updateTask(id) { it.isPaused = false; it.status = DownloadStore.Status.RUNNING }
         DownloadService.updateNotification(ctx, id)
-        if (jobs[id]?.isActive != true) {
-            DownloadStore.updateTask(id) { it.status = DownloadStore.Status.PENDING }
-            processQueue(ctx)
-        }
+    } else {
+        DownloadStore.updateTask(id) { it.status = DownloadStore.Status.PENDING }
+        processQueue(ctx)
     }
+}
 
     fun cancelDownload(ctx: Context, id: String) {
         DownloadStore.updateTask(id) { it.status = DownloadStore.Status.CANCELLED }
