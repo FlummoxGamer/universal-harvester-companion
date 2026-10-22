@@ -25,26 +25,23 @@ object DownloadStore {
     private val _activeDownloads = MutableStateFlow<List<Task>>(emptyList())
     val activeDownloads: StateFlow<List<Task>> = _activeDownloads
 
-    // addTask
     fun addTask(task: Task) {
         _activeDownloads.value = _activeDownloads.value + task
     }
 
-    // updateTask
     fun updateTask(id: String, updateBlock: (Task) -> Unit) {
         _activeDownloads.value = _activeDownloads.value.map { task ->
             if (task.id == id) {
-                updateBlock(task)
-                task
+                val newTask = task.copy()
+                updateBlock(newTask)
+                newTask
             } else task
-        }.toList()
+        }
     }
 
-    // removeTask
     fun removeTask(id: String) {
         _activeDownloads.value = _activeDownloads.value.filterNot { it.id == id }
     }
 
-    // getTask
     fun getTask(id: String): Task? = _activeDownloads.value.find { it.id == id }
 }
