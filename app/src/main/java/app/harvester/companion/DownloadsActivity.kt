@@ -13,16 +13,17 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.recyclerview.widget.ConcatAdapter
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.launch
 
 class DownloadsActivity : AppCompatActivity() {
 
-    private lateinit var adapter: Adapter
+    private lateinit var activeAdapter: ActiveAdapter
+    private lateinit var completedAdapter: CompletedAdapter
     private lateinit var emptyView: TextView
     private lateinit var list: RecyclerView
-    private lateinit var activeContainer: android.widget.LinearLayout
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -30,14 +31,20 @@ class DownloadsActivity : AppCompatActivity() {
 
         list = findViewById(R.id.downloadsList)
         emptyView = findViewById(R.id.downloadsEmpty)
-        activeContainer = findViewById(R.id.activeDownloadChip)
         
-        adapter = Adapter(
+        activeAdapter = ActiveAdapter(
+            onPause = { id -> DownloadEngine.pauseDownload(this, id) },
+            onResume = { id -> DownloadEngine.resumeDownload(this, id) },
+            onCancel = { id -> DownloadEngine.cancelDownload(this, id) }
+        )
+        completedAdapter = CompletedAdapter(
             onClick = { item -> openItem(item) },
             onLongClick = { item -> showItemMenu(item) }
         )
+        
+        val concatAdapter = ConcatAdapter(activeAdapter, completedAdapter)
         list.layoutManager = LinearLayoutManager(this)
-        list.adapter = adapter
+        list.adapter = concatAdapter
 
         findViewById<ImageButton>(R.id.downloadsBack).setOnClickListener { finish() }
         findViewById<ImageButton>(R.id.downloadsMenu).setOnClickListener { showSortMenu() }
@@ -46,65 +53,16 @@ class DownloadsActivity : AppCompatActivity() {
         reload()
     }
 
-private fun observeActiveDownloads() {
-    lifecycleScope.launch {
-        repeatOnLifecycle(Lifecycle.State.STARTED) {
-            DownloadStore.activeDownloads.collect { tasks ->
-                activeContainer.removeAllViews()
-                if (tasks.isEmpty()) {
-                    activeContainer.visibility = View.GONE
-                } else {
-                    activeContainer.visibility = View.VISIBLE
-                    for (task in tasks) {
-                        val v = layoutInflater.inflate(R.layout.item_active_download, activeContainer, false)
-                        val name = v.findViewById<TextView>(R.id.activeDlName)
-                        val status = v.findViewById<TextView>(R.id.activeDlStatus)
-                        val pb = v.findViewById<ProgressBar>(R.id.activeDlProgress)
-                        val btnToggle = v.findViewById<ImageButton>(R.id.btnTogglePause)
-
-                        name.text = task.filename
-                        val size = "${formatSize(task.bytesDownloaded)} / ${formatSize(task.totalBytes)}"
-                        val speed = "${formatSize(task.speed)}/s"
-                        val eta = when {
-                            task.etaSeconds < 0 -> "Calculating..."
-                            task.etaSeconds < 60 -> "${task.etaSeconds}s left"
-                            task.etaSeconds < 3600 -> "${task.etaSeconds / 60}m left"
-                            else -> "${task.etaSeconds / 3600}h left"
-                        }
-                        
-                        status.text = when (task.status) {
-                            DownloadStore.Status.PENDING -> "Queued..."
-                            DownloadStore.Status.PAUSED -> "Paused • $size"
-                            DownloadStore.Status.FAILED -> "Failed • $size"
-                            else -> "$size • $speed • $eta"
-                        }
-
-                        pb.max = 100
-                        pb.progress = if (task.totalBytes > 0) ((task.bytesDownloaded * 100) / task.totalBytes).toInt() else 0
-
-                        when (task.status) {
-                            DownloadStore.Status.RUNNING -> {
-                                btnToggle.setImageResource(android.R.drawable.ic_media_pause)
-                                btnToggle.setOnClickListener { DownloadEngine.pauseDownload(this@DownloadsActivity, task.id) }
-                            }
-                            DownloadStore.Status.PAUSED -> {
-                                btnToggle.setImageResource(android.R.drawable.ic_media_play)
-                                btnToggle.setOnClickListener { DownloadEngine.resumeDownload(this@DownloadsActivity, task.id) }
-                            }
-                            DownloadStore.Status.PENDING, DownloadStore.Status.FAILED -> {
-                                btnToggle.setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
-                                btnToggle.setOnClickListener { DownloadEngine.cancelDownload(this@DownloadsActivity, task.id) }
-                            }
-                            else -> {}
-                        }
-
-                        activeContainer.addView(v)
-                    }
+    private fun observeActiveDownloads() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                DownloadStore.activeDownloads.collect { tasks ->
+                    activeAdapter.submit(tasks)
+                    updateEmptyState()
                 }
             }
         }
     }
-}
 
     override fun onResume() {
         super.onResume()
@@ -113,10 +71,15 @@ private fun observeActiveDownloads() {
 
     private fun reload() {
         val items = DownloadsQuery.list(this)
-        adapter.submit(items)
-        val hasActive = DownloadStore.activeDownloads.value.isNotEmpty()
-        emptyView.visibility = if (items.isEmpty() && !hasActive) View.VISIBLE else View.GONE
-        list.visibility = if (items.isEmpty() && !hasActive) View.GONE else View.VISIBLE
+        completedAdapter.submit(items)
+        updateEmptyState()
+    }
+
+    private fun updateEmptyState() {
+        val hasActive = activeAdapter.itemCount > 0
+        val hasCompleted = completedAdapter.itemCount > 0
+        emptyView.visibility = if (!hasActive && !hasCompleted) View.VISIBLE else View.GONE
+        list.visibility = if (!hasActive && !hasCompleted) View.GONE else View.VISIBLE
     }
 
     private fun formatSize(b: Long): String = when {
@@ -250,10 +213,84 @@ private fun observeActiveDownloads() {
             .show()
     }
 
-    class Adapter(
+    class ActiveAdapter(
+        private val onPause: (String) -> Unit,
+        private val onResume: (String) -> Unit,
+        private val onCancel: (String) -> Unit
+    ) : RecyclerView.Adapter<ActiveAdapter.VH>() {
+        private val items = mutableListOf<DownloadStore.Task>()
+
+        class VH(v: View) : RecyclerView.ViewHolder(v) {
+            val name: TextView = v.findViewById(R.id.activeDlName)
+            val status: TextView = v.findViewById(R.id.activeDlStatus)
+            val pb: ProgressBar = v.findViewById(R.id.activeDlProgress)
+            val btnToggle: ImageButton = v.findViewById(R.id.btnTogglePause)
+            val btnCancel: ImageButton = v.findViewById(R.id.btnCancel)
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
+            val v = android.view.LayoutInflater.from(parent.context)
+                .inflate(R.layout.item_active_download, parent, false)
+            return VH(v)
+        }
+
+        override fun onBindViewHolder(h: VH, position: Int) {
+            val task = items[position]
+            h.name.text = task.filename
+            val size = "${formatSize(task.bytesDownloaded)} / ${formatSize(task.totalBytes)}"
+            val speed = "${formatSize(task.speed)}/s"
+            val eta = when {
+                task.etaSeconds < 0 -> "Calculating..."
+                task.etaSeconds < 60 -> "${task.etaSeconds}s left"
+                task.etaSeconds < 3600 -> "${task.etaSeconds / 60}m left"
+                else -> "${task.etaSeconds / 3600}h left"
+            }
+            
+            h.status.text = when (task.status) {
+                DownloadStore.Status.PENDING -> "Queued..."
+                DownloadStore.Status.PAUSED -> "Paused • $size"
+                DownloadStore.Status.FAILED -> "Failed • $size"
+                else -> "$size • $speed • $eta"
+            }
+            
+            h.pb.max = 100
+            h.pb.progress = if (task.totalBytes > 0) ((task.bytesDownloaded * 100) / task.totalBytes).toInt() else 0
+
+            when (task.status) {
+                DownloadStore.Status.RUNNING -> {
+                    h.btnToggle.setImageResource(android.R.drawable.ic_media_pause)
+                    h.btnToggle.setOnClickListener { onPause(task.id) }
+                    h.btnToggle.visibility = View.VISIBLE
+                }
+                DownloadStore.Status.PAUSED -> {
+                    h.btnToggle.setImageResource(android.R.drawable.ic_media_play)
+                    h.btnToggle.setOnClickListener { onResume(task.id) }
+                    h.btnToggle.visibility = View.VISIBLE
+                }
+                DownloadStore.Status.PENDING -> {
+                    h.btnToggle.visibility = View.GONE
+                }
+                else -> {
+                    h.btnToggle.visibility = View.GONE
+                }
+            }
+            
+            h.btnCancel.setOnClickListener { onCancel(task.id) }
+        }
+
+        override fun getItemCount() = items.size
+
+        fun submit(newList: List<DownloadStore.Task>) {
+            items.clear()
+            items.addAll(newList)
+            notifyDataSetChanged()
+        }
+    }
+
+    class CompletedAdapter(
         private val onClick: (DownloadsQuery.Item) -> Unit,
         private val onLongClick: (DownloadsQuery.Item) -> Unit
-    ) : RecyclerView.Adapter<Adapter.VH>() {
+    ) : RecyclerView.Adapter<CompletedAdapter.VH>() {
 
         private val items = mutableListOf<DownloadsQuery.Item>()
 
@@ -285,6 +322,16 @@ private fun observeActiveDownloads() {
             items.clear()
             items.addAll(newList)
             notifyDataSetChanged()
+        }
+    }
+
+    companion object {
+        fun formatSize(b: Long): String = when {
+            b < 0 -> "?"
+            b < 1024 -> "$b B"
+            b < 1024 * 1024 -> "%.1f KB".format(b / 1024.0)
+            b < 1024L * 1024 * 1024 -> "%.1f MB".format(b / (1024.0 * 1024))
+            else -> "%.1f GB".format(b / (1024.0 * 1024 * 1024))
         }
     }
 }
