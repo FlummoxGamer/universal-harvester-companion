@@ -34,14 +34,18 @@ class NestedGeckoView(context: Context) : GeckoView(context), NestedScrollingChi
         isNestedScrollingEnabled = true
     }
 
-    override fun setSession(session: GeckoSession?) {
+    fun attachSession(newSession: GeckoSession?) {
         trackedSession?.compositorScrollDelegate = null
         trackedSession = null
         currentScrollY = 0f
-        super.setSession(session)
-        trackedSession = session
-        session?.compositorScrollDelegate = GeckoSession.CompositorScrollDelegate { _, update ->
-            currentScrollY = update.scrollY * update.zoom
+        
+        setSession(newSession)
+        
+        trackedSession = newSession
+        newSession?.compositorScrollDelegate = object : GeckoSession.CompositorScrollDelegate {
+            override fun onScrollChanged(session: GeckoSession, update: GeckoSession.ScrollPositionUpdate) {
+                currentScrollY = update.scrollY * update.zoom
+            }
         }
     }
 
