@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.StateFlow
 object DownloadStore {
     enum class Status { PENDING, RUNNING, PAUSED, SUCCESS, FAILED, CANCELLED }
 
-    const val MAX_PARALLEL = 6
+    const val MAX_PARALLEL = 2
 
     data class Task(
         val id: String,
@@ -19,6 +19,7 @@ object DownloadStore {
         var etaSeconds: Long = -1L,
         var status: Status = Status.PENDING,
         var error: String? = null,
+        @Volatile var isPaused: Boolean = false,
         val base64Data: String? = null,
         val userAgent: String? = null,
         val referer: String? = null
