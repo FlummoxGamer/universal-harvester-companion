@@ -6,7 +6,6 @@ import android.view.MotionEvent
 import androidx.core.view.NestedScrollingChild
 import androidx.core.view.NestedScrollingChildHelper
 import androidx.core.view.ViewCompat
-import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.PanZoomController
 
