@@ -102,7 +102,10 @@ fun acquireSession(id: Long): GeckoSession? {
         val savedState = db.loadState(id)
         if (savedState != null) {
             try {
-                session.restoreState(org.mozilla.geckoview.GeckoSession.SessionState.fromString(savedState))
+                val stateObj = org.mozilla.geckoview.GeckoSession.SessionState.fromString(savedState)
+                if (stateObj != null) {
+                    session.restoreState(stateObj)
+                }
             } catch (_: Exception) {}
         }
         
