@@ -698,7 +698,7 @@ private fun hideSplash() {
             currentSession?.setActive(false)
         }
         
-        mainGeckoView.setSession(session)
+        mainGeckoView.attachSession(session)
         currentSession = session
         session.setActive(true)
         
@@ -938,7 +938,7 @@ private fun hideSplash() {
                 
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
                     currentSession?.setActive(false)
-                    mainGeckoView.setSession(newSession)
+                    mainGeckoView.attachSession(newSession)
                     currentSession = newSession
                     currentUrl = "about:blank"
                     binding.homeScreen.visibility = View.GONE
