@@ -30,8 +30,8 @@ class GeckoEngineView @JvmOverloads constructor(
         geckoView.releaseSession()
     }
 
-    fun reload() = geckoView.reload()
-    fun goBack() = geckoView.goBack()
-    fun loadUri(uri: String) = geckoView.loadUri(uri)
+    fun reload() = session?.reload()
+    fun goBack() = session?.goBack()
+    fun loadUri(uri: String) = session?.loadUri(uri)
     fun setVerticalClipping(h: Int) = geckoView.setVerticalClipping(h)
 }
