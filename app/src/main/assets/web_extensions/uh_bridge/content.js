@@ -1,5 +1,16 @@
 const api = typeof browser !== "undefined" ? browser : chrome;
 
+function injectViewport() {
+    if (!document.querySelector('meta[name="viewport"]')) {
+        const meta = document.createElement('meta');
+        meta.name = 'viewport';
+        meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+        (document.head || document.documentElement).appendChild(meta);
+    }
+}
+injectViewport();
+document.addEventListener('DOMContentLoaded', injectViewport);
+
 const injectScript = document.createElement('script');
 injectScript.src = api.runtime.getURL('inject.js');
 (document.head || document.documentElement).appendChild(injectScript);
@@ -29,4 +40,3 @@ window.addEventListener('message', (event) => {
             });
     }
 });
-
