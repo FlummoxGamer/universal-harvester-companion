@@ -40,8 +40,10 @@ class DownloadService : Service() {
 
         fun notifyComplete(ctx: Context, id: String, filename: String) {
             val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
-            val notificationId = id.hashCode()
-            nm.cancel(notificationId)
+            val notificationId = id.hashCode() + 10000
+            if (DownloadStore.activeDownloads.value.isEmpty()) {
+                try { ctx.stopService(Intent(ctx, DownloadService::class.java)) } catch (_: Exception) {}
+            }
             
             val downloadUri = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
             val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
@@ -98,8 +100,10 @@ class DownloadService : Service() {
 
         fun notifyFailed(ctx: Context, id: String, filename: String, error: String) {
             val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
-            val notificationId = id.hashCode()
-            nm.cancel(notificationId)
+            val notificationId = id.hashCode() + 10000
+            if (DownloadStore.activeDownloads.value.isEmpty()) {
+                try { ctx.stopService(Intent(ctx, DownloadService::class.java)) } catch (_: Exception) {}
+            }
             
             val openIntent = Intent(ctx, DownloadsActivity::class.java)
             val piOpen = PendingIntent.getActivity(ctx, notificationId, openIntent, PendingIntent.FLAG_IMMUTABLE)
