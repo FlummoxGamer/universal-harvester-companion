@@ -211,25 +211,31 @@ class DownloadService : Service() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val id = intent?.getStringExtra("id")
-        when (intent?.action) {
-            ACTION_PAUSE -> if (id != null) DownloadEngine.pauseDownload(this, id)
-            ACTION_RESUME -> if (id != null) DownloadEngine.resumeDownload(this, id)
-            ACTION_CANCEL -> if (id != null) DownloadEngine.cancelDownload(this, id)
-        }
-        
-        val active = DownloadStore.activeDownloads.value.filter { it.status == DownloadStore.Status.RUNNING || it.status == DownloadStore.Status.PENDING }
-        if (active.isEmpty()) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-        } else {
-            val firstTask = active.first()
-            startForeground(firstTask.id.hashCode(), buildNotification(this, firstTask))
-        }
-        
-        return START_NOT_STICKY
+override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    val id = intent?.getStringExtra("id")
+    when (intent?.action) {
+        ACTION_PAUSE -> if (id != null) DownloadEngine.pauseDownload(this, id)
+        ACTION_RESUME -> if (id != null) DownloadEngine.resumeDownload(this, id)
+        ACTION_CANCEL -> if (id != null) DownloadEngine.cancelDownload(this, id)
     }
+    
+    val active = DownloadStore.activeDownloads.value.filter { it.status == DownloadStore.Status.RUNNING || it.status == DownloadStore.Status.PENDING || it.status == DownloadStore.Status.PAUSED }
+    if (active.isEmpty()) {
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    } else {
+        val firstTask = active.first()
+        val notification = buildNotification(this, firstTask)
+        if (firstTask.status == DownloadStore.Status.PAUSED) {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(firstTask.id.hashCode(), notification)
+        } else {
+            startForeground(firstTask.id.hashCode(), notification)
+        }
+    }
+    
+    return START_NOT_STICKY
+}
 
     override fun onBind(intent: Intent?): IBinder? = null
 }
