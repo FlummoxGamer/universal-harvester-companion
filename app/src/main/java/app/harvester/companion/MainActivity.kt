@@ -821,7 +821,7 @@ override fun onSessionStateChange(session: GeckoSession, sessionState: GeckoSess
                     if (SettingsPrefs.getBool(this@MainActivity, SettingsPrefs.K_ASK_DL, true)) {
                         showStreamDownloadConfirmationSheet(response.uri, filename, contentType, userAgent, body, contentLength)
                     } else {
-                        DownloadEngine.startStreamDownload(this@MainActivity, filename, contentType ?: "application/octet-stream", body, contentLength, userAgent, currentUrl)
+                        DownloadEngine.startStreamDownload(this@MainActivity, filename, contentType ?: "application/octet-stream", body, contentLength, userAgent, currentUrl, response.uri)
                     }
                     } else {
                     if (SettingsPrefs.getBool(this@MainActivity, SettingsPrefs.K_ASK_DL, true)) {
@@ -976,43 +976,48 @@ private fun showStreamDownloadConfirmationSheet(url: String, filename: String, m
 
     v.findViewById<android.widget.TextView>(R.id.dlFileName).text = filename
     
-    val sizeText = v.findViewById<android.widget.TextView>(R.id.dlFileSize)
-    if (contentLength > 0) {
-        sizeText.text = android.text.format.Formatter.formatShortFileSize(this, contentLength)
-    } else {
-        sizeText.visibility = View.GONE
-        if (url.isNotBlank() && url != "stream") {
-            Thread {
-                try {
-                    val client = okhttp3.OkHttpClient.Builder().connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS).build()
-                    val reqBuilder = okhttp3.Request.Builder().url(url)
-                        .header("User-Agent", userAgent ?: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
-                        .header("Range", "bytes=0-0")
-                        .header("Accept-Encoding", "identity")
-                    val referer = currentUrl
-                    if (!referer.isNullOrBlank()) reqBuilder.addHeader("Referer", referer)
-                    val cookie = android.webkit.CookieManager.getInstance().getCookie(url)
-                    if (!cookie.isNullOrBlank()) reqBuilder.addHeader("Cookie", cookie)
-                    
-                    client.newCall(reqBuilder.build()).execute().use { resp ->
-                        var size = -1L
-                        val contentRange = resp.header("Content-Range")
-                        if (contentRange != null && contentRange.contains("/")) {
-                            size = contentRange.substringAfterLast("/").toLongOrNull() ?: -1L
+val sizeText = v.findViewById<android.widget.TextView>(R.id.dlFileSize)
+if (contentLength > 0) {
+    sizeText.text = android.text.format.Formatter.formatShortFileSize(this, contentLength)
+} else {
+    sizeText.text = "Fetching size..."
+    if (url.isNotBlank() && url != "stream") {
+        Thread {
+            try {
+                val client = okhttp3.OkHttpClient.Builder().connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS).build()
+                val reqBuilder = okhttp3.Request.Builder().url(url)
+                    .header("User-Agent", userAgent ?: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
+                    .header("Range", "bytes=0-0")
+                    .header("Accept-Encoding", "identity")
+                val referer = currentUrl
+                if (!referer.isNullOrBlank()) reqBuilder.addHeader("Referer", referer)
+                val cookie = android.webkit.CookieManager.getInstance().getCookie(url)
+                if (!cookie.isNullOrBlank()) reqBuilder.addHeader("Cookie", cookie)
+                
+                client.newCall(reqBuilder.build()).execute().use { resp ->
+                    var size = -1L
+                    val contentRange = resp.header("Content-Range")
+                    if (contentRange != null && contentRange.contains("/")) {
+                        size = contentRange.substringAfterLast("/").toLongOrNull() ?: -1L
+                    } else {
+                        size = resp.header("Content-Length")?.toLongOrNull() ?: -1L
+                    }
+                    runOnUiThread {
+                        if (size > 0) {
+                            sizeText.text = android.text.format.Formatter.formatShortFileSize(this@MainActivity, size)
                         } else {
-                            size = resp.header("Content-Length")?.toLongOrNull() ?: -1L
-                        }
-                        runOnUiThread {
-                            if (size > 0) {
-                                sizeText.text = android.text.format.Formatter.formatShortFileSize(this@MainActivity, size)
-                                sizeText.visibility = View.VISIBLE
-                            }
+                            sizeText.visibility = View.GONE
                         }
                     }
-                } catch (_: Exception) {}
-            }.start()
-        }
+                }
+            } catch (_: Exception) {
+                runOnUiThread { sizeText.visibility = View.GONE }
+            }
+        }.start()
+    } else {
+        sizeText.visibility = View.GONE
     }
+}
     
     v.findViewById<android.widget.TextView>(R.id.dlFileUrl).text = if (url == "stream") "Stream Download" else url
     
@@ -1029,10 +1034,10 @@ private fun showStreamDownloadConfirmationSheet(url: String, filename: String, m
             sheet.dismiss()
         }
 
-        v.findViewById<android.view.View>(R.id.dlStartBtn).setOnClickListener {
+        v.findViewById<View>(R.id.dlStartBtn).setOnClickListener {
             sheet.dismiss()
             val finalName = v.findViewById<android.widget.TextView>(R.id.dlFileName).text.toString()
-            DownloadEngine.startStreamDownload(this, finalName, mimetype ?: "application/octet-stream", stream, contentLength, userAgent, currentUrl)
+            DownloadEngine.startStreamDownload(this, finalName, mimetype ?: "application/octet-stream", stream, contentLength, userAgent, currentUrl, url)
         }
 
         v.findViewById<android.view.View>(R.id.dlEditName).setOnClickListener {
