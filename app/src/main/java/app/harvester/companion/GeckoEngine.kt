@@ -7,6 +7,8 @@ import org.mozilla.geckoview.GeckoRuntimeSettings
 object GeckoEngine {
     @Volatile
     private var runtime: GeckoRuntime? = null
+    @Volatile
+    private var executor: org.mozilla.geckoview.GeckoWebExecutor? = null
 
     fun getRuntime(ctx: Context): GeckoRuntime? {
         if (runtime == null) {
@@ -36,7 +38,8 @@ object GeckoEngine {
                             }
                         }
                         runtime = rt
-                        
+                        executor = org.mozilla.geckoview.GeckoWebExecutor(rt)
+
                         rt.webExtensionController.ensureBuiltIn(
                             "resource://android/assets/web_extensions/uh_bridge/",
                             "uh-bridge@harvester.app"
@@ -68,6 +71,10 @@ object GeckoEngine {
             }
         }
         return runtime
+    }
+
+    fun speculativeConnect(url: String) {
+        executor?.speculativeConnect(url)
     }
 
     fun clearBootMarker(ctx: Context) {
