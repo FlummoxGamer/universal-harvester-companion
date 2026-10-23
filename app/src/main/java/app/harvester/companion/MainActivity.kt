@@ -336,7 +336,6 @@ private fun hideSplash() {
             binding.suggestionsClearAll.visibility = View.GONE
             
             if (!isUrl && typed.length >= 2) {
-                delay(250)
                 val engine = SearchEnginePrefs.getEngine(this@MainActivity)
                 val preds = SearchPredictions.fetch(engine, typed)
                 if (preds.isNotEmpty() && binding.urlEdit.text.toString().trim() == typed) {
