@@ -157,6 +157,7 @@ class TabManager private constructor(private val ctx: Context) {
     fun updateUrl(id: Long, url: String, title: String?) = db.update(id, url, title)
 
     fun saveState(id: Long, stateStr: String) = db.saveState(id, stateStr)
+    fun loadState(id: Long): String? = db.loadState(id)
 
     fun updateGroup(id: Long, groupId: Long) {
         try {
