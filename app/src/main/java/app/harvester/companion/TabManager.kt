@@ -50,8 +50,9 @@ class TabManager private constructor(private val ctx: Context) {
             val id = db.insert("about:blank", incognito, groupId, parentId)
             val settings = GeckoSessionSettings.Builder()
                 .usePrivateMode(incognito)
-                .userAgentMode(GeckoSessionSettings.USER_AGENT_MODE_DESKTOP)
+                .userAgentMode(GeckoSessionSettings.USER_AGENT_MODE_MOBILE)
                 .viewportMode(GeckoSessionSettings.VIEWPORT_MODE_MOBILE)
+                .pdfViewerEnabled(false)
                 .build()
             val session = GeckoSession(settings)
             alive[id] = Slot(session, incognito)
@@ -65,8 +66,9 @@ class TabManager private constructor(private val ctx: Context) {
             val runtime = GeckoEngine.getRuntime(ctx) ?: return id
             val settings = GeckoSessionSettings.Builder()
                 .usePrivateMode(incognito)
-                .userAgentMode(GeckoSessionSettings.USER_AGENT_MODE_DESKTOP)
+                .userAgentMode(GeckoSessionSettings.USER_AGENT_MODE_MOBILE)
                 .viewportMode(GeckoSessionSettings.VIEWPORT_MODE_MOBILE)
+                .pdfViewerEnabled(false)
                 .build()
             val session = GeckoSession(settings)
             session.open(runtime)
@@ -81,39 +83,45 @@ class TabManager private constructor(private val ctx: Context) {
     fun openBlankTab(incognito: Boolean = false, groupId: Long = 0L, parentId: Long = 0L): Long =
         openNew("about:blank", incognito, groupId, parentId)
 
-fun acquireSession(id: Long): GeckoSession? {
-    synchronized(lock) {
-        alive[id]?.let { currentId = id; return it.session }
-        val entity = db.list().firstOrNull { it.id == id }
-        val incognito = entity?.incognito ?: false
-        val runtime = GeckoEngine.getRuntime(ctx) ?: return null
-        
-        val settings = GeckoSessionSettings.Builder()
-            .usePrivateMode(incognito)
-            .userAgentMode(GeckoSessionSettings.USER_AGENT_MODE_DESKTOP)
-            .viewportMode(GeckoSessionSettings.VIEWPORT_MODE_MOBILE)
-            .build()
-        val session = GeckoSession(settings)
-        session.open(runtime)
-        
-        alive[id] = Slot(session, incognito)
-        currentId = id
-        
-        val savedState = db.loadState(id)
-        if (savedState != null) {
-            try {
-                val stateObj = org.mozilla.geckoview.GeckoSession.SessionState.fromString(savedState)
-                if (stateObj != null) {
-                    session.restoreState(stateObj)
+    fun acquireSession(id: Long): GeckoSession? {
+        synchronized(lock) {
+            alive[id]?.let { currentId = id; return it.session }
+            val entity = db.list().firstOrNull { it.id == id }
+            val incognito = entity?.incognito ?: false
+            val runtime = GeckoEngine.getRuntime(ctx) ?: return null
+            
+            val settings = GeckoSessionSettings.Builder()
+                .usePrivateMode(incognito)
+                .userAgentMode(GeckoSessionSettings.USER_AGENT_MODE_MOBILE)
+                .viewportMode(GeckoSessionSettings.VIEWPORT_MODE_MOBILE)
+                .pdfViewerEnabled(false)
+                .build()
+            val session = GeckoSession(settings)
+            session.open(runtime)
+            
+            alive[id] = Slot(session, incognito)
+            currentId = id
+            
+            val savedState = db.loadState(id)
+            val fallback = entity?.url
+            if (savedState != null) {
+                try {
+                    val stateObj = org.mozilla.geckoview.GeckoSession.SessionState.fromString(savedState)
+                    if (stateObj != null) {
+                        session.restoreState(stateObj)
+                        if (!fallback.isNullOrBlank() && fallback != "about:blank") {
+                            session.loadUri(fallback)
+                        }
+                    }
+                } catch (_: Exception) {
+                    if (!fallback.isNullOrBlank() && fallback != "about:blank") session.loadUri(fallback)
                 }
-            } catch (_: Exception) {}
+            } else if (!fallback.isNullOrBlank() && fallback != "about:blank") {
+                session.loadUri(fallback)
+            }
+            return session
         }
-        
-        val fallback = entity?.url
-        if (!fallback.isNullOrBlank() && fallback != "about:blank") session.loadUri(fallback)
-        return session
     }
-}
 
     fun currentId(): Long = synchronized(lock) { currentId }
     
