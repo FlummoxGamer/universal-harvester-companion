@@ -226,8 +226,8 @@ override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     } else {
         val firstTask = active.first()
         val notification = buildNotification(this, firstTask)
-        if (firstTask.status == DownloadStore.Status.PAUSED) {
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (firstTask.status == DownloadStore.Status.PAUSED || firstTask.status == DownloadStore.Status.PENDING) {
             nm.notify(firstTask.id.hashCode(), notification)
         } else {
             startForeground(firstTask.id.hashCode(), notification)
