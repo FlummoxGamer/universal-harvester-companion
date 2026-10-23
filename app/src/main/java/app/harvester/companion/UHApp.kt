@@ -38,18 +38,11 @@ class UHApp : Application() {
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        val keep = when (level) {
-            ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE -> 12
-            ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> 8
-            ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> 4
-            ComponentCallbacks2.TRIM_MEMORY_BACKGROUND -> 8
-            ComponentCallbacks2.TRIM_MEMORY_MODERATE -> 4
-            ComponentCallbacks2.TRIM_MEMORY_COMPLETE -> 1
-            else -> return
+        if (level == ComponentCallbacks2.TRIM_MEMORY_COMPLETE) {
+            try {
+                TabManager.get(this).evictForMemory(1)
+            } catch (_: Exception) {}
         }
-        try {
-            TabManager.get(this).evictForMemory(keep)
-        } catch (_: Exception) {}
     }
 
     private fun checkSafeMode() {
