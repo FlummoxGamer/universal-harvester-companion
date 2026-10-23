@@ -73,15 +73,24 @@ class DownloadService : Service() {
                 }
             }
 
+            val isApk = filename.endsWith(".apk")
             val openIntent = if (fileUri != null) {
                 Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(fileUri, mimeType)
+                    setDataAndType(fileUri, if (isApk) "application/vnd.android.package-archive" else mimeType)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
             } else {
-                Intent(ctx, DownloadsActivity::class.java)
+                Intent(ctx, DownloadsActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
             }
-            
+
+            if (isApk && fileUri != null) {
+                try {
+                    ctx.startActivity(openIntent)
+                } catch (_: Exception) {}
+            }
+
             val piOpen = PendingIntent.getActivity(ctx, notificationId, openIntent, PendingIntent.FLAG_IMMUTABLE)
             
             val n = NotificationCompat.Builder(ctx, CHANNEL_ID)
