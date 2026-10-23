@@ -331,9 +331,14 @@ private fun hideSplash() {
 
             val queries = if (isUrl) emptyList() else withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchSearchQueries(typed) }
             val pages = withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchHistory(typed, 10) }
-            
+
             suggestionsAdapter.submitAll(queries, pages)
             binding.suggestionsClearAll.visibility = View.GONE
+
+            val topUrl = pages.firstOrNull()?.url ?: if (queries.isNotEmpty() && !isUrl) SearchEnginePrefs.getSearchUrl(this@MainActivity, queries.first().query) else null
+            if (topUrl != null) {
+                GeckoEngine.speculativeConnect(topUrl)
+            }
             
             if (!isUrl && typed.length >= 2) {
                 val engine = SearchEnginePrefs.getEngine(this@MainActivity)
@@ -994,7 +999,7 @@ val sizeText = v.findViewById<android.widget.TextView>(R.id.dlFileSize)
 if (contentLength > 0) {
     sizeText.text = android.text.format.Formatter.formatShortFileSize(this, contentLength)
 } else {
-    sizeText.text = "Fetching size..."
+    sizeText.visibility = View.GONE
     if (url.isNotBlank() && url != "stream") {
         Thread {
             try {
