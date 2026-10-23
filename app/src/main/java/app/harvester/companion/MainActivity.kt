@@ -374,12 +374,17 @@ private fun hideSplash() {
         binding.btnScriptMenu.setOnClickListener { showScriptMenuSheet() }
     }
 
-    private fun navigateInput(typed: String): Boolean {
-        val target = normalize(typed)
-        if (target.isBlank()) return false
-        val isSearch = !target.startsWith("http")
-        if (isSearch) HistoryStore.get(this).recordSearch(typed)
-        var session = currentSession
+private fun navigateInput(typed: String): Boolean {
+    val target = normalize(typed)
+    if (target.isBlank()) return false
+    val isSearch = !target.startsWith("http")
+    if (isSearch) HistoryStore.get(this).recordSearch(typed)
+    
+    binding.loadingBar.visibility = View.VISIBLE
+    binding.loadingBar.progress = 0
+    binding.homeScreen.visibility = View.GONE
+    
+    var session = currentSession
         if (session == null || tabs.list().isEmpty() || tabs.currentId() < 0L) {
             tabs.openNew(target)
             attachCurrent()
@@ -717,17 +722,27 @@ private fun hideSplash() {
         updateUi()
     }
 
-    private fun updateHomeVisibility() {
-        val id = tabs.currentId()
-        if (id in popupTabs) {
-            binding.homeScreen.visibility = View.GONE
-            binding.contentContainer.visibility = View.VISIBLE
-            return
-        }
-        val url = tabs.list().firstOrNull { it.id == id }?.url
-        val isBlank = url.isNullOrBlank() || url == "about:blank"
+private fun updateHomeVisibility() {
+    val id = tabs.currentId()
+    if (id in popupTabs) {
+        binding.homeScreen.visibility = View.GONE
+        binding.contentContainer.visibility = View.VISIBLE
+        return
+    }
+    val entity = tabs.list().firstOrNull { it.id == id }
+    val url = entity?.url
+    val isBlank = url.isNullOrBlank() || url == "about:blank"
+    
+    val hasSavedState = try {
+        id > 0L && tabs.loadState(id) != null
+    } catch (_: Exception) { false }
+    
+    if (hasSavedState && binding.loadingBar.visibility == View.VISIBLE) {
+        binding.homeScreen.visibility = View.GONE
+    } else {
         binding.homeScreen.visibility = if (isBlank) View.VISIBLE else View.GONE
     }
+}
 
     private fun prunePopupTabs() {
         val live = tabs.list().map { it.id }.toSet()
