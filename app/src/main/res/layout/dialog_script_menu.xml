@@ -30,7 +30,7 @@
             <ImageView
                 android:layout_width="22dp"
                 android:layout_height="22dp"
-                android:src="@drawable/ic_extension_rounded"
+                android:src="@drawable/ic_code"
                 android:tint="@color/accent" />
 
             <TextView
