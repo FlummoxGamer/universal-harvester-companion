@@ -193,7 +193,7 @@
             android:layout_height="40dp"
             android:layout_weight="1"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_extension_rounded"
+            android:src="@drawable/ic_code"
             android:tint="@color/subtext"
             android:scaleType="centerInside"
             android:contentDescription="Scripts" />
