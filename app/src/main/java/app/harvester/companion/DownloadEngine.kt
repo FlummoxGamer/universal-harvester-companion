@@ -107,7 +107,7 @@ object DownloadEngine {
                     val cookie = CookieManager.getInstance().getCookie(downloadUrl)
                     if (!cookie.isNullOrBlank()) requestBuilder.addHeader("Cookie", cookie)
                     if (!task.userAgent.isNullOrBlank()) requestBuilder.addHeader("User-Agent", task.userAgent)
-                    else requestBuilder.addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
+                    else requestBuilder.addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
                     if (!task.referer.isNullOrBlank()) requestBuilder.addHeader("Referer", task.referer)
 
                     if (task.bytesDownloaded > 0) {
