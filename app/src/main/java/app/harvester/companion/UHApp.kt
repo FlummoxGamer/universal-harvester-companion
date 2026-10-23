@@ -22,11 +22,7 @@ class UHApp : Application() {
         try {
             startService(Intent(this, SessionService::class.java))
         } catch (_: Exception) {}
-        scheduleCleanup()
-    
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
-            GeckoEngine.getRuntime(this@UHApp)
-        }
+            scheduleCleanup()
     }
 
     private fun scheduleCleanup() {
