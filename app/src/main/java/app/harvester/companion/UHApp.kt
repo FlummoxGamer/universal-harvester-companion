@@ -24,6 +24,9 @@ class UHApp : Application() {
         } catch (_: Exception) {}
         scheduleCleanup()
     
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            GeckoEngine.getRuntime(this@UHApp)
+        }
     }
 
     private fun scheduleCleanup() {
