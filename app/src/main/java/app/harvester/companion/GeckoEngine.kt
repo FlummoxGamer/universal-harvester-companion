@@ -20,9 +20,13 @@ object GeckoEngine {
                     }
                     
                     try {
+                        val prefs = android.os.Bundle().apply {
+                            putBoolean("pdfjs.disabled", true)
+                        }
                         val settings = GeckoRuntimeSettings.Builder()
                             .consoleOutput(true)
                             .debugLogging(true)
+                            .extras(prefs)
                             .build()
                             
                         val rt = GeckoRuntime.create(ctx, settings)
