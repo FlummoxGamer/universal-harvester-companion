@@ -106,9 +106,8 @@ class TabManager private constructor(private val ctx: Context) {
                     val stateObj = org.mozilla.geckoview.GeckoSession.SessionState.fromString(savedState)
                     if (stateObj != null) {
                         session.restoreState(stateObj)
-                        if (!fallback.isNullOrBlank() && fallback != "about:blank") {
-                            session.loadUri(fallback)
-                        }
+                    } else if (!fallback.isNullOrBlank() && fallback != "about:blank") {
+                        session.loadUri(fallback)
                     }
                 } catch (_: Exception) {
                     if (!fallback.isNullOrBlank() && fallback != "about:blank") session.loadUri(fallback)
