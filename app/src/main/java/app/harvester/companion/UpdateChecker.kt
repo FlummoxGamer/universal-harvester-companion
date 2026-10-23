@@ -116,8 +116,10 @@ object UpdateChecker {
 
 private fun downloadAndInstall(activity: Activity, info: Manifest) {
     val dir = File(activity.cacheDir, "updates").apply { mkdirs() }
-    val out = File(dir, "uh_update.apk")
-    val id = DownloadEngine.startDownload(activity, info.apkUrl, "uh_update.apk", "application/vnd.android.package-archive")
+    dir.listFiles()?.forEach { it.delete() }
+    
+    val fileName = "uh_update_${info.versionName}.apk"
+    DownloadEngine.startDownload(activity, info.apkUrl, fileName, "application/vnd.android.package-archive")
     
     android.widget.Toast.makeText(activity, "Downloading update...", android.widget.Toast.LENGTH_LONG).show()
 }
