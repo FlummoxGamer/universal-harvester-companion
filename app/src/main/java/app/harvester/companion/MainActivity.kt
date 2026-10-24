@@ -31,6 +31,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.net.URL
 import org.mozilla.geckoview.GeckoSession
@@ -197,7 +198,7 @@ class MainActivity : AppCompatActivity() {
         val data = json.optString("data")
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-    val body = if (method in listOf("POST", "PUT", "PATCH")) okhttp3.RequestBody.create(data.toByteArray(), null) else null
+    val body = if (method in listOf("POST", "PUT", "PATCH")) data.toRequestBody(null) else null
     val builder = okhttp3.Request.Builder().url(url).method(method, body)
     if (headersStr.isNotBlank()) {
         val hObj = JSONObject(headersStr)
