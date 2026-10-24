@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg">
+
+    <ImageView
+        android:id="@+id/previewImage"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:clipToOutline="true" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:paddingBottom="80dp">
+
+        <Space android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/previewTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Universal Harvester"
+            android:textSize="34sp"
+            android:fontFamily="@font/app_font"
+            android:layout_marginBottom="36dp" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="120dp"
+            android:background="@android:color/transparent" />
+            
+        <Space android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1.4" />
+    </LinearLayout>
+</FrameLayout>
