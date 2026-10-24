@@ -190,34 +190,40 @@ class MainActivity : AppCompatActivity() {
         bridge?.overlayActive = active
         return GeckoResult.fromValue("ok")
     }
-    "GM_xmlhttpRequest" -> {
-        val id = json.optString("id")
-        val method = json.optString("method")
-        val url = json.optString("url")
-        val headersStr = json.optString("headers")
-        val data = json.optString("data")
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-    val body = if (method in listOf("POST", "PUT", "PATCH")) data.toRequestBody(null) else null
-    val builder = okhttp3.Request.Builder().url(url).method(method, body)
-    if (headersStr.isNotBlank()) {
-        val hObj = JSONObject(headersStr)
-        for (key in hObj.keys()) builder.addHeader(key, hObj.getString(key))
-    }
-    val resp = okhttp3.OkHttpClient().newCall(builder.build()).execute()
-    val text = resp.body?.string() ?: ""
-    val respHeaders = resp.headers.toMultimap().entries.joinToString("") { "${it.key}: ${it.value.joinToString(", ")}\r\n" }
-    withContext(Dispatchers.Main) {
-        currentSession?.loadUri("javascript:window.__uh_xhr_done('$id', ${resp.code}, ${JSONObject.quote(text)}, ${JSONObject.quote(respHeaders)}, ${JSONObject.quote(resp.request.url.toString())})")
-    }
-} catch (e: Exception) {
-    withContext(Dispatchers.Main) {
-        currentSession?.loadUri("javascript:window.__uh_xhr_error('$id', ${JSONObject.quote(e.message ?: "error")})")
-    }
+"GM_xmlhttpRequest" -> {
+    val geckoResult = GeckoResult<Any>()
+    val method = json.optString("method")
+    val url = json.optString("url")
+    val headersStr = json.optString("headers")
+    val data = json.optString("data")
+    lifecycleScope.launch(Dispatchers.IO) {
+        try {
+            val body = if (method in listOf("POST", "PUT", "PATCH")) data.toRequestBody(null) else null
+            val builder = okhttp3.Request.Builder().url(url).method(method, body)
+            if (headersStr.isNotBlank()) {
+                val hObj = JSONObject(headersStr)
+                for (key in hObj.keys()) builder.addHeader(key, hObj.getString(key))
             }
+            val resp = okhttp3.OkHttpClient().newCall(builder.build()).execute()
+            val text = resp.body?.string() ?: ""
+            val respHeaders = resp.headers.toMultimap().entries.joinToString("") { "${it.key}: ${it.value.joinToString(", ")}\r\n" }
+            
+            val resObj = JSONObject()
+            resObj.put("status", resp.code)
+            resObj.put("responseText", text)
+            resObj.put("responseHeaders", respHeaders)
+            
+            geckoResult.complete(resObj.toString())
+        } catch (e: Exception) {
+            val errObj = JSONObject()
+            errObj.put("status", 0)
+            errObj.put("responseText", e.message ?: "Error")
+            errObj.put("responseHeaders", "")
+            geckoResult.complete(errObj.toString())
         }
-        return GeckoResult.fromValue("ok")
     }
+    return geckoResult
+}
     "GM_download" -> {
         val url = json.optString("url")
         val name = json.optString("name")
