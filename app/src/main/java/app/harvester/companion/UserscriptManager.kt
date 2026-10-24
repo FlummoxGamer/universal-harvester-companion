@@ -37,7 +37,8 @@ object UserscriptManager {
         val body: String,
         val usesSystemjs: Boolean,
         val noFrames: Boolean,
-        val fileSize: Long
+        val fileSize: Long,
+        val iconUrl: String
     )
 
     fun loadScripts(ctx: Context): List<Script> {
@@ -109,14 +110,14 @@ object UserscriptManager {
 
         val usesSystemjs = body.contains("System.register")
 
-        return Script(
-            name = name, displayName = displayName, namespace = namespace,
-            description = description, version = version, author = author,
-            homepage = homepage, icon = icon, patterns = patterns, excludes = excludes,
-            grants = grants, connects = connects, requires = requires, resources = resources,
-            runAt = runAt, body = body, usesSystemjs = usesSystemjs, noFrames = noFrames,
-            fileSize = fileSize
-        )
+return Script(
+    name = name, displayName = displayName, namespace = namespace,
+    description = description, version = version, author = author,
+    homepage = homepage, icon = icon, patterns = patterns, excludes = excludes,
+    grants = grants, connects = connects, requires = requires, resources = resources,
+    runAt = runAt, body = body, usesSystemjs = usesSystemjs, noFrames = noFrames,
+    fileSize = fileSize, iconUrl = icon
+)
     }
 
     fun install(ctx: Context, name: String, body: String): Boolean {
@@ -203,25 +204,24 @@ object UserscriptManager {
         return install(ctx, parsed.name, body)
     }
 
-    fun installFromUrl(ctx: Context, url: String, callback: (Boolean) -> Unit) {
-        Thread {
-            try {
-                val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-                conn.connectTimeout = 15000
-                conn.readTimeout = 15000
-                conn.connect()
-                if (conn.responseCode in 200..299) {
-                    val body = conn.inputStream.bufferedReader().use { it.readText() }
+fun installFromUrl(ctx: Context, url: String, callback: (Boolean) -> Unit) {
+    Thread {
+        try {
+            val client = okhttp3.OkHttpClient.Builder().followRedirects(true).connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS).build()
+            val req = okhttp3.Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
+            client.newCall(req).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val body = resp.body?.string() ?: ""
                     val parsed = parse("script_" + System.currentTimeMillis(), body)
                     callback(install(ctx, parsed.name, body))
                 } else callback(false)
-                conn.disconnect()
-            } catch (e: Exception) {
-                UHLog.throwable("userscript", "install url failed", e)
-                callback(false)
             }
-        }.start()
-    }
+        } catch (e: Exception) {
+            UHLog.throwable("userscript", "install url failed", e)
+            callback(false)
+        }
+    }.start()
+}
 
     fun installFromUri(ctx: Context, uri: Uri): Boolean {
         return try {
@@ -356,10 +356,23 @@ object UserscriptManager {
   if (window.__uh_bridge_ready) return;
   window.__uh_bridge_ready = true;
 
-  window.unsafeWindow = window;
-  window.__uh_xhr = window.__uh_xhr || {};
-  window.__uh_vcl = window.__uh_vcl || {};
-  window.__uh_menu = window.__uh_menu || {};
+window.unsafeWindow = window;
+window.__uh_xhr = window.__uh_xhr || {};
+window.__uh_vcl = window.__uh_vcl || {};
+window.__uh_menu = window.__uh_menu || {};
+
+window.addEventListener('message', function(event) {
+  if (event.source !== window || !event.data) return;
+  if (event.data.type === 'UH_NATIVE_RESPONSE') {
+    var id = event.data.id;
+    var response = event.data.response;
+    var d = window.__uh_xhr[id];
+    if (d) {
+      delete window.__uh_xhr[id];
+      if (d.onload) try { d.onload({ status: 200, responseText: response, response: response }); } catch(e) {}
+    }
+  }
+});
 
   if (!document.currentScript) {
     try {
