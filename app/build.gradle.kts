@@ -11,8 +11,8 @@ android {
         applicationId = "app.harvester.companion"
         minSdk = 29
         targetSdk = 36
-        versionCode = 69
-        versionName = "2.3.37"
+        versionCode = 70
+        versionName = "2.4.0"
    }
 
    flavorDimensions += "version"
@@ -108,6 +108,8 @@ dependencies {
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("androidx.palette:palette-ktx:1.0.0")
+    implementation("androidx.viewpager2:viewpager2:1.1.0")
 }
 
 
