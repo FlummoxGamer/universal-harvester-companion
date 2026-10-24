@@ -272,7 +272,7 @@ class ScriptsActivity : AppCompatActivity() {
         try {
             val bmp = java.net.URL(r.iconUrl).openStream().use { android.graphics.BitmapFactory.decodeStream(it) }
             if (bmp != null) {
-                runOnUiThread { h.title.setCompoundDrawablesWithIntrinsicBounds(null, null, android.graphics.drawable.BitmapDrawable(h.title.resources, bmp), null) }
+                h.title.post { h.title.setCompoundDrawablesWithIntrinsicBounds(null, null, android.graphics.drawable.BitmapDrawable(h.title.resources, bmp), null) }
             }
         } catch (_: Exception) {}
     }.start()
