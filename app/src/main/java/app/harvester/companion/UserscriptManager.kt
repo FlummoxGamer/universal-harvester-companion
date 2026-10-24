@@ -369,11 +369,24 @@ window.addEventListener('message', function(event) {
     var d = window.__uh_xhr[id];
     if (d) {
       delete window.__uh_xhr[id];
-      if (d.onload) try { d.onload({ status: 200, responseText: response, response: response }); } catch(e) {}
+      if (d.onload) {
+        try {
+          var json = JSON.parse(response);
+          var respData = json.responseText;
+          if (d.responseType === 'json') try { respData = JSON.parse(json.responseText); } catch(e){}
+          d.onload({
+            readyState: 4,
+            status: json.status,
+            statusText: String(json.status),
+            responseText: json.responseText,
+            response: respData,
+            responseHeaders: json.responseHeaders
+          });
+        } catch(e) {}
+      }
     }
   }
 });
-
   if (!document.currentScript) {
     try {
       var dummyScript = document.createElement('script');
