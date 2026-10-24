@@ -267,7 +267,9 @@ class ScriptsActivity : AppCompatActivity() {
             if (r.description.isNotBlank()) meta.append("\n").append(r.description)
             h.sub.text = meta.toString()
 
-h.title.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_code, 0, 0, 0)
+val fallbackIcon = androidx.core.content.ContextCompat.getDrawable(h.title.context, R.drawable.ic_code)?.mutate()
+fallbackIcon?.setTint(androidx.core.content.ContextCompat.getColor(h.title.context, R.color.accent))
+h.title.setCompoundDrawablesWithIntrinsicBounds(fallbackIcon, null, null, null)
 if (r.iconUrl.isNotBlank()) {
     Thread {
         try {
