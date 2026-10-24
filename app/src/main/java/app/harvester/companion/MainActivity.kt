@@ -183,12 +183,65 @@ class MainActivity : AppCompatActivity() {
                                 } catch (_: Exception) {}
                                 return GeckoResult.fromValue("ok")
                             }
-                            "OVERLAY_STATE" -> {
-                                val active = json.optBoolean("active")
-                                val bridge = mainGeckoView.tag as? UserscriptBridge
-                                bridge?.overlayActive = active
-                                return GeckoResult.fromValue("ok")
-                            }
+            "OVERLAY_STATE" -> {
+        val active = json.optBoolean("active")
+        val bridge = mainGeckoView.tag as? UserscriptBridge
+        bridge?.overlayActive = active
+        return GeckoResult.fromValue("ok")
+    }
+    "GM_xmlhttpRequest" -> {
+        val id = json.optString("id")
+        val method = json.optString("method")
+        val url = json.optString("url")
+        val headersStr = json.optString("headers")
+        val data = json.optString("data")
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val builder = okhttp3.Request.Builder().url(url).method(method, if (method in listOf("POST", "PUT", "PATCH")) data.toRequestBody() else null)
+                if (headersStr.isNotBlank()) {
+                    val hObj = JSONObject(headersStr)
+                    for (key in hObj.keys()) builder.addHeader(key, hObj.getString(key))
+                }
+                val resp = okhttp3.OkHttpClient().newCall(builder.build()).execute()
+                val text = resp.body?.string() ?: ""
+                val respHeaders = resp.headers.toMultimap().entries.joinToString("") { "${it.key}: ${it.value.joinToString(", ")}\r\n" }
+                withContext(Dispatchers.Main) {
+                    currentSession?.evaluateJS("window.__uh_xhr_done('$id', ${resp.code}, ${JSONObject.quote(text)}, ${JSONObject.quote(respHeaders)}, ${JSONObject.quote(resp.request.url.toString())})", null)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    currentSession?.evaluateJS("window.__uh_xhr_error('$id', ${JSONObject.quote(e.message ?: "error")})", null)
+                }
+            }
+        }
+        return GeckoResult.fromValue("ok")
+    }
+    "GM_download" -> {
+        val url = json.optString("url")
+        val name = json.optString("name")
+        DownloadEngine.startDownload(this@MainActivity, url, name, "application/octet-stream", null, null, currentUrl)
+        return GeckoResult.fromValue("ok")
+    }
+    "GM_openInTab" -> {
+        val url = json.optString("url")
+        tabs.openNew(url)
+        attachCurrent()
+        updateUi()
+        return GeckoResult.fromValue("ok")
+    }
+    "GM_registerMenuCommand" -> {
+        val script = json.optString("script")
+        val id = json.optString("id")
+        val name = json.optString("name")
+        MenuCommandStore.register(script, id, name, "")
+        return GeckoResult.fromValue("ok")
+    }
+    "GM_unregisterMenuCommand" -> {
+        val script = json.optString("script")
+        val id = json.optString("id")
+        MenuCommandStore.unregister(script, id)
+        return GeckoResult.fromValue("ok")
+    }
                         }
                         return GeckoResult.fromValue("ok")
                     }
