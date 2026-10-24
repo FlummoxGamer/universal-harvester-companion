@@ -3,7 +3,7 @@
     window.__uh_bridge_inject_ready = true;
 
     window.addEventListener('message', (event) => {
-        if (event.source !== window || !event.data) return;
+        if (!event.data) return;
         
         if (event.data.type === 'UH_RUN_SCRIPTS') {
             const scripts = event.data.scripts;
