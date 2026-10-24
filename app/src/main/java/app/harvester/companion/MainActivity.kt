@@ -197,21 +197,22 @@ class MainActivity : AppCompatActivity() {
         val data = json.optString("data")
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val builder = okhttp3.Request.Builder().url(url).method(method, if (method in listOf("POST", "PUT", "PATCH")) data.toRequestBody() else null)
-                if (headersStr.isNotBlank()) {
-                    val hObj = JSONObject(headersStr)
-                    for (key in hObj.keys()) builder.addHeader(key, hObj.getString(key))
-                }
-                val resp = okhttp3.OkHttpClient().newCall(builder.build()).execute()
-                val text = resp.body?.string() ?: ""
-                val respHeaders = resp.headers.toMultimap().entries.joinToString("") { "${it.key}: ${it.value.joinToString(", ")}\r\n" }
-                withContext(Dispatchers.Main) {
-                    currentSession?.evaluateJS("window.__uh_xhr_done('$id', ${resp.code}, ${JSONObject.quote(text)}, ${JSONObject.quote(respHeaders)}, ${JSONObject.quote(resp.request.url.toString())})", null)
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    currentSession?.evaluateJS("window.__uh_xhr_error('$id', ${JSONObject.quote(e.message ?: "error")})", null)
-                }
+    val body = if (method in listOf("POST", "PUT", "PATCH")) okhttp3.RequestBody.create(data.toByteArray(), null) else null
+    val builder = okhttp3.Request.Builder().url(url).method(method, body)
+    if (headersStr.isNotBlank()) {
+        val hObj = JSONObject(headersStr)
+        for (key in hObj.keys()) builder.addHeader(key, hObj.getString(key))
+    }
+    val resp = okhttp3.OkHttpClient().newCall(builder.build()).execute()
+    val text = resp.body?.string() ?: ""
+    val respHeaders = resp.headers.toMultimap().entries.joinToString("") { "${it.key}: ${it.value.joinToString(", ")}\r\n" }
+    withContext(Dispatchers.Main) {
+        currentSession?.loadUri("javascript:window.__uh_xhr_done('$id', ${resp.code}, ${JSONObject.quote(text)}, ${JSONObject.quote(respHeaders)}, ${JSONObject.quote(resp.request.url.toString())})")
+    }
+} catch (e: Exception) {
+    withContext(Dispatchers.Main) {
+        currentSession?.loadUri("javascript:window.__uh_xhr_error('$id', ${JSONObject.quote(e.message ?: "error")})")
+    }
             }
         }
         return GeckoResult.fromValue("ok")
