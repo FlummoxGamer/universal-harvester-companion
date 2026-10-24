@@ -1,7 +1,7 @@
 const api = typeof browser !== "undefined" ? browser : chrome;
 
 window.addEventListener('message', (event) => {
-    if (event.source !== window || !event.data) return;
+    if (!event.data) return;
     
     if (event.data.type === 'UH_INJECT_READY') {
         api.runtime.sendNativeMessage('uhApp', { type: 'GET_SCRIPTS', url: window.location.href })
