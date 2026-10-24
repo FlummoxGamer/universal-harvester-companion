@@ -415,14 +415,32 @@ private fun setupBackDispatcher() {
         val id = if (v != null) tabs.idForSession(v) else -1L
         val url = currentUrl
 
-        if (v != null && tabs.canGoBack(v)) {
-            v.goBack()
+        if (url == "about:blank" || url.isNullOrBlank()) {
+            val all = tabs.list()
+            if (all.size > 1) {
+                popupTabs.remove(id)
+                tabs.close(id)
+                val remaining = tabs.list()
+                if (remaining.isNotEmpty()) {
+                    tabs.acquireSession(remaining.first().id)
+                    attachCurrent(); updateUi()
+                }
+            } else {
+                val now = System.currentTimeMillis()
+                if (now - lastBackPress < 2000L) finish()
+                else {
+                    lastBackPress = now
+                    Toast.makeText(this@MainActivity, "Press back again to exit", Toast.LENGTH_SHORT).show()
+                }
+            }
             return@addCallback
         }
 
-        if (url != "about:blank" && !url.isNullOrBlank() && v != null) {
-            v.loadUri("about:blank")
-            return@addCallback
+        if (v != null) {
+            if (tabs.canGoBack(v)) {
+                v.goBack()
+                return@addCallback
+            }
         }
 
         val currentEntity = tabs.list().firstOrNull { it.id == id }
@@ -436,29 +454,14 @@ private fun setupBackDispatcher() {
             return@addCallback
         }
 
-        val all = tabs.list()
-        if (all.size > 1) {
-            popupTabs.remove(id)
-            tabs.close(id)
-            val remaining = tabs.list()
-            if (remaining.isNotEmpty()) {
-                tabs.acquireSession(remaining.last().id)
-                attachCurrent()
-                updateUi()
-            }
-        } else {
-            val now = System.currentTimeMillis()
-            if (now - lastBackPress < 2000L) {
-                finish()
-            } else {
-                lastBackPress = now
-                Toast.makeText(this@MainActivity, "Press back again to exit", Toast.LENGTH_SHORT).show()
-            }
+        if (v != null) {
+            v.loadUri("about:blank")
+            return@addCallback
         }
-        return@addCallback
+
+        finish()
     }
 }
-
     private fun applyAddressBarPosition() {
         val position = SettingsPrefs.getInt(this, SettingsPrefs.K_ADDRESS_BAR_POSITION, 1)
         val root = binding.root as ConstraintLayout
