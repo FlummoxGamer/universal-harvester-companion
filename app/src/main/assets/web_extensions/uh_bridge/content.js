@@ -1,24 +1,22 @@
 const api = typeof browser !== "undefined" ? browser : chrome;
 
+api.runtime.sendMessage({ type: 'UH_GET_SCRIPTS', url: window.location.href })
+    .then(response => {
+        if (response && response.scripts) {
+            window.postMessage({ type: 'UH_RUN_SCRIPTS', scripts: response.scripts }, '*');
+        }
+    });
+
 window.addEventListener('message', (event) => {
-    if (!event.data) return;
+    if (event.source !== window || !event.data) return;
     
-    if (event.data.type === 'UH_INJECT_READY') {
-        api.runtime.sendNativeMessage('uhApp', { type: 'GET_SCRIPTS', url: window.location.href })
-            .then((response) => {
-                if (response && response.scripts) {
-                    window.postMessage({ type: 'UH_RUN_SCRIPTS', scripts: response.scripts }, '*');
-                }
-            })
-            .catch((e) => console.error('UH Bridge failed to get scripts:', e));
-    } else if (event.data.type === 'UH_NATIVE_CALL') {
-        const payload = event.data.payload;
-        api.runtime.sendNativeMessage('uhApp', payload)
-            .then((response) => {
-                if (payload.id) {
+    if (event.data.type === 'UH_NATIVE_CALL') {
+        api.runtime.sendMessage({ type: 'UH_NATIVE_CALL', payload: event.data.payload })
+            .then(response => {
+                if (event.data.payload.id) {
                     window.postMessage({
                         type: 'UH_NATIVE_RESPONSE',
-                        id: payload.id,
+                        id: event.data.payload.id,
                         response: response
                     }, '*');
                 }
