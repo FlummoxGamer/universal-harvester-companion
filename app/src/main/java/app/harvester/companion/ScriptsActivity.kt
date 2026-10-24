@@ -78,7 +78,8 @@ class ScriptsActivity : AppCompatActivity() {
                 requires = s.requires,
                 usesSystemjs = s.usesSystemjs,
                 fileSize = s.fileSize,
-                enabled = UserscriptStore.isEnabled(this, s.name)
+                enabled = UserscriptStore.isEnabled(this, s.name),
+                iconUrl = s.iconUrl
             )
         })
         emptyView.visibility = if (scripts.isEmpty()) View.VISIBLE else View.GONE
@@ -229,7 +230,8 @@ class ScriptsActivity : AppCompatActivity() {
             val requires: List<String>,
             val usesSystemjs: Boolean,
             val fileSize: Long,
-            var enabled: Boolean
+            var enabled: Boolean,
+            val iconUrl: String
         )
 
         private val rows = mutableListOf<Row>()
@@ -265,8 +267,18 @@ class ScriptsActivity : AppCompatActivity() {
             if (r.description.isNotBlank()) meta.append("\n").append(r.description)
             h.sub.text = meta.toString()
 
-            val pats = if (r.patterns.size <= 2) r.patterns.joinToString(" ")
-                       else r.patterns.take(2).joinToString(" ") + " +${r.patterns.size - 2}"
+            if (r.iconUrl.isNotBlank()) {
+    Thread {
+        try {
+            val bmp = java.net.URL(r.iconUrl).openStream().use { android.graphics.BitmapFactory.decodeStream(it) }
+            if (bmp != null) {
+                runOnUiThread { h.title.setCompoundDrawablesWithIntrinsicBounds(null, null, android.graphics.drawable.BitmapDrawable(h.title.resources, bmp), null) }
+            }
+        } catch (_: Exception) {}
+    }.start()
+}
+val pats = if (r.patterns.size <= 2) r.patterns.joinToString(" ") 
+            else r.patterns.take(2).joinToString(" ") + " +${r.patterns.size - 2}"
             h.patterns.text = pats
 
             h.sw.setOnCheckedChangeListener(null)
