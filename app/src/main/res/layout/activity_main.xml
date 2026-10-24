@@ -6,7 +6,6 @@
     android:layout_height="match_parent"
     android:background="@color/bg">
 
-    <!-- Web Content -->
     <FrameLayout
         android:id="@+id/contentContainer"
         android:layout_width="0dp"
@@ -42,6 +41,7 @@
                 android:text="Universal Harvester"
                 android:textColor="@color/accent"
                 android:textSize="34sp"
+                android:textStyle="bold"
                 android:fontFamily="@font/app_font"
                 android:layout_marginBottom="36dp" />
             <androidx.recyclerview.widget.RecyclerView
@@ -67,7 +67,6 @@
             android:contentDescription="Edit Home" />
     </FrameLayout>
 
-    <!-- Suggestions Overlay -->
     <LinearLayout
         android:id="@+id/suggestionsPanel"
         android:layout_width="0dp"
@@ -98,7 +97,6 @@
             android:visibility="gone" />
     </LinearLayout>
 
-    <!-- Floating Chip Bar -->
     <FrameLayout
         android:id="@+id/urlChipStrip"
         android:layout_width="0dp"
@@ -197,7 +195,6 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
-    <!-- Bottom Bar (same as before) -->
     <LinearLayout
         android:id="@+id/bottomBar"
         android:layout_width="0dp"
@@ -350,6 +347,7 @@
                 android:text="FLUMMOX"
                 android:textColor="@color/text"
                 android:textSize="20sp"
+                android:textStyle="bold"
                 android:fontFamily="@font/app_font"
                 android:letterSpacing="0.15" />
         </LinearLayout>
