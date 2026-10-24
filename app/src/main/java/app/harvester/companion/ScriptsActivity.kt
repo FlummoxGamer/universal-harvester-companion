@@ -267,16 +267,18 @@ class ScriptsActivity : AppCompatActivity() {
             if (r.description.isNotBlank()) meta.append("\n").append(r.description)
             h.sub.text = meta.toString()
 
-            if (r.iconUrl.isNotBlank()) {
+h.title.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_code, 0, 0, 0)
+if (r.iconUrl.isNotBlank()) {
     Thread {
         try {
             val bmp = java.net.URL(r.iconUrl).openStream().use { android.graphics.BitmapFactory.decodeStream(it) }
             if (bmp != null) {
-                h.title.post { h.title.setCompoundDrawablesWithIntrinsicBounds(null, null, android.graphics.drawable.BitmapDrawable(h.title.resources, bmp), null) }
+                h.title.post { h.title.setCompoundDrawablesWithIntrinsicBounds(android.graphics.drawable.BitmapDrawable(h.title.resources, bmp), null, null, null) }
             }
         } catch (_: Exception) {}
     }.start()
 }
+
 val pats = if (r.patterns.size <= 2) r.patterns.joinToString(" ") 
             else r.patterns.take(2).joinToString(" ") + " +${r.patterns.size - 2}"
             h.patterns.text = pats
