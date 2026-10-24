@@ -135,6 +135,14 @@
             android:name=".ImagePreviewActivity"
             android:exported="false"
             android:theme="@style/Theme.UHCompanion" />
+        <activity
+            android:name=".CustomizeHomeActivity"
+            android:exported="false"
+            android:theme="@style/Theme.UHCompanion" />
+        <activity
+            android:name=".WallpaperPreviewActivity"
+            android:exported="false"
+            android:theme="@style/Theme.UHCompanion" />
 
         <service
             android:name=".SessionService"
