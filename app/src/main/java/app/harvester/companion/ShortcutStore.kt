@@ -71,10 +71,9 @@ fun iconUrlFor(targetUrl: String): String {
 }
 
     private fun defaultList(): MutableList<Shortcut> = mutableListOf(
-        Shortcut(
-            name = "DuckDuckGo",
-            url = "https://duckduckgo.com",
-            iconUrl = "https://icons.duckduckgo.com/ip3/duckduckgo.com.ico"
-        )
+        Shortcut("Brave AI", "https://search.brave.com/a/chat", "https://brave.com/static-assets/images/brave-logo-sans-text.svg"),
+        Shortcut("YouTube", "https://m.youtube.com", "https://www.youtube.com/s/desktop/f56f7d15/img/favicon_144x144.png"),
+        Shortcut("Calmly", "https://www.calmlywriter.com/online/", "https://www.calmlywriter.com/favicon.ico"),
+        Shortcut("Cobalt", "https://cobalt.tools", "https://cobalt.tools/favicon.ico")
     )
 }
