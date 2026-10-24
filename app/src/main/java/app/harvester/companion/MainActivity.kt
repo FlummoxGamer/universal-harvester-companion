@@ -285,17 +285,33 @@ private fun hideSplash() {
     }, 1200)
 }
 
-    private fun setupHomeGrid() {
-        shortcutAdapter = ShortcutAdapter(
-            onOpen = { s -> loadUrlFromHome(s.url) },
-            onAdd = { showAddShortcutDialog() },
-            onLongPress = { s -> confirmRemoveShortcut(s) }
-        )
-        binding.shortcutsGrid.layoutManager = GridLayoutManager(this, 4)
-        binding.shortcutsGrid.adapter = shortcutAdapter
-        shortcutAdapter.submit(ShortcutStore.list(this))
-    }
+private fun setupHomeGrid() {
+    shortcutAdapter = ShortcutAdapter(
+        onOpen = { s -> loadUrlFromHome(s.url) },
+        onAdd = { showAddShortcutDialog() },
+        onLongPress = { s -> showWidgetMenu(s) }
+    )
+    binding.shortcutsGrid.layoutManager = GridLayoutManager(this, 4)
+    binding.shortcutsGrid.adapter = shortcutAdapter
+    shortcutAdapter.submit(ShortcutStore.list(this))
+}
 
+private fun showWidgetMenu(s: Shortcut) {
+    val popup = android.widget.PopupMenu(this, binding.shortcutsGrid.findViewHolderForAdapterPosition(ShortcutStore.list(this).indexOf(s))?.itemView)
+    popup.menu.add(0, 1, 0, "Edit")
+    popup.menu.add(0, 2, 1, "Remove")
+    popup.setOnMenuItemClickListener { item ->
+        when (item.itemId) {
+            1 -> showShortcutEditor(s)
+            2 -> {
+                ShortcutStore.remove(this, s.url)
+                shortcutAdapter.submit(ShortcutStore.list(this))
+            }
+        }
+        true
+    }
+    popup.show()
+}
     private fun setupSwipeRefresh() {
         binding.swipeRefresh.setOnRefreshListener {
             currentSession?.reload()
@@ -307,6 +323,10 @@ private fun hideSplash() {
             ContextCompat.getColor(this, R.color.surface)
         )
         binding.swipeRefresh.setOnChildScrollUpCallback { _, _ -> mainGeckoView.canScrollUp() }
+    
+        binding.btnEditHome.setOnClickListener {
+            startActivity(Intent(this, CustomizeHomeActivity::class.java))
+        }
     }
 
     private fun setupSuggestions() {
@@ -1577,7 +1597,31 @@ override fun onResume() {
     applyAddressBarPosition()
     currentSession?.setActive(true)
     currentSession?.setFocused(true)
+    applyWallpaper()
     updateUi()
+}
+
+private fun applyWallpaper() {
+    val wpUri = WallpaperStore.getCurrentWallpaper(this)
+    val textColor = WallpaperStore.getTextColor(this)
+    
+    if (wpUri == null || wpUri == "default") {
+        binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+        binding.homeTitle.setTextColor(ContextCompat.getColor(this, R.color.accent))
+        binding.btnEditHome.setColorFilter(ContextCompat.getColor(this, R.color.text))
+    } else {
+        try {
+            val uri = Uri.parse(wpUri)
+            val inputStream = if (wpUri.startsWith("http")) java.net.URL(wpUri).openStream() else contentResolver.openInputStream(uri)
+            val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+            val drawable = android.graphics.drawable.BitmapDrawable(resources, bitmap)
+            binding.homeScreen.background = drawable
+            binding.homeTitle.setTextColor(textColor)
+            binding.btnEditHome.setColorFilter(textColor)
+        } catch (_: Exception) {
+            binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+        }
+    }
 }
 
 override fun onPause() {
