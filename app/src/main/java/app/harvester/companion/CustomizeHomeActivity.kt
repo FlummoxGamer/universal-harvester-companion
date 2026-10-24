@@ -77,12 +77,18 @@ class CustomizeHomeActivity : AppCompatActivity() {
                     finish()
                 }
                 is WallpaperItem.Custom -> {
-                    val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
-                        putExtra("imageUri", item.uri)
+                   val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
+                       putExtra("imageUri", item.uri)
                     }
                     startActivity(intent)
                 }
+                is WallpaperItem.Remote -> {
+                   val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
+                       putExtra("imageUrl", item.url)
+                }
+                startActivity(intent)
             }
+        }
         }, onLongClick = { item ->
             if (item is WallpaperItem.Custom) {
                 showContextMenu(recentRecycler.findViewHolderForAdapterPosition(recents.indexOf(item))?.itemView, item.uri)
