@@ -4,6 +4,7 @@
 
     window.addEventListener('message', (event) => {
         if (event.source !== window || !event.data) return;
+        
         if (event.data.type === 'UH_RUN_SCRIPTS') {
             const scripts = event.data.scripts;
             if (scripts) {
@@ -16,6 +17,10 @@
                     console.error('UH Bridge script injection failed', e);
                 }
             }
+        } else if (event.data.type === 'UH_NATIVE_RESPONSE') {
+            window.postMessage(event.data, '*');
         }
     });
+
+    window.postMessage({ type: 'UH_INJECT_READY' }, '*');
 })();
