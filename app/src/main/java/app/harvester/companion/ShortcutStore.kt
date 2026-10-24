@@ -13,7 +13,7 @@ object ShortcutStore {
         val raw = ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
             .getString(KEY, null)
         if (raw.isNullOrBlank()) return defaultList()
-    
+        
         val parsed = try {
             val arr = JSONArray(raw)
             val out = mutableListOf<Shortcut>()
@@ -30,22 +30,6 @@ object ShortcutStore {
             return defaults
         }
         return parsed
-    }
-        return try {
-            val arr = JSONArray(raw)
-            val out = mutableListOf<Shortcut>()
-            for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i)
-                out.add(
-                    Shortcut(
-                        name = o.optString("name"),
-                        url = o.optString("url"),
-                        iconUrl = o.optString("iconUrl")
-                    )
-                )
-            }
-            out
-        } catch (_: Exception) { defaultList() }
     }
 
     fun clear(ctx: Context) {
@@ -64,6 +48,7 @@ object ShortcutStore {
         ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
             .edit().putString(KEY, arr.toString()).apply()
     }
+    
     fun shortNameFor(targetUrl: String): String {
         val host = try { java.net.URI(targetUrl).host } catch (_: Exception) { null }
             ?: return targetUrl
@@ -83,14 +68,14 @@ object ShortcutStore {
         save(ctx, current)
     }
 
-fun iconUrlFor(targetUrl: String): String {
-    val host = try {
-        java.net.URI(targetUrl).host
-    } catch (_: Exception) { null }
-    if (host.isNullOrBlank()) return ""
-    val clean = host.removePrefix("www.")
-    return "https://icons.duckduckgo.com/ip3/$clean.ico"
-}
+    fun iconUrlFor(targetUrl: String): String {
+        val host = try {
+            java.net.URI(targetUrl).host
+        } catch (_: Exception) { null }
+        if (host.isNullOrBlank()) return ""
+        val clean = host.removePrefix("www.")
+        return "https://icons.duckduckgo.com/ip3/$clean.ico"
+    }
 
     private fun defaultList(): MutableList<Shortcut> = mutableListOf(
         Shortcut("Brave AI", "https://search.brave.com/a/chat", "https://brave.com/static-assets/images/brave-logo-sans-text.svg"),
