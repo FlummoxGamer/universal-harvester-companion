@@ -126,7 +126,7 @@ class MainActivity : AppCompatActivity() {
                                 val code = UserscriptManager.buildInjectionScript(this@MainActivity, url)
                                 val res = JSONObject()
                                 res.put("scripts", code)
-                                return GeckoResult.fromValue(res.toString())
+                                return GeckoResult.fromValue(res)
                             }
                             "SAVE_BLOB" -> {
                                 val filename = json.optString("filename")
@@ -1316,10 +1316,26 @@ if (contentLength > 0) {
 
         for (script in ordered) {
             val isActive = script in matching
-            val row = layoutInflater.inflate(R.layout.item_script_menu_script, list, false)
+val row = layoutInflater.inflate(R.layout.item_script_menu_script, list, false)
 
-            row.findViewById<android.widget.TextView>(R.id.smsName).text =
-                script.displayName.ifBlank { script.name }
+row.findViewById<android.widget.TextView>(R.id.smsName).text =
+    script.displayName.ifBlank { script.name }
+
+val iconView = row.findViewById<android.widget.ImageView>(R.id.smsIcon)
+iconView.setColorFilter(ContextCompat.getColor(this@MainActivity, R.color.accent))
+if (script.iconUrl.isNotBlank()) {
+    Thread {
+        try {
+            val bmp = java.net.URL(script.iconUrl).openStream().use { android.graphics.BitmapFactory.decodeStream(it) }
+            if (bmp != null) {
+                runOnUiThread {
+                    iconView.setImageBitmap(bmp)
+                    iconView.clearColorFilter()
+                }
+            }
+        } catch (_: Exception) {}
+    }.start()
+}
 
             val badge = row.findViewById<android.widget.TextView>(R.id.smsActiveBadge)
             badge.visibility = if (isActive) View.VISIBLE else View.GONE
