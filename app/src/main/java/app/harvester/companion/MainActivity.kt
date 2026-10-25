@@ -294,6 +294,27 @@ private fun setupHomeGrid() {
     binding.shortcutsGrid.layoutManager = GridLayoutManager(this, 4)
     binding.shortcutsGrid.adapter = shortcutAdapter
     shortcutAdapter.submit(ShortcutStore.list(this))
+
+    val callback = object : androidx.recyclerview.widget.ItemTouchHelper.SimpleCallback(
+        androidx.recyclerview.widget.ItemTouchHelper.UP or androidx.recyclerview.widget.ItemTouchHelper.DOWN or androidx.recyclerview.widget.ItemTouchHelper.START or androidx.recyclerview.widget.ItemTouchHelper.END, 0
+    ) {
+        override fun onMove(recyclerView: androidx.recyclerview.widget.RecyclerView, viewHolder: androidx.recyclerview.widget.RecyclerView.ViewHolder, target: androidx.recyclerview.widget.RecyclerView.ViewHolder): Boolean {
+            val fromPos = viewHolder.adapterPosition
+            val toPos = target.adapterPosition
+            if (fromPos < 0 || toPos < 0) return false
+            if (fromPos == shortcutAdapter.itemCount - 1 || toPos == shortcutAdapter.itemCount - 1) return false
+            shortcutAdapter.moveItem(fromPos, toPos)
+            return true
+        }
+        override fun onSwiped(viewHolder: androidx.recyclerview.widget.RecyclerView.ViewHolder, direction: Int) {}
+        override fun isLongPressDragEnabled(): Boolean = true
+        override fun clearView(recyclerView: androidx.recyclerview.widget.RecyclerView, viewHolder: androidx.recyclerview.widget.RecyclerView.ViewHolder) {
+            super.clearView(recyclerView, viewHolder)
+            ShortcutStore.save(this@MainActivity, shortcutAdapter.getItems())
+        }
+    }
+    val touchHelper = androidx.recyclerview.widget.ItemTouchHelper(callback)
+    touchHelper.attachToRecyclerView(binding.shortcutsGrid)
 }
 
 private fun showWidgetMenu(s: Shortcut) {
