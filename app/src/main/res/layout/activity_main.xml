@@ -212,6 +212,15 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
+        <ImageButton
+            android:id="@+id/btnScriptMenu"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_code"
+            app:tint="@color/text"
+            android:scaleType="centerInside" />
+
         <LinearLayout
             android:id="@+id/urlBar"
             android:layout_width="0dp"
@@ -225,13 +234,25 @@
             android:paddingStart="4dp"
             android:paddingEnd="4dp">
 
-            <ImageButton
-                android:id="@+id/searchEngineIcon"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:scaleType="centerInside"
-                android:padding="6dp" />
+            <FrameLayout
+                android:layout_width="38dp"
+                android:layout_height="38dp">
+                <ImageButton
+                    android:id="@+id/searchEngineIcon"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:layout_gravity="center"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:scaleType="centerInside"
+                    android:padding="6dp" />
+                <ImageView
+                    android:layout_width="12dp"
+                    android:layout_height="12dp"
+                    android:layout_gravity="bottom|end"
+                    android:src="@drawable/ic_arrow_out"
+                    app:tint="@color/text"
+                    android:rotation="90" />
+            </FrameLayout>
 
             <FrameLayout
                 android:layout_width="0dp"
@@ -274,15 +295,6 @@
                     android:visibility="gone" />
             </FrameLayout>
 
-            <ImageButton
-                android:id="@+id/btnScriptMenu"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@drawable/ic_code"
-                app:tint="@color/subtext"
-                android:scaleType="centerInside" />
-
             <TextView
                 android:id="@+id/tabCount"
                 android:layout_width="wrap_content"
@@ -305,7 +317,7 @@
                 android:layout_height="36dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_menu"
-                app:tint="@color/subtext"
+                app:tint="@color/text"
                 android:scaleType="centerInside" />
         </LinearLayout>
     </LinearLayout>
