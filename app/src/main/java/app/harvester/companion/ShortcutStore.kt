@@ -78,7 +78,7 @@ object ShortcutStore {
     }
 
     private fun defaultList(): MutableList<Shortcut> = mutableListOf(
-        Shortcut("DeepSeek", "https://chat.deepseek.com/", "https://chat.deepseek.com/favicon.ico"),
+        Shortcut("DuckDuckGo AI", "https://duck.ai", "https://duckduckgo.com/favicon.ico"),
         Shortcut("YouTube", "https://m.youtube.com", "https://www.youtube.com/s/desktop/f56f7d15/img/favicon_144x144.png"),
         Shortcut("Calmly", "https://www.calmlywriter.com/online/", "https://www.calmlywriter.com/favicon.ico"),
         Shortcut("Cobalt", "https://cobalt.tools", "https://cobalt.tools/favicon.ico")
