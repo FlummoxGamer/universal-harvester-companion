@@ -1,5 +1,6 @@
 package app.harvester.companion
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.view.Gravity
@@ -10,6 +11,8 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
+import java.io.File
+import java.security.MessageDigest
 
 class ShortcutAdapter(
     private val onOpen: (Shortcut) -> Unit,
@@ -37,6 +40,7 @@ class ShortcutAdapter(
             h.icon.setImageDrawable(null)
             h.icon.tag = null
             h.icon.visibility = View.GONE
+            h.icon.setPadding(0, 0, 0, 0)
             h.plus.visibility = View.VISIBLE
             h.label.text = "Add"
             h.itemView.setOnClickListener { onAdd() }
@@ -49,7 +53,15 @@ class ShortcutAdapter(
         h.label.text = s.name
         h.icon.setImageDrawable(null)
         h.icon.tag = s.iconUrl
-        loadIcon(h.icon, s.iconUrl)
+        
+        val params = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        h.icon.layoutParams = params
+        h.icon.scaleType = ImageView.ScaleType.CENTER_CROP
+        
+        loadIcon(h, s.iconUrl)
         h.itemView.setOnClickListener { onOpen(s) }
         h.itemView.setOnLongClickListener { onLongPress(s); true }
     }
@@ -62,18 +74,39 @@ class ShortcutAdapter(
         notifyDataSetChanged()
     }
 
-    private fun loadIcon(view: ImageView, iconUrl: String) {
+    private fun loadIcon(h: VH, iconUrl: String) {
         if (iconUrl.isBlank()) {
-            view.setImageResource(R.drawable.ic_globe)
+            setFallback(h)
             return
         }
+
         val cached = iconCache[iconUrl]
         if (cached != null) {
-            if (view.tag == iconUrl) applyImage(view, cached)
+            if (h.icon.tag == iconUrl) applyImage(h, cached)
             return
         }
-        if (iconCache.containsKey(iconUrl)) return
-        
+
+        val context = h.itemView.context
+        val file = getCacheFile(context, iconUrl)
+
+        if (file.exists()) {
+            val bmp = BitmapFactory.decodeFile(file.absolutePath)
+            if (bmp != null) {
+                iconCache[iconUrl] = bmp
+                if (h.icon.tag == iconUrl) applyImage(h, bmp)
+                
+                val age = System.currentTimeMillis() - file.lastModified()
+                if (age > 7L * 24 * 60 * 60 * 1000) {
+                    fetchAndCache(context, iconUrl, file, h)
+                }
+                return
+            }
+        }
+
+        fetchAndCache(context, iconUrl, file, h)
+    }
+
+    private fun fetchAndCache(context: Context, iconUrl: String, file: File, h: VH) {
         Thread {
             var bmp: Bitmap? = null
             val urlsToTry = mutableListOf(iconUrl)
@@ -89,7 +122,6 @@ class ShortcutAdapter(
                     val client = okhttp3.OkHttpClient.Builder()
                         .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
                         .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-                        .cache(null)
                         .build()
                     val request = okhttp3.Request.Builder()
                         .url(url)
@@ -105,36 +137,63 @@ class ShortcutAdapter(
                     }
                 } catch (_: Exception) { }
             }
-            
-            view.post {
+
+            h.itemView.post {
                 iconCache[iconUrl] = bmp
-                if (view.tag == iconUrl) {
-                    if (bmp != null) applyImage(view, bmp!!)
-                    else view.setImageResource(R.drawable.ic_globe)
+                if (bmp != null) {
+                    try {
+                        file.parentFile?.mkdirs()
+                        file.outputStream().use { out ->
+                            bmp!!.compress(Bitmap.CompressFormat.PNG, 100, out)
+                        }
+                    } catch (_: Exception) {}
+                    if (h.icon.tag == iconUrl) applyImage(h, bmp!!)
+                } else {
+                    if (h.icon.tag == iconUrl) setFallback(h)
                 }
             }
         }.start()
     }
 
-    private fun applyImage(view: ImageView, bmp: Bitmap) {
-        view.setImageBitmap(bmp)
-        val density = view.context.resources.displayMetrics.density
+    private fun applyImage(h: VH, bmp: Bitmap) {
+        val density = h.itemView.context.resources.displayMetrics.density
         val sizePx = (32 * density).toInt()
         
+        h.icon.setImageBitmap(bmp)
         if (bmp.width >= sizePx && bmp.height >= sizePx) {
             val params = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
-            view.layoutParams = params
-            view.scaleType = ImageView.ScaleType.CENTER_CROP
-            view.setPadding(0, 0, 0, 0)
+            h.icon.layoutParams = params
+            h.icon.scaleType = ImageView.ScaleType.CENTER_CROP
         } else {
             val params = FrameLayout.LayoutParams(sizePx, sizePx)
             params.gravity = Gravity.CENTER
-            view.layoutParams = params
-            view.scaleType = ImageView.ScaleType.FIT_CENTER
-            view.setPadding(0, 0, 0, 0)
+            h.icon.layoutParams = params
+            h.icon.scaleType = ImageView.ScaleType.FIT_CENTER
         }
+    }
+
+    private fun setFallback(h: VH) {
+        h.icon.setImageResource(R.drawable.ic_globe)
+        val density = h.itemView.context.resources.displayMetrics.density
+        val sizePx = (32 * density).toInt()
+        val params = FrameLayout.LayoutParams(sizePx, sizePx)
+        params.gravity = Gravity.CENTER
+        h.icon.layoutParams = params
+        h.icon.scaleType = ImageView.ScaleType.FIT_CENTER
+    }
+
+    private fun getCacheFile(context: Context, url: String): File {
+        val hash = try {
+            val md = MessageDigest.getInstance("MD5")
+            val digest = md.digest(url.toByteArray())
+            digest.joinToString("") { "%02x".format(it) }
+        } catch (_: Exception) {
+            url.hashCode().toString()
+        }
+        val dir = File(context.filesDir, "icon_cache")
+        return File(dir, "$hash.png")
     }
 }
