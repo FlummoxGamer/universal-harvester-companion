@@ -50,10 +50,13 @@ object ShortcutStore {
     }
     
     fun shortNameFor(targetUrl: String): String {
-        val host = try { java.net.URI(targetUrl).host } catch (_: Exception) { null }
-            ?: return targetUrl
-        val clean = host.removePrefix("www.")
-        return clean.substringBefore('.')
+        var clean = targetUrl.trim()
+        clean = clean.removePrefix("https://").removePrefix("http://")
+        clean = clean.removePrefix("www.").removePrefix("m.")
+        clean = clean.substringBefore("/")
+        val dotIndex = clean.lastIndexOf('.')
+        if (dotIndex > 0) clean = clean.substring(0, dotIndex)
+        return clean.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.ROOT) else it.toString() }
     }
 
     fun add(ctx: Context, s: Shortcut) {
@@ -74,7 +77,7 @@ object ShortcutStore {
         } catch (_: Exception) { null }
         if (host.isNullOrBlank()) return ""
         val clean = host.removePrefix("www.")
-        return "https://icons.duckduckgo.com/ip3/$clean.ico"
+        return "https://www.google.com/s2/favicons?domain=$clean&sz=128"
     }
 
     private fun defaultList(): MutableList<Shortcut> = mutableListOf(
