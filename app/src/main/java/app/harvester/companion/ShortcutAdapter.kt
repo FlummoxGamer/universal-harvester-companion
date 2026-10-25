@@ -174,13 +174,12 @@ class ShortcutAdapter(
 
     private fun applyImage(h: VH, bmp: Bitmap) {
         h.icon.setImageBitmap(bmp)
-        h.icon.scaleType = ImageView.ScaleType.FIT_CENTER
-        h.icon.setPadding(0, 0, 0, 0)
+        val padding = (8 * h.itemView.context.resources.displayMetrics.density).toInt()
+        h.icon.setPadding(padding, padding, padding, padding)
     }
 
     private fun setFallback(h: VH) {
         h.icon.setImageResource(R.drawable.ic_globe)
-        h.icon.scaleType = ImageView.ScaleType.FIT_CENTER
         val padding = (16 * h.itemView.context.resources.displayMetrics.density).toInt()
         h.icon.setPadding(padding, padding, padding, padding)
     }
