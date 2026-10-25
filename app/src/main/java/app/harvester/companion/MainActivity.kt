@@ -706,6 +706,7 @@ private fun updateSearchEngineIcon() {
         } else {
             binding.searchEngineIcon.setImageBitmap(engineIconCache)
         }
+        binding.searchEngineIcon.setPadding(4, 4, 4, 4)
     } else if (url.startsWith("https")) {
         binding.searchEngineIcon.setImageResource(R.drawable.ic_lock)
         binding.searchEngineArrow.visibility = View.GONE
