@@ -116,7 +116,6 @@ class MainActivity : AppCompatActivity() {
                 "uh-bridge@harvester.app"
             ).accept({ ext ->
                 if (ext != null) {
-                    ext.flags = org.mozilla.geckoview.WebExtension.Flags.ALLOW_CONTENT_MESSAGING
                     ext.setMessageDelegate(object : WebExtension.MessageDelegate {
                     override fun onMessage(nativeApp: String, message: Any, sender: WebExtension.MessageSender): GeckoResult<Any>? {
                         val json = message as? JSONObject ?: return null
