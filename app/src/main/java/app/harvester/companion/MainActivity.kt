@@ -1707,6 +1707,7 @@ override fun onResume() {
     currentSession?.setActive(true)
     currentSession?.setFocused(true)
     applyWallpaper()
+    shortcutAdapter.submit(ShortcutStore.list(this))
     updateUi()
 }
 
@@ -1715,26 +1716,25 @@ private fun applyWallpaper() {
     val textColor = WallpaperStore.getTextColor(this)
     
     if (wpPath == null || wpPath == "default") {
-        binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+        binding.wallpaperBackground.visibility = View.GONE
         binding.homeTitle.setTextColor(ContextCompat.getColor(this, R.color.accent))
         binding.btnEditHome.setColorFilter(ContextCompat.getColor(this, R.color.text))
     } else {
         try {
             val bitmap = android.graphics.BitmapFactory.decodeFile(wpPath)
             if (bitmap != null) {
-                val drawable = android.graphics.drawable.BitmapDrawable(resources, bitmap)
-                binding.homeScreen.background = drawable
+                binding.wallpaperBackground.setImageBitmap(bitmap)
+                binding.wallpaperBackground.visibility = View.VISIBLE
                 binding.homeTitle.setTextColor(textColor)
                 binding.btnEditHome.setColorFilter(textColor)
             } else {
-                binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+                binding.wallpaperBackground.visibility = View.GONE
             }
         } catch (_: Exception) {
-            binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+            binding.wallpaperBackground.visibility = View.GONE
         }
     }
 }
-
 override fun onPause() {
     super.onPause()
     currentSession?.setActive(false)
