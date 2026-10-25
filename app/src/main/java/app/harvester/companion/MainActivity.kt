@@ -62,7 +62,8 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(R.style.Theme_UHCompanion)
         super.onCreate(savedInstanceState)
-        
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+
         val safePrefs = getSharedPreferences("uh_safe_mode", MODE_PRIVATE)
         if (safePrefs.getBoolean("force_safe_mode", false)) {
             startActivity(Intent(this, SafeModeActivity::class.java))
@@ -1710,22 +1711,24 @@ override fun onResume() {
 }
 
 private fun applyWallpaper() {
-    val wpUri = WallpaperStore.getCurrentWallpaper(this)
+    val wpPath = WallpaperStore.getCurrentWallpaper(this)
     val textColor = WallpaperStore.getTextColor(this)
     
-    if (wpUri == null || wpUri == "default") {
+    if (wpPath == null || wpPath == "default") {
         binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
         binding.homeTitle.setTextColor(ContextCompat.getColor(this, R.color.accent))
         binding.btnEditHome.setColorFilter(ContextCompat.getColor(this, R.color.text))
     } else {
         try {
-            val uri = Uri.parse(wpUri)
-            val inputStream = if (wpUri.startsWith("http")) java.net.URL(wpUri).openStream() else contentResolver.openInputStream(uri)
-            val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
-            val drawable = android.graphics.drawable.BitmapDrawable(resources, bitmap)
-            binding.homeScreen.background = drawable
-            binding.homeTitle.setTextColor(textColor)
-            binding.btnEditHome.setColorFilter(textColor)
+            val bitmap = android.graphics.BitmapFactory.decodeFile(wpPath)
+            if (bitmap != null) {
+                val drawable = android.graphics.drawable.BitmapDrawable(resources, bitmap)
+                binding.homeScreen.background = drawable
+                binding.homeTitle.setTextColor(textColor)
+                binding.btnEditHome.setColorFilter(textColor)
+            } else {
+                binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+            }
         } catch (_: Exception) {
             binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
         }
