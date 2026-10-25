@@ -76,15 +76,19 @@ private fun loadIcon(view: ImageView, iconUrl: String) {
         return
     }
     if (iconCache.containsKey(iconUrl)) return
-    
+
     Thread {
         var bmp: Bitmap? = null
         try {
             val client = okhttp3.OkHttpClient.Builder()
                 .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
                 .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                .cache(null)
                 .build()
-            val request = okhttp3.Request.Builder().url(iconUrl).build()
+            val request = okhttp3.Request.Builder()
+                .url(iconUrl)
+                .header("Cache-Control", "no-cache")
+                .build()
             client.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
                     response.body?.byteStream()?.use { stream ->
