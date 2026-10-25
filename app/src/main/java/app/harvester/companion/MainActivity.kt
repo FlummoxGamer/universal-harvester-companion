@@ -314,42 +314,55 @@ private fun setupHomeGrid() {
             ShortcutStore.save(this@MainActivity, shortcutAdapter.getItems())
         }
     }
-    val touchHelper = androidx.recyclerview.widget.ItemTouchHelper(callback)
-    touchHelper.attachToRecyclerView(binding.shortcutsGrid)
+val touchHelper = androidx.recyclerview.widget.ItemTouchHelper(callback)
+touchHelper.attachToRecyclerView(binding.shortcutsGrid)
 
-    binding.shortcutsGrid.addOnItemTouchListener(object : androidx.recyclerview.widget.RecyclerView.SimpleOnItemTouchListener() {
-        private val handler = android.os.Handler(android.os.Looper.getMainLooper())
-        private var runnable: Runnable? = null
-        private var downX = 0f
-        private var downY = 0f
-        private var isDragging = false
+binding.shortcutsGrid.addOnItemTouchListener(object : androidx.recyclerview.widget.RecyclerView.SimpleOnItemTouchListener() {
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var dragRunnable: Runnable? = null
+    private var editRunnable: Runnable? = null
+    private var downX = 0f
+    private var downY = 0f
+    private var isDragReady = false
+    private var isDragging = false
+    private var isPopupShowing = false
 
-        override fun onInterceptTouchEvent(rv: androidx.recyclerview.widget.RecyclerView, e: android.view.MotionEvent): Boolean {
-            when (e.action) {
-                android.view.MotionEvent.ACTION_DOWN -> {
-                    downX = e.x
-                    downY = e.y
-                    isDragging = false
-                    val child = rv.findChildViewUnder(e.x, e.y)
-                    if (child != null) {
-                        val pos = rv.getChildAdapterPosition(child)
-                        if (pos in 0 until shortcutAdapter.itemCount - 1) {
-                            runnable = Runnable {
-                                if (!isDragging) {
-                                    val item = shortcutAdapter.getItemAt(pos)
-                                    showWidgetMenu(item, child)
-                                }
+    override fun onInterceptTouchEvent(rv: androidx.recyclerview.widget.RecyclerView, e: android.view.MotionEvent): Boolean {
+        when (e.action) {
+            android.view.MotionEvent.ACTION_DOWN -> {
+                downX = e.x
+                downY = e.y
+                isDragReady = false
+                isDragging = false
+                isPopupShowing = false
+                val child = rv.findChildViewUnder(e.x, e.y)
+                if (child != null) {
+                    val pos = rv.getChildAdapterPosition(child)
+                    if (pos in 0 until shortcutAdapter.itemCount - 1) {
+                        dragRunnable = Runnable { isDragReady = true }
+                        handler.postDelayed(dragRunnable!!, 150)
+
+                        editRunnable = Runnable {
+                            if (!isDragging && !isPopupShowing) {
+                                isPopupShowing = true
+                                val item = shortcutAdapter.getItemAt(pos)
+                                showWidgetMenu(item, child)
                             }
-                            handler.postDelayed(runnable!!, 400)
                         }
+                        handler.postDelayed(editRunnable!!, 500)
                     }
                 }
-                android.view.MotionEvent.ACTION_MOVE -> {
-                    if (!isDragging && (Math.abs(e.x - downX) > 20 || Math.abs(e.y - downY) > 20)) {
-                        runnable?.let { handler.removeCallbacks(it) }
-                        runnable = null
+            }
+            android.view.MotionEvent.ACTION_MOVE -> {
+                if (isPopupShowing) return false
+                val dx = Math.abs(e.x - downX)
+                val dy = Math.abs(e.y - downY)
+                if (dx > 20 || dy > 20) {
+                    editRunnable?.let { handler.removeCallbacks(it) }
+                    editRunnable = null
+                    
+                    if (isDragReady && !isDragging) {
                         isDragging = true
-                        
                         val child = rv.findChildViewUnder(downX, downY)
                         if (child != null) {
                             val pos = rv.getChildAdapterPosition(child)
@@ -357,16 +370,22 @@ private fun setupHomeGrid() {
                                 touchHelper.startDrag(rv.findViewHolderForAdapterPosition(pos)!!)
                             }
                         }
+                    } else if (!isDragReady) {
+                        dragRunnable?.let { handler.removeCallbacks(it) }
+                        dragRunnable = null
                     }
                 }
-                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
-                    runnable?.let { handler.removeCallbacks(it) }
-                    runnable = null
-                }
             }
-            return false
+            android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                dragRunnable?.let { handler.removeCallbacks(it) }
+                dragRunnable = null
+                editRunnable?.let { handler.removeCallbacks(it) }
+                editRunnable = null
+            }
         }
-    })
+        return false
+    }
+})
 }
 
 private fun showWidgetMenu(s: Shortcut, anchor: android.view.View) {
