@@ -722,40 +722,49 @@ private fun updateSearchEngineIcon() {
 
     private fun showAddShortcutDialog() { showShortcutEditor(null) }
 
-    private fun showShortcutEditor(existing: Shortcut?) {
-        val urlInput = EditText(this).apply {
-            setHint("https://example.com"); setSingleLine()
-            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text))
-            setHintTextColor(ContextCompat.getColor(this@MainActivity, R.color.subtext))
-            if (existing != null) setText(existing.url)
-        }
-        val nameInput = EditText(this).apply {
-            setHint("Name (optional)"); setSingleLine()
-            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text))
-            setHintTextColor(ContextCompat.getColor(this@MainActivity, R.color.subtext))
-            if (existing != null) setText(existing.name)
-        }
-        val wrap = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            setPadding(40, 16, 40, 16)
-            addView(urlInput); addView(nameInput)
-        }
-        AlertDialog.Builder(this)
-            .setTitle(if (existing == null) "Add shortcut" else "Edit shortcut")
-            .setView(wrap)
-            .setPositiveButton(if (existing == null) "Add" else "Save") { _, _ ->
-                val raw = urlInput.text.toString().trim()
-                if (raw.isBlank()) return@setPositiveButton
-                val fixed = if (raw.startsWith("http")) raw else "https://$raw"
-                val manual = nameInput.text.toString().trim()
-                val name = if (manual.isNotBlank()) manual else ShortcutStore.shortNameFor(fixed)
-                if (existing != null) ShortcutStore.remove(this, existing.url)
-                ShortcutStore.add(this, Shortcut(name, fixed, ShortcutStore.iconUrlFor(fixed)))
-                shortcutAdapter.submit(ShortcutStore.list(this))
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+private fun showShortcutEditor(existing: Shortcut?) {
+    val view = layoutInflater.inflate(R.layout.dialog_add_shortcut_custom, null)
+    val dialog = AlertDialog.Builder(this)
+        .setView(view)
+        .setCancelable(true)
+        .create()
+
+    view.findViewById<android.widget.TextView>(R.id.dialogTitle).text = if (existing == null) "Add Shortcut" else "Edit Shortcut"
+    
+    val urlInput = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.inputUrl)
+    val nameInput = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.inputName)
+    
+    if (existing != null) {
+        urlInput.setText(existing.url)
+        nameInput.setText(existing.name)
     }
+
+    view.findViewById<View>(R.id.btnCancel).setOnClickListener { dialog.dismiss() }
+    
+    view.findViewById<View>(R.id.btnSave).setOnClickListener {
+        val raw = urlInput.text.toString().trim()
+        if (raw.isBlank()) {
+            urlInput.error = "URL is required"
+            return@setOnClickListener
+        }
+        val fixed = if (raw.startsWith("http://") || raw.startsWith("https://")) raw else "https://$raw"
+        val manual = nameInput.text.toString().trim()
+        val name = if (manual.isNotBlank()) manual else ShortcutStore.shortNameFor(fixed)
+        
+        if (existing != null) ShortcutStore.remove(this, existing.url)
+        ShortcutStore.add(this, Shortcut(name, fixed, ShortcutStore.iconUrlFor(fixed)))
+        shortcutAdapter.submit(ShortcutStore.list(this))
+        dialog.dismiss()
+    }
+
+    dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+    dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+    dialog.show()
+    
+    val width = (resources.displayMetrics.widthPixels * 0.90).toInt()
+    dialog.window?.setLayout(width, android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
+    dialog.window?.setGravity(android.view.Gravity.CENTER)
+}
 
     private fun confirmRemoveShortcut(s: Shortcut) {
         AlertDialog.Builder(this)
