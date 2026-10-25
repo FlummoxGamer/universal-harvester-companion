@@ -12,8 +12,9 @@
     <FrameLayout
         android:layout_width="56dp"
         android:layout_height="56dp"
-        android:background="@drawable/shortcut_bg">
-
+        android:background="@drawable/shortcut_bg"
+        android:clipToOutline="true">
+        
         <ImageView
             android:id="@+id/shortcutIcon"
             android:layout_width="match_parent"
