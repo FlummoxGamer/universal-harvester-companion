@@ -29,23 +29,23 @@ class WallpaperPreviewActivity : AppCompatActivity() {
         viewPager = findViewById(R.id.viewPager)
         findViewById<android.view.View>(R.id.btnClose).setOnClickListener { finish() }
 
-        val initialUri = intent.getStringExtra("imageUri")
-        val initialUrl = intent.getStringExtra("imageUrl")
+val initialPath = intent.getStringExtra("imagePath")
+val initialUrl = intent.getStringExtra("imageUrl")
 
-       val isCustom = intent.getBooleanExtra("isCustom", true)
-       val recent = mutableListOf<String>()
-       if (isCustom) {
-           recent.addAll(WallpaperStore.getRecent(this))
-           if (initialUri != null) {
-               recent.remove(initialUri)
-               recent.add(0, initialUri)
-           }
-       } else {
-           recent.add(initialUrl ?: "default")
-       }
-       if (recent.isEmpty()) {
-           recent.add("default")
-       }
+val isCustom = intent.getBooleanExtra("isCustom", true)
+val recent = mutableListOf<String>()
+if (isCustom) {
+    recent.addAll(WallpaperStore.getRecent(this))
+    if (initialPath != null) {
+        recent.remove(initialPath)
+        recent.add(0, initialPath)
+    }
+} else {
+    recent.add(initialUrl ?: "default")
+}
+if (recent.isEmpty()) {
+    recent.add("default")
+}
 
         uris = recent
         viewPager.adapter = PreviewAdapter(uris)
