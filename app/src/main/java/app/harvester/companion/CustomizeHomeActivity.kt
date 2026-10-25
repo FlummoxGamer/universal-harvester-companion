@@ -32,7 +32,7 @@ class CustomizeHomeActivity : AppCompatActivity() {
 
     private val pickImage = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
-            Toast.makeText(this, "Saving...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Processing image...", Toast.LENGTH_SHORT).show()
             Thread {
                 val localPath = WallpaperStore.saveWallpaper(this, uri)
                 runOnUiThread {
@@ -43,7 +43,7 @@ class CustomizeHomeActivity : AppCompatActivity() {
                         }
                         startActivity(intent)
                     } else {
-                        Toast.makeText(this, "Failed to save image", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "Failed to save wallpaper", Toast.LENGTH_SHORT).show()
                     }
                 }
             }.start()
@@ -69,7 +69,7 @@ class CustomizeHomeActivity : AppCompatActivity() {
             builder.setPositiveButton("Confirm") { _, _ ->
                 WallpaperStore.clearAll(this)
                 ShortcutStore.clear(this)
-                Toast.makeText(this, "Home reset", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Home reset to defaults", Toast.LENGTH_SHORT).show()
                 finish()
             }
             builder.setNegativeButton("Cancel", null)
