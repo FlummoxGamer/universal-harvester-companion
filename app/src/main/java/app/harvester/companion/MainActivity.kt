@@ -111,12 +111,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupWebExtensionBridge() {
         val runtime = GeckoEngine.getRuntime(this) ?: return
-        runtime.webExtensionController.ensureBuiltIn(
-            "resource://android/assets/web_extensions/uh_bridge/",
-            "uh-bridge@harvester.app"
-        ).accept({ ext ->
-            if (ext != null) {
-                ext.setMessageDelegate(object : WebExtension.MessageDelegate {
+            runtime.webExtensionController.ensureBuiltIn(
+                "resource://android/assets/web_extensions/uh_bridge/",
+                "uh-bridge@harvester.app"
+            ).accept({ ext ->
+                if (ext != null) {
+                    ext.flags = org.mozilla.geckoview.WebExtension.Flags.ALLOW_CONTENT_MESSAGING
+                    ext.setMessageDelegate(object : WebExtension.MessageDelegate {
                     override fun onMessage(nativeApp: String, message: Any, sender: WebExtension.MessageSender): GeckoResult<Any>? {
                         val json = message as? JSONObject ?: return null
                         val type = json.optString("type")
