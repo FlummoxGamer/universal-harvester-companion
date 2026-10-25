@@ -1,6 +1,7 @@
 package app.harvester.companion
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.ViewGroup
 import android.widget.ImageView
@@ -11,7 +12,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.google.android.material.card.MaterialCardView
+import java.io.File
 
 class CustomizeHomeActivity : AppCompatActivity() {
 
@@ -29,18 +30,25 @@ class CustomizeHomeActivity : AppCompatActivity() {
         "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?q=80&w=2000&auto=format&fit=crop"
     )
 
-private val pickImage = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-    if (uri != null) {
-        try {
-            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        } catch (_: Exception) {}
-        val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
-            putExtra("imageUri", uri.toString())
-            putExtra("isCustom", true)
+    private val pickImage = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            Toast.makeText(this, "Saving...", Toast.LENGTH_SHORT).show()
+            Thread {
+                val localPath = WallpaperStore.saveWallpaper(this, uri)
+                runOnUiThread {
+                    if (localPath != null) {
+                        val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
+                            putExtra("imagePath", localPath)
+                            putExtra("isCustom", true)
+                        }
+                        startActivity(intent)
+                    } else {
+                        Toast.makeText(this, "Failed to save image", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }.start()
         }
-        startActivity(intent)
     }
-}
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,9 +65,9 @@ private val pickImage = registerForActivityResult(ActivityResultContracts.PickVi
         findViewById<android.view.View>(R.id.btnResetHome).setOnClickListener {
             val builder = androidx.appcompat.app.AlertDialog.Builder(this, R.style.Theme_UHCompanion)
             builder.setTitle("Reset Home?")
-            builder.setMessage("Are you sure you want to reset all home widgets and wallpapers to defaults?")
+            builder.setMessage("Are you sure you want to reset all widgets and wallpapers to defaults?")
             builder.setPositiveButton("Confirm") { _, _ ->
-                WallpaperStore.setCurrentWallpaper(this, "default", 0)
+                WallpaperStore.clearAll(this)
                 ShortcutStore.clear(this)
                 Toast.makeText(this, "Home reset", Toast.LENGTH_SHORT).show()
                 finish()
@@ -88,18 +96,13 @@ private val pickImage = registerForActivityResult(ActivityResultContracts.PickVi
                     finish()
                 }
                 is WallpaperItem.Custom -> {
-                   val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
-                       putExtra("imageUri", item.uri)
+                    val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
+                        putExtra("imagePath", item.uri)
+                        putExtra("isCustom", true)
                     }
                     startActivity(intent)
                 }
-                is WallpaperItem.Remote -> {
-                   val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
-                       putExtra("imageUrl", item.url)
-                }
-                startActivity(intent)
             }
-        }
         }, onLongClick = { item ->
             if (item is WallpaperItem.Custom) {
                 showContextMenu(recentRecycler.findViewHolderForAdapterPosition(recents.indexOf(item))?.itemView, item.uri)
@@ -107,20 +110,20 @@ private val pickImage = registerForActivityResult(ActivityResultContracts.PickVi
         })
         recentRecycler.adapter = recentAdapter
 
-val defaults = remoteWallpapers.map { WallpaperItem.Remote(it) }
-defaultAdapter = WallpaperAdapter(defaults, onClick = { item ->
-    if (item is WallpaperItem.Remote) {
-        val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
-            putExtra("imageUrl", item.url)
-            putExtra("isCustom", false)
-        }
-        startActivity(intent)
-    }
-}, onLongClick = { })
+        val defaults = remoteWallpapers.map { WallpaperItem.Remote(it) }
+        defaultAdapter = WallpaperAdapter(defaults, onClick = { item ->
+            if (item is WallpaperItem.Remote) {
+                val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
+                    putExtra("imageUrl", item.url)
+                    putExtra("isCustom", false)
+                }
+                startActivity(intent)
+            }
+        }, onLongClick = { })
         defaultRecycler.adapter = defaultAdapter
     }
 
-    private fun showContextMenu(anchor: android.view.View?, uri: String) {
+    private fun showContextMenu(anchor: android.view.View?, path: String) {
         if (anchor == null) return
         val popup = android.widget.PopupMenu(this, anchor)
         popup.menu.add(0, 1, 0, "Set Wallpaper")
@@ -130,12 +133,13 @@ defaultAdapter = WallpaperAdapter(defaults, onClick = { item ->
             when (item.itemId) {
                 1 -> {
                     val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
-                        putExtra("imageUri", uri)
+                        putExtra("imagePath", path)
+                        putExtra("isCustom", true)
                     }
                     startActivity(intent)
                 }
                 2 -> {
-                    WallpaperStore.removeRecent(this, uri)
+                    WallpaperStore.deleteWallpaper(path)
                     loadWallpapers()
                 }
             }
@@ -183,18 +187,17 @@ class WallpaperAdapter(
                 h.placeholder.setImageResource(R.drawable.ic_home)
             }
             is WallpaperItem.Custom -> {
-               h.image.visibility = android.view.View.VISIBLE
-               Thread {
-                   try {
-                       val uri = android.net.Uri.parse(item.uri)
-                       val bitmap = h.itemView.context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) }
-                       if (bitmap != null) {
-                           h.image.post { h.image.setImageBitmap(bitmap) }
-                       }
-                   } catch (_: Exception) {
-                       h.image.post { h.image.setImageResource(R.drawable.ic_home) }
-                   }
-               }.start()
+                h.image.visibility = android.view.View.VISIBLE
+                Thread {
+                    try {
+                        val bitmap = android.graphics.BitmapFactory.decodeFile(item.uri)
+                        if (bitmap != null) {
+                            h.image.post { h.image.setImageBitmap(bitmap) }
+                        }
+                    } catch (_: Exception) {
+                        h.image.post { h.image.setImageResource(R.drawable.ic_home) }
+                    }
+                }.start()
             }
             is WallpaperItem.Remote -> {
                 h.image.visibility = android.view.View.VISIBLE
