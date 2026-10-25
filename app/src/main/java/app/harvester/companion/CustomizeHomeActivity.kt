@@ -187,7 +187,7 @@ class WallpaperAdapter(
                Thread {
                    try {
                        val uri = android.net.Uri.parse(item.uri)
-                       val bitmap = contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) }
+                       val bitmap = h.itemView.context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) }
                        if (bitmap != null) {
                            h.image.post { h.image.setImageBitmap(bitmap) }
                        }
