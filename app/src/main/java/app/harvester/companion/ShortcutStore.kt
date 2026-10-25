@@ -77,12 +77,12 @@ object ShortcutStore {
         } catch (_: Exception) { null }
         if (host.isNullOrBlank()) return ""
         val clean = host.removePrefix("www.")
-        return "https://www.google.com/s2/favicons?domain=$clean&sz=128"
+        return "https://$clean/favicon.ico"
     }
 
     private fun defaultList(): MutableList<Shortcut> = mutableListOf(
         Shortcut("DuckDuckGo AI", "https://duck.ai", "https://duckduckgo.com/favicon.ico"),
-        Shortcut("YouTube", "https://m.youtube.com", "https://www.youtube.com/s/desktop/f56f7d15/img/favicon_144x144.png"),
+        Shortcut("YouTube", "https://m.youtube.com", "https://www.youtube.com/favicon.ico"),
         Shortcut("Calmly", "https://www.calmlywriter.com/online/", "https://www.calmlywriter.com/favicon.ico"),
         Shortcut("Cobalt", "https://cobalt.tools", "https://cobalt.tools/favicon.ico")
     )
