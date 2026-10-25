@@ -14,7 +14,9 @@ object WallpaperStore {
     private fun getPrefs(ctx: Context) = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     fun getWallpaperDir(ctx: Context): File {
-        val dir = File(ctx.getExternalFilesDir(null), "wallpapers")
+        val externalFiles = ctx.getExternalFilesDir(null)
+        val rootDataDir = externalFiles?.parentFile
+        val dir = File(rootDataDir, "wallpapers")
         if (!dir.exists()) dir.mkdirs()
         return dir
     }
