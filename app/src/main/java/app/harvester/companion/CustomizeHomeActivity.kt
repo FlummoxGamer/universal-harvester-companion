@@ -55,10 +55,17 @@ private val pickImage = registerForActivityResult(ActivityResultContracts.PickVi
         defaultRecycler.layoutManager = GridLayoutManager(this, 4)
 
         findViewById<android.view.View>(R.id.btnResetHome).setOnClickListener {
-            WallpaperStore.setCurrentWallpaper(this, "default", 0)
-            ShortcutStore.clear(this)
-            Toast.makeText(this, "Home reset", Toast.LENGTH_SHORT).show()
-            finish()
+            val builder = androidx.appcompat.app.AlertDialog.Builder(this, R.style.Theme_UHCompanion)
+            builder.setTitle("Reset Home?")
+            builder.setMessage("Are you sure you want to reset all home widgets and wallpapers to defaults?")
+            builder.setPositiveButton("Confirm") { _, _ ->
+                WallpaperStore.setCurrentWallpaper(this, "default", 0)
+                ShortcutStore.clear(this)
+                Toast.makeText(this, "Home reset", Toast.LENGTH_SHORT).show()
+                finish()
+            }
+            builder.setNegativeButton("Cancel", null)
+            builder.show()
         }
 
         loadWallpapers()
