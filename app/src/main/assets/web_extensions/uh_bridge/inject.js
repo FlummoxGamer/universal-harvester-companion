@@ -4,7 +4,6 @@
 
     window.addEventListener('message', (event) => {
         if (!event.data) return;
-        
         if (event.data.type === 'UH_RUN_SCRIPTS') {
             const scripts = event.data.scripts;
             if (scripts) {
