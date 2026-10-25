@@ -35,7 +35,7 @@ class AppearanceActivity : AppCompatActivity() {
         }
 
         findViewById<android.view.View>(R.id.appearanceWallpaper).setOnClickListener {
-            Toast.makeText(this, "Wallpaper coming soon", Toast.LENGTH_SHORT).show()
+            startActivity(android.content.Intent(this, CustomizeHomeActivity::class.java))
         }
         findViewById<android.view.View>(R.id.appearanceAddressBar).setOnClickListener {
             startActivity(android.content.Intent(this, CustomizeAddressBarActivity::class.java))
