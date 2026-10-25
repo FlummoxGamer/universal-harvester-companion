@@ -45,14 +45,27 @@
             android:orientation="vertical"
             android:paddingBottom="40dp">
 
-            <TextView
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Recently"
-                android:textColor="@color/text"
-                android:textSize="18sp"
-                android:fontFamily="@font/app_font"
-                android:padding="16dp" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:padding="16dp">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Recently"
+                    android:textColor="@color/text"
+                    android:textSize="18sp"
+                    android:fontFamily="@font/app_font" />
+                <ImageView
+                    android:id="@+id/btnOpenRecently"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_forward"
+                    app:tint="@color/text" />
+            </LinearLayout>
 
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/recentRecycler"
