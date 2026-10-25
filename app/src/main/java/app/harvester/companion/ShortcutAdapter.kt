@@ -172,11 +172,49 @@ class ShortcutAdapter(
         }.start()
     }
 
-    private fun applyImage(h: VH, bmp: Bitmap) {
-        h.icon.setImageBitmap(bmp)
-        val padding = (8 * h.itemView.context.resources.displayMetrics.density).toInt()
-        h.icon.setPadding(padding, padding, padding, padding)
+private fun applyImage(h: VH, bmp: Bitmap) {
+    val transparentBmp = makeCornersTransparent(bmp)
+    h.icon.setImageBitmap(transparentBmp)
+    val padding = (6 * h.itemView.context.resources.displayMetrics.density).toInt()
+    h.icon.setPadding(padding, padding, padding, padding)
+}
+
+private fun makeCornersTransparent(bitmap: Bitmap): Bitmap {
+    val w = bitmap.width
+    val h = bitmap.height
+    if (w < 2 || h < 2) return bitmap
+
+    val c1 = bitmap.getPixel(0, 0)
+    val c2 = bitmap.getPixel(w - 1, 0)
+    val c3 = bitmap.getPixel(0, h - 1)
+    val c4 = bitmap.getPixel(w - 1, h - 1)
+
+    val tolerance = 30
+    if (isColorSimilar(c1, c2, tolerance) && 
+        isColorSimilar(c1, c3, tolerance) && 
+        isColorSimilar(c1, c4, tolerance)) {
+        
+        if (android.graphics.Color.alpha(c1) == 0) return bitmap
+
+        val result = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+        for (x in 0 until w) {
+            for (y in 0 until h) {
+                val pixel = result.getPixel(x, y)
+                if (isColorSimilar(pixel, c1, tolerance)) {
+                    result.setPixel(x, y, android.graphics.Color.TRANSPARENT)
+                }
+            }
+        }
+        return result
     }
+    return bitmap
+}
+
+private fun isColorSimilar(c1: Int, c2: Int, tolerance: Int): Boolean {
+    return Math.abs(android.graphics.Color.red(c1) - android.graphics.Color.red(c2)) <= tolerance &&
+           Math.abs(android.graphics.Color.green(c1) - android.graphics.Color.green(c2)) <= tolerance &&
+           Math.abs(android.graphics.Color.blue(c1) - android.graphics.Color.blue(c2)) <= tolerance
+}
 
     private fun setFallback(h: VH) {
         h.icon.setImageResource(R.drawable.ic_globe)
