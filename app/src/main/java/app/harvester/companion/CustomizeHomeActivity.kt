@@ -176,8 +176,18 @@ class WallpaperAdapter(
                 h.placeholder.setImageResource(R.drawable.ic_home)
             }
             is WallpaperItem.Custom -> {
-                h.image.visibility = android.view.View.VISIBLE
-                h.image.setImageURI(android.net.Uri.parse(item.uri))
+               h.image.visibility = android.view.View.VISIBLE
+               Thread {
+                   try {
+                       val uri = android.net.Uri.parse(item.uri)
+                       val bitmap = contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) }
+                       if (bitmap != null) {
+                           h.image.post { h.image.setImageBitmap(bitmap) }
+                       }
+                   } catch (_: Exception) {
+                       h.image.post { h.image.setImageResource(R.drawable.ic_home) }
+                   }
+               }.start()
             }
             is WallpaperItem.Remote -> {
                 h.image.visibility = android.view.View.VISIBLE
