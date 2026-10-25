@@ -77,7 +77,7 @@ object ShortcutStore {
         } catch (_: Exception) { null }
         if (host.isNullOrBlank()) return ""
         val clean = host.removePrefix("www.")
-        return "https://$clean/favicon.ico"
+        return "https://www.google.com/s2/favicons?domain=$clean&sz=128&v=${app.harvester.companion.BuildConfig.VERSION_CODE}"
     }
 
     private fun defaultList(): MutableList<Shortcut> = mutableListOf(
