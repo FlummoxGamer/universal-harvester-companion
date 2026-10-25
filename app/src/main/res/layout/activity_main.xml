@@ -222,39 +222,41 @@
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:background="@drawable/bg_chip"
-        android:paddingStart="2dp"
-        android:paddingEnd="2dp">
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp">
 
+    <ImageButton
+        android:id="@+id/btnScriptMenu"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:layout_marginEnd="8dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:src="@drawable/ic_code"
+        app:tint="@color/text"
+        android:scaleType="centerInside" />
+
+    <FrameLayout
+        android:layout_width="38dp"
+        android:layout_height="38dp">
         <ImageButton
-            android:id="@+id/btnScriptMenu"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
+            android:id="@+id/searchEngineIcon"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
+            android:layout_gravity="center"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_code"
-            app:tint="@color/text"
-            android:scaleType="centerInside" />
-
-        <FrameLayout
-            android:layout_width="40dp"
-            android:layout_height="40dp">
-            <ImageButton
-                android:id="@+id/searchEngineIcon"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:layout_gravity="center"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:scaleType="centerInside"
-                android:padding="8dp" />
-            <ImageView
-                android:id="@+id/searchEngineArrow"
-                android:layout_width="16dp"
-                android:layout_height="16dp"
-                android:layout_gravity="bottom|end"
-                android:layout_marginBottom="2dp"
-                android:layout_marginEnd="2dp"
-                android:src="@drawable/ic_triangle_down"
-                app:tint="@color/text" />
-        </FrameLayout>
+            android:scaleType="centerInside"
+            android:padding="2dp" />
+        <ImageView
+            android:id="@+id/searchEngineArrow"
+            android:layout_width="12dp"
+            android:layout_height="12dp"
+            android:layout_gravity="bottom|end"
+            android:layout_marginBottom="2dp"
+            android:layout_marginEnd="2dp"
+            android:src="@drawable/ic_triangle_down"
+            android:rotation="-45"
+            app:tint="@color/text" />
+    </FrameLayout>
 
             <FrameLayout
                 android:layout_width="0dp"
