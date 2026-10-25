@@ -804,6 +804,7 @@ private fun updateHomeVisibility() {
     if (id in popupTabs) {
         binding.homeScreen.visibility = View.GONE
         binding.contentContainer.visibility = View.VISIBLE
+        binding.btnEditHome.visibility = View.GONE
         return
     }
     val entity = tabs.list().firstOrNull { it.id == id }
@@ -816,8 +817,10 @@ private fun updateHomeVisibility() {
     
     if (hasSavedState && binding.loadingBar.visibility == View.VISIBLE) {
         binding.homeScreen.visibility = View.GONE
+        binding.btnEditHome.visibility = View.GONE
     } else {
         binding.homeScreen.visibility = if (isBlank) View.VISIBLE else View.GONE
+        binding.btnEditHome.visibility = if (isBlank) View.VISIBLE else View.GONE
     }
 }
 
