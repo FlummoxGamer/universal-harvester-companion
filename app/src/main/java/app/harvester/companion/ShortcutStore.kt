@@ -29,7 +29,17 @@ object ShortcutStore {
             save(ctx, defaults)
             return defaults
         }
-        return parsed
+
+        var migrated = false
+        val finalList = parsed.map { s ->
+            if (!s.iconUrl.contains("google.com/s2/favicons")) {
+                migrated = true
+                s.copy(iconUrl = iconUrlFor(s.url))
+            } else s
+        }.toMutableList()
+
+        if (migrated) save(ctx, finalList)
+        return finalList
     }
 
     fun clear(ctx: Context) {
@@ -81,9 +91,9 @@ object ShortcutStore {
     }
 
     private fun defaultList(): MutableList<Shortcut> = mutableListOf(
-        Shortcut("DuckDuckGo AI", "https://duck.ai", "https://duckduckgo.com/favicon.ico"),
-        Shortcut("YouTube", "https://m.youtube.com", "https://www.youtube.com/favicon.ico"),
-        Shortcut("Calmly", "https://www.calmlywriter.com/online/", "https://www.calmlywriter.com/favicon.ico"),
-        Shortcut("Cobalt", "https://cobalt.tools", "https://cobalt.tools/favicon.ico")
+        Shortcut("DuckDuckGo AI", "https://duck.ai", iconUrlFor("https://duck.ai")),
+        Shortcut("YouTube", "https://m.youtube.com", iconUrlFor("https://m.youtube.com")),
+        Shortcut("Calmly", "https://www.calmlywriter.com/online/", iconUrlFor("https://www.calmlywriter.com")),
+        Shortcut("Cobalt", "https://cobalt.tools", iconUrlFor("https://cobalt.tools"))
     )
 }
