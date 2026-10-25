@@ -40,7 +40,6 @@ class ShortcutAdapter(
             h.icon.setImageDrawable(null)
             h.icon.tag = null
             h.icon.visibility = View.GONE
-            h.icon.setPadding(0, 0, 0, 0)
             h.plus.visibility = View.VISIBLE
             h.label.text = "Add"
             h.itemView.setOnClickListener { onAdd() }
@@ -58,8 +57,9 @@ class ShortcutAdapter(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         )
+        params.gravity = Gravity.CENTER
         h.icon.layoutParams = params
-        h.icon.scaleType = ImageView.ScaleType.CENTER_CROP
+        h.icon.scaleType = ImageView.ScaleType.FIT_CENTER
         
         loadIcon(h, s.iconUrl)
         h.itemView.setOnClickListener { onOpen(s) }
@@ -72,6 +72,23 @@ class ShortcutAdapter(
         items.clear()
         items.addAll(newList)
         notifyDataSetChanged()
+    }
+
+    fun getItemAt(position: Int): Shortcut = items[position]
+    
+    fun getItems(): List<Shortcut> = items
+
+    fun moveItem(fromPosition: Int, toPosition: Int) {
+        if (fromPosition < toPosition) {
+            for (i in fromPosition until toPosition) {
+                java.util.Collections.swap(items, i, i + 1)
+            }
+        } else {
+            for (i in fromPosition downTo toPosition + 1) {
+                java.util.Collections.swap(items, i, i - 1)
+            }
+        }
+        notifyItemMoved(fromPosition, toPosition)
     }
 
     private fun loadIcon(h: VH, iconUrl: String) {
@@ -156,33 +173,16 @@ class ShortcutAdapter(
     }
 
     private fun applyImage(h: VH, bmp: Bitmap) {
-        val density = h.itemView.context.resources.displayMetrics.density
-        val sizePx = (32 * density).toInt()
-        
         h.icon.setImageBitmap(bmp)
-        if (bmp.width >= sizePx && bmp.height >= sizePx) {
-            val params = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-            h.icon.layoutParams = params
-            h.icon.scaleType = ImageView.ScaleType.CENTER_CROP
-        } else {
-            val params = FrameLayout.LayoutParams(sizePx, sizePx)
-            params.gravity = Gravity.CENTER
-            h.icon.layoutParams = params
-            h.icon.scaleType = ImageView.ScaleType.FIT_CENTER
-        }
+        h.icon.scaleType = ImageView.ScaleType.FIT_CENTER
+        h.icon.setPadding(0, 0, 0, 0)
     }
 
     private fun setFallback(h: VH) {
         h.icon.setImageResource(R.drawable.ic_globe)
-        val density = h.itemView.context.resources.displayMetrics.density
-        val sizePx = (32 * density).toInt()
-        val params = FrameLayout.LayoutParams(sizePx, sizePx)
-        params.gravity = Gravity.CENTER
-        h.icon.layoutParams = params
         h.icon.scaleType = ImageView.ScaleType.FIT_CENTER
+        val padding = (16 * h.itemView.context.resources.displayMetrics.density).toInt()
+        h.icon.setPadding(padding, padding, padding, padding)
     }
 
     private fun getCacheFile(context: Context, url: String): File {
