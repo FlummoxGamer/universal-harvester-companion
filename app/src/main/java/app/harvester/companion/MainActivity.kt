@@ -689,32 +689,35 @@ private fun setupBackDispatcher() {
         }.start()
     }
 
-    private fun updateSearchEngineIcon() {
-        val entry = SearchEnginePrefs.currentEntry(this)
-        val url = currentUrl
-        val isBlank = url.isBlank() || url == "about:blank"
+private fun updateSearchEngineIcon() {
+    val entry = SearchEnginePrefs.currentEntry(this)
+    val url = currentUrl
+    val isBlank = url.isBlank() || url == "about:blank"
 
-        if (isBlank || binding.urlEdit.visibility == View.VISIBLE) {
-            binding.searchEngineIcon.visibility = View.VISIBLE
-            binding.searchEngineIcon.isClickable = true
-            binding.searchEngineIcon.clearColorFilter()
-            if (currentEngineId != entry.id || engineIconCache == null) {
-                currentEngineId = entry.id
-                binding.searchEngineIcon.setImageResource(R.drawable.ic_search)
-                loadIconInto(binding.searchEngineIcon, entry.iconUrl, R.drawable.ic_search)
-            } else {
-                binding.searchEngineIcon.setImageBitmap(engineIconCache)
-            }
-        } else if (url.startsWith("https")) {
-            binding.searchEngineIcon.setImageResource(R.drawable.ic_lock)
-            binding.searchEngineIcon.setColorFilter(ContextCompat.getColor(this, R.color.accent))
-            binding.searchEngineIcon.isClickable = false
+    if (isBlank || binding.urlEdit.visibility == View.VISIBLE) {
+        binding.searchEngineIcon.visibility = View.VISIBLE
+        binding.searchEngineArrow.visibility = View.VISIBLE
+        binding.searchEngineIcon.isClickable = true
+        binding.searchEngineIcon.clearColorFilter()
+        if (currentEngineId != entry.id || engineIconCache == null) {
+            currentEngineId = entry.id
+            binding.searchEngineIcon.setImageResource(R.drawable.ic_search)
+            loadIconInto(binding.searchEngineIcon, entry.iconUrl, R.drawable.ic_search)
         } else {
-            binding.searchEngineIcon.setImageResource(R.drawable.ic_lock_open)
-            binding.searchEngineIcon.setColorFilter(ContextCompat.getColor(this, R.color.red))
-            binding.searchEngineIcon.isClickable = false
+            binding.searchEngineIcon.setImageBitmap(engineIconCache)
         }
+    } else if (url.startsWith("https")) {
+        binding.searchEngineIcon.setImageResource(R.drawable.ic_lock)
+        binding.searchEngineArrow.visibility = View.GONE
+        binding.searchEngineIcon.setColorFilter(ContextCompat.getColor(this, R.color.accent))
+        binding.searchEngineIcon.isClickable = false
+    } else {
+        binding.searchEngineIcon.setImageResource(R.drawable.ic_lock_open)
+        binding.searchEngineArrow.visibility = View.GONE
+        binding.searchEngineIcon.setColorFilter(ContextCompat.getColor(this, R.color.red))
+        binding.searchEngineIcon.isClickable = false
     }
+}
 
     private fun showAddShortcutDialog() { showShortcutEditor(null) }
 
