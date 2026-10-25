@@ -65,7 +65,7 @@ if (recent.isEmpty()) {
     }
 
     private fun extractColorAndSave(uriString: String) {
-        Toast.makeText(this, "Setting...", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Applying wallpaper...", Toast.LENGTH_SHORT).show()
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val bitmap = if (uriString.startsWith("http")) {
