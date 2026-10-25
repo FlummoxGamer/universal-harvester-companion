@@ -91,7 +91,7 @@ object ShortcutStore {
     }
 
     private fun defaultList(): MutableList<Shortcut> = mutableListOf(
-        Shortcut("DuckDuckGo AI", "https://duck.ai", iconUrlFor("https://duck.ai")),
+        Shortcut("Duck AI", "https://duck.ai", iconUrlFor("https://duck.ai")),
         Shortcut("YouTube", "https://m.youtube.com", iconUrlFor("https://m.youtube.com")),
         Shortcut("Calmly", "https://www.calmlywriter.com/online/", iconUrlFor("https://www.calmlywriter.com")),
         Shortcut("Cobalt", "https://cobalt.tools", iconUrlFor("https://cobalt.tools"))
