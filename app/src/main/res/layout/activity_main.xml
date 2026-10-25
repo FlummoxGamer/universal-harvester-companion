@@ -32,7 +32,10 @@
             android:orientation="vertical"
             android:gravity="center_horizontal"
             android:background="@color/bg"
-            android:paddingBottom="60dp">
+            android:paddingBottom="60dp"
+            android:focusable="false"
+            android:focusableInTouchMode="false">
+
             <Space android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
             <TextView
                 android:id="@+id/homeTitle"
@@ -40,9 +43,10 @@
                 android:layout_height="wrap_content"
                 android:text="Universal Harvester"
                 android:textColor="@color/accent"
-                android:textSize="34sp"
-                android:textStyle="bold"
+                android:textSize="28sp"
                 android:fontFamily="@font/app_font"
+                android:shadowColor="#80000000"
+                android:shadowRadius="4"
                 android:layout_marginBottom="36dp" />
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/shortcutsGrid"
@@ -62,7 +66,7 @@
             android:layout_marginTop="16dp"
             android:layout_marginEnd="16dp"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_pencil"
+            android:src="@drawable/ic_home_edit"
             app:tint="@color/text"
             android:contentDescription="Edit Home" />
     </FrameLayout>
@@ -208,15 +212,6 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
-        <ImageButton
-            android:id="@+id/btnScriptMenu"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_code"
-            app:tint="@color/subtext"
-            android:scaleType="centerInside" />
-
         <LinearLayout
             android:id="@+id/urlBar"
             android:layout_width="0dp"
@@ -227,8 +222,8 @@
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:background="@drawable/bg_chip"
-            android:paddingStart="6dp"
-            android:paddingEnd="6dp">
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp">
 
             <ImageButton
                 android:id="@+id/searchEngineIcon"
@@ -236,7 +231,7 @@
                 android:layout_height="36dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:scaleType="centerInside"
-                android:padding="8dp" />
+                android:padding="6dp" />
 
             <FrameLayout
                 android:layout_width="0dp"
@@ -279,31 +274,40 @@
                     android:visibility="gone" />
             </FrameLayout>
 
-                <TextView
-                    android:id="@+id/tabCount"
-                    android:layout_width="wrap_content"
-                    android:layout_height="24dp"
-                    android:minWidth="24dp"
-                    android:layout_marginStart="8dp"
-                    android:layout_marginEnd="8dp"
-                    android:gravity="center"
-                    android:background="@drawable/bg_tab_count"
-                    android:textColor="@color/bg"
-                    android:textSize="12sp"
-                    android:textStyle="bold"
-                    android:paddingStart="6dp"
-                    android:paddingEnd="6dp"
-                    android:text="1" />
-            </LinearLayout>
+            <ImageButton
+                android:id="@+id/btnScriptMenu"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_code"
+                app:tint="@color/subtext"
+                android:scaleType="centerInside" />
+
+            <TextView
+                android:id="@+id/tabCount"
+                android:layout_width="wrap_content"
+                android:layout_height="24dp"
+                android:minWidth="24dp"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="4dp"
+                android:gravity="center"
+                android:background="@drawable/bg_tab_count"
+                android:textColor="@color/text"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:text="1" />
 
             <ImageButton
                 android:id="@+id/btnMenu"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_menu"
                 app:tint="@color/subtext"
                 android:scaleType="centerInside" />
+        </LinearLayout>
     </LinearLayout>
 
     <FrameLayout
