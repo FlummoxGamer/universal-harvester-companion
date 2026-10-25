@@ -102,6 +102,7 @@ class CustomizeHomeActivity : AppCompatActivity() {
                     }
                     startActivity(intent)
                 }
+                is WallpaperItem.Remote -> {}
             }
         }, onLongClick = { item ->
             if (item is WallpaperItem.Custom) {
