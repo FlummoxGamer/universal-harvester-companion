@@ -6,6 +6,17 @@
     android:layout_height="match_parent"
     android:background="@color/bg">
 
+    <ImageView
+        android:id="@+id/wallpaperBackground"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:scaleType="centerCrop"
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
     <FrameLayout
         android:id="@+id/contentContainer"
         android:layout_width="0dp"
@@ -31,7 +42,7 @@
             android:layout_height="match_parent"
             android:orientation="vertical"
             android:gravity="center_horizontal"
-            android:background="@color/bg"
+            android:background="@android:color/transparent"
             android:paddingBottom="60dp"
             android:focusable="false"
             android:focusableInTouchMode="false">
@@ -205,7 +216,7 @@
         android:layout_height="60dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:background="@color/bg"
+        android:background="@android:color/transparent"
         android:paddingStart="4dp"
         android:paddingEnd="4dp"
         app:layout_constraintBottom_toBottomOf="parent"
