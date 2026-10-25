@@ -67,7 +67,7 @@ class ShortcutAdapter(
 
 private fun loadIcon(view: ImageView, iconUrl: String) {
     if (iconUrl.isBlank()) {
-        view.setImageDrawable(null)
+        view.setImageResource(R.drawable.ic_globe)
         return
     }
     val cached = iconCache[iconUrl]
@@ -76,10 +76,24 @@ private fun loadIcon(view: ImageView, iconUrl: String) {
         return
     }
     if (iconCache.containsKey(iconUrl)) return
+    
     Thread {
-        val bmp = try {
-            URL(iconUrl).openStream().use { BitmapFactory.decodeStream(it) }
-        } catch (_: Exception) { null }
+        var bmp: Bitmap? = null
+        try {
+            val client = okhttp3.OkHttpClient.Builder()
+                .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+            val request = okhttp3.Request.Builder().url(iconUrl).build()
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    response.body?.byteStream()?.use { stream ->
+                        bmp = BitmapFactory.decodeStream(stream)
+                    }
+                }
+            }
+        } catch (_: Exception) { }
+        
         view.post {
             iconCache[iconUrl] = bmp
             if (bmp != null && view.tag == iconUrl) {
@@ -89,5 +103,5 @@ private fun loadIcon(view: ImageView, iconUrl: String) {
             }
         }
     }.start()
-  }
+}
 }
