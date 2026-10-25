@@ -65,25 +65,29 @@ class ShortcutAdapter(
         notifyDataSetChanged()
     }
 
-    private fun loadIcon(view: ImageView, iconUrl: String) {
-        if (iconUrl.isBlank()) {
-            view.setImageDrawable(null)
-            return
-        }
-        val cached = iconCache[iconUrl]
-        if (cached != null) {
-            if (view.tag == iconUrl) view.setImageBitmap(cached)
-            return
-        }
-        if (iconCache.containsKey(iconUrl)) return
-        CoroutineScope(Dispatchers.IO).launch {
-            val bmp = try {
-                URL(iconUrl).openStream().use { BitmapFactory.decodeStream(it) }
-            } catch (_: Exception) { null }
-            withContext(Dispatchers.Main) {
-                iconCache[iconUrl] = bmp
-                if (bmp != null && view.tag == iconUrl) view.setImageBitmap(bmp)
+private fun loadIcon(view: ImageView, iconUrl: String) {
+    if (iconUrl.isBlank()) {
+        view.setImageDrawable(null)
+        return
+    }
+    val cached = iconCache[iconUrl]
+    if (cached != null) {
+        if (view.tag == iconUrl) view.setImageBitmap(cached)
+        return
+    }
+    if (iconCache.containsKey(iconUrl)) return
+    Thread {
+        val bmp = try {
+            URL(iconUrl).openStream().use { BitmapFactory.decodeStream(it) }
+        } catch (_: Exception) { null }
+        view.post {
+            iconCache[iconUrl] = bmp
+            if (bmp != null && view.tag == iconUrl) {
+                view.setImageBitmap(bmp)
+            } else if (bmp == null && view.tag == iconUrl) {
+                view.setImageResource(R.drawable.ic_globe)
             }
         }
-    }
+    }.start()
+  }
 }
