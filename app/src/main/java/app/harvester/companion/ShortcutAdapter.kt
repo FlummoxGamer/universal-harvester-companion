@@ -47,6 +47,10 @@ class ShortcutAdapter(
             h.icon.visibility = View.GONE
             h.plus.visibility = View.VISIBLE
             h.label.text = "Add"
+            val fallbackColor = androidx.core.content.ContextCompat.getColor(h.itemView.context, R.color.text)
+            val actualColor = if (customTextColor != 0) customTextColor else fallbackColor
+            h.label.setTextColor(actualColor)
+            h.plus.setTextColor(actualColor)
             h.itemView.setOnClickListener { onAdd() }
             h.itemView.setOnLongClickListener { false }
             return
