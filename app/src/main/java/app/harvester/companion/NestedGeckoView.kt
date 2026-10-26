@@ -50,7 +50,9 @@ fun attachSession(newSession: GeckoSession) {
 }
 
     
-fun updateVerticalClipping(bottomBarHeight: Int, imeHeight: Int) {
+ fun canScrollUp(): Boolean = currentScrollY > 0.5f
+
+ fun updateVerticalClipping(bottomBarHeight: Int, imeHeight: Int) {
     try {
         setVerticalClipping(-(bottomBarHeight + imeHeight))
     } catch (e: Throwable) {
