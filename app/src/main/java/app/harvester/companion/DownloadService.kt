@@ -45,8 +45,13 @@ class DownloadService : Service() {
             nm.cancel(progressId)
             
             val downloadUri = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-            val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
-            val cursor = ctx.contentResolver.query(downloadUri, null, selection, arrayOf(filename), null)
+            val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ? AND ${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
+            val cursor = try {
+                ctx.contentResolver.query(downloadUri, null, selection, arrayOf(filename, "Download/%"), null)
+            } catch (e: Throwable) {
+                UHLog.e("download", "notify query failed: ${e.message}")
+                null
+            }
             var fileUri: android.net.Uri? = null
             var mimeType = "*/*"
             cursor?.use {
