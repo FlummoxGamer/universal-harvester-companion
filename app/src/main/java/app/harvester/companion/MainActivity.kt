@@ -71,32 +71,52 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        UHLog.init(this)
-        SessionRecorder.init(this)
-        UHLog.section("MAIN")
+UHLog.init(this)
+SessionRecorder.init(this)
+UHLog.section("MAIN")
 
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
-            }
-        }
+try {
+    GeckoEngine.getRuntime(this)
+} catch (e: Throwable) {
+    UHLog.e("gecko", "GeckoRuntime init failed: ${e.message}")
+    UHLog.throwable("gecko", "GeckoRuntime init failed", e)
+    try { UHLog.mirrorToPublic(this) } catch (_: Exception) {}
+    getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().putBoolean("force_safe_mode", true).apply()
+    startActivity(Intent(this, SafeModeActivity::class.java))
+    finish()
+    return
+}
 
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+    if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+        requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
+    }
+}
+
+binding = ActivityMainBinding.inflate(layoutInflater)
+setContentView(binding.root)
 
 androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, insets ->
     val systemBars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
     val ime = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())
-    
-    binding.homeScreen.setPadding(0, systemBars.top, 0, 0)
+    val imeVisible = ime.bottom > 0
+
     binding.contentContainer.setPadding(0, systemBars.top, 0, 0)
-    
-    val bottomInset = maxOf(systemBars.bottom, ime.bottom)
+
+    val bottomInset = if (imeVisible) ime.bottom else systemBars.bottom
     binding.bottomBar.setPadding(0, 0, 0, bottomInset)
-    
+
+    try {
+        val barH = binding.bottomBar.height
+        if (barH > 0) {
+            binding.webContainer.geckoView.updateVerticalClipping(barH, if (imeVisible) ime.bottom else 0)
+        }
+    } catch (e: Throwable) {
+        UHLog.e("insets", "clip update failed: ${e.message}")
+    }
+
     insets
 }
-
 tabs = TabManager.get(this)
        setupWebExtensionBridge()
 
@@ -668,24 +688,24 @@ private fun setupBackDispatcher() {
             cs.clear(id, ConstraintSet.BOTTOM)
         }
 
-        if (position == 0) {
-            cs.connect(barId, ConstraintSet.TOP, parent, ConstraintSet.TOP)
-            cs.connect(lbId, ConstraintSet.TOP, barId, ConstraintSet.BOTTOM)
-            cs.connect(chipId, ConstraintSet.TOP, lbId, ConstraintSet.BOTTOM)
-            cs.connect(spId, ConstraintSet.TOP, chipId, ConstraintSet.BOTTOM)
-            cs.connect(spId, ConstraintSet.BOTTOM, parent, ConstraintSet.BOTTOM)
-            cs.connect(wcId, ConstraintSet.TOP, lbId, ConstraintSet.BOTTOM)
-            cs.connect(wcId, ConstraintSet.BOTTOM, parent, ConstraintSet.BOTTOM)
-        } else {
-            cs.connect(barId, ConstraintSet.BOTTOM, parent, ConstraintSet.BOTTOM)
-            cs.connect(lbId, ConstraintSet.BOTTOM, barId, ConstraintSet.TOP)
-            cs.connect(chipId, ConstraintSet.BOTTOM, lbId, ConstraintSet.TOP)
-            cs.connect(spId, ConstraintSet.BOTTOM, chipId, ConstraintSet.TOP)
-            cs.connect(spId, ConstraintSet.TOP, parent, ConstraintSet.TOP)
-            cs.connect(wcId, ConstraintSet.TOP, parent, ConstraintSet.TOP)
-            cs.connect(wcId, ConstraintSet.BOTTOM, lbId, ConstraintSet.TOP)
-        }
-        cs.applyTo(root)
+if (position == 0) {
+    cs.connect(barId, ConstraintSet.TOP, parent, ConstraintSet.TOP)
+    cs.connect(lbId, ConstraintSet.TOP, barId, ConstraintSet.BOTTOM)
+    cs.connect(chipId, ConstraintSet.TOP, lbId, ConstraintSet.BOTTOM)
+    cs.connect(spId, ConstraintSet.TOP, chipId, ConstraintSet.BOTTOM)
+    cs.connect(spId, ConstraintSet.BOTTOM, parent, ConstraintSet.BOTTOM)
+    cs.connect(wcId, ConstraintSet.TOP, chipId, ConstraintSet.BOTTOM)
+    cs.connect(wcId, ConstraintSet.BOTTOM, parent, ConstraintSet.BOTTOM)
+} else {
+    cs.connect(barId, ConstraintSet.BOTTOM, parent, ConstraintSet.BOTTOM)
+    cs.connect(lbId, ConstraintSet.BOTTOM, barId, ConstraintSet.TOP)
+    cs.connect(chipId, ConstraintSet.BOTTOM, lbId, ConstraintSet.TOP)
+    cs.connect(spId, ConstraintSet.BOTTOM, chipId, ConstraintSet.TOP)
+    cs.connect(spId, ConstraintSet.TOP, parent, ConstraintSet.TOP)
+    cs.connect(wcId, ConstraintSet.TOP, parent, ConstraintSet.TOP)
+    cs.connect(wcId, ConstraintSet.BOTTOM, chipId, ConstraintSet.TOP)
+}
+cs.applyTo(root)
     }
 
     private fun enterEditMode() {
