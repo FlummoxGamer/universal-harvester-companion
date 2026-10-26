@@ -55,10 +55,10 @@
                 android:textColor="@color/accent"
                 android:textSize="28sp"
                 android:fontFamily="@font/app_font"
-                android:shadowColor="#99000000"
+                android:shadowColor="#E6000000"
                 android:shadowDx="0"
                 android:shadowDy="2"
-                android:shadowRadius="6"
+                android:shadowRadius="8"
                 android:layout_marginBottom="36dp" />
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/shortcutsGrid"
@@ -165,11 +165,7 @@
                     android:ellipsize="end"
                     android:textColor="@color/text"
                     android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:shadowColor="#99000000"
-                    android:shadowDx="0"
-                    android:shadowDy="1"
-                    android:shadowRadius="3" />
+                    android:textStyle="bold" />
 
                 <TextView
                     android:id="@+id/urlChipText"
@@ -177,12 +173,8 @@
                     android:layout_height="wrap_content"
                     android:maxLines="1"
                     android:ellipsize="middle"
-                    android:textColor="@color/accent"
-                    android:textSize="12sp"
-                    android:shadowColor="#99000000"
-                    android:shadowDx="0"
-                    android:shadowDy="1"
-                    android:shadowRadius="3" />
+                    android:textColor="@color/text"
+                    android:textSize="12sp" />
             </LinearLayout>
 
             <ImageButton
