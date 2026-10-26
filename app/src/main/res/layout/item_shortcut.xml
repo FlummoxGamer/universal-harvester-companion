@@ -42,9 +42,5 @@
             android:ellipsize="end"
             android:textColor="@color/text"
             android:textSize="12sp"
-            android:gravity="center"
-            android:shadowColor="#E6000000"
-            android:shadowDx="0"
-            android:shadowDy="2"
-            android:shadowRadius="6" />
+            android:gravity="center" />
    </LinearLayout>
