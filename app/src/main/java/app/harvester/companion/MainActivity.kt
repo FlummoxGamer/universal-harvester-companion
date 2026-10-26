@@ -83,8 +83,21 @@ class MainActivity : AppCompatActivity() {
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        tabs = TabManager.get(this)
-        setupWebExtensionBridge()
+
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, insets ->
+            val systemBars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            val ime = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())
+    
+           binding.homeScreen.setPadding(0, systemBars.top, 0, 0)
+    
+           val bottomInset = maxOf(systemBars.bottom, ime.bottom)
+           binding.bottomBar.setPadding(0, 0, 0, bottomInset)
+    
+           insets
+       }
+
+       tabs = TabManager.get(this)
+       setupWebExtensionBridge()
 
         mainGeckoView = binding.webContainer.geckoView
 
@@ -680,6 +693,11 @@ private fun setupBackDispatcher() {
 
         binding.urlChipText.text = if (isBlank) "" else url
         binding.urlChipStrip.visibility = if (isBlank) View.GONE else View.VISIBLE
+        if (isBlank) {
+            binding.urlChipStrip.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        } else {
+            binding.urlChipStrip.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+        }
 
         binding.urlText.visibility = View.GONE
         binding.urlEdit.visibility = View.VISIBLE
@@ -911,6 +929,8 @@ private fun updateHomeVisibility() {
         binding.homeScreen.visibility = View.GONE
         binding.contentContainer.visibility = View.VISIBLE
         binding.btnEditHome.visibility = View.GONE
+        binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+        binding.suggestionsPanel.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
         return
     }
     val entity = tabs.list().firstOrNull { it.id == id }
@@ -924,9 +944,19 @@ private fun updateHomeVisibility() {
     if (hasSavedState && binding.loadingBar.visibility == View.VISIBLE) {
         binding.homeScreen.visibility = View.GONE
         binding.btnEditHome.visibility = View.GONE
+        binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+        binding.suggestionsPanel.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
     } else {
         binding.homeScreen.visibility = if (isBlank) View.VISIBLE else View.GONE
         binding.btnEditHome.visibility = if (isBlank) View.VISIBLE else View.GONE
+        
+        if (isBlank) {
+            binding.bottomBar.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            binding.suggestionsPanel.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        } else {
+            binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+            binding.suggestionsPanel.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+        }
     }
 }
 
