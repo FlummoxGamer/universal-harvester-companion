@@ -22,7 +22,12 @@ class ShortcutAdapter(
 
     private val items = mutableListOf<Shortcut>()
     private val iconCache = mutableMapOf<String, Bitmap?>()
+    private var customTextColor: Int = 0
 
+    fun setTextColor(color: Int) {
+        customTextColor = color
+        notifyDataSetChanged()
+    }
     class VH(v: View) : RecyclerView.ViewHolder(v) {
         val icon: ImageView = v.findViewById(R.id.shortcutIcon)
         val plus: TextView = v.findViewById(R.id.shortcutPlus)
@@ -50,6 +55,7 @@ class ShortcutAdapter(
         h.icon.visibility = View.VISIBLE
         h.plus.visibility = View.GONE
         h.label.text = s.name
+        h.label.setTextColor(if (customTextColor != 0) customTextColor else androidx.core.content.ContextCompat.getColor(h.itemView.context, R.color.text))
         h.icon.setImageDrawable(null)
         h.icon.tag = s.iconUrl
         
