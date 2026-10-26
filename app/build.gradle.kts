@@ -11,8 +11,8 @@ android {
         applicationId = "app.harvester.companion"
         minSdk = 29
         targetSdk = 36
-        versionCode = 84
-        versionName = "2.4.14"
+        versionCode = 85
+        versionName = "2.4.15"
    }
 
    flavorDimensions += "version"
