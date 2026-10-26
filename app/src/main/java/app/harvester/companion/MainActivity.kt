@@ -678,6 +678,10 @@ private fun setupBackDispatcher() {
         val url = currentUrl
         val isBlank = url.isBlank() || url == "about:blank"
 
+        binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+        binding.suggestionsPanel.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+        binding.urlChipStrip.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+
         binding.urlChipText.text = if (isBlank) "" else url
         binding.urlChipStrip.visibility = if (isBlank) View.GONE else View.VISIBLE
         if (isBlank) {
@@ -720,6 +724,7 @@ private fun setupBackDispatcher() {
         binding.urlText.visibility = View.VISIBLE
         binding.urlClear.visibility = View.GONE
         binding.urlChipStrip.visibility = View.GONE
+        updateHomeVisibility()
         urlTextWatcher?.let { binding.urlEdit.removeTextChangedListener(it) }
         urlTextWatcher = null
         suggestJob?.cancel()
@@ -914,7 +919,7 @@ private fun updateHomeVisibility() {
     val id = tabs.currentId()
     if (id in popupTabs) {
         binding.homeScreen.visibility = View.GONE
-        binding.contentContainer.visibility = View.VISIBLE
+        binding.swipeRefresh.visibility = View.VISIBLE
         binding.btnEditHome.visibility = View.GONE
         binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
         return
@@ -929,15 +934,21 @@ private fun updateHomeVisibility() {
     
     if (hasSavedState && binding.loadingBar.visibility == View.VISIBLE) {
         binding.homeScreen.visibility = View.GONE
+        binding.swipeRefresh.visibility = View.VISIBLE
         binding.btnEditHome.visibility = View.GONE
         binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
     } else {
-        binding.homeScreen.visibility = if (isBlank) View.VISIBLE else View.GONE
-        binding.btnEditHome.visibility = if (isBlank) View.VISIBLE else View.GONE
+        val hasWallpaper = WallpaperStore.getCurrentWallpaper(this) != null && WallpaperStore.getCurrentWallpaper(this) != "default"
         
         if (isBlank) {
-            binding.bottomBar.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            binding.homeScreen.visibility = View.VISIBLE
+            binding.swipeRefresh.visibility = View.GONE
+            binding.btnEditHome.visibility = View.VISIBLE
+            binding.bottomBar.setBackgroundColor(if (hasWallpaper) android.graphics.Color.TRANSPARENT else ContextCompat.getColor(this, R.color.bg))
         } else {
+            binding.homeScreen.visibility = View.GONE
+            binding.swipeRefresh.visibility = View.VISIBLE
+            binding.btnEditHome.visibility = View.GONE
             binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
         }
     }
@@ -1730,6 +1741,7 @@ private fun applyWallpaper() {
     
     if (wpPath == null || wpPath == "default") {
         binding.wallpaperBackground.visibility = View.GONE
+        binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
         binding.homeTitle.setTextColor(ContextCompat.getColor(this, R.color.accent))
         binding.btnEditHome.setColorFilter(ContextCompat.getColor(this, R.color.text))
     } else {
@@ -1738,13 +1750,16 @@ private fun applyWallpaper() {
             if (bitmap != null) {
                 binding.wallpaperBackground.setImageBitmap(bitmap)
                 binding.wallpaperBackground.visibility = View.VISIBLE
+                binding.homeScreen.setBackgroundColor(android.graphics.Color.TRANSPARENT)
                 binding.homeTitle.setTextColor(textColor)
                 binding.btnEditHome.setColorFilter(textColor)
             } else {
                 binding.wallpaperBackground.visibility = View.GONE
+                binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
             }
         } catch (_: Exception) {
             binding.wallpaperBackground.visibility = View.GONE
+            binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
         }
     }
 }
