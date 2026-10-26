@@ -55,8 +55,10 @@
                 android:textColor="@color/accent"
                 android:textSize="28sp"
                 android:fontFamily="@font/app_font"
-                android:shadowColor="#80000000"
-                android:shadowRadius="4"
+                android:shadowColor="#99000000"
+                android:shadowDx="0"
+                android:shadowDy="2"
+                android:shadowRadius="6"
                 android:layout_marginBottom="36dp" />
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/shortcutsGrid"
@@ -201,6 +203,7 @@
         style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="0dp"
         android:layout_height="2dp"
+        android:background="@color/bg"
         android:max="100"
         android:progressTint="@color/accent"
         android:progressBackgroundTint="@color/surface"
