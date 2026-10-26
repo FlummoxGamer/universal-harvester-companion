@@ -53,9 +53,12 @@
                 android:layout_height="wrap_content"
                 android:text="Universal Harvester"
                 android:textColor="@color/accent"
-                android:textSize="36sp"
-                android:letterSpacing="-0.05"
-                android:fontFamily="@font/app_font"
+                android:textSize="48sp"
+                android:fontFamily="@font/logo_font"
+                android:shadowColor="#B3000000"
+                android:shadowDx="0"
+                android:shadowDy="2"
+                android:shadowRadius="8"
                 android:layout_marginBottom="36dp" />
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/shortcutsGrid"
