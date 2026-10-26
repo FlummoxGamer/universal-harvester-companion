@@ -197,19 +197,32 @@ private fun makeCornersTransparent(bitmap: Bitmap): Bitmap {
         if (android.graphics.Color.alpha(c1) == 0) return bitmap
 
         val result = bitmap.copy(Bitmap.Config.ARGB_8888, true)
-        for (x in 0 until w) {
-            for (y in 0 until h) {
-                val pixel = result.getPixel(x, y)
-                if (isColorSimilar(pixel, c1, tolerance)) {
-                    result.setPixel(x, y, android.graphics.Color.TRANSPARENT)
-                }
+        val visited = Array(w) { BooleanArray(h) }
+        val queue = java.util.LinkedList<Pair<Int, Int>>()
+
+        queue.add(Pair(0, 0))
+        queue.add(Pair(w - 1, 0))
+        queue.add(Pair(0, h - 1))
+        queue.add(Pair(w - 1, h - 1))
+
+        while (queue.isNotEmpty()) {
+            val (x, y) = queue.poll()
+            if (x < 0 || x >= w || y < 0 || y >= h || visited[x][y]) continue
+            visited[x][y] = true
+
+            val pixel = result.getPixel(x, y)
+            if (isColorSimilar(pixel, c1, tolerance)) {
+                result.setPixel(x, y, android.graphics.Color.TRANSPARENT)
+                queue.add(Pair(x + 1, y))
+                queue.add(Pair(x - 1, y))
+                queue.add(Pair(x, y + 1))
+                queue.add(Pair(x, y - 1))
             }
         }
         return result
     }
     return bitmap
 }
-
 private fun isColorSimilar(c1: Int, c2: Int, tolerance: Int): Boolean {
     return Math.abs(android.graphics.Color.red(c1) - android.graphics.Color.red(c2)) <= tolerance &&
            Math.abs(android.graphics.Color.green(c1) - android.graphics.Color.green(c2)) <= tolerance &&
