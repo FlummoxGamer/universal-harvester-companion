@@ -326,8 +326,12 @@ object DownloadEngine {
                 parent?.findFile(task.filename)?.delete()
             } else {
                 val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
-                ctx.contentResolver.delete(collection, selection, arrayOf(task.filename))
+                val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ? AND ${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
+                try {
+                    ctx.contentResolver.delete(collection, selection, arrayOf(task.filename, "Download/%"))
+                } catch (e: Throwable) {
+                    UHLog.e("download", "cancel delete failed: ${e.message}")
+                }
             }
             DownloadStore.removeTask(id)
         }
