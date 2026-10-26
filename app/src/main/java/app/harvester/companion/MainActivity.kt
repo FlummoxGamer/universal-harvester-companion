@@ -677,6 +677,21 @@ private fun setupBackDispatcher() {
         finish()
     }
 }
+    private fun updateStatusBarAppearance(isHome: Boolean) {
+        val controller = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+        if (isHome) {
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            val textColor = WallpaperStore.getTextColor(this)
+            val safeColor = if (textColor == 0) ContextCompat.getColor(this, R.color.text) else textColor
+            val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(safeColor)
+            controller.isAppearanceLightStatusBars = luminance > 0.5
+        } else {
+            window.statusBarColor = ContextCompat.getColor(this, R.color.bg)
+            val isDarkTheme = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+            controller.isAppearanceLightStatusBars = !isDarkTheme
+        }
+    }
+
     private fun applyAddressBarPosition() {
         val position = SettingsPrefs.getInt(this, SettingsPrefs.K_ADDRESS_BAR_POSITION, 1)
         val root = binding.root as ConstraintLayout
@@ -974,26 +989,29 @@ private fun updateHomeVisibility() {
         id > 0L && tabs.loadState(id) != null
     } catch (_: Exception) { false }
     
-    if (hasSavedState && binding.loadingBar.visibility == View.VISIBLE) {
+if (hasSavedState && binding.loadingBar.visibility == View.VISIBLE) {
+    binding.homeScreen.visibility = View.GONE
+    binding.swipeRefresh.visibility = View.VISIBLE
+    binding.btnEditHome.visibility = View.GONE
+    binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+    updateStatusBarAppearance(false)
+} else {
+    val hasWallpaper = WallpaperStore.getCurrentWallpaper(this) != null && WallpaperStore.getCurrentWallpaper(this) != "default"
+    
+    if (isBlank) {
+        binding.homeScreen.visibility = View.VISIBLE
+        binding.swipeRefresh.visibility = View.GONE
+        binding.btnEditHome.visibility = View.VISIBLE
+        binding.bottomBar.setBackgroundColor(if (hasWallpaper) android.graphics.Color.TRANSPARENT else ContextCompat.getColor(this, R.color.bg))
+        updateStatusBarAppearance(true)
+    } else {
         binding.homeScreen.visibility = View.GONE
         binding.swipeRefresh.visibility = View.VISIBLE
         binding.btnEditHome.visibility = View.GONE
         binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
-    } else {
-        val hasWallpaper = WallpaperStore.getCurrentWallpaper(this) != null && WallpaperStore.getCurrentWallpaper(this) != "default"
-        
-        if (isBlank) {
-            binding.homeScreen.visibility = View.VISIBLE
-            binding.swipeRefresh.visibility = View.GONE
-            binding.btnEditHome.visibility = View.VISIBLE
-            binding.bottomBar.setBackgroundColor(if (hasWallpaper) android.graphics.Color.TRANSPARENT else ContextCompat.getColor(this, R.color.bg))
-        } else {
-            binding.homeScreen.visibility = View.GONE
-            binding.swipeRefresh.visibility = View.VISIBLE
-            binding.btnEditHome.visibility = View.GONE
-            binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
-        }
+        updateStatusBarAppearance(false)
     }
+}
 }
 
     private fun prunePopupTabs() {
@@ -1795,10 +1813,13 @@ if (wpPath == null || wpPath == "default") {
             binding.wallpaperBackground.visibility = View.VISIBLE
             binding.homeScreen.setBackgroundColor(android.graphics.Color.TRANSPARENT)
             
-            val safeColor = if (textColor == 0) ContextCompat.getColor(this, R.color.accent) else textColor
-            binding.homeTitle.setTextColor(safeColor)
-            binding.btnEditHome.setColorFilter(safeColor)
-            shortcutAdapter.setTextColor(safeColor)
+            val safeColor = if (textColor == 0) ContextCompat.getColor(this, R.color.text) else textColor
+            val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(safeColor)
+            val strictBW = if (luminance > 0.5) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+
+            binding.homeTitle.setTextColor(strictBW)
+            binding.btnEditHome.setColorFilter(strictBW)
+            shortcutAdapter.setTextColor(strictBW)
         } else {
                 binding.wallpaperBackground.visibility = View.GONE
                 binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
