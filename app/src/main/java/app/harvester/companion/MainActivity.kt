@@ -62,7 +62,6 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(R.style.Theme_UHCompanion)
         super.onCreate(savedInstanceState)
-        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
 
         val safePrefs = getSharedPreferences("uh_safe_mode", MODE_PRIVATE)
         if (safePrefs.getBoolean("force_safe_mode", false)) {
@@ -83,18 +82,6 @@ class MainActivity : AppCompatActivity() {
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
-
-        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, insets ->
-            val systemBars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-            val ime = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())
-    
-           binding.homeScreen.setPadding(0, systemBars.top, 0, 0)
-    
-           val bottomInset = maxOf(systemBars.bottom, ime.bottom)
-           binding.bottomBar.setPadding(0, 0, 0, bottomInset)
-    
-           insets
-       }
 
        tabs = TabManager.get(this)
        setupWebExtensionBridge()
