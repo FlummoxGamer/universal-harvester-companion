@@ -49,7 +49,14 @@ fun attachSession(newSession: GeckoSession) {
     }
 }
 
-    fun canScrollUp(): Boolean = currentScrollY > 0.5f
+    
+fun updateVerticalClipping(bottomBarHeight: Int, imeHeight: Int) {
+    try {
+        setVerticalClipping(-(bottomBarHeight + imeHeight))
+    } catch (e: Throwable) {
+        UHLog.e("gecko", "setVerticalClipping failed: ${e.message}")
+    }
+}
 
     private fun canOverscrollTop(): Boolean = (overscrollDirections and 1) != 0
     private fun isTouchHandledByWebsite(): Boolean = (handledResult and PanZoomController.INPUT_RESULT_HANDLED_CONTENT) != 0
