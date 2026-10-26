@@ -44,6 +44,12 @@ class TabGridDialog(
             ViewGroup.LayoutParams.MATCH_PARENT
         )
         window?.setBackgroundDrawableResource(android.R.color.transparent)
+        window?.statusBarColor = androidx.core.content.ContextCompat.getColor(context, R.color.bg)
+        window?.let { w ->
+            val controller = androidx.core.view.WindowCompat.getInsetsController(w, w.decorView)
+            val isDark = (context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+            controller.isAppearanceLightStatusBars = !isDark
+        }
 
         val grid = findViewById<RecyclerView>(R.id.tabGrid)
         grid.layoutManager = GridLayoutManager(context, 2)
