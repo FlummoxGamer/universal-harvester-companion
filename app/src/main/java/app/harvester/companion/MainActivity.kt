@@ -677,20 +677,23 @@ private fun setupBackDispatcher() {
         finish()
     }
 }
-    private fun updateStatusBarAppearance(isHome: Boolean) {
-        val controller = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
-        if (isHome) {
-            window.statusBarColor = android.graphics.Color.TRANSPARENT
-            val textColor = WallpaperStore.getTextColor(this)
-            val safeColor = if (textColor == 0) ContextCompat.getColor(this, R.color.text) else textColor
-            val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(safeColor)
-            controller.isAppearanceLightStatusBars = luminance > 0.5
-        } else {
-            window.statusBarColor = ContextCompat.getColor(this, R.color.bg)
-            val isDarkTheme = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+private fun updateStatusBarAppearance(isHome: Boolean) {
+    val controller = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+    val isDarkTheme = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+    if (isHome) {
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        val textColor = WallpaperStore.getTextColor(this)
+        if (textColor == 0) {
             controller.isAppearanceLightStatusBars = !isDarkTheme
+        } else {
+            val isDarkText = androidx.core.graphics.ColorUtils.calculateLuminance(textColor) < 0.5
+            controller.isAppearanceLightStatusBars = isDarkText
         }
+    } else {
+        window.statusBarColor = ContextCompat.getColor(this, R.color.bg)
+        controller.isAppearanceLightStatusBars = !isDarkTheme
     }
+}
 
     private fun applyAddressBarPosition() {
         val position = SettingsPrefs.getInt(this, SettingsPrefs.K_ADDRESS_BAR_POSITION, 1)
@@ -807,6 +810,14 @@ cs.applyTo(root)
         v.setBackgroundResource(R.drawable.bg_bottom_sheet)
         sheet.setContentView(v)
         sheet.behavior.isDraggable = false
+        sheet.setOnShowListener {
+            sheet.window?.let { w ->
+                val c = androidx.core.view.WindowCompat.getInsetsController(w, w.decorView)
+                val isDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+                c.isAppearanceLightStatusBars = !isDark
+                w.statusBarColor = ContextCompat.getColor(this, R.color.bg)
+            }
+        }
 
         val list = v.findViewById<android.widget.LinearLayout>(R.id.engineList)
         val current = SearchEnginePrefs.getEngine(this)
@@ -1495,6 +1506,14 @@ if (contentLength > 0) {
         v.setBackgroundResource(R.drawable.bg_bottom_sheet)
         sheet.setContentView(v)
         sheet.behavior.isDraggable = false
+        sheet.setOnShowListener {
+            sheet.window?.let { w ->
+                val c = androidx.core.view.WindowCompat.getInsetsController(w, w.decorView)
+                val isDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+                c.isAppearanceLightStatusBars = !isDark
+                w.statusBarColor = ContextCompat.getColor(this, R.color.bg)
+            }
+        }
 
         val list = v.findViewById<android.widget.LinearLayout>(R.id.scriptMenuList)
         populateScriptSheet(list, sheet)
@@ -1599,6 +1618,7 @@ if (script.iconUrl.isNotBlank()) {
     }
 
     private fun openTabGrid() {
+        exitEditMode()
         TabGridDialog(this, tabs,
             onSwitch = { id -> switchTab(id) },
             onNew = { attachCurrent(); updateUi() }
@@ -1621,10 +1641,19 @@ if (script.iconUrl.isNotBlank()) {
     }
 
     private fun showMenu() {
+        exitEditMode()
         val sheet = BottomSheetDialog(this)
         val v = layoutInflater.inflate(R.layout.dialog_main_menu, null)
         v.setBackgroundResource(R.drawable.bg_bottom_sheet)
         sheet.setContentView(v)
+        sheet.setOnShowListener {
+            sheet.window?.let { w ->
+                val c = androidx.core.view.WindowCompat.getInsetsController(w, w.decorView)
+                val isDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+                c.isAppearanceLightStatusBars = !isDark
+                w.statusBarColor = ContextCompat.getColor(this, R.color.bg)
+            }
+        }
 
         v.findViewById<View>(R.id.menuFavorites)?.setOnClickListener { sheet.dismiss(); toast("Favorites coming soon") }
         v.findViewById<View>(R.id.menuHistory)?.setOnClickListener {
@@ -1815,7 +1844,11 @@ if (wpPath == null || wpPath == "default") {
             
             val safeColor = if (textColor == 0) ContextCompat.getColor(this, R.color.text) else textColor
             val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(safeColor)
-            val strictBW = if (luminance > 0.5) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+            val strictBW = if (textColor == 0) {
+                if (luminance > 0.5) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+            } else {
+                textColor
+            }
 
             binding.homeTitle.setTextColor(strictBW)
             binding.btnEditHome.setColorFilter(strictBW)
