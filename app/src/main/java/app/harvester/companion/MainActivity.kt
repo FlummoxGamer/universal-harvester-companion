@@ -59,10 +59,12 @@ class MainActivity : AppCompatActivity() {
     private var suggestJob: Job? = null
     private var urlTextWatcher: android.text.TextWatcher? = null
 
-        override fun onCreate(savedInstanceState: Bundle?) {
+    override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(R.style.Theme_UHCompanion)
         super.onCreate(savedInstanceState)
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
 
         val safePrefs = getSharedPreferences("uh_safe_mode", MODE_PRIVATE)
         if (safePrefs.getBoolean("force_safe_mode", false)) {
@@ -533,17 +535,17 @@ private fun showWidgetMenu(s: Shortcut, anchor: android.view.View) {
         }
 
 suggestJob?.cancel()
-suggestJob = lifecycleScope.launch(Dispatchers.Main) {
+suggestJob = lifecycleScope.launch {
     if (!hasText) {
-        val queries = HistoryStore.get(this@MainActivity).searchSearchQueries("", 10)
-        val pages = HistoryStore.get(this@MainActivity).searchHistory("", 5)
+        val queries = withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchSearchQueries("", 10) }
+        val pages = withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchHistory("", 5) }
         suggestionsAdapter.submitAll(queries, pages)
         binding.suggestionsClearAll.visibility = if (queries.isNotEmpty()) View.VISIBLE else View.GONE
         return@launch
     }
 
-    val queries = if (isUrl) emptyList() else HistoryStore.get(this@MainActivity).searchSearchQueries(typed)
-    val pages = HistoryStore.get(this@MainActivity).searchHistory(typed, 10)
+    val queries = if (isUrl) emptyList() else withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchSearchQueries(typed) }
+    val pages = withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchHistory(typed, 10) }
 
     suggestionsAdapter.submitAll(queries, pages)
     binding.suggestionsClearAll.visibility = View.GONE
@@ -555,15 +557,11 @@ suggestJob = lifecycleScope.launch(Dispatchers.Main) {
     
     if (!isUrl && typed.length >= 2) {
         val engine = SearchEnginePrefs.getEngine(this@MainActivity)
-        launch(Dispatchers.IO) {
-            val preds = SearchPredictions.fetch(engine, typed)
-            withContext(Dispatchers.Main) {
-                if (preds.isNotEmpty() && binding.urlEdit.text.toString().trim() == typed) {
-                    val fake = preds.mapIndexed { i, p -> HistoryStore.SearchQuery(-1L - i, p, System.currentTimeMillis()) }
-                    val merged = (fake + queries).distinctBy { it.query.lowercase() }.take(8)
-                    suggestionsAdapter.submitAll(merged, pages)
-                }
-            }
+        val preds = SearchPredictions.fetch(engine, typed)
+        if (preds.isNotEmpty() && binding.urlEdit.text.toString().trim() == typed) {
+            val fake = preds.mapIndexed { i, p -> HistoryStore.SearchQuery(-1L - i, p, System.currentTimeMillis()) }
+            val merged = (fake + queries).distinctBy { it.query.lowercase() }.take(8)
+            suggestionsAdapter.submitAll(merged, pages)
         }
     }
 }
@@ -724,6 +722,7 @@ cs.applyTo(root)
         binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
         binding.suggestionsPanel.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
         binding.urlChipStrip.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+        binding.urlChipBar.setCardBackgroundColor(ContextCompat.getColor(this, R.color.surface_2))
 
         binding.urlChipText.text = if (isBlank) "" else url
         binding.urlChipStrip.visibility = if (isBlank) View.GONE else View.VISIBLE
@@ -1796,7 +1795,7 @@ if (wpPath == null || wpPath == "default") {
             binding.wallpaperBackground.visibility = View.VISIBLE
             binding.homeScreen.setBackgroundColor(android.graphics.Color.TRANSPARENT)
             
-            val safeColor = if (textColor == 0) android.graphics.Color.WHITE else textColor
+            val safeColor = if (textColor == 0) ContextCompat.getColor(this, R.color.accent) else textColor
             binding.homeTitle.setTextColor(safeColor)
             binding.btnEditHome.setColorFilter(safeColor)
             shortcutAdapter.setTextColor(safeColor)
