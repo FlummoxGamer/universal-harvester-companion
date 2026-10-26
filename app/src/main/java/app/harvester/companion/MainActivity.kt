@@ -102,9 +102,14 @@ androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, 
     val imeVisible = ime.bottom > 0
 
     binding.contentContainer.setPadding(0, systemBars.top, 0, 0)
+    binding.suggestionsPanel.setPadding(0, systemBars.top, 0, 0)
 
     val bottomInset = if (imeVisible) ime.bottom else systemBars.bottom
-    binding.bottomBar.setPadding(0, 0, 0, bottomInset)
+    val params = binding.bottomBar.layoutParams as androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
+    if (params.bottomMargin != bottomInset) {
+        params.bottomMargin = bottomInset
+        binding.bottomBar.layoutParams = params
+    }
 
     try {
         val barH = binding.bottomBar.height
@@ -527,30 +532,32 @@ private fun showWidgetMenu(s: Shortcut, anchor: android.view.View) {
             binding.urlChipStrip.visibility = View.GONE
         }
 
-        suggestJob?.cancel()
-        suggestJob = lifecycleScope.launch {
-            if (!hasText) {
-                val queries = withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchSearchQueries("", 10) }
-                val pages = withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchHistory("", 5) }
-                suggestionsAdapter.submitAll(queries, pages)
-                binding.suggestionsClearAll.visibility = if (queries.isNotEmpty()) View.VISIBLE else View.GONE
-                return@launch
-            }
+suggestJob?.cancel()
+suggestJob = lifecycleScope.launch(Dispatchers.Main) {
+    if (!hasText) {
+        val queries = HistoryStore.get(this@MainActivity).searchSearchQueries("", 10)
+        val pages = HistoryStore.get(this@MainActivity).searchHistory("", 5)
+        suggestionsAdapter.submitAll(queries, pages)
+        binding.suggestionsClearAll.visibility = if (queries.isNotEmpty()) View.VISIBLE else View.GONE
+        return@launch
+    }
 
-            val queries = if (isUrl) emptyList() else withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchSearchQueries(typed) }
-            val pages = withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchHistory(typed, 10) }
+    val queries = if (isUrl) emptyList() else HistoryStore.get(this@MainActivity).searchSearchQueries(typed)
+    val pages = HistoryStore.get(this@MainActivity).searchHistory(typed, 10)
 
-            suggestionsAdapter.submitAll(queries, pages)
-            binding.suggestionsClearAll.visibility = View.GONE
+    suggestionsAdapter.submitAll(queries, pages)
+    binding.suggestionsClearAll.visibility = View.GONE
 
-            val topUrl = pages.firstOrNull()?.url ?: if (queries.isNotEmpty() && !isUrl) SearchEnginePrefs.getSearchUrl(this@MainActivity, queries.first().query) else null
-            if (topUrl != null) {
-                GeckoEngine.speculativeConnect(topUrl)
-            }
-            
-            if (!isUrl && typed.length >= 2) {
-                val engine = SearchEnginePrefs.getEngine(this@MainActivity)
-                val preds = SearchPredictions.fetch(engine, typed)
+    val topUrl = pages.firstOrNull()?.url ?: if (queries.isNotEmpty() && !isUrl) SearchEnginePrefs.getSearchUrl(this@MainActivity, queries.first().query) else null
+    if (topUrl != null) {
+        GeckoEngine.speculativeConnect(topUrl)
+    }
+    
+    if (!isUrl && typed.length >= 2) {
+        val engine = SearchEnginePrefs.getEngine(this@MainActivity)
+        launch(Dispatchers.IO) {
+            val preds = SearchPredictions.fetch(engine, typed)
+            withContext(Dispatchers.Main) {
                 if (preds.isNotEmpty() && binding.urlEdit.text.toString().trim() == typed) {
                     val fake = preds.mapIndexed { i, p -> HistoryStore.SearchQuery(-1L - i, p, System.currentTimeMillis()) }
                     val merged = (fake + queries).distinctBy { it.query.lowercase() }.take(8)
@@ -558,6 +565,8 @@ private fun showWidgetMenu(s: Shortcut, anchor: android.view.View) {
                 }
             }
         }
+    }
+}
     }
 
     private fun setupBottomBar() {
@@ -1773,21 +1782,25 @@ private fun applyWallpaper() {
     val wpPath = WallpaperStore.getCurrentWallpaper(this)
     val textColor = WallpaperStore.getTextColor(this)
     
-    if (wpPath == null || wpPath == "default") {
-        binding.wallpaperBackground.visibility = View.GONE
-        binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
-        binding.homeTitle.setTextColor(ContextCompat.getColor(this, R.color.accent))
-        binding.btnEditHome.setColorFilter(ContextCompat.getColor(this, R.color.text))
-    } else {
-        try {
-            val bitmap = android.graphics.BitmapFactory.decodeFile(wpPath)
-            if (bitmap != null) {
-                binding.wallpaperBackground.setImageBitmap(bitmap)
-                binding.wallpaperBackground.visibility = View.VISIBLE
-                binding.homeScreen.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                binding.homeTitle.setTextColor(textColor)
-                binding.btnEditHome.setColorFilter(textColor)
-            } else {
+if (wpPath == null || wpPath == "default") {
+    binding.wallpaperBackground.visibility = View.GONE
+    binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+    binding.homeTitle.setTextColor(ContextCompat.getColor(this, R.color.accent))
+    binding.btnEditHome.setColorFilter(ContextCompat.getColor(this, R.color.text))
+    shortcutAdapter.setTextColor(ContextCompat.getColor(this, R.color.text))
+} else {
+    try {
+        val bitmap = android.graphics.BitmapFactory.decodeFile(wpPath)
+        if (bitmap != null) {
+            binding.wallpaperBackground.setImageBitmap(bitmap)
+            binding.wallpaperBackground.visibility = View.VISIBLE
+            binding.homeScreen.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            
+            val safeColor = if (textColor == 0) android.graphics.Color.WHITE else textColor
+            binding.homeTitle.setTextColor(safeColor)
+            binding.btnEditHome.setColorFilter(safeColor)
+            shortcutAdapter.setTextColor(safeColor)
+        } else {
                 binding.wallpaperBackground.visibility = View.GONE
                 binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
             }
