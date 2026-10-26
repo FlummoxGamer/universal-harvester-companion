@@ -14,8 +14,8 @@ import kotlinx.coroutines.launch
 class UHApp : Application() {
     override fun onCreate() {
         super.onCreate()
-        checkSafeMode()
         setupCrashHandler()
+        checkSafeMode()
         ThemePrefs.applyCurrent(this)
         UHLog.init(this)
         SessionRecorder.init(this)
