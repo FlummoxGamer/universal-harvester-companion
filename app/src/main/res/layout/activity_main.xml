@@ -22,7 +22,7 @@
         android:layout_width="0dp"
         android:layout_height="0dp"
         app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toTopOf="@id/loadingBar"
+        app:layout_constraintBottom_toTopOf="@id/urlChipStrip"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
@@ -91,7 +91,7 @@
         android:background="@color/bg"
         android:visibility="gone"
         app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toTopOf="@id/urlChipBar"
+        app:layout_constraintBottom_toTopOf="@id/urlChipStrip"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
         <androidx.recyclerview.widget.RecyclerView
@@ -165,7 +165,11 @@
                     android:ellipsize="end"
                     android:textColor="@color/text"
                     android:textSize="14sp"
-                    android:textStyle="bold" />
+                    android:textStyle="bold"
+                    android:shadowColor="#99000000"
+                    android:shadowDx="0"
+                    android:shadowDy="1"
+                    android:shadowRadius="3" />
 
                 <TextView
                     android:id="@+id/urlChipText"
@@ -174,7 +178,11 @@
                     android:maxLines="1"
                     android:ellipsize="middle"
                     android:textColor="@color/accent"
-                    android:textSize="12sp" />
+                    android:textSize="12sp"
+                    android:shadowColor="#99000000"
+                    android:shadowDx="0"
+                    android:shadowDy="1"
+                    android:shadowRadius="3" />
             </LinearLayout>
 
             <ImageButton
