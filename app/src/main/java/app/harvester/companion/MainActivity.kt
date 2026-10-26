@@ -917,7 +917,6 @@ private fun updateHomeVisibility() {
         binding.contentContainer.visibility = View.VISIBLE
         binding.btnEditHome.visibility = View.GONE
         binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
-        binding.suggestionsPanel.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
         return
     }
     val entity = tabs.list().firstOrNull { it.id == id }
@@ -932,17 +931,14 @@ private fun updateHomeVisibility() {
         binding.homeScreen.visibility = View.GONE
         binding.btnEditHome.visibility = View.GONE
         binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
-        binding.suggestionsPanel.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
     } else {
         binding.homeScreen.visibility = if (isBlank) View.VISIBLE else View.GONE
         binding.btnEditHome.visibility = if (isBlank) View.VISIBLE else View.GONE
         
         if (isBlank) {
             binding.bottomBar.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-            binding.suggestionsPanel.setBackgroundColor(android.graphics.Color.TRANSPARENT)
         } else {
             binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
-            binding.suggestionsPanel.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
         }
     }
 }
