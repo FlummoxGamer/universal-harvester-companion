@@ -59,11 +59,12 @@ class MainActivity : AppCompatActivity() {
     private var suggestJob: Job? = null
     private var urlTextWatcher: android.text.TextWatcher? = null
 
-    setTheme(R.style.Theme_UHCompanion)
-    super.onCreate(savedInstanceState)
-    androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+        override fun onCreate(savedInstanceState: Bundle?) {
+        setTheme(R.style.Theme_UHCompanion)
+        super.onCreate(savedInstanceState)
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
 
-     val safePrefs = getSharedPreferences("uh_safe_mode", MODE_PRIVATE)
+        val safePrefs = getSharedPreferences("uh_safe_mode", MODE_PRIVATE)
         if (safePrefs.getBoolean("force_safe_mode", false)) {
             startActivity(Intent(this, SafeModeActivity::class.java))
             finish()
