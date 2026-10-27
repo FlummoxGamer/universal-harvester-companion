@@ -102,11 +102,18 @@ androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, 
     val systemBars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
     val ime = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())
     val imeVisible = ime.bottom > 0
+    val position = SettingsPrefs.getInt(this, SettingsPrefs.K_ADDRESS_BAR_POSITION, 1)
 
-    binding.contentContainer.setPadding(0, systemBars.top, 0, 0)
+    if (position == 0) {
+        binding.bottomBar.setPadding(0, systemBars.top, 0, 0)
+        binding.contentContainer.setPadding(0, 0, 0, 0)
+    } else {
+        binding.bottomBar.setPadding(0, 0, 0, 0)
+        binding.contentContainer.setPadding(0, systemBars.top, 0, 0)
+    }
     binding.suggestionsPanel.setPadding(0, systemBars.top, 0, 0)
 
-    val bottomInset = if (imeVisible) ime.bottom else systemBars.bottom
+    val bottomInset = if (position == 1) (if (imeVisible) ime.bottom else systemBars.bottom) else 0
     val params = binding.bottomBar.layoutParams as androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
     if (params.bottomMargin != bottomInset) {
         params.bottomMargin = bottomInset
@@ -1883,6 +1890,12 @@ if (wpPath == null || wpPath == "default") {
             binding.homeTitle.setTextColor(strictBW)
             binding.homeTitle.setShadowLayer(8f, 0f, 2f, shadowColor)
             binding.btnEditHome.setColorFilter(strictBW)
+
+            val bg = android.graphics.drawable.GradientDrawable()
+            bg.shape = android.graphics.drawable.GradientDrawable.OVAL
+            bg.setColor(if (strictBW == android.graphics.Color.BLACK) 0x33FFFFFF else 0x33000000)
+            binding.btnEditHome.background = bg
+
             shortcutAdapter.setTextColor(strictBW, shadowColor)
         } else {
                 binding.wallpaperBackground.visibility = View.GONE
