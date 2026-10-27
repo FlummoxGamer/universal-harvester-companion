@@ -11,15 +11,16 @@ object LeakCanarySetup {
     fun setup(application: Application) {
         if (AppWatcher.isInstalled) return
         
-        LeakCanary.showLeakDisplayActivityLauncherIcon(false)
-
         AppWatcher.manualInstall(
             application = application,
             retainedDelayMillis = TimeUnit.SECONDS.toMillis(5),
             watchersToInstall = AppWatcher.appDefaultWatchers(application)
         )
 
+        LeakCanary.showLeakDisplayActivityLauncherIcon(false)
+
         LeakCanary.config = LeakCanary.config.copy(
+            showNotifications = false,
             onHeapAnalyzedListener = OnHeapAnalyzedListener { heapAnalysis ->
                 if (heapAnalysis is HeapAnalysisSuccess) {
                     val realLeaks = heapAnalysis.allLeaks.filter { leak ->
@@ -29,13 +30,11 @@ object LeakCanarySetup {
                         !className.startsWith("android.") && 
                         !className.contains("java.lang.ref")
                     }
-                    for (leak in realLeaks) {
-                        val trace = leak.leakTraces.firstOrNull()
-                        if (trace != null) {
-                            val path = trace.referencePath.joinToString(" -> ") { it.owningClassName }
-                            val leakingObjectName = trace.leakingObject.className
-                            UHLog.writeLeakLog("MEMORY LEAK: $leakingObjectName | Path: $path")
-                        }
+                    if (realLeaks.count() > 0) {
+                        val trace = realLeaks.first().leakTraces.firstOrNull()
+                        val leakingObjectName = trace?.leakingObject?.className ?: "Unknown"
+                        val holder = trace?.referencePath?.firstOrNull()?.owningClassName ?: "Unknown"
+                        UHLog.writeLeakLog("MEMORY LEAK: $leakingObjectName held by $holder")
                     }
                 }
             }
