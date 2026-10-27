@@ -27,8 +27,10 @@
         app:layout_constraintTop_toBottomOf="@id/pickerHandle"
         app:layout_constraintBottom_toTopOf="@id/engineAddCustom"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
-
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHeight_default="wrap"
+        app:layout_constraintHeight_max="480dp">
+        
         <LinearLayout
             android:id="@+id/engineList"
             android:layout_width="match_parent"
