@@ -146,7 +146,6 @@ private fun refresh() {
     }
 
 private fun closeOne(id: Long) {
-    // If closing a grouped tab and only one remains, ask about deleting the group
     val entity = manager.list().firstOrNull { it.id == id }
     if (entity != null && entity.groupId != 0L) {
         val remainingInGroup = manager.listByGroup(entity.groupId).size
@@ -312,28 +311,39 @@ private fun closeOne(id: Long) {
 
 private fun toast(s: String) = Toast.makeText(context, s, Toast.LENGTH_SHORT).show()
 
-override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
-    super.onConfigurationChanged(newConfig)
-    val grid = findViewById<RecyclerView>(R.id.tabGrid)
-    val isLandscape = newConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-    val screenWidthDp = newConfig.screenWidthDp
-    val columns = if (isLandscape) {
-        when {
-            screenWidthDp >= 1280 -> 5
-            screenWidthDp >= 917 -> 4
-            screenWidthDp >= 600 -> 3
-            else -> 2
+private val configCallbacks = object : android.content.ComponentCallbacks {
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        val grid = findViewById<RecyclerView>(R.id.tabGrid)
+        val isLandscape = newConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        val screenWidthDp = newConfig.screenWidthDp
+        val columns = if (isLandscape) {
+            when {
+                screenWidthDp >= 1280 -> 5
+                screenWidthDp >= 917 -> 4
+                screenWidthDp >= 600 -> 3
+                else -> 2
+            }
+        } else {
+            when {
+                screenWidthDp >= 800 -> 4
+                screenWidthDp >= 480 -> 3
+                else -> 2
+            }
         }
-    } else {
-        when {
-            screenWidthDp >= 800 -> 4
-            screenWidthDp >= 480 -> 3
-            else -> 2
-        }
+        grid.layoutManager = GridLayoutManager(context, columns)
     }
-    grid.layoutManager = GridLayoutManager(context, columns)
+    override fun onLowMemory() {}
 }
 
+override fun show() {
+    super.show()
+    context.registerComponentCallbacks(configCallbacks)
+}
+
+override fun dismiss() {
+    context.unregisterComponentCallbacks(configCallbacks)
+    super.dismiss()
+}
     private class Adapter(
         private val ctx: Context,
         private var items: List<TabEntity>,
