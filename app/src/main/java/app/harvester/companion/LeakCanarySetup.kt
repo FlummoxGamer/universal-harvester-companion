@@ -19,6 +19,21 @@ object LeakCanarySetup {
 
         LeakCanary.showLeakDisplayActivityLauncherIcon(false)
 
+        val nm = application.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        nm.cancelAll()
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val channel = nm.getNotificationChannel("LeakCanary")
+            if (channel != null) {
+                channel.setImportance(android.app.NotificationManager.IMPORTANCE_NONE)
+                nm.createNotificationChannel(channel)
+            }
+            val channel2 = nm.getNotificationChannel("leakcanary")
+            if (channel2 != null) {
+                channel2.setImportance(android.app.NotificationManager.IMPORTANCE_NONE)
+                nm.createNotificationChannel(channel2)
+            }
+        }
+
         LeakCanary.config = LeakCanary.config.copy(
             showNotifications = false,
             onHeapAnalyzedListener = OnHeapAnalyzedListener { heapAnalysis ->
