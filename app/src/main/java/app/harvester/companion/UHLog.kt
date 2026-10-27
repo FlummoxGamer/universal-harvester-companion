@@ -293,8 +293,9 @@ fun netPopupCreated(id: Long) {
             try {
                 val target = if (isNet) netWriter else writer
                 target?.appendLine(line)
-                if (isNet) {
-                    netWriter?.flush()
+                if (isNet || tag == "security" || tag == "leak" || tag == "crash" || tag == "strictmode") {
+                    target?.flush()
+                    pending = 0
                 } else {
                     pending++
                     if (pending >= FLUSH_EVERY) { writer?.flush(); pending = 0 }
