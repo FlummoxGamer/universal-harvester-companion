@@ -46,35 +46,36 @@
             android:focusable="false"
             android:focusableInTouchMode="false">
 
-            <Space android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
-            <TextView
-                android:id="@+id/homeTitle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Universal Harvester"
-                android:textColor="@color/accent"
-                android:textSize="48sp"
-                android:fontFamily="@font/logo_font"
-                android:shadowColor="#99000000"
-                android:shadowDx="0"
-                android:shadowDy="2"
-                android:shadowRadius="6"
-                android:layout_marginBottom="36dp" />
-            <androidx.core.widget.NestedScrollView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:clipToPadding="false"
-                android:fillViewport="true"
-                android:overScrollMode="never">
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/shortcutsGrid"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:paddingStart="16dp"
-                    android:paddingEnd="16dp"
-                    android:clipToPadding="false" />
-            </androidx.core.widget.NestedScrollView>
-            <Space android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1.4" />
+            <Space android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="0.4" />
+           <TextView
+               android:id="@+id/homeTitle"
+               android:layout_width="wrap_content"
+               android:layout_height="wrap_content"
+               android:text="Universal Harvester"
+               android:textColor="@color/accent"
+               android:textSize="48sp"
+               android:fontFamily="@font/logo_font"
+               android:shadowColor="#99000000"
+               android:shadowDx="0"
+               android:shadowDy="2"
+               android:shadowRadius="6"
+               android:layout_marginBottom="36dp" />
+           <androidx.core.widget.NestedScrollView
+               android:layout_width="match_parent"
+               android:layout_height="0dp"
+               android:layout_weight="1"
+               android:clipToPadding="false"
+               android:fillViewport="true"
+               android:overScrollMode="never">
+               <androidx.recyclerview.widget.RecyclerView
+                   android:id="@+id/shortcutsGrid"
+                   android:layout_width="match_parent"
+                   android:layout_height="wrap_content"
+                   android:paddingStart="16dp"
+                   android:paddingEnd="16dp"
+                   android:clipToPadding="false" />
+           </androidx.core.widget.NestedScrollView>
+           <Space android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="0.4" />
         </LinearLayout>
 
         <ImageButton
