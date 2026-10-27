@@ -43,8 +43,8 @@
             android:textColor="@color/text"
             android:textSize="12sp"
             android:gravity="center"
-            android:shadowColor="#99000000"
+            android:shadowColor="#CC000000"
             android:shadowDx="0"
-            android:shadowDy="2"
-            android:shadowRadius="4" />
+            android:shadowDy="3"
+            android:shadowRadius="6" />
    </LinearLayout>
