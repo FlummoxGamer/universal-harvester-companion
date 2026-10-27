@@ -80,6 +80,7 @@
             android:background="?attr/selectableItemBackgroundBorderless"
             android:src="@drawable/ic_pencil"
             app:tint="@color/text"
+            android:elevation="4dp"
             android:contentDescription="Edit Home" />
     </FrameLayout>
 
