@@ -24,7 +24,7 @@ object LeakCanarySetup {
                     val first = realLeaks.first()
                     val gcRoot = first.leakTraces.firstOrNull()?.leakingObject?.className ?: "Unknown"
                     val holder = first.leakTraces.firstOrNull()?.leakTrace?.referencePath?.firstOrNull()?.ownerClass ?: "Unknown"
-                    UHLog.e("leak", "MEMORY LEAK: $gcRoot held by $holder")
+                    UHLog.writeLeakLog("MEMORY LEAK: $gcRoot held by $holder")
                 }
             }
         )
