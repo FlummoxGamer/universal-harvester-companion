@@ -24,8 +24,6 @@
         android:id="@+id/engineScroll"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        app:layout_constraintHeight_max="520dp"
-        app:layout_constraintHeight_default="wrap"
         app:layout_constraintTop_toBottomOf="@id/pickerHandle"
         app:layout_constraintBottom_toTopOf="@id/engineAddCustom"
         app:layout_constraintStart_toStartOf="parent"
