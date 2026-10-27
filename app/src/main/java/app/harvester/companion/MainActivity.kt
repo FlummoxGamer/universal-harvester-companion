@@ -725,7 +725,9 @@ private fun setupBackDispatcher() {
 private fun updateStatusBarAppearance(isHome: Boolean) {
     val controller = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
     val isDarkTheme = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
-    if (isHome) {
+    val hasWallpaper = WallpaperStore.getCurrentWallpaper(this) != null && WallpaperStore.getCurrentWallpaper(this) != "default"
+
+    if (isHome && hasWallpaper) {
         window.statusBarColor = android.graphics.Color.TRANSPARENT
         val textColor = WallpaperStore.getTextColor(this)
         if (textColor == 0) {
@@ -739,7 +741,6 @@ private fun updateStatusBarAppearance(isHome: Boolean) {
         controller.isAppearanceLightStatusBars = !isDarkTheme
     }
 }
-
     private fun applyAddressBarPosition() {
         val position = SettingsPrefs.getInt(this, SettingsPrefs.K_ADDRESS_BAR_POSITION, 1)
         val root = binding.root as ConstraintLayout
@@ -854,7 +855,8 @@ cs.applyTo(root)
         val v = layoutInflater.inflate(R.layout.dialog_search_engine_picker, null)
         v.setBackgroundResource(R.drawable.bg_bottom_sheet)
         sheet.setContentView(v)
-        sheet.behavior.isDraggable = false
+        sheet.behavior.skipCollapsed = true
+        sheet.behavior.state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
         sheet.setOnShowListener {
             sheet.window?.let { w ->
                 val c = androidx.core.view.WindowCompat.getInsetsController(w, w.decorView)
@@ -1059,13 +1061,14 @@ if (hasSavedState && binding.loadingBar.visibility == View.VISIBLE) {
         binding.homeScreen.visibility = View.VISIBLE
         binding.swipeRefresh.visibility = View.GONE
         binding.btnEditHome.visibility = View.VISIBLE
-    
+   
         if (isEditing) {
             binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+            updateStatusBarAppearance(false)
         } else {
             binding.bottomBar.setBackgroundColor(if (hasWallpaper) android.graphics.Color.TRANSPARENT else ContextCompat.getColor(this, R.color.bg))
+            updateStatusBarAppearance(true)
         }
-        updateStatusBarAppearance(true)
     } else {
         binding.homeScreen.visibility = View.GONE
         binding.swipeRefresh.visibility = View.VISIBLE
@@ -1556,7 +1559,8 @@ if (contentLength > 0) {
         val v = layoutInflater.inflate(R.layout.dialog_script_menu, null)
         v.setBackgroundResource(R.drawable.bg_bottom_sheet)
         sheet.setContentView(v)
-        sheet.behavior.isDraggable = false
+        sheet.behavior.skipCollapsed = true
+        sheet.behavior.state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
         sheet.setOnShowListener {
             sheet.window?.let { w ->
                 val c = androidx.core.view.WindowCompat.getInsetsController(w, w.decorView)
@@ -1690,20 +1694,21 @@ if (script.iconUrl.isNotBlank()) {
         return SearchEnginePrefs.getSearchUrl(this, t)
     }
 
-    private fun showMenu() {
-        val sheet = BottomSheetDialog(this, R.style.Theme_UHCompanion_BottomSheet)
-        val v = layoutInflater.inflate(R.layout.dialog_main_menu, null)
-        v.setBackgroundResource(R.drawable.bg_bottom_sheet)
-        sheet.setContentView(v)
-        sheet.setOnShowListener {
-            sheet.window?.let { w ->
-                val c = androidx.core.view.WindowCompat.getInsetsController(w, w.decorView)
-                val isDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
-                c.isAppearanceLightStatusBars = !isDark
-                w.statusBarColor = ContextCompat.getColor(this, R.color.bg)
-            }
+private fun showMenu() {
+    val sheet = BottomSheetDialog(this, R.style.Theme_UHCompanion_BottomSheet)
+    val v = layoutInflater.inflate(R.layout.dialog_main_menu, null)
+    v.setBackgroundResource(R.drawable.bg_bottom_sheet)
+    sheet.setContentView(v)
+    sheet.behavior.skipCollapsed = true
+    sheet.behavior.state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
+    sheet.setOnShowListener {
+        sheet.window?.let { w ->
+            val c = androidx.core.view.WindowCompat.getInsetsController(w, w.decorView)
+            val isDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+            c.isAppearanceLightStatusBars = !isDark
+            w.statusBarColor = ContextCompat.getColor(this, R.color.bg)
         }
-
+    }
         v.findViewById<View>(R.id.menuFavorites)?.setOnClickListener { sheet.dismiss(); toast("Favorites coming soon") }
         v.findViewById<View>(R.id.menuHistory)?.setOnClickListener {
             sheet.dismiss()
