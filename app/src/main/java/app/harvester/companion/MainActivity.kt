@@ -857,15 +857,7 @@ cs.applyTo(root)
         sheet.setContentView(v)
         sheet.behavior.skipCollapsed = true
         sheet.behavior.state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
-        sheet.setOnShowListener {
-            sheet.window?.let { w ->
-                val c = androidx.core.view.WindowCompat.getInsetsController(w, w.decorView)
-                val isDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
-                c.isAppearanceLightStatusBars = !isDark
-                w.statusBarColor = ContextCompat.getColor(this, R.color.bg)
-            }
-        }
-
+        
         val list = v.findViewById<android.widget.LinearLayout>(R.id.engineList)
         val current = SearchEnginePrefs.getEngine(this)
         for (entry in SearchEnginePrefs.all(this)) {
@@ -1561,14 +1553,7 @@ if (contentLength > 0) {
         sheet.setContentView(v)
         sheet.behavior.skipCollapsed = true
         sheet.behavior.state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
-        sheet.setOnShowListener {
-            sheet.window?.let { w ->
-                val c = androidx.core.view.WindowCompat.getInsetsController(w, w.decorView)
-                val isDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
-                c.isAppearanceLightStatusBars = !isDark
-                w.statusBarColor = ContextCompat.getColor(this, R.color.bg)
-            }
-        }
+        
 
         val list = v.findViewById<android.widget.LinearLayout>(R.id.scriptMenuList)
         populateScriptSheet(list, sheet)
@@ -1701,14 +1686,7 @@ private fun showMenu() {
     sheet.setContentView(v)
     sheet.behavior.skipCollapsed = true
     sheet.behavior.state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
-    sheet.setOnShowListener {
-        sheet.window?.let { w ->
-            val c = androidx.core.view.WindowCompat.getInsetsController(w, w.decorView)
-            val isDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
-            c.isAppearanceLightStatusBars = !isDark
-            w.statusBarColor = ContextCompat.getColor(this, R.color.bg)
-        }
-    }
+    
         v.findViewById<View>(R.id.menuFavorites)?.setOnClickListener { sheet.dismiss(); toast("Favorites coming soon") }
         v.findViewById<View>(R.id.menuHistory)?.setOnClickListener {
             sheet.dismiss()
