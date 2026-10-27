@@ -348,7 +348,7 @@ private fun updateGridColumns() {
     if (nsv != null) {
         val lp = nsv.layoutParams as android.widget.LinearLayout.LayoutParams
         if (isLandscape) {
-            lp.height = (170 * resources.displayMetrics.density).toInt()
+            lp.height = (250 * resources.displayMetrics.density).toInt()
             lp.weight = 0f
         } else {
             lp.height = 0
