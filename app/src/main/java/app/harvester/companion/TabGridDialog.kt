@@ -44,6 +44,7 @@ class TabGridDialog(
             ViewGroup.LayoutParams.MATCH_PARENT
         )
         window?.setBackgroundDrawableResource(android.R.color.transparent)
+        window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
         window?.statusBarColor = androidx.core.content.ContextCompat.getColor(context, R.color.bg)
         window?.let { w ->
             val controller = androidx.core.view.WindowCompat.getInsetsController(w, w.decorView)
