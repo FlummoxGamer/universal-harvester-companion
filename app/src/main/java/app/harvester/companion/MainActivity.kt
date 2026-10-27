@@ -356,10 +356,10 @@ private fun updateGridColumns() {
     val screenWidthDp = resources.configuration.screenWidthDp
     val cols = if (isLandscape) {
         when {
-            screenWidthDp >= 1280 -> 6
-            screenWidthDp >= 917 -> 5
-            screenWidthDp >= 600 -> 4
-            else -> 3
+            screenWidthDp >= 1280 -> 9
+            screenWidthDp >= 917 -> 8
+            screenWidthDp >= 600 -> 7
+            else -> 6
         }
     } else 4
     (binding.shortcutsGrid.layoutManager as? GridLayoutManager)?.spanCount = cols
