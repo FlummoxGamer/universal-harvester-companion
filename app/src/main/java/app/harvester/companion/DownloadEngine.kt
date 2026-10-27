@@ -25,6 +25,7 @@ object DownloadEngine {
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true)
+        .addInterceptor(SecurityInterceptor())
         .addInterceptor { chain ->
             var request = chain.request()
             var response = chain.proceed(request)
