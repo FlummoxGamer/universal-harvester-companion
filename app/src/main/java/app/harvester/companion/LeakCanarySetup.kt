@@ -27,10 +27,10 @@ object LeakCanarySetup {
                         !className.startsWith("android.") && 
                         !className.contains("java.lang.ref")
                     }
-                    if (realLeaks.isNotEmpty()) {
+                    if (realLeaks.size > 0) {
                         val trace = realLeaks.first().leakTraces.firstOrNull()
                         val leakingObjectName = trace?.leakingObject?.className ?: "Unknown"
-                        val holder = trace?.referencePath?.firstOrNull()?.ownerClass ?: "Unknown"
+                        val holder = trace?.referencePath?.firstOrNull()?.ownerClassName ?: "Unknown"
                         UHLog.writeLeakLog("MEMORY LEAK: $leakingObjectName held by $holder")
                     }
                 }
