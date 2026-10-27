@@ -104,21 +104,18 @@ androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, 
     val imeVisible = ime.bottom > 0
     val position = SettingsPrefs.getInt(this, SettingsPrefs.K_ADDRESS_BAR_POSITION, 1)
 
-    if (position == 0) {
-        binding.bottomBar.setPadding(0, systemBars.top, 0, 0)
-        binding.contentContainer.setPadding(0, 0, 0, 0)
-    } else {
-        binding.bottomBar.setPadding(0, 0, 0, 0)
-        binding.contentContainer.setPadding(0, systemBars.top, 0, 0)
-    }
-    binding.suggestionsPanel.setPadding(0, systemBars.top, 0, 0)
-
-    val bottomInset = if (position == 1) (if (imeVisible) ime.bottom else systemBars.bottom) else 0
     val params = binding.bottomBar.layoutParams as androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
-    if (params.bottomMargin != bottomInset) {
-        params.bottomMargin = bottomInset
-        binding.bottomBar.layoutParams = params
+    if (position == 0) {
+        params.topMargin = systemBars.top
+        binding.contentContainer.setPadding(0, 0, 0, 0)
+        params.bottomMargin = 0
+    } else {
+        params.topMargin = 0
+        binding.contentContainer.setPadding(0, systemBars.top, 0, 0)
+        params.bottomMargin = if (imeVisible) ime.bottom else systemBars.bottom
     }
+    binding.bottomBar.layoutParams = params
+    binding.suggestionsPanel.setPadding(0, if (position == 1) systemBars.top else 0, 0, 0)
 
     try {
         val barH = binding.bottomBar.height
@@ -155,32 +152,8 @@ tabs = TabManager.get(this)
 
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ hideSplash() }, 1200)
 
-            if (BuildConfig.DEBUG) {
-        runDebugLeakTests()
-    }
-
     UHLog.d("main", "onCreate complete")
-}
-
-private fun runDebugLeakTests() {
-    leakedContext = this
-    kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-        try {
-            val client = okhttp3.OkHttpClient.Builder().addInterceptor(SecurityInterceptor()).build()
-            val req = okhttp3.Request.Builder()
-                .url("http://example.com/debug-test")
-                .header("Authorization", "Bearer FAKE_TOKEN_FOR_TEST")
-                .header("Cookie", "session=12345")
-                .build()
-            client.newCall(req).execute().close()
-        } catch (_: Exception) {}
     }
-}
-
-companion object {
-    var leakedContext: android.content.Context? = null
-}
-
     private fun setupWebExtensionBridge() {
         val runtime = GeckoEngine.getRuntime(this) ?: return
             runtime.webExtensionController.ensureBuiltIn(
@@ -1889,12 +1862,12 @@ if (wpPath == null || wpPath == "default") {
 
             binding.homeTitle.setTextColor(strictBW)
             binding.homeTitle.setShadowLayer(8f, 0f, 2f, shadowColor)
-            binding.btnEditHome.setColorFilter(strictBW)
 
-            val bg = android.graphics.drawable.GradientDrawable()
-            bg.shape = android.graphics.drawable.GradientDrawable.OVAL
-            bg.setColor(if (strictBW == android.graphics.Color.BLACK) 0x33FFFFFF else 0x33000000)
-            binding.btnEditHome.background = bg
+            binding.btnEditHome.setColorFilter(strictBW)
+            binding.btnEditHome.background = null
+            val paint = android.graphics.Paint()
+            paint.setShadowLayer(8f, 0f, 2f, shadowColor)
+            binding.btnEditHome.setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, paint)
 
             shortcutAdapter.setTextColor(strictBW, shadowColor)
         } else {
