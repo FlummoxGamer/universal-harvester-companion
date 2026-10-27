@@ -115,8 +115,8 @@ androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, 
         params.bottomMargin = if (imeVisible) ime.bottom else systemBars.bottom
     }
     binding.bottomBar.layoutParams = params
-    binding.suggestionsPanel.setPadding(0, if (position == 1) systemBars.top else 0, 0, 0)
-
+    binding.bottomBar.setPadding(0, 0, 0, 0)
+    binding.suggestionsPanel.setPadding(0, systemBars.top, 0, 0)
     try {
         val barH = binding.bottomBar.height
         if (barH > 0) {
@@ -768,9 +768,9 @@ if (position == 0) {
     cs.connect(wcId, ConstraintSet.TOP, parent, ConstraintSet.TOP)
     cs.connect(wcId, ConstraintSet.BOTTOM, chipId, ConstraintSet.TOP)
 }
-cs.applyTo(root)
-    }
-
+    cs.applyTo(root)
+    androidx.core.view.ViewCompat.requestApplyInsets(root)
+}
     private fun enterEditMode() {
         val url = currentUrl
         val isBlank = url.isBlank() || url == "about:blank"
@@ -1876,7 +1876,7 @@ if (wpPath == null || wpPath == "default") {
             binding.homeTitle.setShadowLayer(8f, 0f, 2f, shadowColor)
 
             binding.btnEditHome.setColorFilter(strictBW)
-            binding.btnEditHome.background = null
+            binding.btnEditHome.setBackgroundColor(android.graphics.Color.TRANSPARENT)
             val paint = android.graphics.Paint()
             paint.setShadowLayer(8f, 0f, 2f, shadowColor)
             binding.btnEditHome.setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, paint)
