@@ -777,6 +777,8 @@ if (position == 0) {
         val url = currentUrl
         val isBlank = url.isBlank() || url == "about:blank"
 
+        updateStatusBarAppearance(false)
+
         binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
         binding.suggestionsPanel.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
         binding.urlChipStrip.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
@@ -1877,13 +1879,39 @@ if (wpPath == null || wpPath == "default") {
             binding.homeTitle.setTextColor(strictBW)
             binding.homeTitle.setShadowLayer(8f, 0f, 2f, shadowColor)
 
-            binding.btnEditHome.setColorFilter(strictBW)
-            binding.btnEditHome.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-            val paint = android.graphics.Paint()
-            paint.setShadowLayer(8f, 0f, 2f, shadowColor)
-            binding.btnEditHome.setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, paint)
+val pencilDrawable = androidx.core.content.ContextCompat.getDrawable(this, R.drawable.ic_pencil)?.mutate()
+pencilDrawable?.setTint(strictBW)
+pencilDrawable?.setBounds(0, 0, pencilDrawable.intrinsicWidth, pencilDrawable.intrinsicHeight)
 
-            shortcutAdapter.setTextColor(strictBW, shadowColor)
+val padding = 16
+val bmp = android.graphics.Bitmap.createBitmap(
+    (pencilDrawable?.intrinsicWidth ?: 48) + padding * 2, 
+    (pencilDrawable?.intrinsicHeight ?: 48) + padding * 2, 
+    android.graphics.Bitmap.Config.ARGB_8888
+)
+val canvas = android.graphics.Canvas(bmp)
+
+val mask = android.graphics.Bitmap.createBitmap(
+    pencilDrawable?.intrinsicWidth ?: 48, 
+    pencilDrawable?.intrinsicHeight ?: 48, 
+    android.graphics.Bitmap.Config.ALPHA_8
+)
+val maskCanvas = android.graphics.Canvas(mask)
+pencilDrawable?.draw(maskCanvas)
+
+val shadowPaint = android.graphics.Paint()
+shadowPaint.setShadowLayer(8f, 0f, 2f, shadowColor)
+canvas.drawBitmap(mask, padding.toFloat(), padding.toFloat(), shadowPaint)
+
+pencilDrawable?.setBounds(padding, padding, padding + (pencilDrawable.intrinsicWidth), padding + (pencilDrawable.intrinsicHeight))
+pencilDrawable?.draw(canvas)
+
+binding.btnEditHome.setImageBitmap(bmp)
+binding.btnEditHome.background = null
+binding.btnEditHome.setPadding(0, 0, 0, 0)
+binding.btnEditHome.scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
+
+shortcutAdapter.setTextColor(strictBW, shadowColor)
         } else {
                 binding.wallpaperBackground.visibility = View.GONE
                 binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
