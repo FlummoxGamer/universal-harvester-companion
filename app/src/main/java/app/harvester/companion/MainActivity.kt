@@ -805,7 +805,7 @@ cs.applyTo(root)
     }
 
     private fun showSearchEnginePicker() {
-        val sheet = BottomSheetDialog(this)
+        val sheet = BottomSheetDialog(this, R.style.Theme_UHCompanion_BottomSheet)
         val v = layoutInflater.inflate(R.layout.dialog_search_engine_picker, null)
         v.setBackgroundResource(R.drawable.bg_bottom_sheet)
         sheet.setContentView(v)
@@ -1009,11 +1009,17 @@ if (hasSavedState && binding.loadingBar.visibility == View.VISIBLE) {
 } else {
     val hasWallpaper = WallpaperStore.getCurrentWallpaper(this) != null && WallpaperStore.getCurrentWallpaper(this) != "default"
     
+    val isEditing = binding.urlEdit.visibility == View.VISIBLE
     if (isBlank) {
         binding.homeScreen.visibility = View.VISIBLE
         binding.swipeRefresh.visibility = View.GONE
         binding.btnEditHome.visibility = View.VISIBLE
-        binding.bottomBar.setBackgroundColor(if (hasWallpaper) android.graphics.Color.TRANSPARENT else ContextCompat.getColor(this, R.color.bg))
+    
+        if (isEditing) {
+            binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+        } else {
+            binding.bottomBar.setBackgroundColor(if (hasWallpaper) android.graphics.Color.TRANSPARENT else ContextCompat.getColor(this, R.color.bg))
+        }
         updateStatusBarAppearance(true)
     } else {
         binding.homeScreen.visibility = View.GONE
@@ -1501,7 +1507,7 @@ if (contentLength > 0) {
     }
 
     private fun showScriptMenuSheet() {
-        val sheet = BottomSheetDialog(this)
+        val sheet = BottomSheetDialog(this, R.style.Theme_UHCompanion_BottomSheet)
         val v = layoutInflater.inflate(R.layout.dialog_script_menu, null)
         v.setBackgroundResource(R.drawable.bg_bottom_sheet)
         sheet.setContentView(v)
@@ -1618,10 +1624,9 @@ if (script.iconUrl.isNotBlank()) {
     }
 
     private fun openTabGrid() {
-        exitEditMode()
         TabGridDialog(this, tabs,
             onSwitch = { id -> switchTab(id) },
-            onNew = { attachCurrent(); updateUi() }
+            onNew = { exitEditMode(); attachCurrent(); updateUi() }
         ).apply {
             setOnDismissListener {
                 val live = tabs.currentSession()
@@ -1641,8 +1646,7 @@ if (script.iconUrl.isNotBlank()) {
     }
 
     private fun showMenu() {
-        exitEditMode()
-        val sheet = BottomSheetDialog(this)
+        val sheet = BottomSheetDialog(this, R.style.Theme_UHCompanion_BottomSheet)
         val v = layoutInflater.inflate(R.layout.dialog_main_menu, null)
         v.setBackgroundResource(R.drawable.bg_bottom_sheet)
         sheet.setContentView(v)
@@ -1810,6 +1814,7 @@ if (script.iconUrl.isNotBlank()) {
         if (already != null) { switchTab(already.id); return }
         if (tabs.list().isEmpty()) tabs.openNew(incoming)
         else tabs.openNew(incoming)
+        exitEditMode()
         attachCurrent(); updateUi()
     }
 
