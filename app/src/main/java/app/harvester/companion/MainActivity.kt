@@ -351,6 +351,26 @@ private fun hideSplash() {
     }, 1200)
 }
 
+private fun updateGridColumns() {
+    val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val screenWidthDp = resources.configuration.screenWidthDp
+    val cols = if (isLandscape) {
+        when {
+            screenWidthDp >= 1280 -> 6
+            screenWidthDp >= 917 -> 5
+            screenWidthDp >= 600 -> 4
+            else -> 3
+        }
+    } else 4
+    (binding.shortcutsGrid.layoutManager as? GridLayoutManager)?.spanCount = cols
+}
+
+override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+    super.onConfigurationChanged(newConfig)
+    updateGridColumns()
+    applyAddressBarPosition()
+}
+
 private fun setupHomeGrid() {
     shortcutAdapter = ShortcutAdapter(
         onOpen = { s -> loadUrlFromHome(s.url) },
@@ -359,6 +379,7 @@ private fun setupHomeGrid() {
     )
     binding.shortcutsGrid.layoutManager = GridLayoutManager(this, 4)
     binding.shortcutsGrid.adapter = shortcutAdapter
+    updateGridColumns()
     shortcutAdapter.submit(ShortcutStore.list(this))
 
     val callback = object : androidx.recyclerview.widget.ItemTouchHelper.SimpleCallback(
