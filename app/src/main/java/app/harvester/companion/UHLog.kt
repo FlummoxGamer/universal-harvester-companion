@@ -184,12 +184,87 @@ object UHLog {
     fun addListener(fn: (String) -> Unit) { listeners.add(fn) }
     fun removeListener(fn: (String) -> Unit) { listeners.remove(fn) }
 
-    fun isVerbose(): Boolean = verbose
+fun isVerbose(): Boolean = verbose
 
-    fun setVerbose(on: Boolean) {
-        verbose = on
-        appContext?.let { DebugPrefs.setVerboseLogging(it, on) }
-    }
+fun setVerbose(on: Boolean) {
+    verbose = on
+    appContext?.let { DebugPrefs.setVerboseLogging(it, on) }
+}
+
+fun netNav(method: String, url: String, referer: String?, hasCookie: Boolean, hasAuth: Boolean) {
+    if (!verbose) return
+    val sb = StringBuilder()
+    sb.append("NAV ").append(method).append(' ').append(url)
+    if (!referer.isNullOrBlank()) sb.append("\n  ref=").append(referer)
+    if (hasCookie) sb.append("\n  cookie=<present>")
+    if (hasAuth) sb.append("\n  auth=<present>")
+    write("net", 'V', sb.toString(), true)
+}
+
+fun netPost(url: String, contentType: String?, contentLength: Long) {
+    if (!verbose) return
+    val sb = StringBuilder()
+    sb.append("POST ").append(url)
+    if (!contentType.isNullOrBlank()) sb.append("\n  ct=").append(contentType)
+    if (contentLength >= 0) sb.append("\n  cl=").append(contentLength)
+    write("net", 'V', sb.toString(), true)
+}
+
+fun netApi(method: String, url: String) {
+    if (!verbose) return
+    write("net", 'V', "API $method $url", true)
+}
+
+fun netError(url: String, code: Int) {
+    write("net", 'E', "ERROR $code $url", true)
+}
+
+fun netScheme(raw: String, action: String) {
+    if (!verbose) return
+    write("net", 'V', "SCHEME $raw → $action", true)
+}
+
+fun netPopupOpen(parentUrl: String, userGesture: Boolean, isDialog: Boolean) {
+    if (!verbose) return
+    write("net", 'V', "POPUP open parent=$parentUrl user=$userGesture dialog=$isDialog", true)
+}
+
+fun netPopupCreated(id: Long) {
+    if (!verbose) return
+    write("net", 'V', "POPUP created id=$id", true)
+}
+
+fun netPopupLoad(url: String) {
+    if (!verbose) return
+    write("net", 'V', "POPUP load $url", true)
+}
+
+fun netResource(url: String, mime: String) {
+    if (!verbose) return
+    write("net", 'V', "RES $mime $url", true)
+}
+
+fun netExtDialog(url: String) {
+    if (!verbose) return
+    write("net", 'V', "EXT dialog $url", true)
+}
+
+fun netExtOpen(url: String) {
+    if (!verbose) return
+    write("net", 'V', "EXT open $url", true)
+}
+
+fun netExtStay(url: String) {
+    if (!verbose) return
+    write("net", 'V', "EXT stay $url", true)
+}
+
+fun net3p(pageUrl: String, hosts: Collection<String>) {
+    if (!verbose) return
+    if (hosts.isEmpty()) return
+    val sorted = hosts.toSortedSet().joinToString(" ")
+    write("net", 'V', "3P $pageUrl: $sorted", true)
+}
 
     private fun sanitize(s: String): String {
         if (s.length < 20) return s
