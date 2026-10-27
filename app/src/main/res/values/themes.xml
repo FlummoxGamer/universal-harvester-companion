@@ -11,7 +11,13 @@
         <item name="colorOnSurface">@color/text</item>
     </style>
 
-    <style name="Theme.UHCompanion.Launch" parent="Theme.UHCompanion">
+        <style name="Theme.UHCompanion.Launch" parent="Theme.UHCompanion">
         <item name="android:windowBackground">@drawable/splash_bg</item>
+    </style>
+
+    <style name="Theme.UHCompanion.BottomSheet" parent="Theme.Material3.DayNight.BottomSheetDialog">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 </resources>
