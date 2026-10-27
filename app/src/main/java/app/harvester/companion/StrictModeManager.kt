@@ -1,10 +1,8 @@
 package app.harvester.companion
 
 import android.os.Build
-import android.os.Handler
 import android.os.Looper
 import android.os.StrictMode
-import java.util.concurrent.Executors
 
 object StrictModeManager {
     fun enableStrictMode(isDebug: Boolean) {
@@ -12,19 +10,20 @@ object StrictModeManager {
         if (Looper.myLooper() != Looper.getMainLooper()) return
 
         val manufacturer = Build.MANUFACTURER.lowercase()
-        val isOemBypass = manufacturer.contains("huawei") || manufacturer.contains("oneplus") || manufacturer.contains("oppo")
+        val isOemBypass = manufacturer.contains("huawei") || manufacturer.contains("oneplus") || manufacturer.contains("oppo") || manufacturer.contains("realme")
 
-        val threadBuilder = StrictMode.ThreadPolicy.Builder().detectAll()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && !isOemBypass) {
-            val executor = Executors.newSingleThreadExecutor()
-            threadBuilder.penaltyListener(executor) { violation ->
-                val trace = violation.stackTrace.joinToString("\n") { "  at $it" }
-                UHLog.writeLeakLog("STRICTMODE THREAD VIOLATION:\n$trace")
-            }
-        } else {
-            threadBuilder.penaltyLog()
+        if (isOemBypass) {
+            StrictMode.setThreadPolicy(StrictMode.ThreadPolicy.LAX)
+            StrictMode.setVmPolicy(StrictMode.VmPolicy.LAX)
+            return
         }
-        StrictMode.setThreadPolicy(threadBuilder.build())
+
+        StrictMode.setThreadPolicy(
+            StrictMode.ThreadPolicy.Builder()
+                .detectAll()
+                .penaltyLog()
+                .build()
+        )
 
         val vmBuilder = StrictMode.VmPolicy.Builder()
             .detectLeakedSqlLiteObjects()
@@ -32,16 +31,10 @@ object StrictModeManager {
             .detectLeakedRegistrationObjects()
             .detectActivityLeaks()
             .detectFileUriExposure()
+            .penaltyLog()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && !isOemBypass) {
-            val executor = Executors.newSingleThreadExecutor()
-            vmBuilder.penaltyListener(executor) { violation ->
-                val trace = violation.stackTrace.joinToString("\n") { "  at $it" }
-                UHLog.writeLeakLog("STRICTMODE VM LEAK: ${violation.javaClass.simpleName}\n$trace")
-            }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             vmBuilder.detectNonSdkApiUsage()
-        } else {
-            vmBuilder.penaltyLog()
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
