@@ -52,8 +52,24 @@ class TabGridDialog(
             controller.isAppearanceLightStatusBars = !isDark
         }
 
-        val grid = findViewById<RecyclerView>(R.id.tabGrid)
-        grid.layoutManager = GridLayoutManager(context, 2)
+val grid = findViewById<RecyclerView>(R.id.tabGrid)
+val isLandscape = context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+val screenWidthDp = context.resources.configuration.screenWidthDp
+val columns = if (isLandscape) {
+    when {
+        screenWidthDp >= 1280 -> 5
+        screenWidthDp >= 917 -> 4
+        screenWidthDp >= 600 -> 3
+        else -> 2
+    }
+} else {
+    when {
+        screenWidthDp >= 800 -> 4
+        screenWidthDp >= 480 -> 3
+        else -> 2
+    }
+}
+grid.layoutManager = GridLayoutManager(context, columns)
         adapter = Adapter(context, emptyList(), 0L,
             onTap = { id -> dismiss(); onSwitch(id) },
             onClose = { id -> closeOne(id) },
