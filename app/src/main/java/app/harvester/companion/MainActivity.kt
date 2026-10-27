@@ -1861,7 +1861,10 @@ if (wpPath == null || wpPath == "default") {
     binding.wallpaperBackground.visibility = View.GONE
     binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
     binding.homeTitle.setTextColor(ContextCompat.getColor(this, R.color.accent))
+    binding.btnEditHome.setImageResource(R.drawable.ic_pencil)
     binding.btnEditHome.setColorFilter(ContextCompat.getColor(this, R.color.text))
+    binding.btnEditHome.background = null
+    binding.btnEditHome.setLayerType(android.view.View.LAYER_TYPE_NONE, null)
     shortcutAdapter.setTextColor(ContextCompat.getColor(this, R.color.text), 0)
 } else {
     try {
