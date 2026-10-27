@@ -13,7 +13,9 @@ import shark.HeapAnalysisSuccess
 object LeakCanarySetup {
     fun setup(application: Application) {
         if (AppWatcher.isInstalled) return
-        
+
+        LeakCanary.config = LeakCanary.config.copy(showNotifications = false)
+
         AppWatcher.manualInstall(
             application = application,
             retainedDelayMillis = TimeUnit.SECONDS.toMillis(5),
