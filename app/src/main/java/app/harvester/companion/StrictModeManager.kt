@@ -18,7 +18,8 @@ object StrictModeManager {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && !isOemBypass) {
             val executor = Executors.newSingleThreadExecutor()
             threadBuilder.penaltyListener(executor) { violation ->
-                UHLog.e("strictmode", "Thread Violation: ${violation.stackTrace.take(3).joinToString(" <- ") { it.toString() }}")
+                val trace = violation.stackTrace.joinToString("\n") { "  at $it" }
+                UHLog.writeLeakLog("STRICTMODE THREAD VIOLATION:\n$trace")
             }
         } else {
             threadBuilder.penaltyLog()
@@ -35,7 +36,8 @@ object StrictModeManager {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && !isOemBypass) {
             val executor = Executors.newSingleThreadExecutor()
             vmBuilder.penaltyListener(executor) { violation ->
-                UHLog.e("strictmode", "VM Leak: ${violation.javaClass.simpleName} - ${violation.message}")
+                val trace = violation.stackTrace.joinToString("\n") { "  at $it" }
+                UHLog.writeLeakLog("STRICTMODE VM LEAK: ${violation.javaClass.simpleName}\n$trace")
             }
             vmBuilder.detectNonSdkApiUsage()
         } else {
