@@ -346,7 +346,7 @@ private fun updateGridColumns() {
 
     val nsv = binding.shortcutsGrid.parent as? androidx.core.widget.NestedScrollView
     if (nsv != null) {
-        val lp = nsv.layoutParams as androidx.widget.LinearLayout.LayoutParams
+        val lp = nsv.layoutParams as android.widget.LinearLayout.LayoutParams
         if (isLandscape) {
             lp.height = (170 * resources.displayMetrics.density).toInt()
             lp.weight = 0f
