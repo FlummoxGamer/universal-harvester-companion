@@ -44,7 +44,12 @@ class TabGridDialog(
             ViewGroup.LayoutParams.MATCH_PARENT
         )
         window?.setBackgroundDrawableResource(android.R.color.transparent)
-        window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            window?.insetsController?.hide(android.view.WindowInsets.Type.statusBars())
+        } else {
+            @Suppress("DEPRECATION")
+            window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        }
 
 
 val grid = findViewById<RecyclerView>(R.id.tabGrid)
