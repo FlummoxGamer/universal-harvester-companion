@@ -44,21 +44,11 @@ class TabGridDialog(
             ViewGroup.LayoutParams.MATCH_PARENT
         )
         window?.setBackgroundDrawableResource(R.color.bg)
-        val isStatusBarLandscape = context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-        if (isStatusBarLandscape) {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                window?.insetsController?.hide(android.view.WindowInsets.Type.statusBars())
-            } else {
-                @Suppress("DEPRECATION")
-                window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
-            }
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            window?.insetsController?.hide(android.view.WindowInsets.Type.statusBars())
         } else {
-            window?.statusBarColor = androidx.core.content.ContextCompat.getColor(context, R.color.bg)
-            window?.let { w ->
-                val controller = androidx.core.view.WindowCompat.getInsetsController(w, w.decorView)
-                val isDark = (context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
-                controller.isAppearanceLightStatusBars = !isDark
-            }
+            @Suppress("DEPRECATION")
+            window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
         }
 
 val grid = findViewById<RecyclerView>(R.id.tabGrid)
