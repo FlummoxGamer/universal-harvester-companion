@@ -19,6 +19,10 @@ class UHApp : Application() {
         ThemePrefs.applyCurrent(this)
         UHLog.init(this)
         SessionRecorder.init(this)
+        if (BuildConfig.DEBUG) {
+            StrictModeManager.enableStrictMode(true)
+            LeakCanarySetup.setup(this)
+        }
         try {
             startService(Intent(this, SessionService::class.java))
         } catch (_: Exception) {}
