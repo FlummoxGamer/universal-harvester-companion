@@ -1866,7 +1866,7 @@ if (wpPath == null || wpPath == "default") {
     binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
     binding.homeTitle.setTextColor(ContextCompat.getColor(this, R.color.accent))
     binding.btnEditHome.setColorFilter(ContextCompat.getColor(this, R.color.text))
-    shortcutAdapter.setTextColor(ContextCompat.getColor(this, R.color.text))
+    shortcutAdapter.setTextColor(ContextCompat.getColor(this, R.color.text), 0)
 } else {
     try {
         val bitmap = android.graphics.BitmapFactory.decodeFile(wpPath)
