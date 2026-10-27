@@ -310,7 +310,29 @@ private fun closeOne(id: Long) {
             .show()
     }
 
-    private fun toast(s: String) = Toast.makeText(context, s, Toast.LENGTH_SHORT).show()
+private fun toast(s: String) = Toast.makeText(context, s, Toast.LENGTH_SHORT).show()
+
+override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+    super.onConfigurationChanged(newConfig)
+    val grid = findViewById<RecyclerView>(R.id.tabGrid)
+    val isLandscape = newConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val screenWidthDp = newConfig.screenWidthDp
+    val columns = if (isLandscape) {
+        when {
+            screenWidthDp >= 1280 -> 5
+            screenWidthDp >= 917 -> 4
+            screenWidthDp >= 600 -> 3
+            else -> 2
+        }
+    } else {
+        when {
+            screenWidthDp >= 800 -> 4
+            screenWidthDp >= 480 -> 3
+            else -> 2
+        }
+    }
+    grid.layoutManager = GridLayoutManager(context, columns)
+}
 
     private class Adapter(
         private val ctx: Context,
