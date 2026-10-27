@@ -246,7 +246,8 @@ tabs = TabManager.get(this)
                 val hObj = JSONObject(headersStr)
                 for (key in hObj.keys()) builder.addHeader(key, hObj.getString(key))
             }
-            val resp = okhttp3.OkHttpClient().newCall(builder.build()).execute()
+            val client = okhttp3.OkHttpClient.Builder().addInterceptor(SecurityInterceptor()).build()
+            val resp = client.newCall(builder.build()).execute()
             val text = resp.body?.string() ?: ""
             val respHeaders = resp.headers.toMultimap().entries.joinToString("") { "${it.key}: ${it.value.joinToString(", ")}\r\n" }
             
