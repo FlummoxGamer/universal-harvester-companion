@@ -142,6 +142,19 @@ object UHLog {
         copyToPublic(ctx, netPath, "net.txt")
     }
 
+    fun writeLeakLog(msg: String) {
+        val line = "${timeFormat.format(Date())} E [leak] $msg"
+        synchronized(lock) {
+            buffer.addLast(line)
+            while (buffer.size > MAX_LINES) buffer.removeFirst()
+            try {
+                writer?.appendLine(line)
+                writer?.flush()
+            } catch (_: Exception) {}
+        }
+        try { Log.e(TAG, line) } catch (_: Exception) {}
+    }
+
     private fun copyToPublic(ctx: Context, srcPath: String, filename: String) {
         if (srcPath.isBlank()) return
         val src = File(srcPath)
