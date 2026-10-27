@@ -23,11 +23,14 @@ class ShortcutAdapter(
     private val items = mutableListOf<Shortcut>()
     private val iconCache = mutableMapOf<String, Bitmap?>()
     private var customTextColor: Int = 0
+    private var customShadowColor: Int = 0
 
-    fun setTextColor(color: Int) {
+    fun setTextColor(color: Int, shadowColor: Int) {
         customTextColor = color
+        customShadowColor = shadowColor
         notifyDataSetChanged()
     }
+
     class VH(v: View) : RecyclerView.ViewHolder(v) {
         val icon: ImageView = v.findViewById(R.id.shortcutIcon)
         val plus: TextView = v.findViewById(R.id.shortcutPlus)
@@ -49,16 +52,13 @@ class ShortcutAdapter(
             h.label.text = "Add"
             val fallbackColor = androidx.core.content.ContextCompat.getColor(h.itemView.context, R.color.text)
             val actualColor = if (customTextColor != 0) customTextColor else fallbackColor
+            val actualShadow = if (customShadowColor != 0) customShadowColor else android.graphics.Color.TRANSPARENT
+            
             h.label.setTextColor(actualColor)
             h.plus.setTextColor(actualColor)
-
-            if (customTextColor == android.graphics.Color.WHITE) {
-                h.label.setShadowLayer(6f, 0f, 2f, android.graphics.Color.parseColor("#CC000000"))
-                h.plus.setShadowLayer(6f, 0f, 2f, android.graphics.Color.parseColor("#CC000000"))
-            } else {
-                h.label.setShadowLayer(0f, 0f, 0f, 0)
-                h.plus.setShadowLayer(0f, 0f, 0f, 0)
-            }
+            h.label.setShadowLayer(if (actualShadow != android.graphics.Color.TRANSPARENT) 8f else 0f, 0f, 2f, actualShadow)
+            h.plus.setShadowLayer(if (actualShadow != android.graphics.Color.TRANSPARENT) 8f else 0f, 0f, 2f, actualShadow)
+            
             h.itemView.setOnClickListener { onAdd() }
             h.itemView.setOnLongClickListener { false }
             return
@@ -67,14 +67,6 @@ class ShortcutAdapter(
         h.icon.visibility = View.VISIBLE
         h.plus.visibility = View.GONE
         h.label.text = s.name
-        val actualColor = if (customTextColor != 0) customTextColor else androidx.core.content.ContextCompat.getColor(h.itemView.context, R.color.text)
-        h.label.setTextColor(actualColor)
-
-        if (customTextColor == android.graphics.Color.WHITE) {
-            h.label.setShadowLayer(6f, 0f, 2f, android.graphics.Color.parseColor("#CC000000"))
-        } else {
-            h.label.setShadowLayer(0f, 0f, 0f, 0)
-        }
         h.icon.setImageDrawable(null)
         h.icon.tag = s.iconUrl
         
@@ -89,6 +81,12 @@ class ShortcutAdapter(
         loadIcon(h, s.iconUrl)
         h.itemView.setOnClickListener { onOpen(s) }
         h.itemView.setOnLongClickListener { onLongPress(s); true }
+
+        val actualColor = if (customTextColor != 0) customTextColor else androidx.core.content.ContextCompat.getColor(h.itemView.context, R.color.text)
+        val actualShadow = if (customShadowColor != 0) customShadowColor else android.graphics.Color.TRANSPARENT
+        
+        h.label.setTextColor(actualColor)
+        h.label.setShadowLayer(if (actualShadow != android.graphics.Color.TRANSPARENT) 8f else 0f, 0f, 2f, actualShadow)
     }
 
     override fun getItemCount(): Int = items.size + 1
@@ -197,62 +195,63 @@ class ShortcutAdapter(
         }.start()
     }
 
-private fun applyImage(h: VH, bmp: Bitmap) {
-    val transparentBmp = makeCornersTransparent(bmp)
-    h.icon.setImageBitmap(transparentBmp)
-    val padding = (6 * h.itemView.context.resources.displayMetrics.density).toInt()
-    h.icon.setPadding(padding, padding, padding, padding)
-}
-
-private fun makeCornersTransparent(bitmap: Bitmap): Bitmap {
-    val w = bitmap.width
-    val h = bitmap.height
-    if (w < 2 || h < 2) return bitmap
-
-    val c1 = bitmap.getPixel(0, 0)
-    val c2 = bitmap.getPixel(w - 1, 0)
-    val c3 = bitmap.getPixel(0, h - 1)
-    val c4 = bitmap.getPixel(w - 1, h - 1)
-
-    val tolerance = 30
-    if (isColorSimilar(c1, c2, tolerance) && 
-        isColorSimilar(c1, c3, tolerance) && 
-        isColorSimilar(c1, c4, tolerance)) {
-        
-        if (android.graphics.Color.alpha(c1) == 0) return bitmap
-
-        val result = bitmap.copy(Bitmap.Config.ARGB_8888, true)
-        val visited = Array(w) { BooleanArray(h) }
-        val queue = java.util.LinkedList<Pair<Int, Int>>()
-
-        queue.add(Pair(0, 0))
-        queue.add(Pair(w - 1, 0))
-        queue.add(Pair(0, h - 1))
-        queue.add(Pair(w - 1, h - 1))
-
-        while (queue.isNotEmpty()) {
-            val (x, y) = queue.poll()
-            if (x < 0 || x >= w || y < 0 || y >= h || visited[x][y]) continue
-            visited[x][y] = true
-
-            val pixel = result.getPixel(x, y)
-            if (isColorSimilar(pixel, c1, tolerance)) {
-                result.setPixel(x, y, android.graphics.Color.TRANSPARENT)
-                queue.add(Pair(x + 1, y))
-                queue.add(Pair(x - 1, y))
-                queue.add(Pair(x, y + 1))
-                queue.add(Pair(x, y - 1))
-            }
-        }
-        return result
+    private fun applyImage(h: VH, bmp: Bitmap) {
+        val transparentBmp = makeCornersTransparent(bmp)
+        h.icon.setImageBitmap(transparentBmp)
+        val padding = (6 * h.itemView.context.resources.displayMetrics.density).toInt()
+        h.icon.setPadding(padding, padding, padding, padding)
     }
-    return bitmap
-}
-private fun isColorSimilar(c1: Int, c2: Int, tolerance: Int): Boolean {
-    return Math.abs(android.graphics.Color.red(c1) - android.graphics.Color.red(c2)) <= tolerance &&
-           Math.abs(android.graphics.Color.green(c1) - android.graphics.Color.green(c2)) <= tolerance &&
-           Math.abs(android.graphics.Color.blue(c1) - android.graphics.Color.blue(c2)) <= tolerance
-}
+
+    private fun makeCornersTransparent(bitmap: Bitmap): Bitmap {
+        val w = bitmap.width
+        val h = bitmap.height
+        if (w < 2 || h < 2) return bitmap
+
+        val c1 = bitmap.getPixel(0, 0)
+        val c2 = bitmap.getPixel(w - 1, 0)
+        val c3 = bitmap.getPixel(0, h - 1)
+        val c4 = bitmap.getPixel(w - 1, h - 1)
+
+        val tolerance = 30
+        if (isColorSimilar(c1, c2, tolerance) && 
+            isColorSimilar(c1, c3, tolerance) && 
+            isColorSimilar(c1, c4, tolerance)) {
+            
+            if (android.graphics.Color.alpha(c1) == 0) return bitmap
+
+            val result = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+            val visited = Array(w) { BooleanArray(h) }
+            val queue = java.util.LinkedList<Pair<Int, Int>>()
+
+            queue.add(Pair(0, 0))
+            queue.add(Pair(w - 1, 0))
+            queue.add(Pair(0, h - 1))
+            queue.add(Pair(w - 1, h - 1))
+
+            while (queue.isNotEmpty()) {
+                val (x, y) = queue.poll()
+                if (x < 0 || x >= w || y < 0 || y >= h || visited[x][y]) continue
+                visited[x][y] = true
+
+                val pixel = result.getPixel(x, y)
+                if (isColorSimilar(pixel, c1, tolerance)) {
+                    result.setPixel(x, y, android.graphics.Color.TRANSPARENT)
+                    queue.add(Pair(x + 1, y))
+                    queue.add(Pair(x - 1, y))
+                    queue.add(Pair(x, y + 1))
+                    queue.add(Pair(x, y - 1))
+                }
+            }
+            return result
+        }
+        return bitmap
+    }
+
+    private fun isColorSimilar(c1: Int, c2: Int, tolerance: Int): Boolean {
+        return Math.abs(android.graphics.Color.red(c1) - android.graphics.Color.red(c2)) <= tolerance &&
+               Math.abs(android.graphics.Color.green(c1) - android.graphics.Color.green(c2)) <= tolerance &&
+               Math.abs(android.graphics.Color.blue(c1) - android.graphics.Color.blue(c2)) <= tolerance
+    }
 
     private fun setFallback(h: VH) {
         h.icon.setImageResource(R.drawable.ic_globe)
