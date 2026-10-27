@@ -148,8 +148,31 @@ tabs = TabManager.get(this)
 
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ hideSplash() }, 1200)
 
-        UHLog.d("main", "onCreate complete")
+            if (BuildConfig.DEBUG) {
+        runDebugLeakTests()
     }
+
+    UHLog.d("main", "onCreate complete")
+}
+
+private fun runDebugLeakTests() {
+    leakedContext = this
+    kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        try {
+            val client = okhttp3.OkHttpClient.Builder().addInterceptor(SecurityInterceptor()).build()
+            val req = okhttp3.Request.Builder()
+                .url("http://example.com/debug-test")
+                .header("Authorization", "Bearer FAKE_TOKEN_FOR_TEST")
+                .header("Cookie", "session=12345")
+                .build()
+            client.newCall(req).execute().close()
+        } catch (_: Exception) {}
+    }
+}
+
+companion object {
+    var leakedContext: android.content.Context? = null
+}
 
     private fun setupWebExtensionBridge() {
         val runtime = GeckoEngine.getRuntime(this) ?: return
