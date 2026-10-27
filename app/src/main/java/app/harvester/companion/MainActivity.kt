@@ -343,6 +343,18 @@ private fun updateGridColumns() {
         }
     } else 4
     (binding.shortcutsGrid.layoutManager as? GridLayoutManager)?.spanCount = cols
+
+    val nsv = binding.shortcutsGrid.parent as? androidx.core.widget.NestedScrollView
+    if (nsv != null) {
+        val lp = nsv.layoutParams
+        if (isLandscape) {
+            lp.height = (160 * resources.displayMetrics.density).toInt()
+        } else {
+            lp.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+        }
+        nsv.layoutParams = lp
+        nsv.requestLayout()
+    }
 }
 
 override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
