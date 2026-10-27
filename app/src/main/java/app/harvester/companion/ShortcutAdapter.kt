@@ -51,6 +51,14 @@ class ShortcutAdapter(
             val actualColor = if (customTextColor != 0) customTextColor else fallbackColor
             h.label.setTextColor(actualColor)
             h.plus.setTextColor(actualColor)
+
+            if (customTextColor == android.graphics.Color.WHITE) {
+                h.label.setShadowLayer(6f, 0f, 2f, android.graphics.Color.parseColor("#CC000000"))
+                h.plus.setShadowLayer(6f, 0f, 2f, android.graphics.Color.parseColor("#CC000000"))
+            } else {
+                h.label.setShadowLayer(0f, 0f, 0f, 0)
+                h.plus.setShadowLayer(0f, 0f, 0f, 0)
+            }
             h.itemView.setOnClickListener { onAdd() }
             h.itemView.setOnLongClickListener { false }
             return
@@ -59,7 +67,14 @@ class ShortcutAdapter(
         h.icon.visibility = View.VISIBLE
         h.plus.visibility = View.GONE
         h.label.text = s.name
-        h.label.setTextColor(if (customTextColor != 0) customTextColor else androidx.core.content.ContextCompat.getColor(h.itemView.context, R.color.text))
+        val actualColor = if (customTextColor != 0) customTextColor else androidx.core.content.ContextCompat.getColor(h.itemView.context, R.color.text)
+        h.label.setTextColor(actualColor)
+
+        if (customTextColor == android.graphics.Color.WHITE) {
+            h.label.setShadowLayer(6f, 0f, 2f, android.graphics.Color.parseColor("#CC000000"))
+        } else {
+            h.label.setShadowLayer(0f, 0f, 0f, 0)
+        }
         h.icon.setImageDrawable(null)
         h.icon.tag = s.iconUrl
         
