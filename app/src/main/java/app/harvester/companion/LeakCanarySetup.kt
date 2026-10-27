@@ -1,6 +1,9 @@
 package app.harvester.companion
 
 import android.app.Application
+import android.app.NotificationManager
+import android.content.Context
+import android.os.Build
 import java.util.concurrent.TimeUnit
 import leakcanary.AppWatcher
 import leakcanary.LeakCanary
@@ -19,18 +22,13 @@ object LeakCanarySetup {
 
         LeakCanary.showLeakDisplayActivityLauncherIcon(false)
 
-        val nm = application.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        val nm = application.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.cancelAll()
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            val channel = nm.getNotificationChannel("LeakCanary")
-            if (channel != null) {
-                channel.setImportance(android.app.NotificationManager.IMPORTANCE_NONE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channels = nm.notificationChannels
+            for (channel in channels) {
+                channel.importance = NotificationManager.IMPORTANCE_NONE
                 nm.createNotificationChannel(channel)
-            }
-            val channel2 = nm.getNotificationChannel("leakcanary")
-            if (channel2 != null) {
-                channel2.setImportance(android.app.NotificationManager.IMPORTANCE_NONE)
-                nm.createNotificationChannel(channel2)
             }
         }
 
