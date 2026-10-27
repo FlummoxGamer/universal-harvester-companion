@@ -1876,15 +1876,14 @@ if (wpPath == null || wpPath == "default") {
             binding.homeScreen.setBackgroundColor(android.graphics.Color.TRANSPARENT)
             
             val safeColor = if (textColor == 0) ContextCompat.getColor(this, R.color.text) else textColor
-            binding.homeTitle.setTextColor(safeColor)
-            binding.btnEditHome.setColorFilter(safeColor)
-            shortcutAdapter.setTextColor(safeColor)
+            val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(safeColor)
+            val strictBW = if (luminance > 0.5) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+            val shadowColor = if (strictBW == android.graphics.Color.BLACK) android.graphics.Color.WHITE else android.graphics.Color.BLACK
 
-            if (textColor != 0) {
-                binding.homeTitle.setShadowLayer(8f, 0f, 2f, android.graphics.Color.parseColor("#B3000000"))
-            } else {
-                binding.homeTitle.setShadowLayer(0f, 0f, 0f, 0)
-            }
+            binding.homeTitle.setTextColor(strictBW)
+            binding.homeTitle.setShadowLayer(8f, 0f, 2f, shadowColor)
+            binding.btnEditHome.setColorFilter(strictBW)
+            shortcutAdapter.setTextColor(strictBW, shadowColor)
         } else {
                 binding.wallpaperBackground.visibility = View.GONE
                 binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
