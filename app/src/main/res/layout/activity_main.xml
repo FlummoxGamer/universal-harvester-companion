@@ -46,7 +46,7 @@
             android:focusable="false"
             android:focusableInTouchMode="false">
 
-            <Space android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="0.4" />
+           <Space android:id="@+id/topSpacer" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="0.4" />
            <TextView
                android:id="@+id/homeTitle"
                android:layout_width="wrap_content"
@@ -75,8 +75,8 @@
                    android:paddingEnd="16dp"
                    android:clipToPadding="false" />
            </androidx.core.widget.NestedScrollView>
-           <Space android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="0.4" />
-        </LinearLayout>
+           <Space android:id="@+id/bottomSpacer" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="0.4" />
+       </LinearLayout>
 
         <ImageButton
             android:id="@+id/btnEditHome"
