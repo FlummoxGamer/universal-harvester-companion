@@ -1,9 +1,6 @@
 package app.harvester.companion
 
 import android.app.Application
-import android.app.NotificationManager
-import android.content.Context
-import android.os.Build
 import java.util.concurrent.TimeUnit
 import leakcanary.AppWatcher
 import leakcanary.LeakCanary
@@ -14,28 +11,8 @@ object LeakCanarySetup {
     fun setup(application: Application) {
         if (AppWatcher.isInstalled) return
 
-        LeakCanary.config = LeakCanary.config.copy(showNotifications = false)
-
-        AppWatcher.manualInstall(
-            application = application,
-            retainedDelayMillis = TimeUnit.SECONDS.toMillis(5),
-            watchersToInstall = AppWatcher.appDefaultWatchers(application)
-        )    
-
-        LeakCanary.showLeakDisplayActivityLauncherIcon(false)
-        LeakCanary.config = LeakCanary.config.copy(showNotifications = false)
-
-        val nm = application.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.cancelAll()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channels = nm.notificationChannels
-            for (channel in channels) {
-                channel.importance = NotificationManager.IMPORTANCE_NONE
-                nm.createNotificationChannel(channel)
-            }
-        }
-
         LeakCanary.config = LeakCanary.config.copy(
+            dumpHeap = false,
             showNotifications = false,
             onHeapAnalyzedListener = OnHeapAnalyzedListener { heapAnalysis ->
                 if (heapAnalysis is HeapAnalysisSuccess) {
@@ -55,5 +32,13 @@ object LeakCanarySetup {
                 }
             }
         )
+
+        AppWatcher.manualInstall(
+            application = application,
+            retainedDelayMillis = TimeUnit.SECONDS.toMillis(5),
+            watchersToInstall = AppWatcher.appDefaultWatchers(application)
+        )
+
+        LeakCanary.showLeakDisplayActivityLauncherIcon(false)
     }
 }
