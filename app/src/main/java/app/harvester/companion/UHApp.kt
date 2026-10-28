@@ -22,6 +22,19 @@ class UHApp : Application() {
         if (BuildConfig.DEBUG) {
             StrictModeManager.enableStrictMode(true)
             LeakCanarySetup.setup(this)
+            try {
+                val nm = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    val channels = nm.notificationChannels
+                    for (channel in channels) {
+                        if (channel.id.contains("leak", ignoreCase = true)) {
+                            channel.importance = android.app.NotificationManager.IMPORTANCE_NONE
+                            nm.createNotificationChannel(channel)
+                        }
+                    }
+                }
+                nm.cancelAll()
+            } catch (_: Exception) {}
         }
         try {
             startService(Intent(this, SessionService::class.java))
