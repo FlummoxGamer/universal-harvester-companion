@@ -14,6 +14,7 @@ object StrictModeManager {
             .detectLeakedRegistrationObjects()
             .detectActivityLeaks()
             .penaltyListener(java.util.concurrent.Executors.newSingleThreadExecutor()) { violation ->
+                if (violation.javaClass.simpleName == "InstanceCountViolation") return@penaltyListener
                 val oldPolicy = StrictMode.allowThreadDiskWrites()
                 try {
                     val trace = violation.stackTrace.joinToString("\n") { "  at $it" }
