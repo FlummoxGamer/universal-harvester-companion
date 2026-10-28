@@ -351,6 +351,21 @@ private fun updateGridColumns() {
         lp.weight = 1f
         nsv.layoutParams = lp
         nsv.requestLayout()
+
+        val topSpacer = findViewById<android.view.View>(R.id.topSpacer)
+        val bottomSpacer = findViewById<android.view.View>(R.id.bottomSpacer)
+        val topLp = topSpacer?.layoutParams as? android.widget.LinearLayout.LayoutParams
+        val bottomLp = bottomSpacer?.layoutParams as? android.widget.LinearLayout.LayoutParams
+
+        if (isLandscape) {
+            topLp?.weight = 0.1f
+            bottomLp?.weight = 0.1f
+        } else {
+            topLp?.weight = 0.4f
+            bottomLp?.weight = 0.4f
+        }
+        topSpacer?.layoutParams = topLp
+        bottomSpacer?.layoutParams = bottomLp
     }
 }
 
