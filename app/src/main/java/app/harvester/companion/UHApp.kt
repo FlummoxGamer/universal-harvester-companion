@@ -20,6 +20,17 @@ class UHApp : Application() {
         UHLog.init(this)
         SessionRecorder.init(this)
         if (BuildConfig.DEBUG) {
+            try {
+                val nm = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    val ch1 = android.app.NotificationChannel("LeakCanary", "LeakCanary", android.app.NotificationManager.IMPORTANCE_NONE)
+                    ch1.setShowBadge(false)
+                    nm.createNotificationChannel(ch1)
+                    val ch2 = android.app.NotificationChannel("leakcanary", "leakcanary", android.app.NotificationManager.IMPORTANCE_NONE)
+                    ch2.setShowBadge(false)
+                    nm.createNotificationChannel(ch2)
+                }
+            } catch (_: Exception) {}
             StrictModeManager.enableStrictMode(true)
             LeakCanarySetup.setup(this)
         }
