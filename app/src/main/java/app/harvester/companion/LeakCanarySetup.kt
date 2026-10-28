@@ -20,9 +20,10 @@ object LeakCanarySetup {
             application = application,
             retainedDelayMillis = TimeUnit.SECONDS.toMillis(5),
             watchersToInstall = AppWatcher.appDefaultWatchers(application)
-        )
+        )    
 
         LeakCanary.showLeakDisplayActivityLauncherIcon(false)
+        LeakCanary.config = LeakCanary.config.copy(showNotifications = false)
 
         val nm = application.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.cancelAll()
