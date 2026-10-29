@@ -45,28 +45,27 @@ class TabGridDialog(
         )
         window?.setBackgroundDrawableResource(R.color.bg)
         window?.let { w ->
-            val controller = androidx.core.view.WindowCompat.getInsetsController(w, w.decorView)
-            controller.hide(androidx.core.view.WindowInsetsCompat.Type.statusBars())
-         }
+            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(w, true)
+        }
 
-val grid = findViewById<RecyclerView>(R.id.tabGrid)
-val isLandscape = context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-val screenWidthDp = context.resources.configuration.screenWidthDp
-val columns = if (isLandscape) {
-    when {
-        screenWidthDp >= 1280 -> 5
-        screenWidthDp >= 917 -> 4
-        screenWidthDp >= 600 -> 3
-        else -> 2
-    }
-} else {
-    when {
-        screenWidthDp >= 800 -> 4
-        screenWidthDp >= 480 -> 3
-        else -> 2
-    }
-}
-grid.layoutManager = GridLayoutManager(context, columns)
+        val grid = findViewById<RecyclerView>(R.id.tabGrid)
+        val isLandscape = context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        val screenWidthDp = context.resources.configuration.screenWidthDp
+        val columns = if (isLandscape) {
+            when {
+                screenWidthDp >= 1280 -> 5
+                screenWidthDp >= 917 -> 4
+                screenWidthDp >= 600 -> 3
+                else -> 2
+            }
+        } else {
+            when {
+                screenWidthDp >= 800 -> 4
+                screenWidthDp >= 480 -> 3
+                else -> 2
+            }
+        }
+        grid.layoutManager = GridLayoutManager(context, columns)
         adapter = Adapter(context, emptyList(), 0L,
             onTap = { id -> dismiss(); onSwitch(id) },
             onClose = { id -> closeOne(id) },
@@ -102,35 +101,35 @@ grid.layoutManager = GridLayoutManager(context, columns)
         }
     }
 
-private fun refresh() {
-    val tabs = currentTabs()
-    adapter?.update(tabs, manager.currentId())
-    findViewById<TextView>(R.id.tabGridCount).text = tabs.size.toString()
-    if (mode == MODE_INCOGNITO) {
-        findViewById<ImageButton>(R.id.tabsIncognito).setColorFilter(0xFF22D3EE.toInt())
-    } else {
-        findViewById<ImageButton>(R.id.tabsIncognito).clearColorFilter()
-    }
-    val strip = findViewById<LinearLayout>(R.id.tabStrip)
-    if (mode == MODE_GROUPS && filterGroupId != 0L) {
-        strip.visibility = View.VISIBLE
-        strip.removeAllViews()
-        for (t in tabs) {
-            val chip = android.widget.TextView(context).apply {
-                text = t.title.ifBlank { "New Tab" }.take(20)
-                setTextColor(
-                    if (t.id == manager.currentId()) 0xFF22D3EE.toInt() else 0xFF8A96A8.toInt()
-                )
-                textSize = 12f
-                setPadding(24, 12, 24, 12)
-                setOnClickListener { onSwitch(t.id) }
-            }
-            strip.addView(chip)
+    private fun refresh() {
+        val tabs = currentTabs()
+        adapter?.update(tabs, manager.currentId())
+        findViewById<TextView>(R.id.tabGridCount).text = tabs.size.toString()
+        if (mode == MODE_INCOGNITO) {
+            findViewById<ImageButton>(R.id.tabsIncognito).setColorFilter(0xFF22D3EE.toInt())
+        } else {
+            findViewById<ImageButton>(R.id.tabsIncognito).clearColorFilter()
         }
-    } else {
-        strip.visibility = View.GONE
+        val strip = findViewById<LinearLayout>(R.id.tabStrip)
+        if (mode == MODE_GROUPS && filterGroupId != 0L) {
+            strip.visibility = View.VISIBLE
+            strip.removeAllViews()
+            for (t in tabs) {
+                val chip = android.widget.TextView(context).apply {
+                    text = t.title.ifBlank { "New Tab" }.take(20)
+                    setTextColor(
+                        if (t.id == manager.currentId()) 0xFF22D3EE.toInt() else 0xFF8A96A8.toInt()
+                    )
+                    textSize = 12f
+                    setPadding(24, 12, 24, 12)
+                    setOnClickListener { onSwitch(t.id) }
+                }
+                strip.addView(chip)
+            }
+        } else {
+            strip.visibility = View.GONE
+        }
     }
-}
 
     private fun toggleIncognito() {
         if (mode == MODE_INCOGNITO) {
@@ -147,44 +146,44 @@ private fun refresh() {
         refresh()
     }
 
-private fun closeOne(id: Long) {
-    val entity = manager.list().firstOrNull { it.id == id }
-    if (entity != null && entity.groupId != 0L) {
-        val remainingInGroup = manager.listByGroup(entity.groupId).size
-        if (remainingInGroup <= 1) {
-            val group = TabGroupStore.byId(context, entity.groupId)
-            AlertDialog.Builder(context)
-                .setTitle("Close last tab in group?")
-                .setMessage("Delete group \"${group?.name ?: "unnamed"}\" as well?")
-                .setPositiveButton("Delete group") { _, _ ->
-                    TabGroupStore.delete(context, entity.groupId)
-                    manager.close(id)
-                    refresh()
-                }
-                .setNegativeButton("Keep group") { _, _ ->
-                    manager.close(id)
-                    refresh()
-                }
-                .show()
-            return
+    private fun closeOne(id: Long) {
+        val entity = manager.list().firstOrNull { it.id == id }
+        if (entity != null && entity.groupId != 0L) {
+            val remainingInGroup = manager.listByGroup(entity.groupId).size
+            if (remainingInGroup <= 1) {
+                val group = TabGroupStore.byId(context, entity.groupId)
+                AlertDialog.Builder(context)
+                    .setTitle("Close last tab in group?")
+                    .setMessage("Delete group \"${group?.name ?: "unnamed"}\" as well?")
+                    .setPositiveButton("Delete group") { _, _ ->
+                        TabGroupStore.delete(context, entity.groupId)
+                        manager.close(id)
+                        refresh()
+                    }
+                    .setNegativeButton("Keep group") { _, _ ->
+                        manager.close(id)
+                        refresh()
+                    }
+                    .show()
+                return
+            }
         }
-    }
-    manager.close(id)
-    val remaining = currentTabs()
-    if (remaining.isEmpty()) {
-        if (mode == MODE_INCOGNITO) {
-            manager.closeAllIncognito()
-            mode = MODE_NORMAL
-            refresh()
-            if (currentTabs().isEmpty()) { dismiss(); onNew() }
+        manager.close(id)
+        val remaining = currentTabs()
+        if (remaining.isEmpty()) {
+            if (mode == MODE_INCOGNITO) {
+                manager.closeAllIncognito()
+                mode = MODE_NORMAL
+                refresh()
+                if (currentTabs().isEmpty()) { dismiss(); onNew() }
+            } else {
+                dismiss()
+                onNew()
+            }
         } else {
-            dismiss()
-            onNew()
+            refresh()
         }
-    } else {
-        refresh()
     }
-}
 
     private fun confirmCloseAll() {
         val count = currentTabs().size
@@ -311,41 +310,42 @@ private fun closeOne(id: Long) {
             .show()
     }
 
-private fun toast(s: String) = Toast.makeText(context, s, Toast.LENGTH_SHORT).show()
+    private fun toast(s: String) = Toast.makeText(context, s, Toast.LENGTH_SHORT).show()
 
-private val configCallbacks = object : android.content.ComponentCallbacks {
-    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
-        val grid = findViewById<RecyclerView>(R.id.tabGrid)
-        val isLandscape = newConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-        val screenWidthDp = newConfig.screenWidthDp
-        val columns = if (isLandscape) {
-            when {
-                screenWidthDp >= 1280 -> 5
-                screenWidthDp >= 917 -> 4
-                screenWidthDp >= 600 -> 3
-                else -> 2
+    private val configCallbacks = object : android.content.ComponentCallbacks {
+        override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+            val grid = findViewById<RecyclerView>(R.id.tabGrid)
+            val isLandscape = newConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            val screenWidthDp = newConfig.screenWidthDp
+            val columns = if (isLandscape) {
+                when {
+                    screenWidthDp >= 1280 -> 5
+                    screenWidthDp >= 917 -> 4
+                    screenWidthDp >= 600 -> 3
+                    else -> 2
+                }
+            } else {
+                when {
+                    screenWidthDp >= 800 -> 4
+                    screenWidthDp >= 480 -> 3
+                    else -> 2
+                }
             }
-        } else {
-            when {
-                screenWidthDp >= 800 -> 4
-                screenWidthDp >= 480 -> 3
-                else -> 2
-            }
+            grid.layoutManager = GridLayoutManager(context, columns)
         }
-        grid.layoutManager = GridLayoutManager(context, columns)
+        override fun onLowMemory() {}
     }
-    override fun onLowMemory() {}
-}
 
-override fun show() {
-    super.show()
-    context.registerComponentCallbacks(configCallbacks)
-}
+    override fun show() {
+        super.show()
+        context.registerComponentCallbacks(configCallbacks)
+    }
 
-override fun dismiss() {
-    context.unregisterComponentCallbacks(configCallbacks)
-    super.dismiss()
-}
+    override fun dismiss() {
+        context.unregisterComponentCallbacks(configCallbacks)
+        super.dismiss()
+    }
+
     private class Adapter(
         private val ctx: Context,
         private var items: List<TabEntity>,
