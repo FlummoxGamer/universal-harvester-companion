@@ -660,38 +660,37 @@ private fun setupBackDispatcher() {
             return@addCallback
         }
 
-        val v = currentSession
-        val id = if (v != null) tabs.idForSession(v) else -1L
-        val url = currentUrl
+val v = currentSession
+val id = if (v != null) tabs.idForSession(v) else -1L
+val url = currentUrl
 
-        if (url == "about:blank" || url.isNullOrBlank()) {
-            val all = tabs.list()
-            if (all.size > 1) {
-                popupTabs.remove(id)
-                tabs.close(id)
-                val remaining = tabs.list()
-                if (remaining.isNotEmpty()) {
-                    tabs.acquireSession(remaining.first().id)
-                    attachCurrent(); updateUi()
-                }
-            } else {
-                val now = System.currentTimeMillis()
-                if (now - lastBackPress < 2000L) finish()
-                else {
-                    lastBackPress = now
-                    Toast.makeText(this@MainActivity, "Press back again to exit", Toast.LENGTH_SHORT).show()
-                }
-            }
-            return@addCallback
+if (url == "about:blank" || url.isNullOrBlank()) {
+    val all = tabs.list()
+    if (all.size > 1) {
+        popupTabs.remove(id)
+        tabs.close(id)
+        val remaining = tabs.list()
+        if (remaining.isNotEmpty()) {
+            tabs.acquireSession(remaining.first().id)
+            attachCurrent(); updateUi()
         }
-
-        if (v != null) {
-            if (tabs.canGoBack(v)) {
-                v.goBack()
-                return@addCallback
-            }
+    } else {
+        val now = System.currentTimeMillis()
+        if (now - lastBackPress < 2000L) finish()
+        else {
+            lastBackPress = now
+            Toast.makeText(this@MainActivity, "Press back again to exit", Toast.LENGTH_SHORT).show()
         }
+    }
+    return@addCallback
+}
 
+if (v != null) {
+    if (tabs.canGoBack(v)) {
+        v.goBack()
+        return@addCallback
+    }
+}
         val currentEntity = tabs.list().firstOrNull { it.id == id }
         if (currentEntity != null && currentEntity.parentId != 0L) {
             val parentId = currentEntity.parentId
@@ -1932,8 +1931,12 @@ override fun onPause() {
 
     override fun onDestroy() {
         if (::tabs.isInitialized) {
-            tabs.saveAll()
-            tabs.detachDelegates()
+           tabs.saveAll()
+           if (isFinishing) {
+               tabs.destroyAllSessions()
+           } else {
+               tabs.detachDelegates()
+           }
         }
         if (::mainGeckoView.isInitialized) {
             mainGeckoView.releaseSession()
