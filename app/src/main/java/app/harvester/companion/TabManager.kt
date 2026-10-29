@@ -27,6 +27,10 @@ class TabManager private constructor(private val ctx: Context) {
     private var currentId: Long = -1L
     private val attachedSessions = mutableSetOf<GeckoSession>()
 
+    init {
+        currentId = ctx.getSharedPreferences("uh_tabs", Context.MODE_PRIVATE).getLong("last_tab_id", -1L)
+    }
+
     fun pushHistory(id: Long) {
         if (tabHistory.isNotEmpty() && tabHistory.last() == id) return
         tabHistory.add(id)
@@ -42,6 +46,7 @@ class TabManager private constructor(private val ctx: Context) {
     fun setCurrentId(id: Long) {
         synchronized(lock) {
             currentId = id
+            ctx.getSharedPreferences("uh_tabs", Context.MODE_PRIVATE).edit().putLong("last_tab_id", id).apply()
         }
     }
 
@@ -252,6 +257,25 @@ class TabManager private constructor(private val ctx: Context) {
                     slot.session.contentBlockingDelegate = null
                     slot.session.permissionDelegate = null
                 } catch (_: Exception) {}
+            }
+        }
+    }
+
+    fun destroyAllSessions() {
+        synchronized(lock) {
+            for (slot in alive.values) {
+                try { slot.session.close() } catch (_: Exception) {}
+            }
+            alive.clear()
+            attachedSessions.clear()
+        }
+    }
+
+    fun updateTheme(isDark: Boolean) {
+        synchronized(lock) {
+            val scheme = if (isDark) GeckoSessionSettings.COLOR_SCHEME_DARK else GeckoSessionSettings.COLOR_SCHEME_LIGHT
+            for (slot in alive.values) {
+                try { slot.session.settings.preferredColorScheme = scheme } catch (_: Exception) {}
             }
         }
     }
