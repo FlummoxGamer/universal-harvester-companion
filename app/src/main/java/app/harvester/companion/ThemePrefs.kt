@@ -19,6 +19,12 @@ object ThemePrefs {
     fun setMode(ctx: Context, mode: Int) {
         prefs(ctx).edit().putInt(KEY_MODE, mode).apply()
         apply(mode)
+        val isDark = when (mode) {
+            MODE_DARK -> true
+            MODE_LIGHT -> false
+            else -> (ctx.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+        }
+        try { TabManager.get(ctx).updateTheme(isDark) } catch (_: Exception) {}
     }
 
     fun apply(mode: Int) {
