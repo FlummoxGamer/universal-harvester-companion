@@ -19,7 +19,6 @@ object UHLog {
     private const val FLUSH_EVERY = 20
     private const val KEEP_SESSIONS = 10
     private const val RESUME_WINDOW_MS = 60L * 1000L
-    private const val DEDUPE_WINDOW_MS = 5000L
 
     private const val PREFS = "uh_session"
     private const val KEY_SESSION_ID = "session_id"
@@ -37,11 +36,6 @@ object UHLog {
     private var appContext: Context? = null
     private var initialised = false
     @Volatile private var verbose = false
-
-    private var lastLogKey: String = ""
-    private var lastLogLine: String = ""
-    private var lastLogTime: Long = 0L
-    private var repeatCount: Int = 0
 
     @Volatile var externalPath: String = ""
     @Volatile var netPath: String = ""
@@ -184,45 +178,45 @@ object UHLog {
     fun addListener(fn: (String) -> Unit) { listeners.add(fn) }
     fun removeListener(fn: (String) -> Unit) { listeners.remove(fn) }
 
-fun isVerbose(): Boolean = verbose
+    fun isVerbose(): Boolean = verbose
 
-fun setVerbose(on: Boolean) {
-    verbose = on
-    appContext?.let { DebugPrefs.setVerboseLogging(it, on) }
-}
+    fun setVerbose(on: Boolean) {
+        verbose = on
+        appContext?.let { DebugPrefs.setVerboseLogging(it, on) }
+    }
 
-fun netNav(method: String, url: String, referer: String?, hasCookie: Boolean, hasAuth: Boolean) {
-    if (!verbose) return
-    val sb = StringBuilder()
-    sb.append("NAV ").append(method).append(' ').append(url)
-    if (!referer.isNullOrBlank()) sb.append("\n  ref=").append(referer)
-    if (hasCookie) sb.append("\n  cookie=<present>")
-    if (hasAuth) sb.append("\n  auth=<present>")
-    write("net", 'V', sb.toString(), true)
-}
+    fun netNav(method: String, url: String, referer: String?, hasCookie: Boolean, hasAuth: Boolean) {
+        if (!verbose) return
+        val sb = StringBuilder()
+        sb.append("NAV ").append(method).append(' ').append(url)
+        if (!referer.isNullOrBlank()) sb.append("\n  ref=").append(referer)
+        if (hasCookie) sb.append("\n  cookie=<present>")
+        if (hasAuth) sb.append("\n  auth=<present>")
+        write("net", 'V', sb.toString(), true)
+    }
 
-fun netPost(url: String, contentType: String?, contentLength: Long) {
-    if (!verbose) return
-    val sb = StringBuilder()
-    sb.append("POST ").append(url)
-    if (!contentType.isNullOrBlank()) sb.append("\n  ct=").append(contentType)
-    if (contentLength >= 0) sb.append("\n  cl=").append(contentLength)
-    write("net", 'V', sb.toString(), true)
-}
+    fun netPost(url: String, contentType: String?, contentLength: Long) {
+        if (!verbose) return
+        val sb = StringBuilder()
+        sb.append("POST ").append(url)
+        if (!contentType.isNullOrBlank()) sb.append("\n  ct=").append(contentType)
+        if (contentLength >= 0) sb.append("\n  cl=").append(contentLength)
+        write("net", 'V', sb.toString(), true)
+    }
 
-fun netApi(method: String, url: String) {
-    if (!verbose) return
-    write("net", 'V', "API $method $url", true)
-}
+    fun netApi(method: String, url: String) {
+        if (!verbose) return
+        write("net", 'V', "API $method $url", true)
+    }
 
-fun netError(url: String, code: Int) {
-    write("net", 'E', "ERROR $code $url", true)
-}
+    fun netError(url: String, code: Int) {
+        write("net", 'E', "ERROR $code $url", true)
+    }
 
-fun netScheme(raw: String, action: String) {
-    if (!verbose) return
-    write("net", 'V', "SCHEME $raw → $action", true)
-}
+    fun netScheme(raw: String, action: String) {
+        if (!verbose) return
+        write("net", 'V', "SCHEME $raw → $action", true)
+    }
 
 fun netPopupOpen(parentUrl: String, userGesture: Boolean, isDialog: Boolean) {
     if (!verbose) return
@@ -234,71 +228,65 @@ fun netPopupCreated(id: Long) {
     write("net", 'V', "POPUP created id=$id", true)
 }
 
-fun netPopupLoad(url: String) {
-    if (!verbose) return
-    write("net", 'V', "POPUP load $url", true)
-}
-
-fun netResource(url: String, mime: String) {
-    if (!verbose) return
-    write("net", 'V', "RES $mime $url", true)
-}
-
-fun netExtDialog(url: String) {
-    if (!verbose) return
-    write("net", 'V', "EXT dialog $url", true)
-}
-
-fun netExtOpen(url: String) {
-    if (!verbose) return
-    write("net", 'V', "EXT open $url", true)
-}
-
-fun netExtStay(url: String) {
-    if (!verbose) return
-    write("net", 'V', "EXT stay $url", true)
-}
-
-fun net3p(pageUrl: String, hosts: Collection<String>) {
-    if (!verbose) return
-    if (hosts.isEmpty()) return
-    val sorted = hosts.toSortedSet().joinToString(" ")
-    write("net", 'V', "3P $pageUrl: $sorted", true)
-}
-
-    private fun sanitize(s: String): String {
-        if (s.length < 20) return s
-        var out = s
-        if (out.contains("eyJ")) out = RX_JWT.replace(out) { "<JWT>" }
-        if (out.contains("earer")) out = RX_BEARER.replace(out) { m -> m.groupValues[1] + "<BEARER>" }
-        if (out.contains("ookie")) out = RX_COOKIE.replace(out) { m -> m.groupValues[1] + "<COOKIE>" }
-        if (out.contains("loudfront")) out = RX_CF.replace(out) { m -> m.groupValues[1] + "<CF>" }
-        if (out.length > 300) out = RX_B64_BLOB.replace(out) { "<BLOB(${it.value.length}b)>" }
-        return out
+    fun netPopupLoad(url: String) {
+        if (!verbose) return
+        write("net", 'V', "POPUP load $url", true)
     }
+
+    fun netResource(url: String, mime: String) {
+        if (!verbose) return
+        write("net", 'V', "RES $mime $url", true)
+    }
+
+    fun netExtDialog(url: String) {
+        if (!verbose) return
+        write("net", 'V', "EXT dialog $url", true)
+    }
+
+    fun netExtOpen(url: String) {
+        if (!verbose) return
+        write("net", 'V', "EXT open $url", true)
+    }
+
+    fun netExtStay(url: String) {
+        if (!verbose) return
+        write("net", 'V', "EXT stay $url", true)
+    }
+
+    fun net3p(pageUrl: String, hosts: Collection<String>) {
+        if (!verbose) return
+        if (hosts.isEmpty()) return
+        val sorted = hosts.toSortedSet().joinToString(" ")
+        write("net", 'V', "3P $pageUrl: $sorted", true)
+    }
+
+ private fun sanitize(s: String): String {
+    if (s.length < 20) return s
+    var out = s
+    if (out.contains("eyJ")) out = RX_JWT.replace(out) { "<JWT>" }
+    if (out.contains("earer")) out = RX_BEARER.replace(out) { m -> m.groupValues[1] + "<BEARER>" }
+    if (out.contains("ookie")) out = RX_COOKIE.replace(out) { m -> m.groupValues[1] + "<COOKIE>" }
+    if (out.contains("loudfront")) out = RX_CF.replace(out) { m -> m.groupValues[1] + "<CF>" }
+    if (out.length > 300) out = RX_B64_BLOB.replace(out) { "<BLOB(${it.value.length}b)>" }
+    return out
+ }
 
     private fun write(tag: String, level: Char, msg: String, isNet: Boolean = false) {
         val clean = sanitize(msg)
-        val now = System.currentTimeMillis()
-        val key = "$level|$tag|$clean"
-        val line = "${timeFormat.format(Date(now))} $level [$tag] $clean"
-        
+        val line = "${timeFormat.format(Date())} $level [$tag] $clean"
         synchronized(lock) {
-            if (key == lastLogKey && (now - lastLogTime) < DEDUPE_WINDOW_MS) {
-                repeatCount++
-                lastLogTime = now
-                return
-            } else {
-                if (repeatCount > 0) {
-                    val repeatedLine = "${timeFormat.format(Date(lastLogTime))} ${lastLogLine.substringAfter(" ").substringBefore(" [").first()} [${lastLogLine.substringAfter("[").substringBefore("]")}] ${lastLogLine.substringAfter("] ")} (repeated ${repeatCount + 1} times)"
-                    writeToBuffer(repeatedLine, isNet)
-                    repeatCount = 0
+            buffer.addLast(line)
+            while (buffer.size > MAX_LINES) buffer.removeFirst()
+            try {
+                val target = if (isNet) netWriter else writer
+                target?.appendLine(line)
+                if (isNet) {
+                    netWriter?.flush()
+                } else {
+                    pending++
+                    if (pending >= FLUSH_EVERY) { writer?.flush(); pending = 0 }
                 }
-                lastLogKey = key
-                lastLogLine = line
-                lastLogTime = now
-            }
-            writeToBuffer(line, isNet)
+            } catch (_: Exception) {}
         }
         if (!isNet) {
             for (l in listeners) try { l(line) } catch (_: Exception) {}
@@ -306,28 +294,16 @@ fun net3p(pageUrl: String, hosts: Collection<String>) {
         try { Log.d(TAG, line) } catch (_: Exception) {}
     }
 
-    private fun writeToBuffer(line: String, isNet: Boolean) {
-        buffer.addLast(line)
-        while (buffer.size > MAX_LINES) buffer.removeFirst()
-        try {
-            val target = if (isNet) netWriter else writer
-            target?.appendLine(line)
-            if (isNet || line.contains("[security]") || line.contains("[leak]") || line.contains("[crash]") || line.contains("[strictmode]")) {
-                target?.flush()
-                pending = 0
-            } else {
-                pending++
-                if (pending >= FLUSH_EVERY) { writer?.flush(); pending = 0 }
-            }
-        } catch (_: Exception) {}
-    }
-
     private fun writeAlways(tag: String, level: Char, msg: String) {
         val clean = sanitize(msg)
         val line = "${timeFormat.format(Date())} $level [$tag] $clean"
         synchronized(lock) {
-            writeToBuffer(line, false)
-            try { writer?.flush() } catch (_: Exception) {}
+            buffer.addLast(line)
+            while (buffer.size > MAX_LINES) buffer.removeFirst()
+            try {
+                writer?.appendLine(line)
+                writer?.flush()
+            } catch (_: Exception) {}
         }
         try { Log.d(TAG, line) } catch (_: Exception) {}
     }
@@ -364,16 +340,6 @@ fun net3p(pageUrl: String, hosts: Collection<String>) {
                 netWriter = BufferedWriter(FileWriter(nf, true))
             } catch (_: Exception) {}
         }
-    }
-
-    fun writeLeakLog(msg: String) {
-        val clean = sanitize(msg)
-        val line = "${timeFormat.format(Date())} E [leak] $clean"
-        synchronized(lock) {
-            writeToBuffer(line, false)
-            try { writer?.flush() } catch (_: Exception) {}
-        }
-        try { Log.e(TAG, line) } catch (_: Exception) {}
     }
 
     private fun installCrashHandler() {
