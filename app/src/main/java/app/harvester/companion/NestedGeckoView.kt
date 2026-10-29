@@ -49,10 +49,10 @@ class NestedGeckoView(context: Context) : GeckoView(context), NestedScrollingChi
         }
     }
 
-    override fun releaseSession() {
+    override fun releaseSession(): GeckoSession? {
         trackedSession?.compositorScrollDelegate = null
         trackedSession = null
-        super.releaseSession()
+        return super.releaseSession()
     }
     
     fun canScrollUp(): Boolean = currentScrollY > 0.5f
