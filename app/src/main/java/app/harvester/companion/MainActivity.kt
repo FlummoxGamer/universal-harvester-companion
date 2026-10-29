@@ -1933,6 +1933,10 @@ override fun onPause() {
     override fun onDestroy() {
         if (::tabs.isInitialized) {
             tabs.saveAll()
+            tabs.detachDelegates()
+        }
+        if (::mainGeckoView.isInitialized) {
+            mainGeckoView.releaseSession()
         }
         MenuCommandStore.listener = null
         suggestJob?.cancel()
