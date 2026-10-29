@@ -239,4 +239,20 @@ class TabManager private constructor(private val ctx: Context) {
 
     fun saveCurrentState() {}
     fun saveAll() {}
+
+    fun detachDelegates() {
+        synchronized(lock) {
+            for (slot in alive.values) {
+                try {
+                    slot.session.promptDelegate = null
+                    slot.session.contentDelegate = null
+                    slot.session.navigationDelegate = null
+                    slot.session.progressDelegate = null
+                    slot.session.historyDelegate = null
+                    slot.session.contentBlockingDelegate = null
+                    slot.session.permissionDelegate = null
+                } catch (_: Exception) {}
+            }
+        }
+    }
 }
