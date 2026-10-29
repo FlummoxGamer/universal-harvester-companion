@@ -273,10 +273,16 @@ class TabManager private constructor(private val ctx: Context) {
 
     fun updateTheme(isDark: Boolean) {
         synchronized(lock) {
-            val scheme = if (isDark) GeckoSessionSettings.COLOR_SCHEME_DARK else GeckoSessionSettings.COLOR_SCHEME_LIGHT
-            for (slot in alive.values) {
-                try { slot.session.settings.preferredColorScheme = scheme } catch (_: Exception) {}
-            }
+            try {
+                val runtimeSettings = GeckoEngine.getRuntime(ctx)?.settings
+                if (runtimeSettings != null) {
+                    runtimeSettings.preferredColorScheme = if (isDark) {
+                        org.mozilla.geckoview.GeckoRuntimeSettings.COLOR_SCHEME_DARK
+                    } else {
+                        org.mozilla.geckoview.GeckoRuntimeSettings.COLOR_SCHEME_LIGHT
+                    }
+                }
+            } catch (_: Exception) {}
         }
     }
 }
