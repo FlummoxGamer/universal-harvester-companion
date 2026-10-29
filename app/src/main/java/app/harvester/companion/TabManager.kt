@@ -264,7 +264,16 @@ class TabManager private constructor(private val ctx: Context) {
     fun destroyAllSessions() {
         synchronized(lock) {
             for (slot in alive.values) {
-                try { slot.session.close() } catch (_: Exception) {}
+                try {
+                    slot.session.promptDelegate = null
+                    slot.session.contentDelegate = null
+                    slot.session.navigationDelegate = null
+                    slot.session.progressDelegate = null
+                    slot.session.historyDelegate = null
+                    slot.session.contentBlockingDelegate = null
+                    slot.session.permissionDelegate = null
+                    slot.session.close()
+                } catch (_: Exception) {}
             }
             alive.clear()
             attachedSessions.clear()
@@ -285,4 +294,5 @@ class TabManager private constructor(private val ctx: Context) {
             } catch (_: Exception) {}
         }
     }
+}
 }
