@@ -14,17 +14,18 @@ import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import androidx.fragment.app.DialogFragment
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetDialog
 
-class TabGridDialog(
-    ctx: Context,
-    private val manager: TabManager,
-    private val onSwitch: (Long) -> Unit,
-    private val onNew: () -> Unit
-) : Dialog(android.view.ContextThemeWrapper(ctx, R.style.Theme_UHCompanion)) {
+class TabGridDialog : DialogFragment() {
 
+    var onSwitch: ((Long) -> Unit)? = null
+    var onNew: (() -> Unit)? = null
+    var onDismissCallback: (() -> Unit)? = null
+
+    private lateinit var manager: TabManager
     private var adapter: Adapter? = null
     private var mode: Int = MODE_NORMAL
     private var filterGroupId: Long = 0L
@@ -37,20 +38,16 @@ class TabGridDialog(
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        requestWindowFeature(Window.FEATURE_NO_TITLE)
-        setContentView(R.layout.dialog_tab_grid)
-        window?.setLayout(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
-        )
-        window?.setBackgroundDrawableResource(R.color.bg)
-        window?.let { w ->
-            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(w, true)
-        }
+        setStyle(STYLE_NO_TITLE, R.style.Theme_UHCompanion)
+        manager = TabManager.get(requireContext())
+    }
 
-        val grid = findViewById<RecyclerView>(R.id.tabGrid)
-        val isLandscape = context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-        val screenWidthDp = context.resources.configuration.screenWidthDp
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
+        val v = inflater.inflate(R.layout.dialog_tab_grid, container, false)
+        
+        val grid = v.findViewById<RecyclerView>(R.id.tabGrid)
+        val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        val screenWidthDp = resources.configuration.screenWidthDp
         val columns = if (isLandscape) {
             when {
                 screenWidthDp >= 1280 -> 5
@@ -66,30 +63,50 @@ class TabGridDialog(
             }
         }
         grid.layoutManager = GridLayoutManager(context, columns)
-        adapter = Adapter(context, emptyList(), 0L,
-            onTap = { id -> dismiss(); onSwitch(id) },
+        adapter = Adapter(requireContext(), emptyList(), 0L,
+            onTap = { id -> dismiss(); onSwitch?.invoke(id) },
             onClose = { id -> closeOne(id) },
             onGroupLongPress = { groupId -> showGroupMenu(groupId) }
         )
         grid.adapter = adapter
 
-        findViewById<View>(R.id.tabsBack).setOnClickListener { dismiss() }
-        findViewById<View>(R.id.tabsIncognito).setOnClickListener { toggleIncognito() }
-        findViewById<View>(R.id.tabsGroups).setOnClickListener { toggleGroups() }
-        findViewById<View>(R.id.tabsMenu).setOnClickListener { showTabMenu() }
+        v.findViewById<View>(R.id.tabsBack).setOnClickListener { dismiss() }
+        v.findViewById<View>(R.id.tabsIncognito).setOnClickListener { toggleIncognito(v) }
+        v.findViewById<View>(R.id.tabsGroups).setOnClickListener { toggleGroups(v) }
+        v.findViewById<View>(R.id.tabsMenu).setOnClickListener { showTabMenu(v) }
 
-        findViewById<View>(R.id.tabBottomNew).setOnClickListener {
+        v.findViewById<View>(R.id.tabBottomNew).setOnClickListener {
             dismiss()
             if (mode == MODE_INCOGNITO) manager.openNew("about:blank", incognito = true)
             else manager.openNew("about:blank")
-            onNew()
+            onNew?.invoke()
         }
-        findViewById<View>(R.id.tabBottomCloseAll).setOnClickListener { confirmCloseAll() }
-        findViewById<View>(R.id.tabBottomGrid).setOnClickListener { refresh() }
-        findViewById<View>(R.id.tabBottomSelect).setOnClickListener { toast("Select mode coming soon") }
-        findViewById<View>(R.id.tabBottomCount).setOnClickListener { toast("${currentTabs().size} tabs") }
+        v.findViewById<View>(R.id.tabBottomCloseAll).setOnClickListener { confirmCloseAll() }
+        v.findViewById<View>(R.id.tabBottomGrid).setOnClickListener { refresh(v) }
+        v.findViewById<View>(R.id.tabBottomSelect).setOnClickListener { toast("Select mode coming soon") }
+        v.findViewById<View>(R.id.tabBottomCount).setOnClickListener { toast("${currentTabs().size} tabs") }
 
-        refresh()
+        return v
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        refresh(view)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        dialog?.window?.setLayout(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        dialog?.window?.setBackgroundDrawableResource(R.color.bg)
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(dialog!!.window!!, true)
+    }
+
+    override fun onDismiss(dialog: android.content.DialogInterface) {
+        super.onDismiss(dialog)
+        onDismissCallback?.invoke()
     }
 
     private fun currentTabs(): List<TabEntity> {
@@ -101,16 +118,16 @@ class TabGridDialog(
         }
     }
 
-    private fun refresh() {
+    private fun refresh(v: View) {
         val tabs = currentTabs()
         adapter?.update(tabs, manager.currentId())
-        findViewById<TextView>(R.id.tabGridCount).text = tabs.size.toString()
+        v.findViewById<TextView>(R.id.tabGridCount).text = tabs.size.toString()
         if (mode == MODE_INCOGNITO) {
-            findViewById<ImageButton>(R.id.tabsIncognito).setColorFilter(0xFF22D3EE.toInt())
+            v.findViewById<ImageButton>(R.id.tabsIncognito).setColorFilter(0xFF22D3EE.toInt())
         } else {
-            findViewById<ImageButton>(R.id.tabsIncognito).clearColorFilter()
+            v.findViewById<ImageButton>(R.id.tabsIncognito).clearColorFilter()
         }
-        val strip = findViewById<LinearLayout>(R.id.tabStrip)
+        val strip = v.findViewById<LinearLayout>(R.id.tabStrip)
         if (mode == MODE_GROUPS && filterGroupId != 0L) {
             strip.visibility = View.VISIBLE
             strip.removeAllViews()
@@ -122,7 +139,7 @@ class TabGridDialog(
                     )
                     textSize = 12f
                     setPadding(24, 12, 24, 12)
-                    setOnClickListener { onSwitch(t.id) }
+                    setOnClickListener { onSwitch?.invoke(t.id) }
                 }
                 strip.addView(chip)
             }
@@ -131,19 +148,15 @@ class TabGridDialog(
         }
     }
 
-    private fun toggleIncognito() {
-        if (mode == MODE_INCOGNITO) {
-            mode = MODE_NORMAL
-        } else {
-            mode = MODE_INCOGNITO
-        }
-        refresh()
+    private fun toggleIncognito(v: View) {
+        if (mode == MODE_INCOGNITO) mode = MODE_NORMAL else mode = MODE_INCOGNITO
+        refresh(v)
     }
 
-    private fun toggleGroups() {
+    private fun toggleGroups(v: View) {
         mode = MODE_GROUPS
         filterGroupId = 0L
-        refresh()
+        refresh(v)
     }
 
     private fun closeOne(id: Long) {
@@ -151,18 +164,18 @@ class TabGridDialog(
         if (entity != null && entity.groupId != 0L) {
             val remainingInGroup = manager.listByGroup(entity.groupId).size
             if (remainingInGroup <= 1) {
-                val group = TabGroupStore.byId(context, entity.groupId)
-                AlertDialog.Builder(context)
+                val group = TabGroupStore.byId(requireContext(), entity.groupId)
+                AlertDialog.Builder(requireContext())
                     .setTitle("Close last tab in group?")
                     .setMessage("Delete group \"${group?.name ?: "unnamed"}\" as well?")
                     .setPositiveButton("Delete group") { _, _ ->
-                        TabGroupStore.delete(context, entity.groupId)
+                        TabGroupStore.delete(requireContext(), entity.groupId)
                         manager.close(id)
-                        refresh()
+                        refresh(requireView())
                     }
                     .setNegativeButton("Keep group") { _, _ ->
                         manager.close(id)
-                        refresh()
+                        refresh(requireView())
                     }
                     .show()
                 return
@@ -174,14 +187,14 @@ class TabGridDialog(
             if (mode == MODE_INCOGNITO) {
                 manager.closeAllIncognito()
                 mode = MODE_NORMAL
-                refresh()
-                if (currentTabs().isEmpty()) { dismiss(); onNew() }
+                refresh(requireView())
+                if (currentTabs().isEmpty()) { dismiss(); onNew?.invoke() }
             } else {
                 dismiss()
-                onNew()
+                onNew?.invoke()
             }
         } else {
-            refresh()
+            refresh(requireView())
         }
     }
 
@@ -192,7 +205,7 @@ class TabGridDialog(
             MODE_INCOGNITO -> "Close all $count incognito tabs?"
             else -> "Close all $count tabs?"
         }
-        AlertDialog.Builder(context)
+        AlertDialog.Builder(requireContext())
             .setTitle(label)
             .setMessage("This cannot be undone.")
             .setPositiveButton("Close all") { _, _ ->
@@ -203,15 +216,15 @@ class TabGridDialog(
                     manager.closeAll()
                 }
                 dismiss()
-                onNew()
+                onNew?.invoke()
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-    private fun showTabMenu() {
-        val sheet = BottomSheetDialog(context)
-        val v = LayoutInflater.from(context).inflate(R.layout.dialog_tab_menu, null)
+    private fun showTabMenu(parentView: View) {
+        val sheet = BottomSheetDialog(requireContext())
+        val v = layoutInflater.inflate(R.layout.dialog_tab_menu, null)
         sheet.setContentView(v)
         sheet.behavior.isDraggable = false
 
@@ -222,17 +235,17 @@ class TabGridDialog(
             sheet.dismiss()
             manager.openNew("about:blank")
             dismiss()
-            onNew()
+            onNew?.invoke()
         }
         v.findViewById<View>(R.id.tmNewIncognito)?.setOnClickListener {
             sheet.dismiss()
             manager.openNew("about:blank", incognito = true)
             dismiss()
-            onNew()
+            onNew?.invoke()
         }
         v.findViewById<View>(R.id.tmNewGroup)?.setOnClickListener {
             sheet.dismiss()
-            promptCreateGroup()
+            promptCreateGroup(parentView)
         }
         v.findViewById<View>(R.id.tmCloseAll)?.setOnClickListener {
             sheet.dismiss()
@@ -245,17 +258,17 @@ class TabGridDialog(
         sheet.show()
     }
 
-    private fun promptCreateGroup() {
-        val input = EditText(context).apply { hint = "Group name"; setSingleLine() }
-        AlertDialog.Builder(context)
+    private fun promptCreateGroup(parentView: View) {
+        val input = EditText(requireContext()).apply { hint = "Group name"; setSingleLine() }
+        AlertDialog.Builder(requireContext())
             .setTitle("New tab group")
             .setView(input)
             .setPositiveButton("Create") { _, _ ->
                 val name = input.text.toString().trim().ifBlank { "Group" }
-                TabGroupStore.create(context, name)
+                TabGroupStore.create(requireContext(), name)
                 mode = MODE_GROUPS
                 filterGroupId = 0L
-                refresh()
+                refresh(parentView)
                 toast("Group '$name' created")
             }
             .setNegativeButton("Cancel", null)
@@ -263,31 +276,31 @@ class TabGridDialog(
     }
 
     private fun showGroupMenu(groupId: Long) {
-        val group = TabGroupStore.byId(context, groupId) ?: return
-        AlertDialog.Builder(context)
+        val group = TabGroupStore.byId(requireContext(), groupId) ?: return
+        AlertDialog.Builder(requireContext())
             .setTitle(group.name)
             .setItems(arrayOf("Open", "Rename", "Delete group")) { _, which ->
                 when (which) {
                     0 -> {
                         filterGroupId = groupId
                         mode = MODE_GROUPS
-                        refresh()
+                        refresh(requireView())
                     }
                     1 -> {
-                        val input = EditText(context).apply { setText(group.name); setSingleLine() }
-                        AlertDialog.Builder(context)
+                        val input = EditText(requireContext()).apply { setText(group.name); setSingleLine() }
+                        AlertDialog.Builder(requireContext())
                             .setTitle("Rename group")
                             .setView(input)
                             .setPositiveButton("Save") { _, _ ->
-                                TabGroupStore.rename(context, groupId, input.text.toString().trim())
-                                refresh()
+                                TabGroupStore.rename(requireContext(), groupId, input.text.toString().trim())
+                                refresh(requireView())
                             }
                             .setNegativeButton("Cancel", null)
                             .show()
                     }
                     2 -> {
-                        TabGroupStore.delete(context, groupId)
-                        refresh()
+                        TabGroupStore.delete(requireContext(), groupId)
+                        refresh(requireView())
                     }
                 }
             }
@@ -295,7 +308,7 @@ class TabGridDialog(
     }
 
     private fun confirmDeleteData() {
-        AlertDialog.Builder(context)
+        AlertDialog.Builder(requireContext())
             .setTitle("Delete browsing data?")
             .setMessage("Cookies, cache, and site storage will be cleared.")
             .setPositiveButton("Delete") { _, _ ->
@@ -310,41 +323,7 @@ class TabGridDialog(
             .show()
     }
 
-    private fun toast(s: String) = Toast.makeText(context, s, Toast.LENGTH_SHORT).show()
-
-    private val configCallbacks = object : android.content.ComponentCallbacks {
-        override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
-            val grid = findViewById<RecyclerView>(R.id.tabGrid)
-            val isLandscape = newConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-            val screenWidthDp = newConfig.screenWidthDp
-            val columns = if (isLandscape) {
-                when {
-                    screenWidthDp >= 1280 -> 5
-                    screenWidthDp >= 917 -> 4
-                    screenWidthDp >= 600 -> 3
-                    else -> 2
-                }
-            } else {
-                when {
-                    screenWidthDp >= 800 -> 4
-                    screenWidthDp >= 480 -> 3
-                    else -> 2
-                }
-            }
-            grid.layoutManager = GridLayoutManager(context, columns)
-        }
-        override fun onLowMemory() {}
-    }
-
-    override fun show() {
-        super.show()
-        context.registerComponentCallbacks(configCallbacks)
-    }
-
-    override fun dismiss() {
-        context.unregisterComponentCallbacks(configCallbacks)
-        super.dismiss()
-    }
+    private fun toast(s: String) = Toast.makeText(requireContext(), s, Toast.LENGTH_SHORT).show()
 
     private class Adapter(
         private val ctx: Context,
