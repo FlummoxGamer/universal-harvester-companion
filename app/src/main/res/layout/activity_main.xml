@@ -224,7 +224,7 @@
     <LinearLayout
         android:id="@+id/bottomBar"
         android:layout_width="0dp"
-        android:layout_height="60dp"
+        android:layout_height="68dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:background="@color/bg"
@@ -237,7 +237,7 @@
     <LinearLayout
         android:id="@+id/urlBar"
         android:layout_width="0dp"
-        android:layout_height="44dp"
+        android:layout_height="52dp"
         android:layout_weight="1"
         android:layout_marginStart="2dp"
         android:layout_marginEnd="2dp"
