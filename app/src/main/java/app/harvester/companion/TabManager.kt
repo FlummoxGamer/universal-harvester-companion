@@ -295,4 +295,3 @@ class TabManager private constructor(private val ctx: Context) {
         }
     }
 }
-}
