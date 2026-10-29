@@ -23,7 +23,7 @@ class TabGridDialog(
     private val manager: TabManager,
     private val onSwitch: (Long) -> Unit,
     private val onNew: () -> Unit
-) : Dialog(ctx) {
+) : Dialog(android.view.ContextThemeWrapper(ctx, R.style.Theme_UHCompanion)) {
 
     private var adapter: Adapter? = null
     private var mode: Int = MODE_NORMAL
