@@ -145,7 +145,12 @@ tabs = TabManager.get(this)
         if (existing.isEmpty()) {
             tabs.openNew("about:blank")
         } else {
-            tabs.acquireSession(existing.first().id)
+            val lastId = tabs.currentId()
+            if (lastId != -1L && existing.any { it.id == lastId }) {
+                tabs.acquireSession(lastId)
+            } else {
+                tabs.acquireSession(existing.first().id)
+            }
         }
         attachCurrent()
         applyAddressBarPosition()
@@ -345,16 +350,25 @@ private fun updateGridColumns() {
     (binding.shortcutsGrid.layoutManager as? GridLayoutManager)?.spanCount = cols
 
     if (isLandscape) {
+        binding.homeTitle.visibility = android.view.View.GONE
+        
         val content = binding.homeScreen
         if (content.childCount > 0 && content.getChildAt(0) is android.widget.Space) {
             val topSpace = content.getChildAt(0)
             val bottomSpace = content.getChildAt(content.childCount - 1)
-            (topSpace.layoutParams as android.widget.LinearLayout.LayoutParams).weight = 0.1f
-            (bottomSpace.layoutParams as android.widget.LinearLayout.LayoutParams).weight = 0.1f
-            topSpace.layoutParams = topSpace.layoutParams
-            bottomSpace.layoutParams = bottomSpace.layoutParams
+            val lpTop = topSpace.layoutParams as android.widget.LinearLayout.LayoutParams
+            lpTop.weight = 0f
+            lpTop.height = (16 * resources.displayMetrics.density).toInt()
+            topSpace.layoutParams = lpTop
+            
+            val lpBot = bottomSpace.layoutParams as android.widget.LinearLayout.LayoutParams
+            lpBot.weight = 0f
+            lpBot.height = (16 * resources.displayMetrics.density).toInt()
+            bottomSpace.layoutParams = lpBot
         }
     } else {
+        binding.homeTitle.visibility = android.view.View.VISIBLE
+        
         val content = binding.homeScreen
         if (content.childCount > 0 && content.getChildAt(0) is android.widget.Space) {
             val topSpace = content.getChildAt(0)
@@ -687,22 +701,11 @@ val id = if (v != null) tabs.idForSession(v) else -1L
 val url = currentUrl
 
 if (url == "about:blank" || url.isNullOrBlank()) {
-    val all = tabs.list()
-    if (all.size > 1) {
-        popupTabs.remove(id)
-        tabs.close(id)
-        val remaining = tabs.list()
-        if (remaining.isNotEmpty()) {
-            tabs.acquireSession(remaining.first().id)
-            attachCurrent(); updateUi()
-        }
-    } else {
-        val now = System.currentTimeMillis()
-        if (now - lastBackPress < 2000L) finish()
-        else {
-            lastBackPress = now
-            Toast.makeText(this@MainActivity, "Press back again to exit", Toast.LENGTH_SHORT).show()
-        }
+    val now = System.currentTimeMillis()
+    if (now - lastBackPress < 2000L) finish()
+    else {
+        lastBackPress = now
+        Toast.makeText(this@MainActivity, "Press back again to exit", Toast.LENGTH_SHORT).show()
     }
     return@addCallback
 }
@@ -1669,18 +1672,17 @@ if (script.iconUrl.isNotBlank()) {
         }
     }
 
-    private fun openTabGrid() {
-        TabGridDialog(this, tabs,
-            onSwitch = { id -> switchTab(id) },
-            onNew = { exitEditMode(); attachCurrent(); updateUi() }
-        ).apply {
-            setOnDismissListener {
-                val live = tabs.currentSession()
-                if (live != null && live !== currentSession) { attachCurrent(); updateUi() }
-                else updateUi()
-            }
-        }.show()
-    }
+private fun openTabGrid() {
+    TabGridDialog().apply {
+        onSwitch = { id -> switchTab(id) }
+        onNew = { exitEditMode(); attachCurrent(); updateUi() }
+        onDismissCallback = {
+            val live = tabs.currentSession()
+            if (live != null && live !== currentSession) { attachCurrent(); updateUi() }
+            else updateUi()
+        }
+    }.show(supportFragmentManager, "TabGridDialog")
+}
 
     private fun normalize(input: String): String {
         val t = input.trim()
@@ -1951,20 +1953,20 @@ override fun onPause() {
     UHLog.onActivityPause(this)
 }
 
-    override fun onDestroy() {
-        if (::tabs.isInitialized) {
-           tabs.saveAll()
-           if (isFinishing) {
-               tabs.destroyAllSessions()
-           } else {
-               tabs.detachDelegates()
-           }
+override fun onDestroy() {
+    if (::tabs.isInitialized) {
+        tabs.saveAll()
+        if (isFinishing) {
+            tabs.destroyAllSessions()
+        } else {
+            tabs.detachDelegates()
         }
-        if (::mainGeckoView.isInitialized) {
-            mainGeckoView.releaseSession()
-        }
-        MenuCommandStore.listener = null
-        suggestJob?.cancel()
-        super.onDestroy()
     }
+    if (::mainGeckoView.isInitialized) {
+        mainGeckoView.releaseSession()
+    }
+    MenuCommandStore.listener = null
+    suggestJob?.cancel()
+    super.onDestroy()
+}
 }
