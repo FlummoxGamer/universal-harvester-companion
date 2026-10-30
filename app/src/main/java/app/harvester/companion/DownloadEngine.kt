@@ -193,15 +193,25 @@ object DownloadEngine {
             } catch (e: Exception) {
                 val currentTask = DownloadStore.getTask(task.id) ?: return@launch
                 if (currentTask.status != DownloadStore.Status.CANCELLED && currentTask.status != DownloadStore.Status.PAUSED) {
-                    targetUri?.let { deletePartialFile(ctx, it) }
-                    if (targetDoc != null) targetDoc?.delete()
-                    DownloadStore.updateTask(task.id) {
-                        it.status = DownloadStore.Status.FAILED
-                        it.error = e.message
-                    }
-                    DownloadService.notifyFailed(ctx, task.id, task.filename, e.message ?: "Unknown error")
-                }
-            } finally {
+                    if (currentTask.retryCount < 3) {
+                        DownloadStore.updateTask(task.id) {
+                            it.status = DownloadStore.Status.PENDING
+                            it.retryCount++
+                            it.error = e.message
+                       }
+                       DownloadService.updateNotification(ctx, task.id)
+                       delay(2000L * currentTask.retryCount)
+                   } else {
+                       targetUri?.let { deletePartialFile(ctx, it) }
+                       if (targetDoc != null) targetDoc?.delete()
+                       DownloadStore.updateTask(task.id) {
+                           it.status = DownloadStore.Status.FAILED
+                           it.error = e.message
+                       }
+                       DownloadService.notifyFailed(ctx, task.id, task.filename, e.message ?: "Unknown error")
+                   }
+               }
+           } finally {
                 if (DownloadStore.getTask(task.id)?.status != DownloadStore.Status.PAUSED) {
                     processQueue(ctx)
                 }
@@ -304,11 +314,14 @@ object DownloadEngine {
         DownloadService.updateNotification(ctx, id)
     }
 
-    fun resumeDownload(ctx: Context, id: String) {
-        DownloadStore.updateTask(id) { it.status = DownloadStore.Status.PENDING }
-        DownloadService.updateNotification(ctx, id)
-        processQueue(ctx)
+fun resumeDownload(ctx: Context, id: String) {
+    DownloadStore.updateTask(id) { 
+        it.status = DownloadStore.Status.PENDING 
+        it.retryCount = 0
     }
+    DownloadService.updateNotification(ctx, id)
+    processQueue(ctx)
+}
 
     fun cancelDownload(ctx: Context, id: String) {
         DownloadStore.updateTask(id) { it.status = DownloadStore.Status.CANCELLED }
