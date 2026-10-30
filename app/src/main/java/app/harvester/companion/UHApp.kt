@@ -26,7 +26,8 @@ class UHApp : Application() {
         try {
             startService(Intent(this, SessionService::class.java))
         } catch (_: Exception) {}
-            scheduleCleanup()
+        DownloadEngine.initNetworkListener(this)
+        scheduleCleanup()
     }
 
     private fun scheduleCleanup() {
