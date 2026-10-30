@@ -340,43 +340,8 @@ private fun updateGridColumns() {
 
     if (isLandscape) {
         binding.homeTitle.visibility = android.view.View.GONE
-        
-        val content = binding.homeScreen
-        if (content.childCount > 0 && content.getChildAt(0) is android.widget.Space) {
-            val topSpace = content.getChildAt(0)
-            val bottomSpace = content.getChildAt(content.childCount - 1)
-            
-            val lpTop = topSpace.layoutParams as android.widget.LinearLayout.LayoutParams
-            lpTop.weight = 0f
-            lpTop.height = (72 * resources.displayMetrics.density).toInt()
-            topSpace.layoutParams = lpTop
-            
-            val lpBot = bottomSpace.layoutParams as android.widget.LinearLayout.LayoutParams
-            lpBot.weight = 0f
-            lpBot.height = (16 * resources.displayMetrics.density).toInt()
-            bottomSpace.layoutParams = lpBot
-        }
     } else {
         binding.homeTitle.visibility = android.view.View.VISIBLE
-        
-        val content = binding.homeScreen
-        if (content.childCount > 0 && content.getChildAt(0) is android.widget.Space) {
-            val topSpace = content.getChildAt(0)
-            val bottomSpace = content.getChildAt(content.childCount - 1)
-            (topSpace.layoutParams as android.widget.LinearLayout.LayoutParams).weight = 0.4f
-            (bottomSpace.layoutParams as android.widget.LinearLayout.LayoutParams).weight = 0.4f
-            topSpace.layoutParams = topSpace.layoutParams
-            bottomSpace.layoutParams = bottomSpace.layoutParams
-        }
-    }
-
-    val nsv = binding.shortcutsGrid.parent as? androidx.core.widget.NestedScrollView
-    if (nsv != null) {
-        val lp = nsv.layoutParams as android.widget.LinearLayout.LayoutParams
-        lp.height = 0
-        lp.weight = 1f
-        nsv.layoutParams = lp
-        nsv.requestLayout()
     }
 }
 
