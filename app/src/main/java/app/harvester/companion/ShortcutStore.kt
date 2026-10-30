@@ -13,21 +13,37 @@ object ShortcutStore {
         val raw = ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
             .getString(KEY, null)
         if (raw.isNullOrBlank()) return defaultList()
-        return try {
+        
+        val parsed = try {
             val arr = JSONArray(raw)
             val out = mutableListOf<Shortcut>()
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
-                out.add(
-                    Shortcut(
-                        name = o.optString("name"),
-                        url = o.optString("url"),
-                        iconUrl = o.optString("iconUrl")
-                    )
-                )
+                out.add(Shortcut(o.optString("name"), o.optString("url"), o.optString("iconUrl")))
             }
             out
-        } catch (_: Exception) { defaultList() }
+        } catch (_: Exception) { mutableListOf() }
+
+        if (parsed.size == 1 && parsed[0].name == "DuckDuckGo") {
+            val defaults = defaultList()
+            save(ctx, defaults)
+            return defaults
+        }
+
+        var migrated = false
+        val finalList = parsed.map { s ->
+            if (!s.iconUrl.contains("google.com/s2/favicons")) {
+                migrated = true
+                s.copy(iconUrl = iconUrlFor(s.url))
+            } else s
+        }.toMutableList()
+
+        if (migrated) save(ctx, finalList)
+        return finalList
+    }
+
+    fun clear(ctx: Context) {
+        ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit().clear().apply()
     }
 
     fun save(ctx: Context, list: List<Shortcut>) {
@@ -42,11 +58,15 @@ object ShortcutStore {
         ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
             .edit().putString(KEY, arr.toString()).apply()
     }
+    
     fun shortNameFor(targetUrl: String): String {
-        val host = try { java.net.URI(targetUrl).host } catch (_: Exception) { null }
-            ?: return targetUrl
-        val clean = host.removePrefix("www.")
-        return clean.substringBefore('.')
+        var clean = targetUrl.trim()
+        clean = clean.removePrefix("https://").removePrefix("http://")
+        clean = clean.removePrefix("www.").removePrefix("m.")
+        clean = clean.substringBefore("/")
+        val dotIndex = clean.lastIndexOf('.')
+        if (dotIndex > 0) clean = clean.substring(0, dotIndex)
+        return clean.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.ROOT) else it.toString() }
     }
 
     fun add(ctx: Context, s: Shortcut) {
@@ -61,20 +81,19 @@ object ShortcutStore {
         save(ctx, current)
     }
 
-fun iconUrlFor(targetUrl: String): String {
-    val host = try {
-        java.net.URI(targetUrl).host
-    } catch (_: Exception) { null }
-    if (host.isNullOrBlank()) return ""
-    val clean = host.removePrefix("www.")
-    return "https://icons.duckduckgo.com/ip3/$clean.ico"
-}
+    fun iconUrlFor(targetUrl: String): String {
+        val host = try {
+            java.net.URI(targetUrl).host
+        } catch (_: Exception) { null }
+        if (host.isNullOrBlank()) return ""
+        val clean = host.removePrefix("www.")
+        return "https://www.google.com/s2/favicons?domain=$clean&sz=128&v=${app.harvester.companion.BuildConfig.VERSION_CODE}"
+    }
 
     private fun defaultList(): MutableList<Shortcut> = mutableListOf(
-        Shortcut(
-            name = "DuckDuckGo",
-            url = "https://duckduckgo.com",
-            iconUrl = "https://icons.duckduckgo.com/ip3/duckduckgo.com.ico"
-        )
+        Shortcut("Duck AI", "https://duck.ai", iconUrlFor("https://duck.ai")),
+        Shortcut("YouTube", "https://m.youtube.com", iconUrlFor("https://m.youtube.com")),
+        Shortcut("Calmly", "https://www.calmlywriter.com/online/", iconUrlFor("https://www.calmlywriter.com")),
+        Shortcut("Cobalt", "https://cobalt.tools", iconUrlFor("https://cobalt.tools"))
     )
 }

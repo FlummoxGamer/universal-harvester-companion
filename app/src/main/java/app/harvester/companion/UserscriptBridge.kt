@@ -31,35 +31,49 @@ class UserscriptBridge(private val ctx: Context) {
 
     private fun nsKey(script: String, key: String) = "$script::$key"
 
-@Volatile var overlayActive = false
+    @Volatile var overlayActive = false
 
-@JavascriptInterface
-fun updateOverlayState(active: Boolean) { overlayActive = active }
+    @JavascriptInterface
+    fun updateOverlayState(active: Boolean) { overlayActive = active }
 
-@JavascriptInterface
-fun saveBlob(filename: String, mime: String, base64Data: String, pageUrl: String) {
-    try {
-        DownloadEngine.startDownload(ctx, "", filename, mime, base64Data, null, pageUrl)
-        val w = v() ?: return
-        w.post { android.widget.Toast.makeText(ctx, "Download started", android.widget.Toast.LENGTH_SHORT).show() }
-    } catch (e: Exception) {
-        UHLog.throwable("blob", "service failed", e)
-    }
-}
-    
-init {
-    prefs.registerOnSharedPreferenceChangeListener(
-        android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, k ->
-            val key = k ?: return@OnSharedPreferenceChangeListener
-            val parts = key.split("::", limit = 2)
-            if (parts.size != 2) return@OnSharedPreferenceChangeListener
-            val script = parts[0]
-            val userKey = parts[1]
-            val newV = p?.getString(key, null)
-            fireVcl(script, userKey, null, newV)
+    @JavascriptInterface
+    fun saveBlob(filename: String, mime: String, base64Data: String, pageUrl: String) {
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            try {
+                DownloadEngine.startDownload(ctx, "", filename, mime, base64Data, null, pageUrl)
+                android.widget.Toast.makeText(ctx, "Download started", android.widget.Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                UHLog.throwable("blob", "service failed", e)
+            }
         }
-    )
-}
+    }
+
+    @JavascriptInterface
+    fun openImage(url: String) {
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            try {
+                val intent = Intent(ctx, ImagePreviewActivity::class.java).apply {
+                    putExtra("url", url)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                ctx.startActivity(intent)
+            } catch (_: Exception) {}
+        }
+    }
+    
+    init {
+        prefs.registerOnSharedPreferenceChangeListener(
+            android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, k ->
+                val key = k ?: return@OnSharedPreferenceChangeListener
+                val parts = key.split("::", limit = 2)
+                if (parts.size != 2) return@OnSharedPreferenceChangeListener
+                val script = parts[0]
+                val userKey = parts[1]
+                val newV = p?.getString(key, null)
+                fireVcl(script, userKey, null, newV)
+            }
+        )
+    }
 
     private fun fireVcl(script: String, key: String, oldV: String?, newV: String?) {
         val w = v() ?: return
@@ -75,8 +89,6 @@ init {
         }
         w.post { w.evaluateJavascript(sb.toString(), null) }
     }
-
-    // --- Storage (namespaced per script) ---
 
     @JavascriptInterface
     fun GM_getValueNs(script: String, key: String): String? =
@@ -124,94 +136,92 @@ init {
         for (list in vcl.values) list.removeAll { it.id == id }
     }
 
-    // --- XHR ---
-
-@JavascriptInterface
-fun GM_xmlhttpRequest(
-    script: String, id: String, method: String, url: String,
-    headersJson: String, body: String, responseType: String,
-    timeoutStr: String, user: String, password: String
-) {
-    Thread {
-        try {
-            val conn = URL(url).openConnection() as HttpURLConnection
-            conn.requestMethod = method
-            conn.connectTimeout = 20000
-            conn.readTimeout = timeoutStr.toIntOrNull()?.takeIf { it > 0 } ?: 20000
-            conn.instanceFollowRedirects = true
-
+    @JavascriptInterface
+    fun GM_xmlhttpRequest(
+        script: String, id: String, method: String, url: String,
+        headersJson: String, body: String, responseType: String,
+        timeoutStr: String, user: String, password: String
+    ) {
+        Thread {
             try {
-                val hdrs = if (headersJson.isBlank()) JSONObject() else JSONObject(headersJson)
-                for (k in hdrs.keys()) conn.setRequestProperty(k, hdrs.optString(k))
-            } catch (_: Exception) {}
+                val conn = URL(url).openConnection() as HttpURLConnection
+                conn.requestMethod = method
+                conn.connectTimeout = 20000
+                conn.readTimeout = timeoutStr.toIntOrNull()?.takeIf { it > 0 } ?: 20000
+                conn.instanceFollowRedirects = true
 
-            val cookie = try { CookieManager.getInstance().getCookie(url) } catch (_: Exception) { null }
-            if (!cookie.isNullOrBlank() && conn.getRequestProperty("Cookie") == null) {
-                conn.setRequestProperty("Cookie", cookie)
-            }
-            if (conn.getRequestProperty("User-Agent") == null) {
-                conn.setRequestProperty("User-Agent",
-                    "Mozilla/5.0 (Linux; Android 10; RMX1801) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/153.0.8010.57 Mobile Safari/537.36")
-            }
+                try {
+                    val hdrs = if (headersJson.isBlank()) JSONObject() else JSONObject(headersJson)
+                    for (k in hdrs.keys()) conn.setRequestProperty(k, hdrs.optString(k))
+                } catch (_: Exception) {}
 
-            if (body.isNotBlank() && method in listOf("POST", "PUT", "PATCH", "DELETE")) {
-                conn.doOutput = true
-                conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-            }
+                val cookie = try { CookieManager.getInstance().getCookie(url) } catch (_: Exception) { null }
+                if (!cookie.isNullOrBlank() && conn.getRequestProperty("Cookie") == null) {
+                    conn.setRequestProperty("Cookie", cookie)
+                }
+                if (conn.getRequestProperty("User-Agent") == null) {
+                    conn.setRequestProperty("User-Agent",
+                        "Mozilla/5.0 (Linux; Android 10; RMX1801) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/153.0.8010.57 Mobile Safari/537.36")
+                }
 
-            xhrAborts[id] = conn
+                if (body.isNotBlank() && method in listOf("POST", "PUT", "PATCH", "DELETE")) {
+                    conn.doOutput = true
+                    conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                }
 
-            val status = conn.responseCode
-            val stream = if (status in 200..299) conn.inputStream else conn.errorStream
-            val totalLen = conn.contentLengthLong
-            val sb = StringBuilder()
-            if (stream != null) {
-                val buf = ByteArray(16 * 1024)
-                var read = 0L
-                var lastFire = 0L
-                var n: Int
-                while (true) {
-                    n = stream.read(buf)
-                    if (n < 0) break
-                    sb.append(String(buf, 0, n, Charsets.UTF_8))
-                    read += n
-                    val now = System.currentTimeMillis()
-                    if (now - lastFire > 200L) {
-                        lastFire = now
-                        val w = v()
-                        if (w != null && totalLen > 0) {
-                            val js = "try{window.__uh_xhr_progress('" + id + "'," +
-                                read + "," + totalLen + ")}catch(e){}"
-                            w.post { w.evaluateJavascript(js, null) }
+                xhrAborts[id] = conn
+
+                val status = conn.responseCode
+                val stream = if (status in 200..299) conn.inputStream else conn.errorStream
+                val totalLen = conn.contentLengthLong
+                val sb = StringBuilder()
+                if (stream != null) {
+                    val buf = ByteArray(16 * 1024)
+                    var read = 0L
+                    var lastFire = 0L
+                    var n: Int
+                    while (true) {
+                        n = stream.read(buf)
+                        if (n < 0) break
+                        sb.append(String(buf, 0, n, Charsets.UTF_8))
+                        read += n
+                        val now = System.currentTimeMillis()
+                        if (now - lastFire > 200L) {
+                            lastFire = now
+                            val w = v()
+                            if (w != null && totalLen > 0) {
+                                val js = "try{window.__uh_xhr_progress('" + id + "'," +
+                                    read + "," + totalLen + ")}catch(e){}"
+                                w.post { w.evaluateJavascript(js, null) }
+                            }
                         }
                     }
                 }
-            }
-            val text = sb.toString()
+                val text = sb.toString()
 
-            val respHeaders = StringBuilder()
-            for ((k, values) in conn.headerFields) {
-                if (k == null) continue
-                for (vv in values) respHeaders.append(k).append(": ").append(vv).append("\r\n")
-            }
-            val finalUrl = conn.url.toString()
-            xhrAborts.remove(id)
-            conn.disconnect()
+                val respHeaders = StringBuilder()
+                for ((k, values) in conn.headerFields) {
+                    if (k == null) continue
+                    for (vv in values) respHeaders.append(k).append(": ").append(vv).append("\r\n")
+                }
+                val finalUrl = conn.url.toString()
+                xhrAborts.remove(id)
+                conn.disconnect()
 
-            val payload = buildPayload(responseType, text)
-            val w = v() ?: return@Thread
-            val js = "try{window.__uh_xhr_done('" + id + "'," + status + "," +
-                jsString(payload) + "," + jsString(respHeaders.toString()) + "," +
-                jsString(finalUrl) + ")}catch(e){}"
-            w.post { w.evaluateJavascript(js, null) }
-        } catch (e: Exception) {
-            xhrAborts.remove(id)
-            val w = v() ?: return@Thread
-            val js = "try{window.__uh_xhr_error('" + id + "'," + jsString(e.message ?: "error") + ")}catch(e){}"
-            w.post { w.evaluateJavascript(js, null) }
-        }
-    }.start()
-}
+                val payload = buildPayload(responseType, text)
+                val w = v() ?: return@Thread
+                val js = "try{window.__uh_xhr_done('" + id + "'," + status + "," +
+                    jsString(payload) + "," + jsString(respHeaders.toString()) + "," +
+                    jsString(finalUrl) + ")}catch(e){}"
+                w.post { w.evaluateJavascript(js, null) }
+            } catch (e: Exception) {
+                xhrAborts.remove(id)
+                val w = v() ?: return@Thread
+                val js = "try{window.__uh_xhr_error('" + id + "'," + jsString(e.message ?: "error") + ")}catch(e){}"
+                w.post { w.evaluateJavascript(js, null) }
+            }
+        }.start()
+    }
 
     @JavascriptInterface
     fun GM_xhrAbort(id: String) {
@@ -230,18 +240,16 @@ fun GM_xmlhttpRequest(
         }
     }
 
-    // --- Downloads / tabs / clipboard / notifications ---
-
-@JavascriptInterface
-fun GM_download(script: String, url: String, name: String) {
-    try {
-        DownloadHelper.saveFromUrlWithCookies(ctx, url, name, null, null)
-        val w = v() ?: return
-        w.post {
-            android.widget.Toast.makeText(ctx, "Download started", android.widget.Toast.LENGTH_SHORT).show()
-        }
-    } catch (_: Exception) {}
-}
+    @JavascriptInterface
+    fun GM_download(script: String, url: String, name: String) {
+        try {
+            DownloadHelper.saveFromUrlWithCookies(ctx, url, name, null, null)
+            val w = v() ?: return
+            w.post {
+                android.widget.Toast.makeText(ctx, "Download started", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        } catch (_: Exception) {}
+    }
 
     @JavascriptInterface
     fun GM_openInTab(script: String, url: String, active: Boolean) {
@@ -294,8 +302,6 @@ fun GM_download(script: String, url: String, name: String) {
         MenuCommandStore.unregister(script, id)
     }
 
-    // --- Cookies ---
-
     @JavascriptInterface
     fun GM_cookieGet(url: String): String {
         return try {
@@ -326,8 +332,6 @@ fun GM_download(script: String, url: String, name: String) {
         try { CookieManager.getInstance().setCookie(url, "$name=; Max-Age=0") } catch (_: Exception) {}
     }
 
-    // --- Resources ---
-
     @JavascriptInterface
     fun GM_getResourceText(script: String, name: String): String? =
         ResourceStore.getText(ctx, script, name)
@@ -335,8 +339,6 @@ fun GM_download(script: String, url: String, name: String) {
     @JavascriptInterface
     fun GM_getResourceURL(script: String, name: String): String? =
         ResourceStore.getUrl(ctx, script, name)
-
-    // --- Misc ---
 
     @JavascriptInterface
     fun GM_log(message: String) {
@@ -367,17 +369,6 @@ fun GM_download(script: String, url: String, name: String) {
     fun report(url: String, kind: String, detail: String) {
         UHLog.d("capture", "$kind $url — $detail")
     }
-
-@JavascriptInterface
-fun openImage(url: String) {
-    try {
-        val intent = Intent(ctx, ImagePreviewActivity::class.java).apply {
-            putExtra("url", url)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        ctx.startActivity(intent)
-    } catch (_: Exception) {}
-}
 
     private fun jsString(s: String): String {
         val sb = StringBuilder("\"")

@@ -1,9 +1,8 @@
 package app.harvester.companion
 
 import android.content.Context
-import android.os.Bundle
-import android.os.Parcel
-import android.webkit.WebView
+import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.GeckoSessionSettings
 
 class TabManager private constructor(private val ctx: Context) {
 
@@ -16,88 +15,164 @@ class TabManager private constructor(private val ctx: Context) {
         }
     }
 
-    private class Slot(val view: WebView, val incognito: Boolean) {
+    private class Slot(val session: GeckoSession, val incognito: Boolean) {
         var canGoBack: Boolean = false
         var canGoForward: Boolean = false
     }
 
-private val db = TabDb(ctx)
-private val alive = LinkedHashMap<Long, Slot>(16, 0.75f, true)
-private val tabHistory = mutableListOf<Long>()
-
-fun pushHistory(id: Long) {
-    if (tabHistory.isNotEmpty() && tabHistory.last() == id) return
-    tabHistory.add(id)
-    if (tabHistory.size > 20) tabHistory.removeAt(0)
-}
-
-fun popHistory(): Long? {
-    if (tabHistory.isEmpty()) return null
-    tabHistory.removeAt(tabHistory.size - 1)
-    return tabHistory.lastOrNull()
-}
-    private val pendingDestroy = mutableListOf<WebView>()
+    private val db = TabDb(ctx)
+    private val alive = LinkedHashMap<Long, Slot>(16, 0.75f, true)
+    private val tabHistory = mutableListOf<Long>()
     private val lock = Any()
     private var currentId: Long = -1L
+    private val attachedSessions = mutableSetOf<GeckoSession>()
 
-fun openNew(url: String, incognito: Boolean = false, groupId: Long = 0L, parentId: Long = 0L): Long {
-    synchronized(lock) {
-        val id = db.insert(url, incognito, groupId, parentId)
-        val view = WebViewEngine.create(ctx, incognito)
-        alive[id] = Slot(view, incognito)
-        currentId = id
-        if (url.isNotBlank() && url != "about:blank") view.loadUrl(url)
-        return id
+    init {
+        currentId = ctx.getSharedPreferences("uh_tabs", Context.MODE_PRIVATE).getLong("last_tab_id", -1L)
     }
-}
+
+    fun pushHistory(id: Long) {
+        if (tabHistory.isNotEmpty() && tabHistory.last() == id) return
+        tabHistory.add(id)
+        if (tabHistory.size > 20) tabHistory.removeAt(0)
+    }
+
+    fun popHistory(): Long? {
+        if (tabHistory.isEmpty()) return null
+        tabHistory.removeAt(tabHistory.size - 1)
+        return tabHistory.lastOrNull()
+    }
+
+    fun setCurrentId(id: Long) {
+        synchronized(lock) {
+            currentId = id
+            ctx.getSharedPreferences("uh_tabs", Context.MODE_PRIVATE).edit().putLong("last_tab_id", id).apply()
+        }
+    }
+
+    fun createUnopenedSession(incognito: Boolean = false, groupId: Long = 0L, parentId: Long = 0L): Pair<Long, GeckoSession> {
+        synchronized(lock) {
+            val id = db.insert("about:blank", incognito, groupId, parentId)
+            val settings = GeckoSessionSettings.Builder()
+                .usePrivateMode(incognito)
+                .userAgentMode(GeckoSessionSettings.USER_AGENT_MODE_MOBILE)
+                .viewportMode(GeckoSessionSettings.VIEWPORT_MODE_MOBILE)
+                .build()
+            val session = GeckoSession(settings)
+            alive[id] = Slot(session, incognito)
+            return Pair(id, session)
+        }
+    }
+
+    fun openNew(url: String, incognito: Boolean = false, groupId: Long = 0L, parentId: Long = 0L): Long {
+        synchronized(lock) {
+            val id = db.insert(url, incognito, groupId, parentId)
+            val runtime = GeckoEngine.getRuntime(ctx) ?: return id
+            val settings = GeckoSessionSettings.Builder()
+                .usePrivateMode(incognito)
+                .userAgentMode(GeckoSessionSettings.USER_AGENT_MODE_MOBILE)
+                .viewportMode(GeckoSessionSettings.VIEWPORT_MODE_MOBILE)
+                .build()
+            val session = GeckoSession(settings)
+            session.open(runtime)
+            
+            alive[id] = Slot(session, incognito)
+            currentId = id
+            if (url.isNotBlank() && url != "about:blank") session.loadUri(url)
+            return id
+        }
+    }
+
     fun openBlankTab(incognito: Boolean = false, groupId: Long = 0L, parentId: Long = 0L): Long =
         openNew("about:blank", incognito, groupId, parentId)
 
-    fun acquireView(id: Long): WebView? {
+    fun acquireSession(id: Long): GeckoSession? {
         synchronized(lock) {
-            alive[id]?.let { currentId = id; return it.view }
+            alive[id]?.let { currentId = id; return it.session }
             val entity = db.list().firstOrNull { it.id == id }
             val incognito = entity?.incognito ?: false
-            val view = WebViewEngine.create(ctx, incognito)
-            alive[id] = Slot(view, incognito)
+            val runtime = GeckoEngine.getRuntime(ctx) ?: return null
+            
+            val settings = GeckoSessionSettings.Builder()
+                .usePrivateMode(incognito)
+                .userAgentMode(GeckoSessionSettings.USER_AGENT_MODE_MOBILE)
+                .viewportMode(GeckoSessionSettings.VIEWPORT_MODE_MOBILE)
+                .build()
+            val session = GeckoSession(settings)
+            session.open(runtime)
+            
+            alive[id] = Slot(session, incognito)
             currentId = id
-            val restored = restoreState(id, view)
-            if (!restored) {
-                val fallback = entity?.url
-                if (!fallback.isNullOrBlank() && fallback != "about:blank") view.loadUrl(fallback)
+            
+            val savedState = db.loadState(id)
+            val fallback = entity?.url
+            if (savedState != null) {
+                try {
+                    val stateObj = org.mozilla.geckoview.GeckoSession.SessionState.fromString(savedState)
+                    if (stateObj != null) {
+                        session.restoreState(stateObj)
+                    } else if (!fallback.isNullOrBlank() && fallback != "about:blank") {
+                        session.loadUri(fallback)
+                    }
+                } catch (_: Exception) {
+                    if (!fallback.isNullOrBlank() && fallback != "about:blank") session.loadUri(fallback)
+                }
+            } else if (!fallback.isNullOrBlank() && fallback != "about:blank") {
+                session.loadUri(fallback)
             }
-            return view
+            return session
         }
     }
 
     fun currentId(): Long = synchronized(lock) { currentId }
-    fun currentView(): WebView? = synchronized(lock) { alive[currentId]?.view }
+    
+    fun currentSession(): GeckoSession? = synchronized(lock) { alive[currentId]?.session }
+    
     fun currentIsIncognito(): Boolean = synchronized(lock) { alive[currentId]?.incognito ?: false }
 
-    fun idForView(view: WebView): Long = synchronized(lock) {
-        alive.entries.firstOrNull { it.value.view === view }?.key ?: -1L
+    fun idForSession(session: GeckoSession): Long = synchronized(lock) {
+        alive.entries.firstOrNull { it.value.session === session }?.key ?: -1L
+    }
+    
+    fun markAttached(session: GeckoSession): Boolean = synchronized(lock) {
+        attachedSessions.add(session)
+    }
+
+    fun canGoBack(session: GeckoSession): Boolean = synchronized(lock) {
+        alive.entries.firstOrNull { it.value.session === session }?.value?.canGoBack ?: false
+    }
+    
+    fun canGoForward(session: GeckoSession): Boolean = synchronized(lock) {
+        alive.entries.firstOrNull { it.value.session === session }?.value?.canGoForward ?: false
     }
 
     fun list(): List<TabEntity> = db.list()
+    
     fun listNormal(): List<TabEntity> = db.list().filter { !it.incognito }
+    
     fun listIncognito(): List<TabEntity> = db.list().filter { it.incognito }
+    
     fun listByGroup(groupId: Long): List<TabEntity> = db.list().filter { it.groupId == groupId }
+    
     fun listUngrouped(): List<TabEntity> = db.list().filter { it.groupId == 0L }
 
     fun hasIncognito(): Boolean = listIncognito().isNotEmpty()
 
     fun updateUrl(id: Long, url: String, title: String?) = db.update(id, url, title)
 
-@Synchronized
-fun updateGroup(id: Long, groupId: Long) {
-    try {
-        val cv = android.content.ContentValues().apply { put("group_id", groupId) }
-        db.writableDatabase.update("tabs", cv, "id=?", arrayOf(id.toString()))
-    } catch (_: Exception) {}
-}
-    fun setNav(view: WebView, back: Boolean, forward: Boolean) {
+    fun saveState(id: Long, stateStr: String) = db.saveState(id, stateStr)
+    fun loadState(id: Long): String? = db.loadState(id)
+
+    fun updateGroup(id: Long, groupId: Long) {
+        try {
+            val cv = android.content.ContentValues().apply { put("group_id", groupId) }
+            db.writableDatabase.update("tabs", cv, "id=?", arrayOf(id.toString()))
+        } catch (_: Exception) {}
+    }
+
+    fun setNav(session: GeckoSession, back: Boolean, forward: Boolean) {
         synchronized(lock) {
-            val slot = alive.entries.firstOrNull { it.value.view === view }?.value ?: return
+            val slot = alive.entries.firstOrNull { it.value.session === session }?.value ?: return
             slot.canGoBack = back
             slot.canGoForward = forward
         }
@@ -108,11 +183,10 @@ fun updateGroup(id: Long, groupId: Long) {
             val slot = alive.remove(id)
             db.delete(id)
             if (slot != null) {
+                attachedSessions.remove(slot.session)
+                try { slot.session.close() } catch (_: Exception) {}
                 if (id == currentId) {
-                    pendingDestroy.add(slot.view)
                     currentId = db.list().firstOrNull()?.id ?: -1L
-                } else {
-                    try { slot.view.destroy() } catch (_: Exception) {}
                 }
             }
         }
@@ -120,39 +194,31 @@ fun updateGroup(id: Long, groupId: Long) {
 
     fun closeAll() {
         synchronized(lock) {
-            for (slot in alive.values) pendingDestroy.add(slot.view)
+            for (slot in alive.values) {
+                try { slot.session.close() } catch (_: Exception) {}
+            }
             alive.clear()
+            attachedSessions.clear()
             db.clear()
             currentId = -1L
         }
     }
 
     fun closeAllIncognito() {
-    synchronized(lock) {
-        val incognitoIds = db.list().filter { it.incognito }.map { it.id }
-        for (id in incognitoIds) {
-            val slot = alive.remove(id) ?: continue
-            pendingDestroy.add(slot.view)
-            db.delete(id)
+        synchronized(lock) {
+            val incognitoIds = db.list().filter { it.incognito }.map { it.id }
+            for (id in incognitoIds) {
+                val slot = alive.remove(id) ?: continue
+                attachedSessions.remove(slot.session)
+                try { slot.session.close() } catch (_: Exception) {}
+                db.delete(id)
+            }
+            if (currentId in incognitoIds) {
+                currentId = db.list().firstOrNull()?.id ?: -1L
+            }
         }
-        if (currentId in incognitoIds) {
-            currentId = db.list().firstOrNull()?.id ?: -1L
-        }
-    }
-    // Clear all session data: cookies, cache, storage
-    try {
-        val cookieManager = android.webkit.CookieManager.getInstance()
-        cookieManager.removeAllCookies(null)
-        cookieManager.flush()
-        android.webkit.WebStorage.getInstance().deleteAllData()
-        android.webkit.WebViewDatabase.getInstance(ctx).clearUsernamePassword()
-        android.webkit.WebViewDatabase.getInstance(ctx).clearHttpAuthUsernamePassword()
-        android.webkit.WebViewDatabase.getInstance(ctx).clearFormData()
-    } catch (_: Exception) {}
     }
     
-    private fun incognitoCleared(): Boolean = listIncognito().isEmpty()
-
     fun evictForMemory(keepCount: Int) {
         val victims: List<Long>
         synchronized(lock) {
@@ -170,63 +236,62 @@ fun updateGroup(id: Long, groupId: Long) {
         synchronized(lock) {
             for (id in victims) {
                 val slot = alive.remove(id) ?: continue
-                try { saveState(id, slot.view) } catch (_: Exception) {}
-                pendingDestroy.add(slot.view)
+                attachedSessions.remove(slot.session)
+                try { slot.session.close() } catch (_: Exception) {}
             }
         }
     }
 
-    fun drainPendingDestroy() {
+    fun saveCurrentState() {}
+    fun saveAll() {}
+
+    fun detachDelegates() {
         synchronized(lock) {
-            if (pendingDestroy.isEmpty()) return
-            for (view in pendingDestroy) {
+            for (slot in alive.values) {
                 try {
-                    (view.parent as? android.view.ViewGroup)?.removeView(view)
-                    view.destroy()
+                    slot.session.promptDelegate = null
+                    slot.session.contentDelegate = null
+                    slot.session.navigationDelegate = null
+                    slot.session.progressDelegate = null
+                    slot.session.historyDelegate = null
+                    slot.session.contentBlockingDelegate = null
+                    slot.session.permissionDelegate = null
                 } catch (_: Exception) {}
             }
-            pendingDestroy.clear()
         }
     }
 
-    fun saveCurrentState() {
+    fun destroyAllSessions() {
         synchronized(lock) {
-            val slot = alive[currentId] ?: return
-            if (slot.incognito) return  // don't persist incognito
-            saveState(currentId, slot.view)
-        }
-    }
-
-    fun saveAll() {
-        synchronized(lock) {
-            for ((id, slot) in alive) {
-                if (slot.incognito) continue
-                saveState(id, slot.view)
+            for (slot in alive.values) {
+                try {
+                    slot.session.promptDelegate = null
+                    slot.session.contentDelegate = null
+                    slot.session.navigationDelegate = null
+                    slot.session.progressDelegate = null
+                    slot.session.historyDelegate = null
+                    slot.session.contentBlockingDelegate = null
+                    slot.session.permissionDelegate = null
+                    slot.session.close()
+                } catch (_: Exception) {}
             }
+            alive.clear()
+            attachedSessions.clear()
         }
     }
 
-    private fun saveState(id: Long, view: WebView) {
-        try {
-            val bundle = Bundle()
-            view.saveState(bundle)
-            val parcel = Parcel.obtain()
-            bundle.writeToParcel(parcel, 0)
-            val bytes = parcel.marshall()
-            parcel.recycle()
-            db.saveState(id, bytes)
-        } catch (_: Exception) {}
-    }
-
-    private fun restoreState(id: Long, view: WebView): Boolean {
-        val bytes = db.loadState(id) ?: return false
-        return try {
-            val parcel = Parcel.obtain()
-            parcel.unmarshall(bytes, 0, bytes.size)
-            parcel.setDataPosition(0)
-            val bundle = Bundle.CREATOR.createFromParcel(parcel)
-            parcel.recycle()
-            view.restoreState(bundle) != null
-        } catch (_: Exception) { false }
+    fun updateTheme(isDark: Boolean) {
+        synchronized(lock) {
+            try {
+                val runtimeSettings = GeckoEngine.getRuntime(ctx)?.settings
+                if (runtimeSettings != null) {
+                    runtimeSettings.preferredColorScheme = if (isDark) {
+                        org.mozilla.geckoview.GeckoRuntimeSettings.COLOR_SCHEME_DARK
+                    } else {
+                        org.mozilla.geckoview.GeckoRuntimeSettings.COLOR_SCHEME_LIGHT
+                    }
+                }
+            } catch (_: Exception) {}
+        }
     }
 }

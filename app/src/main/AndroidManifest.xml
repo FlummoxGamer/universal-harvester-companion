@@ -22,9 +22,16 @@
         android:largeHeap="true">
 
         <activity
+            android:name=".SafeModeActivity"
+            android:exported="false"
+            android:theme="@style/Theme.UHCompanion" />
+
+        <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:theme="@style/Theme.UHCompanion.Launch"
             android:configChanges="orientation|screenSize|keyboardHidden"
+            android:windowSoftInputMode="adjustResize"
             android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -43,6 +50,11 @@
             android:name=".ToolsActivity"
             android:exported="false"
             android:label="Capture Tools" />
+
+        <activity
+            android:name=".ExtensionsActivity"
+            android:exported="false"
+            android:label="Extensions" />
 
         <activity
             android:name=".ScriptsActivity"
@@ -124,6 +136,14 @@
             android:name=".ImagePreviewActivity"
             android:exported="false"
             android:theme="@style/Theme.UHCompanion" />
+        <activity
+            android:name=".CustomizeHomeActivity"
+            android:exported="false"
+            android:theme="@style/Theme.UHCompanion" />
+        <activity
+            android:name=".WallpaperPreviewActivity"
+            android:exported="false"
+            android:theme="@style/Theme.UHCompanion" />
 
         <service
             android:name=".SessionService"
@@ -144,5 +164,20 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <receiver
+            android:name=".UpdateReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.DOWNLOAD_COMPLETE" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".InstallReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

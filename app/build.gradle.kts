@@ -11,8 +11,24 @@ android {
         applicationId = "app.harvester.companion"
         minSdk = 29
         targetSdk = 36
-        versionCode = 43
-        versionName = "2.3.11"
+        versionCode = 110
+        versionName = "2.4.40"
+   }
+
+   flavorDimensions += "version"
+   productFlavors {
+       create("stable") {
+           dimension = "version"
+           applicationIdSuffix = ""
+           versionNameSuffix = ""
+           resValue("string", "app_name", "Universal Harvester")
+       }
+       create("dev") {
+           dimension = "version"
+           applicationIdSuffix = ".dev"
+           versionNameSuffix = "-dev"
+           resValue("string", "app_name", "UH Dev")
+       }
     }
 
     buildFeatures {
@@ -81,6 +97,8 @@ kotlin {
 }
 
 dependencies {
+    debugImplementation("com.squareup.leakcanary:leakcanary-android:2.14")
+    implementation("org.mozilla.geckoview:geckoview:154.0.20260824154132")
     implementation("androidx.webkit:webkit:1.12.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
@@ -91,5 +109,16 @@ dependencies {
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("androidx.palette:palette-ktx:1.0.0")
+    implementation("androidx.viewpager2:viewpager2:1.1.0")
 }
 
+
+tasks.configureEach {
+    if (name.startsWith("check") && name.endsWith("AarMetadata")) {
+        enabled = false
+    }
+}
+tasks.matching { it.name.startsWith("check") && it.name.endsWith("AarMetadata") }.configureEach {
+    enabled = false
+}

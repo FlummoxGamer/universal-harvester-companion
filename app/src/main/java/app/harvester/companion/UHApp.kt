@@ -6,17 +6,27 @@ import android.content.Intent
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import java.io.File
+import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.launch
 
 class UHApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        setupCrashHandler()
+        checkSafeMode()
         ThemePrefs.applyCurrent(this)
         UHLog.init(this)
         SessionRecorder.init(this)
+        if (BuildConfig.DEBUG) {
+            StrictModeManager.enableStrictMode(true)
+            LeakCanarySetup.setup(this)
+        }
         try {
             startService(Intent(this, SessionService::class.java))
         } catch (_: Exception) {}
+        DownloadEngine.initNetworkListener(this)
         scheduleCleanup()
     }
 
@@ -33,17 +43,55 @@ class UHApp : Application() {
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        val keep = when (level) {
-            ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE -> 12
-            ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> 8
-            ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> 4
-            ComponentCallbacks2.TRIM_MEMORY_BACKGROUND -> 8
-            ComponentCallbacks2.TRIM_MEMORY_MODERATE -> 4
-            ComponentCallbacks2.TRIM_MEMORY_COMPLETE -> 1
-            else -> return
+        if (level == ComponentCallbacks2.TRIM_MEMORY_COMPLETE) {
+            try {
+                TabManager.get(this).evictForMemory(1)
+            } catch (_: Exception) {}
         }
-        try {
-            TabManager.get(this).evictForMemory(keep)
-        } catch (_: Exception) {}
+    }
+
+    private fun checkSafeMode() {
+        val bootMarker = File(filesDir, "boot_marker.tmp")
+        val crashFile = File(filesDir, "last_crash.txt")
+        
+        if (crashFile.exists()) {
+            val prefs = getSharedPreferences("uh_safe_mode", MODE_PRIVATE)
+            prefs.edit().putBoolean("force_safe_mode", true).apply()
+            
+            val crashDir = File(filesDir, "crashes").apply { mkdirs() }
+            val dest = File(crashDir, "crash_${System.currentTimeMillis()}.txt")
+            crashFile.renameTo(dest)
+            
+            if (bootMarker.exists()) bootMarker.delete()
+        }
+        
+        bootMarker.createNewFile()
+    }
+
+    private fun setupCrashHandler() {
+        val prev = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            try {
+                val crashFile = File(filesDir, "last_crash.txt")
+                FileOutputStream(crashFile).use { out ->
+                    out.write("Thread: ${t.name}\n".toByteArray())
+                    out.write("Exception: ${e.javaClass.name}: ${e.message}\n".toByteArray())
+                    e.stackTrace.forEach { 
+                        out.write("  at $it\n".toByteArray()) 
+                    }
+                    var cause = e.cause
+                    while (cause != null) {
+                        out.write("Caused by: ${cause.javaClass.name}: ${cause.message}\n".toByteArray())
+                        cause.stackTrace.forEach { 
+                            out.write("  at $it\n".toByteArray()) 
+                        }
+                        cause = cause.cause
+                    }
+                    out.flush()
+                    out.fd.sync()
+                }
+            } catch (_: Exception) {}
+            prev?.uncaughtException(t, e)
+        }
     }
 }

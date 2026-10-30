@@ -16,9 +16,10 @@
         android:paddingEnd="6dp">
 
         <ImageView
+            android:id="@+id/smsIcon"
             android:layout_width="18dp"
             android:layout_height="18dp"
-            android:src="@drawable/ic_extension_rounded"
+            android:src="@drawable/ic_code"
             android:tint="@color/accent" />
 
         <TextView

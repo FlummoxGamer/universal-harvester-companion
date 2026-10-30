@@ -12,13 +12,13 @@
     <FrameLayout
         android:layout_width="56dp"
         android:layout_height="56dp"
-        android:background="@drawable/shortcut_bg">
-
+        android:background="@drawable/shortcut_bg"
+        android:clipToOutline="true">
+        
         <ImageView
             android:id="@+id/shortcutIcon"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:layout_gravity="center"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
             android:scaleType="fitCenter" />
 
         <TextView
@@ -33,14 +33,18 @@
             android:visibility="gone" />
     </FrameLayout>
 
-    <TextView
-        android:id="@+id/shortcutLabel"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:maxLines="1"
-        android:ellipsize="end"
-        android:textColor="@color/text"
-        android:textSize="12sp"
-        android:gravity="center" />
-</LinearLayout>
+        <TextView
+            android:id="@+id/shortcutLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textColor="@color/text"
+            android:textSize="12sp"
+            android:gravity="center"
+            android:shadowColor="#CC000000"
+            android:shadowDx="0"
+            android:shadowDy="3"
+            android:shadowRadius="6" />
+   </LinearLayout>

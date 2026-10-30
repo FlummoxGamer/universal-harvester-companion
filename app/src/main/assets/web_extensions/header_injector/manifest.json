@@ -1,0 +1,18 @@
+{
+    "manifest_version": 2,
+    "name": "Header Injector",
+    "version": "1.0.0",
+    "browser_specific_settings": {
+        "gecko": {
+            "id": "header-injector@harvester.app"
+        }
+    },
+    "background": {
+        "scripts": ["background.js"]
+    },
+    "permissions": [
+        "webRequest",
+        "webRequestBlocking",
+        "<all_urls>"
+    ]
+}

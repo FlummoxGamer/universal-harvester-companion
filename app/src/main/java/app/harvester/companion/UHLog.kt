@@ -2,6 +2,7 @@ package app.harvester.companion
 
 import android.content.ContentValues
 import android.content.Context
+import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import java.io.BufferedWriter
@@ -19,6 +20,7 @@ object UHLog {
     private const val FLUSH_EVERY = 20
     private const val KEEP_SESSIONS = 10
     private const val RESUME_WINDOW_MS = 60L * 1000L
+    private const val DEDUPE_WINDOW_MS = 5000L
 
     private const val PREFS = "uh_session"
     private const val KEY_SESSION_ID = "session_id"
@@ -36,6 +38,11 @@ object UHLog {
     private var appContext: Context? = null
     private var initialised = false
     @Volatile private var verbose = false
+
+    private var lastLogKey: String = ""
+    private var lastLogLine: String = ""
+    private var lastLogTime: Long = 0L
+    private var repeatCount: Int = 0
 
     @Volatile var externalPath: String = ""
     @Volatile var netPath: String = ""
@@ -148,31 +155,55 @@ object UHLog {
         if (!src.exists() || src.length() == 0L) return
         try {
             val bytes = src.readBytes()
-            val resolver = ctx.contentResolver
-            val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
-            val relPath = "Download/Harvester/sess_$sessionId/"
-            try {
-                resolver.delete(
-                    collection,
-                    "${MediaStore.MediaColumns.DISPLAY_NAME}=? AND ${MediaStore.MediaColumns.RELATIVE_PATH}=?",
-                    arrayOf(filename, relPath)
-                )
-            } catch (_: Exception) {}
-            val values = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-                put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
-                put(MediaStore.MediaColumns.RELATIVE_PATH, relPath)
+            val customUriStr = SettingsPrefs.getString(ctx, "custom_download_uri", "")
+            if (customUriStr.isNotBlank()) {
+                val treeUri = android.net.Uri.parse(customUriStr)
+                val parent = androidx.documentfile.provider.DocumentFile.fromTreeUri(ctx, treeUri)
+                if (parent != null) {
+                    var harvesterDir = parent.findFile("Harvester")
+                    if (harvesterDir == null || !harvesterDir.isDirectory) {
+                        harvesterDir = parent.createDirectory("Harvester")
+                    }
+                    var sessionDir = harvesterDir?.findFile("sess_$sessionId")
+                    if (sessionDir == null || !sessionDir.isDirectory) {
+                        sessionDir = harvesterDir?.createDirectory("sess_$sessionId")
+                    }
+                    var fileDoc = sessionDir?.findFile(filename)
+                    if (fileDoc != null) fileDoc.delete()
+                    fileDoc = sessionDir?.createFile("text/plain", filename)
+                    if (fileDoc != null) {
+                        ctx.contentResolver.openOutputStream(fileDoc.uri)?.use { os -> os.write(bytes) }
+                    }
+                }
+            } else {
+                val resolver = ctx.contentResolver
+                val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+                val relPath = "${Environment.DIRECTORY_DOWNLOADS}/Harvester/sess_$sessionId/"
+                try {
+                    resolver.delete(
+                        collection,
+                        "${MediaStore.MediaColumns.DISPLAY_NAME}=? AND ${MediaStore.MediaColumns.RELATIVE_PATH}=?",
+                        arrayOf(filename, relPath)
+                    )
+                } catch (_: Exception) {}
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, relPath)
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                        put(MediaStore.MediaColumns.IS_PENDING, 1)
+                    }
+                }
+                val uri = resolver.insert(collection, values) ?: return
+                resolver.openOutputStream(uri)?.use { os -> os.write(bytes) }
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                    val done = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
+                    resolver.update(uri, done, null, null)
                 }
             }
-            val uri = resolver.insert(collection, values) ?: return
-            resolver.openOutputStream(uri)?.use { os -> os.write(bytes) }
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                val done = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
-                resolver.update(uri, done, null, null)
-            }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            try { Log.e(TAG, "Mirror failed: ${e.message}") } catch (_: Exception) {}
+        }
     }
 
     fun addListener(fn: (String) -> Unit) { listeners.add(fn) }
@@ -218,15 +249,15 @@ object UHLog {
         write("net", 'V', "SCHEME $raw → $action", true)
     }
 
-fun netPopupOpen(parentUrl: String, userGesture: Boolean, isDialog: Boolean) {
-    if (!verbose) return
-    write("net", 'V', "POPUP open parent=$parentUrl user=$userGesture dialog=$isDialog", true)
-}
+    fun netPopupOpen(parentUrl: String, userGesture: Boolean, isDialog: Boolean) {
+        if (!verbose) return
+        write("net", 'V', "POPUP open parent=$parentUrl user=$userGesture dialog=$isDialog", true)
+    }
 
-fun netPopupCreated(id: Long) {
-    if (!verbose) return
-    write("net", 'V', "POPUP created id=$id", true)
-}
+    fun netPopupCreated(id: Long) {
+        if (!verbose) return
+        write("net", 'V', "POPUP created id=$id", true)
+    }
 
     fun netPopupLoad(url: String) {
         if (!verbose) return
@@ -260,33 +291,39 @@ fun netPopupCreated(id: Long) {
         write("net", 'V', "3P $pageUrl: $sorted", true)
     }
 
- private fun sanitize(s: String): String {
-    if (s.length < 20) return s
-    var out = s
-    if (out.contains("eyJ")) out = RX_JWT.replace(out) { "<JWT>" }
-    if (out.contains("earer")) out = RX_BEARER.replace(out) { m -> m.groupValues[1] + "<BEARER>" }
-    if (out.contains("ookie")) out = RX_COOKIE.replace(out) { m -> m.groupValues[1] + "<COOKIE>" }
-    if (out.contains("loudfront")) out = RX_CF.replace(out) { m -> m.groupValues[1] + "<CF>" }
-    if (out.length > 300) out = RX_B64_BLOB.replace(out) { "<BLOB(${it.value.length}b)>" }
-    return out
- }
+    private fun sanitize(s: String): String {
+        if (s.length < 20) return s
+        var out = s
+        if (out.contains("eyJ")) out = RX_JWT.replace(out) { "<JWT>" }
+        if (out.contains("earer")) out = RX_BEARER.replace(out) { m -> m.groupValues[1] + "<BEARER>" }
+        if (out.contains("ookie")) out = RX_COOKIE.replace(out) { m -> m.groupValues[1] + "<COOKIE>" }
+        if (out.contains("loudfront")) out = RX_CF.replace(out) { m -> m.groupValues[1] + "<CF>" }
+        if (out.length > 300) out = RX_B64_BLOB.replace(out) { "<BLOB(${it.value.length}b)>" }
+        return out
+    }
 
     private fun write(tag: String, level: Char, msg: String, isNet: Boolean = false) {
         val clean = sanitize(msg)
-        val line = "${timeFormat.format(Date())} $level [$tag] $clean"
+        val now = System.currentTimeMillis()
+        val key = "$level|$tag|$clean"
+        val line = "${timeFormat.format(Date(now))} $level [$tag] $clean"
+        
         synchronized(lock) {
-            buffer.addLast(line)
-            while (buffer.size > MAX_LINES) buffer.removeFirst()
-            try {
-                val target = if (isNet) netWriter else writer
-                target?.appendLine(line)
-                if (isNet) {
-                    netWriter?.flush()
-                } else {
-                    pending++
-                    if (pending >= FLUSH_EVERY) { writer?.flush(); pending = 0 }
+            if (key == lastLogKey && (now - lastLogTime) < DEDUPE_WINDOW_MS) {
+                repeatCount++
+                lastLogTime = now
+                return
+            } else {
+                if (repeatCount > 0) {
+                    val repeatedLine = "$lastLogLine (repeated ${repeatCount + 1} times)"
+                    writeToBuffer(repeatedLine, isNet)
+                    repeatCount = 0
                 }
-            } catch (_: Exception) {}
+                lastLogKey = key
+                lastLogLine = line
+                lastLogTime = now
+            }
+            writeToBuffer(line, isNet)
         }
         if (!isNet) {
             for (l in listeners) try { l(line) } catch (_: Exception) {}
@@ -294,16 +331,28 @@ fun netPopupCreated(id: Long) {
         try { Log.d(TAG, line) } catch (_: Exception) {}
     }
 
+    private fun writeToBuffer(line: String, isNet: Boolean) {
+        buffer.addLast(line)
+        while (buffer.size > MAX_LINES) buffer.removeFirst()
+        try {
+            val target = if (isNet) netWriter else writer
+            target?.appendLine(line)
+            if (isNet || line.contains("[security]") || line.contains("[leak]") || line.contains("[crash]") || line.contains("[strictmode]")) {
+                target?.flush()
+                pending = 0
+            } else {
+                pending++
+                if (pending >= FLUSH_EVERY) { writer?.flush(); pending = 0 }
+            }
+        } catch (_: Exception) {}
+    }
+
     private fun writeAlways(tag: String, level: Char, msg: String) {
         val clean = sanitize(msg)
         val line = "${timeFormat.format(Date())} $level [$tag] $clean"
         synchronized(lock) {
-            buffer.addLast(line)
-            while (buffer.size > MAX_LINES) buffer.removeFirst()
-            try {
-                writer?.appendLine(line)
-                writer?.flush()
-            } catch (_: Exception) {}
+            writeToBuffer(line, false)
+            try { writer?.flush() } catch (_: Exception) {}
         }
         try { Log.d(TAG, line) } catch (_: Exception) {}
     }
@@ -340,6 +389,16 @@ fun netPopupCreated(id: Long) {
                 netWriter = BufferedWriter(FileWriter(nf, true))
             } catch (_: Exception) {}
         }
+    }
+
+    fun writeLeakLog(msg: String) {
+        val clean = sanitize(msg)
+        val line = "${timeFormat.format(Date())} E [leak] $clean"
+        synchronized(lock) {
+            writeToBuffer(line, false)
+            try { writer?.flush() } catch (_: Exception) {}
+        }
+        try { Log.e(TAG, line) } catch (_: Exception) {}
     }
 
     private fun installCrashHandler() {

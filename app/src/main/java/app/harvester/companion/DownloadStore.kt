@@ -4,7 +4,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 object DownloadStore {
-    enum class Status { PENDING, RUNNING, PAUSED, SUCCESS, FAILED, CANCELLED }
+    enum class Status { PENDING, RUNNING, PAUSED, SUCCESS, FAILED, CANCELLED, WAITING_FOR_NETWORK }
+
+    const val MAX_PARALLEL = 2
 
     const val MAX_PARALLEL = 2
 

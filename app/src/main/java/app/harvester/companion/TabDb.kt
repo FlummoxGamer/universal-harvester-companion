@@ -91,21 +91,21 @@ fun updateGroup(id: Long, groupId: Long) {
     writableDatabase.update("tabs", cv, "id=?", arrayOf(id.toString()))
 }
 
-    @Synchronized
-    fun saveState(id: Long, bytes: ByteArray) {
-        val cv = ContentValues().apply { put("state", bytes) }
-        writableDatabase.update("tabs", cv, "id=?", arrayOf(id.toString()))
-    }
+@Synchronized
+fun saveState(id: Long, stateStr: String) {
+    val cv = ContentValues().apply { put("state", stateStr.toByteArray()) }
+    writableDatabase.update("tabs", cv, "id=?", arrayOf(id.toString()))
+}
 
-    @Synchronized
-    fun loadState(id: Long): ByteArray? {
-        readableDatabase.rawQuery(
-            "SELECT state FROM tabs WHERE id=?", arrayOf(id.toString())
-        ).use {
-            if (it.moveToFirst() && !it.isNull(0)) return it.getBlob(0)
-        }
-        return null
+@Synchronized
+fun loadState(id: Long): String? {
+    readableDatabase.rawQuery(
+        "SELECT state FROM tabs WHERE id=?", arrayOf(id.toString())
+    ).use {
+        if (it.moveToFirst() && !it.isNull(0)) return String(it.getBlob(0))
     }
+    return null
+}
 
     @Synchronized
     fun delete(id: Long) {

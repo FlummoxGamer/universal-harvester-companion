@@ -1,18 +1,18 @@
 package app.harvester.companion
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.net.URL
+import java.io.File
+import java.security.MessageDigest
 
 class ShortcutAdapter(
     private val onOpen: (Shortcut) -> Unit,
@@ -22,6 +22,14 @@ class ShortcutAdapter(
 
     private val items = mutableListOf<Shortcut>()
     private val iconCache = mutableMapOf<String, Bitmap?>()
+    private var customTextColor: Int = 0
+    private var customShadowColor: Int = 0
+
+    fun setTextColor(color: Int, shadowColor: Int) {
+        customTextColor = color
+        customShadowColor = shadowColor
+        notifyDataSetChanged()
+    }
 
     class VH(v: View) : RecyclerView.ViewHolder(v) {
         val icon: ImageView = v.findViewById(R.id.shortcutIcon)
@@ -42,6 +50,15 @@ class ShortcutAdapter(
             h.icon.visibility = View.GONE
             h.plus.visibility = View.VISIBLE
             h.label.text = "Add"
+            val fallbackColor = androidx.core.content.ContextCompat.getColor(h.itemView.context, R.color.text)
+            val actualColor = if (customTextColor != 0) customTextColor else fallbackColor
+            val actualShadow = if (customShadowColor != 0) customShadowColor else android.graphics.Color.TRANSPARENT
+            
+            h.label.setTextColor(actualColor)
+            h.plus.setTextColor(actualColor)
+            h.label.setShadowLayer(if (actualShadow != android.graphics.Color.TRANSPARENT) 8f else 0f, 0f, 2f, actualShadow)
+            h.plus.setShadowLayer(if (actualShadow != android.graphics.Color.TRANSPARENT) 8f else 0f, 0f, 2f, actualShadow)
+            
             h.itemView.setOnClickListener { onAdd() }
             h.itemView.setOnLongClickListener { false }
             return
@@ -52,9 +69,24 @@ class ShortcutAdapter(
         h.label.text = s.name
         h.icon.setImageDrawable(null)
         h.icon.tag = s.iconUrl
-        loadIcon(h.icon, s.iconUrl)
+        
+        val params = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        params.gravity = Gravity.CENTER
+        h.icon.layoutParams = params
+        h.icon.scaleType = ImageView.ScaleType.FIT_CENTER
+        
+        loadIcon(h, s.iconUrl)
         h.itemView.setOnClickListener { onOpen(s) }
         h.itemView.setOnLongClickListener { onLongPress(s); true }
+
+        val actualColor = if (customTextColor != 0) customTextColor else androidx.core.content.ContextCompat.getColor(h.itemView.context, R.color.text)
+        val actualShadow = if (customShadowColor != 0) customShadowColor else android.graphics.Color.TRANSPARENT
+        
+        h.label.setTextColor(actualColor)
+        h.label.setShadowLayer(if (actualShadow != android.graphics.Color.TRANSPARENT) 8f else 0f, 0f, 2f, actualShadow)
     }
 
     override fun getItemCount(): Int = items.size + 1
@@ -65,25 +97,177 @@ class ShortcutAdapter(
         notifyDataSetChanged()
     }
 
-    private fun loadIcon(view: ImageView, iconUrl: String) {
-        if (iconUrl.isBlank()) {
-            view.setImageDrawable(null)
-            return
-        }
-        val cached = iconCache[iconUrl]
-        if (cached != null) {
-            if (view.tag == iconUrl) view.setImageBitmap(cached)
-            return
-        }
-        if (iconCache.containsKey(iconUrl)) return
-        CoroutineScope(Dispatchers.IO).launch {
-            val bmp = try {
-                URL(iconUrl).openStream().use { BitmapFactory.decodeStream(it) }
-            } catch (_: Exception) { null }
-            withContext(Dispatchers.Main) {
-                iconCache[iconUrl] = bmp
-                if (bmp != null && view.tag == iconUrl) view.setImageBitmap(bmp)
+    fun getItemAt(position: Int): Shortcut = items[position]
+    
+    fun getItems(): List<Shortcut> = items
+
+    fun moveItem(fromPosition: Int, toPosition: Int) {
+        if (fromPosition < toPosition) {
+            for (i in fromPosition until toPosition) {
+                java.util.Collections.swap(items, i, i + 1)
+            }
+        } else {
+            for (i in fromPosition downTo toPosition + 1) {
+                java.util.Collections.swap(items, i, i - 1)
             }
         }
+        notifyItemMoved(fromPosition, toPosition)
+    }
+
+    private fun loadIcon(h: VH, iconUrl: String) {
+        if (iconUrl.isBlank()) {
+            setFallback(h)
+            return
+        }
+
+        val cached = iconCache[iconUrl]
+        if (cached != null) {
+            if (h.icon.tag == iconUrl) applyImage(h, cached)
+            return
+        }
+
+        val context = h.itemView.context
+        val file = getCacheFile(context, iconUrl)
+
+        if (file.exists()) {
+            val bmp = BitmapFactory.decodeFile(file.absolutePath)
+            if (bmp != null) {
+                iconCache[iconUrl] = bmp
+                if (h.icon.tag == iconUrl) applyImage(h, bmp)
+                
+                val age = System.currentTimeMillis() - file.lastModified()
+                if (age > 7L * 24 * 60 * 60 * 1000) {
+                    fetchAndCache(context, iconUrl, file, h)
+                }
+                return
+            }
+        }
+
+        fetchAndCache(context, iconUrl, file, h)
+    }
+
+    private fun fetchAndCache(context: Context, iconUrl: String, file: File, h: VH) {
+        Thread {
+            var bmp: Bitmap? = null
+            val urlsToTry = mutableListOf(iconUrl)
+            try {
+                val host = java.net.URI(iconUrl).host
+                if (host != null && !iconUrl.contains("favicon.ico")) {
+                    urlsToTry.add("https://$host/favicon.ico")
+                }
+            } catch (_: Exception) {}
+
+            for (url in urlsToTry) {
+                try {
+                    val client = okhttp3.OkHttpClient.Builder()
+                        .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                        .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                        .build()
+                    val request = okhttp3.Request.Builder()
+                        .url(url)
+                        .header("Cache-Control", "no-cache")
+                        .build()
+                    client.newCall(request).execute().use { response ->
+                        if (response.isSuccessful) {
+                            response.body?.byteStream()?.use { stream ->
+                                bmp = BitmapFactory.decodeStream(stream)
+                            }
+                            if (bmp != null) break
+                        }
+                    }
+                } catch (_: Exception) { }
+            }
+
+            h.itemView.post {
+                iconCache[iconUrl] = bmp
+                if (bmp != null) {
+                    try {
+                        file.parentFile?.mkdirs()
+                        file.outputStream().use { out ->
+                            bmp!!.compress(Bitmap.CompressFormat.PNG, 100, out)
+                        }
+                    } catch (_: Exception) {}
+                    if (h.icon.tag == iconUrl) applyImage(h, bmp!!)
+                } else {
+                    if (h.icon.tag == iconUrl) setFallback(h)
+                }
+            }
+        }.start()
+    }
+
+    private fun applyImage(h: VH, bmp: Bitmap) {
+        val transparentBmp = makeCornersTransparent(bmp)
+        h.icon.setImageBitmap(transparentBmp)
+        val padding = (6 * h.itemView.context.resources.displayMetrics.density).toInt()
+        h.icon.setPadding(padding, padding, padding, padding)
+    }
+
+    private fun makeCornersTransparent(bitmap: Bitmap): Bitmap {
+        val w = bitmap.width
+        val h = bitmap.height
+        if (w < 2 || h < 2) return bitmap
+
+        val c1 = bitmap.getPixel(0, 0)
+        val c2 = bitmap.getPixel(w - 1, 0)
+        val c3 = bitmap.getPixel(0, h - 1)
+        val c4 = bitmap.getPixel(w - 1, h - 1)
+
+        val tolerance = 30
+        if (isColorSimilar(c1, c2, tolerance) && 
+            isColorSimilar(c1, c3, tolerance) && 
+            isColorSimilar(c1, c4, tolerance)) {
+            
+            if (android.graphics.Color.alpha(c1) == 0) return bitmap
+
+            val result = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+            val visited = Array(w) { BooleanArray(h) }
+            val queue = java.util.LinkedList<Pair<Int, Int>>()
+
+            queue.add(Pair(0, 0))
+            queue.add(Pair(w - 1, 0))
+            queue.add(Pair(0, h - 1))
+            queue.add(Pair(w - 1, h - 1))
+
+            while (queue.isNotEmpty()) {
+                val (x, y) = queue.poll()
+                if (x < 0 || x >= w || y < 0 || y >= h || visited[x][y]) continue
+                visited[x][y] = true
+
+                val pixel = result.getPixel(x, y)
+                if (isColorSimilar(pixel, c1, tolerance)) {
+                    result.setPixel(x, y, android.graphics.Color.TRANSPARENT)
+                    queue.add(Pair(x + 1, y))
+                    queue.add(Pair(x - 1, y))
+                    queue.add(Pair(x, y + 1))
+                    queue.add(Pair(x, y - 1))
+                }
+            }
+            return result
+        }
+        return bitmap
+    }
+
+    private fun isColorSimilar(c1: Int, c2: Int, tolerance: Int): Boolean {
+        return Math.abs(android.graphics.Color.red(c1) - android.graphics.Color.red(c2)) <= tolerance &&
+               Math.abs(android.graphics.Color.green(c1) - android.graphics.Color.green(c2)) <= tolerance &&
+               Math.abs(android.graphics.Color.blue(c1) - android.graphics.Color.blue(c2)) <= tolerance
+    }
+
+    private fun setFallback(h: VH) {
+        h.icon.setImageResource(R.drawable.ic_globe)
+        val padding = (16 * h.itemView.context.resources.displayMetrics.density).toInt()
+        h.icon.setPadding(padding, padding, padding, padding)
+    }
+
+    private fun getCacheFile(context: Context, url: String): File {
+        val hash = try {
+            val md = MessageDigest.getInstance("MD5")
+            val digest = md.digest(url.toByteArray())
+            digest.joinToString("") { "%02x".format(it) }
+        } catch (_: Exception) {
+            url.hashCode().toString()
+        }
+        val dir = File(context.filesDir, "icon_cache")
+        return File(dir, "$hash.png")
     }
 }
