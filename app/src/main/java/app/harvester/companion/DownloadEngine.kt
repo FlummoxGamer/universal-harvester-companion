@@ -273,17 +273,20 @@ object DownloadEngine {
                     }
                 }
 
-                val currentTask = DownloadStore.getTask(task.id)
-                if (currentTask == null || currentTask.status == DownloadStore.Status.CANCELLED) return@launch
+val currentTask = DownloadStore.getTask(task.id)
+if (currentTask == null || currentTask.status == DownloadStore.Status.CANCELLED || currentTask.status == DownloadStore.Status.PAUSED) return@launch
 
-                targetUri?.let { finishMediaStore(ctx, it) }
-                DownloadStore.updateTask(task.id) {
-                    it.bytesDownloaded = task.bytesDownloaded
-                    if (it.totalBytes <= 0) it.totalBytes = it.bytesDownloaded
-                    it.status = DownloadStore.Status.SUCCESS
-                }
-                DownloadService.notifyComplete(ctx, task.id, task.filename)
-                DownloadStore.removeTask(task.id)
+targetUri?.let { finishMediaStore(ctx, it) }
+DownloadStore.updateTask(task.id) {
+    it.bytesDownloaded = task.bytesDownloaded
+    if (it.totalBytes <= 0) it.totalBytes = it.bytesDownloaded
+    it.status = DownloadStore.Status.SUCCESS
+}
+
+if (DownloadStore.getTask(task.id)?.status != DownloadStore.Status.PAUSED) {
+    DownloadService.notifyComplete(ctx, task.id, task.filename)
+    DownloadStore.removeTask(task.id)
+}
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -304,13 +307,13 @@ object DownloadEngine {
     }
 
     fun pauseDownload(ctx: Context, id: String) {
+        DownloadStore.updateTask(id) { it.status = DownloadStore.Status.PAUSED }
         calls[id]?.cancel()
         calls.remove(id)
         jobs[id]?.cancel()
         jobs.remove(id)
         streams[id]?.close()
         streams.remove(id)
-        DownloadStore.updateTask(id) { it.status = DownloadStore.Status.PAUSED }
         DownloadService.updateNotification(ctx, id)
     }
 
