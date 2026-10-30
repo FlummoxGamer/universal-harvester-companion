@@ -73,11 +73,14 @@ if (recent.isEmpty()) {
         Toast.makeText(this, "Applying wallpaper...", Toast.LENGTH_SHORT).show()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val bitmap = if (uriString.startsWith("http")) {
-                    java.net.URL(uriString).openStream().use { BitmapFactory.decodeStream(it) }
-                } else {
-                    BitmapFactory.decodeFile(uriString)
+                var finalUriString = uriString
+                if (uriString.startsWith("http")) {
+                    val downloadedPath = WallpaperStore.downloadRemoteWallpaper(this@WallpaperPreviewActivity, uriString)
+                    if (downloadedPath != null) {
+                        finalUriString = downloadedPath
+                    }
                 }
+                val bitmap = BitmapFactory.decodeFile(finalUriString)
 
                 if (bitmap != null) {
                     val palette = Palette.from(bitmap).generate()
@@ -91,7 +94,7 @@ if (recent.isEmpty()) {
                     }
 
                     withContext(Dispatchers.Main) {
-                        WallpaperStore.setCurrentWallpaper(this@WallpaperPreviewActivity, uriString, textColor)
+                        WallpaperStore.setCurrentWallpaper(this@WallpaperPreviewActivity, finalUriString, textColor)
                         finish()
                     }
                 } else {
@@ -99,54 +102,70 @@ if (recent.isEmpty()) {
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    WallpaperStore.setCurrentWallpaper(this@WallpaperPreviewActivity, uriString, 0)
+                    WallpaperStore.setCurrentWallpaper(this@WallpaperPreviewActivity, "default", 0)
                     finish()
                 }
             }
         }
     }
 
-    inner class PreviewAdapter(private val items: List<String>) : RecyclerView.Adapter<PreviewAdapter.VH>() {
-        inner class VH(v: android.view.View) : RecyclerView.ViewHolder(v) {
-            val image: ImageView = v.findViewById(R.id.previewImage)
-            val title: android.widget.TextView = v.findViewById(R.id.previewTitle)
-        }
-
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
-            val v = layoutInflater.inflate(R.layout.item_wallpaper_preview, parent, false)
-            return VH(v)
-        }
-
-        override fun onBindViewHolder(h: VH, position: Int) {
-            val item = items[position]
-            if (item == "default") {
-                h.image.setImageResource(android.R.color.transparent)
-                h.image.setBackgroundColor(androidx.core.content.ContextCompat.getColor(this@WallpaperPreviewActivity, R.color.bg))
-                h.title.setTextColor(androidx.core.content.ContextCompat.getColor(this@WallpaperPreviewActivity, R.color.accent))
-            } else {
-                Thread {
-                    try {
-                        val bitmap = if (item.startsWith("http")) {
-                            java.net.URL(item).openStream().use { BitmapFactory.decodeStream(it) }
-                        } else {
-                            BitmapFactory.decodeFile(item)
-                        }
-                        if (bitmap != null) {
-                            val palette = Palette.from(bitmap).generate()
-                            val dominantColor = palette.getDominantColor(android.graphics.Color.GRAY)
-                            val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(dominantColor)
-                            val textColor = if (luminance > 0.5) android.graphics.Color.BLACK else android.graphics.Color.WHITE
-
-                            h.image.post {
-                                h.image.setImageBitmap(bitmap)
-                                h.title.setTextColor(textColor)
-                            }
-                        }
-                    } catch (_: Exception) {}
-                }.start()
-            }
-        }
-
-        override fun getItemCount() = items.size
+inner class PreviewAdapter(private val items: List<String>) : RecyclerView.Adapter<PreviewAdapter.VH>() {
+    inner class VH(v: android.view.View) : RecyclerView.ViewHolder(v) {
+        val image: ImageView = v.findViewById(R.id.previewImage)
+        val title: android.widget.TextView = v.findViewById(R.id.previewTitle)
+        val shortcuts: androidx.recyclerview.widget.RecyclerView = v.findViewById(R.id.previewShortcuts)
     }
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
+        val v = layoutInflater.inflate(R.layout.item_wallpaper_preview, parent, false)
+        return VH(v)
+    }
+
+    override fun onBindViewHolder(h: VH, position: Int) {
+        val item = items[position]
+        
+        val shortcutList = ShortcutStore.list(this@WallpaperPreviewActivity)
+        val adapter = ShortcutAdapter(
+            onOpen = {},
+            onAdd = {},
+            onLongPress = {}
+        )
+        h.shortcuts.layoutManager = androidx.recyclerview.widget.GridLayoutManager(this@WallpaperPreviewActivity, 4)
+        h.shortcuts.adapter = adapter
+        adapter.submit(shortcutList)
+
+        if (item == "default") {
+            h.image.setImageResource(android.R.color.transparent)
+            h.image.setBackgroundColor(androidx.core.content.ContextCompat.getColor(this@WallpaperPreviewActivity, R.color.bg))
+            h.title.setTextColor(androidx.core.content.ContextCompat.getColor(this@WallpaperPreviewActivity, R.color.accent))
+            adapter.setTextColor(androidx.core.content.ContextCompat.getColor(this@WallpaperPreviewActivity, R.color.text), 0)
+        } else {
+            Thread {
+                try {
+                    val bitmap = if (item.startsWith("http")) {
+                        java.net.URL(item).openStream().use { BitmapFactory.decodeStream(it) }
+                    } else {
+                        BitmapFactory.decodeFile(item)
+                    }
+                    if (bitmap != null) {
+                        val palette = Palette.from(bitmap).generate()
+                        val dominantColor = palette.getDominantColor(android.graphics.Color.GRAY)
+                        val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(dominantColor)
+                        val textColor = if (luminance > 0.5) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+                        val shadowColor = if (textColor == android.graphics.Color.BLACK) android.graphics.Color.WHITE else android.graphics.Color.BLACK
+
+                        h.image.post {
+                            h.image.setImageBitmap(bitmap)
+                            h.title.setTextColor(textColor)
+                            h.title.setShadowLayer(8f, 0f, 2f, shadowColor)
+                            adapter.setTextColor(textColor, shadowColor)
+                        }
+                    }
+                } catch (_: Exception) {}
+            }.start()
+        }
+    }
+
+    override fun getItemCount() = items.size
+}
 }
