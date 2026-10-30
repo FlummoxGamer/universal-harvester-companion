@@ -308,7 +308,6 @@ tabs = TabManager.get(this)
             UHLog.e("main", "Failed to attach MessageDelegate: ${error?.message}")
         })
     }
-}
 private var isSplashHidden = false
 private fun hideSplash() {
     if (isSplashHidden) return
