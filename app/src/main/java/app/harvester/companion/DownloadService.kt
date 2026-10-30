@@ -208,8 +208,7 @@ if (task.status == DownloadStore.Status.FAILED) {
 } else {
     builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", piCancel)
 }
-        }
-
+        
         private fun formatSpeed(b: Long): String = if (b <= 0) "0 B/s" else "${formatSize(b)}/s"
 
         private fun formatSize(b: Long): String = when {
