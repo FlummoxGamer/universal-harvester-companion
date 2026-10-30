@@ -84,10 +84,11 @@ class CustomizeHomeActivity : AppCompatActivity() {
         loadWallpapers()
     }
 
-    private fun loadWallpapers() {
-        val recents = mutableListOf(WallpaperItem.Add, WallpaperItem.Default)
-        recents.addAll(WallpaperStore.getRecent(this).map { WallpaperItem.Custom(it) })
+private fun loadWallpapers() {
+    val recents = mutableListOf(WallpaperItem.Add, WallpaperItem.Default)
+    recents.addAll(WallpaperStore.getRecent(this).map { WallpaperItem.Custom(it) })
 
+    if (!::recentAdapter.isInitialized) {
         recentAdapter = WallpaperAdapter(recents, onClick = { item ->
             when (item) {
                 is WallpaperItem.Add -> pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
@@ -110,8 +111,12 @@ class CustomizeHomeActivity : AppCompatActivity() {
             }
         })
         recentRecycler.adapter = recentAdapter
+    } else {
+        recentAdapter.updateItems(recents)
+    }
 
-        val defaults = remoteWallpapers.map { WallpaperItem.Remote(it) }
+    val defaults = remoteWallpapers.map { WallpaperItem.Remote(it) }
+    if (!::defaultAdapter.isInitialized) {
         defaultAdapter = WallpaperAdapter(defaults, onClick = { item ->
             if (item is WallpaperItem.Remote) {
                 val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
@@ -122,7 +127,10 @@ class CustomizeHomeActivity : AppCompatActivity() {
             }
         }, onLongClick = { })
         defaultRecycler.adapter = defaultAdapter
+    } else {
+        defaultAdapter.updateItems(defaults)
     }
+}
 
     private fun showContextMenu(anchor: android.view.View?, path: String) {
         if (anchor == null) return
@@ -158,11 +166,15 @@ sealed class WallpaperItem {
 }
 
 class WallpaperAdapter(
-    private val items: List<WallpaperItem>,
+    private var items: List<WallpaperItem>,
     private val onClick: (WallpaperItem) -> Unit,
     private val onLongClick: (WallpaperItem) -> Unit
 ) : RecyclerView.Adapter<WallpaperAdapter.VH>() {
 
+    fun updateItems(newItems: List<WallpaperItem>) {
+        items = newItems
+        notifyDataSetChanged()
+    }
     class VH(v: android.view.View) : RecyclerView.ViewHolder(v) {
         val image: ImageView = v.findViewById(R.id.wpImage)
         val placeholder: ImageView = v.findViewById(R.id.wpPlaceholder)
@@ -191,7 +203,7 @@ class WallpaperAdapter(
                 h.image.visibility = android.view.View.VISIBLE
                 Thread {
                     try {
-                        val bitmap = android.graphics.BitmapFactory.decodeFile(item.uri)
+                        val bitmap = WallpaperStore.getSampledBitmap(item.uri, 300, 300)
                         if (bitmap != null) {
                             h.image.post { h.image.setImageBitmap(bitmap) }
                         }
