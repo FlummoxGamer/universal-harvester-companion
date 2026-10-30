@@ -6,6 +6,7 @@
     android:layout_margin="4dp">
 
     <com.google.android.material.card.MaterialCardView
+        android:id="@+id/wallpaperCard"
         android:layout_width="0dp"
         android:layout_height="0dp"
         app:cardCornerRadius="12dp"
@@ -34,6 +35,16 @@
                 android:layout_height="32dp"
                 android:layout_gravity="center"
                 app:tint="@color/text" />
+
+            <ImageView
+                android:id="@+id/wpActiveCheck"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="top|end"
+                android:layout_margin="8dp"
+                android:background="@drawable/ic_ext_on"
+                android:visibility="gone"
+                app:tint="@color/accent" />
         </FrameLayout>
     </com.google.android.material.card.MaterialCardView>
 </androidx.constraintlayout.widget.ConstraintLayout>
