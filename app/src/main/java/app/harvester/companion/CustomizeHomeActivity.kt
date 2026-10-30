@@ -57,8 +57,8 @@ class CustomizeHomeActivity : AppCompatActivity() {
         findViewById<android.view.View>(R.id.btnBack).setOnClickListener { finish() }
 
         recentRecycler = findViewById(R.id.recentRecycler)
-        recentRecycler.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
-        
+        recentRecycler.layoutManager = GridLayoutManager(this, 4)
+
         defaultRecycler = findViewById(R.id.defaultRecycler)
         defaultRecycler.layoutManager = GridLayoutManager(this, 4)
 
@@ -67,7 +67,7 @@ class CustomizeHomeActivity : AppCompatActivity() {
             builder.setTitle("Reset Home?")
             builder.setMessage("Are you sure you want to reset all widgets and wallpapers to defaults?")
             builder.setPositiveButton("Confirm") { _, _ ->
-                WallpaperStore.clearAll(this)
+                WallpaperStore.setCurrentWallpaper(this, "default", 0)
                 ShortcutStore.clear(this)
                 Toast.makeText(this, "Home reset to defaults", Toast.LENGTH_SHORT).show()
                 finish()
