@@ -479,20 +479,18 @@ binding.shortcutsGrid.addOnItemTouchListener(object : androidx.recyclerview.widg
 }
 
 private fun showWidgetMenu(s: Shortcut, anchor: android.view.View) {
-    val popup = android.widget.PopupMenu(this, anchor)
-    popup.menu.add(0, 1, 0, "Edit")
-    popup.menu.add(0, 2, 1, "Remove")
-    popup.setOnMenuItemClickListener { item ->
-        when (item.itemId) {
-            1 -> showShortcutEditor(s)
-            2 -> {
-                ShortcutStore.remove(this, s.url)
-                shortcutAdapter.submit(ShortcutStore.list(this))
+    androidx.appcompat.app.AlertDialog.Builder(this)
+        .setTitle(s.name)
+        .setItems(arrayOf("Edit", "Remove")) { _, which ->
+            when (which) {
+                0 -> showShortcutEditor(s)
+                1 -> {
+                    ShortcutStore.remove(this, s.url)
+                    shortcutAdapter.submit(ShortcutStore.list(this))
+                }
             }
         }
-        true
-    }
-    popup.show()
+        .show()
 }
     private fun setupSwipeRefresh() {
         binding.swipeRefresh.setOnRefreshListener {
