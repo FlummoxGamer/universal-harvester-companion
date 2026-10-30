@@ -42,11 +42,10 @@
             android:layout_height="match_parent"
             android:orientation="vertical"
             android:gravity="center_horizontal"
-            android:paddingBottom="60dp"
+            android:paddingBottom="20dp"
             android:focusable="false"
             android:focusableInTouchMode="false">
 
-            <Space android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="0.4" />
            <TextView
                android:id="@+id/homeTitle"
                android:layout_width="wrap_content"
@@ -59,7 +58,9 @@
                android:shadowDx="0"
                android:shadowDy="2"
                android:shadowRadius="6"
-               android:layout_marginBottom="36dp" />
+               android:layout_marginTop="32dp"
+               android:layout_marginBottom="24dp" />
+               
            <androidx.core.widget.NestedScrollView
                android:layout_width="match_parent"
                android:layout_height="0dp"
@@ -73,9 +74,9 @@
                    android:layout_height="wrap_content"
                    android:paddingStart="16dp"
                    android:paddingEnd="16dp"
+                   android:paddingBottom="32dp"
                    android:clipToPadding="false" />
            </androidx.core.widget.NestedScrollView>
-           <Space android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="0.4" />
         </LinearLayout>
 
         <ImageButton
