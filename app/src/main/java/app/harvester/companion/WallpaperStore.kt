@@ -13,15 +13,15 @@ object WallpaperStore {
 
     private fun getPrefs(ctx: Context) = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    fun getWallpaperDir(ctx: Context): File {
-        val dir = File(ctx.getExternalFilesDir(null), "wallpapers")
-        if (!dir.exists()) dir.mkdirs()
-        val nomedia = File(dir, ".nomedia")
-        if (!nomedia.exists()) {
-            try { nomedia.createNewFile() } catch (_: Exception) {}
-        }
-        return dir
+fun getWallpaperDir(ctx: Context): File {
+    val dir = File(ctx.getExternalFilesDir(null)?.parentFile, "wallpapers")
+    if (!dir.exists()) dir.mkdirs()
+    val nomedia = File(dir, ".nomedia")
+    if (!nomedia.exists()) {
+        try { nomedia.createNewFile() } catch (_: Exception) {}
     }
+    return dir
+}
 
     fun saveWallpaper(ctx: Context, uri: Uri): String? {
         return try {
@@ -37,11 +37,39 @@ object WallpaperStore {
                     input.copyTo(output)
                 }
             }
+            cleanOldWallpapers(ctx)
             file.absolutePath
         } catch (_: Exception) {
             null
         }
     }
+
+fun downloadRemoteWallpaper(ctx: Context, url: String): String? {
+    return try {
+        val file = File(getWallpaperDir(ctx), "wall_${System.currentTimeMillis()}.jpg")
+        val request = okhttp3.Request.Builder().url(url).build()
+        val response = okhttp3.OkHttpClient().newCall(request).execute()
+        if (response.isSuccessful && response.body != null) {
+            response.body!!.byteStream().use { input ->
+                file.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            cleanOldWallpapers(ctx)
+            file.absolutePath
+        } else null
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun cleanOldWallpapers(ctx: Context) {
+    val dir = getWallpaperDir(ctx)
+    val files = dir.listFiles { f -> f.isFile && f.name.startsWith("wall_") } ?: return
+    if (files.size > 20) {
+        files.sortedBy { it.lastModified() }.take(files.size - 20).forEach { it.delete() }
+    }
+}
 
     fun setCurrentWallpaper(ctx: Context, path: String?, textColor: Int) {
         getPrefs(ctx).edit()
