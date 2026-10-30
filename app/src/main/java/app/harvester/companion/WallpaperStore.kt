@@ -32,9 +32,22 @@ fun getWallpaperDir(ctx: Context): File {
                 else -> "jpg"
             }
             val file = File(getWallpaperDir(ctx), "wall_${System.currentTimeMillis()}.$ext")
-            ctx.contentResolver.openInputStream(uri)?.use { input ->
-                file.outputStream().use { output ->
-                    input.copyTo(output)
+            val hash = try {
+                val md = java.security.MessageDigest.getInstance("MD5")
+                val digest = md.digest(file.readBytes())
+                digest.joinToString("") { "%02x".format(it) }
+            } catch (_: Exception) { "" }
+
+            if (hash.isNotEmpty()) {
+                val existing = getWallpaperDir(ctx).listFiles { f -> f.name.startsWith("wall_") }?.find {
+                    try {
+                        val md = java.security.MessageDigest.getInstance("MD5")
+                        val digest = md.digest(it.readBytes())
+                        digest.joinToString("") { b -> "%02x".format(b) } == hash
+                    } catch (_: Exception) { false }
+                }
+                if (existing != null && existing.absolutePath != file.absolutePath) {
+                    existing.delete()
                 }
             }
             cleanOldWallpapers(ctx)
