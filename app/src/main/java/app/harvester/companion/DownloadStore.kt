@@ -9,20 +9,21 @@ object DownloadStore {
     const val MAX_PARALLEL = 2
 
     data class Task(
-        val id: String,
-        val url: String,
-        val filename: String,
-        val mime: String,
-        var bytesDownloaded: Long = 0L,
-        var totalBytes: Long = -1L,
-        var speed: Long = 0L,
-        var etaSeconds: Long = -1L,
-        var status: Status = Status.PENDING,
-        var error: String? = null,
-        val base64Data: String? = null,
-        val userAgent: String? = null,
-        val referer: String? = null,
-        val realUrl: String? = null
+         val id: String,
+         val url: String,
+         val filename: String,
+         val mime: String,
+         var bytesDownloaded: Long = 0L,
+         var totalBytes: Long = -1L,
+         var speed: Long = 0L,
+         var etaSeconds: Long = -1L,
+         var status: Status = Status.PENDING,
+         var error: String? = null,
+         val base64Data: String? = null,
+         val userAgent: String? = null,
+         val referer: String? = null,
+         val realUrl: String? = null,
+         var retryCount: Int = 0
     )
 
     private val _activeDownloads = MutableStateFlow<List<Task>>(emptyList())
