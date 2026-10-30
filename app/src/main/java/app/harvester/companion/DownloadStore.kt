@@ -8,8 +8,6 @@ object DownloadStore {
 
     const val MAX_PARALLEL = 2
 
-    const val MAX_PARALLEL = 2
-
     data class Task(
         val id: String,
         val url: String,
