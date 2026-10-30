@@ -161,12 +161,10 @@ tabs = TabManager.get(this)
     }
     private fun setupWebExtensionBridge() {
         val runtime = GeckoEngine.getRuntime(this) ?: return
-            runtime.webExtensionController.ensureBuiltIn(
-                "resource://android/assets/web_extensions/uh_bridge/",
-                "uh-bridge@harvester.app"
-            ).accept({ ext ->
-                if (ext != null) {
-                    ext.setMessageDelegate(object : WebExtension.MessageDelegate {
+        runtime.webExtensionController.list().accept({ extList ->
+            val ext = extList?.find { it.id == "uh-bridge@harvester.app" }
+            if (ext != null) {
+                ext.setMessageDelegate(object : WebExtension.MessageDelegate {
                     override fun onMessage(nativeApp: String, message: Any, sender: WebExtension.MessageSender): GeckoResult<Any>? {
                         val json = message as? JSONObject ?: return null
                         val type = json.optString("type")
@@ -306,11 +304,11 @@ tabs = TabManager.get(this)
                     }
                 }, "uhApp")
             }
-        }, { error ->
+            }, { error ->
             UHLog.e("main", "Failed to attach MessageDelegate: ${error?.message}")
         })
     }
-
+}
 private var isSplashHidden = false
 private fun hideSplash() {
     if (isSplashHidden) return
@@ -338,15 +336,7 @@ private fun hideSplash() {
 
 private fun updateGridColumns() {
     val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-    val screenWidthDp = resources.configuration.screenWidthDp
-    val cols = if (isLandscape) {
-        when {
-            screenWidthDp >= 1280 -> 9
-            screenWidthDp >= 917 -> 8
-            screenWidthDp >= 600 -> 7
-            else -> 6
-        }
-    } else 4
+    val cols = if (isLandscape) 5 else 4
     (binding.shortcutsGrid.layoutManager as? GridLayoutManager)?.spanCount = cols
 
     if (isLandscape) {
@@ -356,9 +346,10 @@ private fun updateGridColumns() {
         if (content.childCount > 0 && content.getChildAt(0) is android.widget.Space) {
             val topSpace = content.getChildAt(0)
             val bottomSpace = content.getChildAt(content.childCount - 1)
+            
             val lpTop = topSpace.layoutParams as android.widget.LinearLayout.LayoutParams
             lpTop.weight = 0f
-            lpTop.height = (16 * resources.displayMetrics.density).toInt()
+            lpTop.height = (72 * resources.displayMetrics.density).toInt()
             topSpace.layoutParams = lpTop
             
             val lpBot = bottomSpace.layoutParams as android.widget.LinearLayout.LayoutParams
