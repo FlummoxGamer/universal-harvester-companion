@@ -20,7 +20,7 @@ class DownloadService : Service() {
         const val ACTION_CANCEL = "app.harvester.companion.CANCEL"
         const val ACTION_TRY_AGAIN = "app.harvester.companion.TRY_AGAIN"
 
-            fun start(ctx: Context) {
+        fun start(ctx: Context) {
             val intent = Intent(ctx, DownloadService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(intent)
             else ctx.startService(intent)
@@ -125,6 +125,18 @@ class DownloadService : Service() {
             val openIntent = Intent(ctx, DownloadsActivity::class.java)
             val piOpen = PendingIntent.getActivity(ctx, notificationId, openIntent, PendingIntent.FLAG_IMMUTABLE)
             
+            val retryIntent = Intent(ctx, DownloadService::class.java).apply {
+                action = ACTION_TRY_AGAIN
+                putExtra("id", id)
+            }
+            val piRetry = PendingIntent.getService(ctx, notificationId + 3, retryIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+
+            val cancelIntent = Intent(ctx, DownloadService::class.java).apply {
+                action = ACTION_CANCEL
+                putExtra("id", id)
+            }
+            val piCancel = PendingIntent.getService(ctx, notificationId + 2, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+
             val n = NotificationCompat.Builder(ctx, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_notify_error)
                 .setContentTitle(filename)
@@ -133,6 +145,8 @@ class DownloadService : Service() {
                 .setContentIntent(piOpen)
                 .setAutoCancel(true)
                 .setOngoing(false)
+                .addAction(R.drawable.ic_reload, "Try Again", piRetry)
+                .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", piCancel)
                 .build()
                 
             nm.notify(notificationId, n)
@@ -145,6 +159,7 @@ class DownloadService : Service() {
         fun cancelNotification(ctx: Context, id: String) {
             val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
             nm.cancel(id.hashCode())
+            nm.cancel(id.hashCode() + 10000)
         }
 
         private fun buildNotification(ctx: Context, task: DownloadStore.Task): android.app.Notification {
@@ -152,63 +167,66 @@ class DownloadService : Service() {
             val notificationId = task.id.hashCode()
             val piOpen = PendingIntent.getActivity(ctx, notificationId, openIntent, PendingIntent.FLAG_IMMUTABLE)
 
-val isPaused = task.status == DownloadStore.Status.PAUSED
-val isPending = task.status == DownloadStore.Status.PENDING
+            val isPaused = task.status == DownloadStore.Status.PAUSED
+            val isPending = task.status == DownloadStore.Status.PENDING
+            
+            val pauseIntent = Intent(ctx, DownloadService::class.java).apply {
+                action = if (isPaused) ACTION_RESUME else ACTION_PAUSE
+                putExtra("id", task.id)
+            }
+            val piPause = PendingIntent.getService(ctx, notificationId + 1, pauseIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
-val pauseIntent = Intent(ctx, DownloadService::class.java).apply {
-    action = if (isPaused) ACTION_RESUME else ACTION_PAUSE
-    putExtra("id", task.id)
-}
-val piPause = PendingIntent.getService(ctx, notificationId + 1, pauseIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            val cancelIntent = Intent(ctx, DownloadService::class.java).apply {
+                action = ACTION_CANCEL
+                putExtra("id", task.id)
+            }
+            val piCancel = PendingIntent.getService(ctx, notificationId + 2, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
-val cancelIntent = Intent(ctx, DownloadService::class.java).apply {
-    action = ACTION_CANCEL
-    putExtra("id", task.id)
-}
-val piCancel = PendingIntent.getService(ctx, notificationId + 2, cancelIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            val retryIntent = Intent(ctx, DownloadService::class.java).apply {
+                action = ACTION_TRY_AGAIN
+                putExtra("id", task.id)
+            }
+            val piRetry = PendingIntent.getService(ctx, notificationId + 3, retryIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
-val retryIntent = Intent(ctx, DownloadService::class.java).apply {
-    action = ACTION_TRY_AGAIN
-    putExtra("id", task.id)
-}
-val piRetry = PendingIntent.getService(ctx, notificationId + 3, retryIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            val speed = formatSpeed(task.speed)
+            val eta = formatEta(task.etaSeconds)
+            val size = "${formatSize(task.bytesDownloaded)} / ${formatSize(task.totalBytes)}"
+            
+            val text = when {
+                isPending -> "Queued..."
+                isPaused -> "Paused • $size"
+                task.status == DownloadStore.Status.FAILED -> "Failed • $size"
+                else -> "$size • $speed • $eta"
+            }
 
-val speed = formatSpeed(task.speed)
-val eta = formatEta(task.etaSeconds)
-val size = "${formatSize(task.bytesDownloaded)} / ${formatSize(task.totalBytes)}"
+            val progress = if (task.totalBytes > 0) ((task.bytesDownloaded * 100) / task.totalBytes).toInt() else 0
 
-val text = when {
-    isPending -> "Queued..."
-    isPaused -> "Paused • $size"
-    task.status == DownloadStore.Status.FAILED -> "Failed • $size"
-    else -> "$size • $speed • $eta"
-}
+            val builder = NotificationCompat.Builder(ctx, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_downloads)
+                .setContentTitle(task.filename)
+                .setContentText(text)
+                .setContentIntent(piOpen)
+                .setOnlyAlertOnce(true)
+                .setProgress(100, progress, task.totalBytes <= 0 && !isPending)
+                .setOngoing(true)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+                
+            if (task.status == DownloadStore.Status.FAILED) {
+                builder.addAction(R.drawable.ic_reload, "Try Again", piRetry)
+                builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", piCancel)
+            } else if (isPaused) {
+                builder.addAction(android.R.drawable.ic_media_play, "Resume", piPause)
+                builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", piCancel)
+            } else if (!isPending) {
+                builder.addAction(android.R.drawable.ic_media_pause, "Pause", piPause)
+                builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", piCancel)
+            } else {
+                builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", piCancel)
+            }
 
-val progress = if (task.totalBytes > 0) ((task.bytesDownloaded * 100) / task.totalBytes).toInt() else 0
+            return builder.build()
+        }
 
-val builder = NotificationCompat.Builder(ctx, CHANNEL_ID)
-    .setSmallIcon(R.drawable.ic_downloads)
-    .setContentTitle(task.filename)
-    .setContentText(text)
-    .setContentIntent(piOpen)
-    .setOnlyAlertOnce(true)
-    .setProgress(100, progress, task.totalBytes <= 0 && !isPending)
-    .setOngoing(true)
-    .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-    
-if (task.status == DownloadStore.Status.FAILED) {
-    builder.addAction(R.drawable.ic_reload, "Try Again", piRetry)
-    builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", piCancel)
-} else if (isPaused) {
-    builder.addAction(android.R.drawable.ic_media_play, "Resume", piPause)
-    builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", piCancel)
-} else if (!isPending) {
-    builder.addAction(android.R.drawable.ic_media_pause, "Pause", piPause)
-    builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", piCancel)
-} else {
-    builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", piCancel)
-}
-        
         private fun formatSpeed(b: Long): String = if (b <= 0) "0 B/s" else "${formatSize(b)}/s"
 
         private fun formatSize(b: Long): String = when {
@@ -238,36 +256,36 @@ if (task.status == DownloadStore.Status.FAILED) {
         }
     }
 
-override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    val id = intent?.getStringExtra("id")
-    when (intent?.action) {
-        ACTION_PAUSE -> if (id != null) DownloadEngine.pauseDownload(this, id)
-        ACTION_RESUME -> if (id != null) DownloadEngine.resumeDownload(this, id)
-        ACTION_CANCEL -> if (id != null) DownloadEngine.cancelDownload(this, id)
-        ACTION_TRY_AGAIN -> if (id != null) {
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            nm.cancel(id.hashCode())
-            DownloadEngine.resumeDownload(this, id)
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val id = intent?.getStringExtra("id")
+        when (intent?.action) {
+            ACTION_PAUSE -> if (id != null) DownloadEngine.pauseDownload(this, id)
+            ACTION_RESUME -> if (id != null) DownloadEngine.resumeDownload(this, id)
+            ACTION_CANCEL -> if (id != null) DownloadEngine.cancelDownload(this, id)
+            ACTION_TRY_AGAIN -> if (id != null) {
+                val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                nm.cancel(id.hashCode() + 10000)
+                DownloadEngine.resumeDownload(this, id)
+            }
         }
-    }
-    
-    val active = DownloadStore.activeDownloads.value.filter { it.status == DownloadStore.Status.RUNNING || it.status == DownloadStore.Status.PENDING || it.status == DownloadStore.Status.PAUSED }
-    if (active.isEmpty()) {
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
-    } else {
-        val firstTask = active.first()
-        val notification = buildNotification(this, firstTask)
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (firstTask.status == DownloadStore.Status.PAUSED || firstTask.status == DownloadStore.Status.PENDING) {
-            nm.notify(firstTask.id.hashCode(), notification)
+        
+        val active = DownloadStore.activeDownloads.value.filter { it.status == DownloadStore.Status.RUNNING || it.status == DownloadStore.Status.PENDING || it.status == DownloadStore.Status.PAUSED }
+        if (active.isEmpty()) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
         } else {
-            startForeground(firstTask.id.hashCode(), notification)
+            val firstTask = active.first()
+            val notification = buildNotification(this, firstTask)
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (firstTask.status == DownloadStore.Status.PAUSED || firstTask.status == DownloadStore.Status.PENDING) {
+                nm.notify(firstTask.id.hashCode(), notification)
+            } else {
+                startForeground(firstTask.id.hashCode(), notification)
+            }
         }
+        
+        return START_NOT_STICKY
     }
-    
-    return START_NOT_STICKY
-}
 
     override fun onBind(intent: Intent?): IBinder? = null
 }
