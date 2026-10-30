@@ -338,10 +338,33 @@ private fun updateGridColumns() {
     val cols = if (isLandscape) 5 else 4
     (binding.shortcutsGrid.layoutManager as? GridLayoutManager)?.spanCount = cols
 
-    if (isLandscape) {
-        binding.homeTitle.visibility = android.view.View.GONE
-    } else {
-        binding.homeTitle.visibility = android.view.View.VISIBLE
+    val content = binding.homeScreen
+    if (content.childCount >= 3 && content.getChildAt(0) is android.widget.Space) {
+        val topSpace = content.getChildAt(0)
+        val bottomSpace = content.getChildAt(content.childCount - 1)
+        val lpTop = topSpace.layoutParams as android.widget.LinearLayout.LayoutParams
+        val lpBot = bottomSpace.layoutParams as android.widget.LinearLayout.LayoutParams
+
+        if (isLandscape) {
+            binding.homeTitle.visibility = android.view.View.GONE
+            lpTop.weight = 0.05f
+            lpBot.weight = 0.05f
+        } else {
+            binding.homeTitle.visibility = android.view.View.VISIBLE
+            lpTop.weight = 0.4f
+            lpBot.weight = 0.4f
+        }
+        topSpace.layoutParams = lpTop
+        bottomSpace.layoutParams = lpBot
+    }
+
+    val nsv = binding.shortcutsGrid.parent as? androidx.core.widget.NestedScrollView
+    if (nsv != null) {
+        val lp = nsv.layoutParams as android.widget.LinearLayout.LayoutParams
+        lp.height = 0
+        lp.weight = 1f
+        nsv.layoutParams = lp
+        nsv.requestLayout()
     }
 }
 
