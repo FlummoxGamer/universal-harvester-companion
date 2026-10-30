@@ -50,6 +50,11 @@ if (recent.isEmpty()) {
         uris = recent
         viewPager.adapter = PreviewAdapter(uris)
 
+        val initialIndex = uris.indexOf(initialPath)
+        if (initialIndex >= 0) {
+            viewPager.setCurrentItem(initialIndex, false)
+        }
+
         findViewById<android.view.View>(R.id.btnSet).setOnClickListener {
             val currentPos = viewPager.currentItem
             if (currentPos in uris.indices) {
@@ -71,7 +76,7 @@ if (recent.isEmpty()) {
                 val bitmap = if (uriString.startsWith("http")) {
                     java.net.URL(uriString).openStream().use { BitmapFactory.decodeStream(it) }
                 } else {
-                    contentResolver.openInputStream(Uri.parse(uriString))?.use { BitmapFactory.decodeStream(it) }
+                    BitmapFactory.decodeFile(uriString)
                 }
 
                 if (bitmap != null) {
@@ -124,7 +129,7 @@ if (recent.isEmpty()) {
                         val bitmap = if (item.startsWith("http")) {
                             java.net.URL(item).openStream().use { BitmapFactory.decodeStream(it) }
                         } else {
-                            contentResolver.openInputStream(Uri.parse(item))?.use { BitmapFactory.decodeStream(it) }
+                            BitmapFactory.decodeFile(item)
                         }
                         if (bitmap != null) {
                             val palette = Palette.from(bitmap).generate()
