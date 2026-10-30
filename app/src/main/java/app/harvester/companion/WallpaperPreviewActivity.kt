@@ -134,11 +134,22 @@ inner class PreviewAdapter(private val items: List<String>) : RecyclerView.Adapt
         h.shortcuts.adapter = adapter
         adapter.submit(shortcutList)
 
+        val surfaceColor = com.google.android.material.color.MaterialColors.getColor(h.itemView, com.google.android.material.R.attr.colorSurface)
+        val onSurfaceColor = com.google.android.material.color.MaterialColors.getColor(h.itemView, com.google.android.material.R.attr.colorOnSurface)
+        val bgColor = com.google.android.material.color.MaterialColors.getColor(h.itemView, androidx.appcompat.R.attr.colorBackgroundFloating)
+
+        val mockAddressBar = h.itemView.findViewById<LinearLayout>(R.id.previewMockAddressBar)
+        mockAddressBar?.setBackgroundColor(surfaceColor)
+        val mockUrlText = h.itemView.findViewById<TextView>(R.id.previewMockUrlText)
+        mockUrlText?.setTextColor(onSurfaceColor)
+        val mockTabCount = h.itemView.findViewById<TextView>(R.id.previewMockTabCount)
+        mockTabCount?.setTextColor(onSurfaceColor)
+
         if (item == "default") {
             h.image.setImageResource(android.R.color.transparent)
-            h.image.setBackgroundColor(androidx.core.content.ContextCompat.getColor(this@WallpaperPreviewActivity, R.color.bg))
-            h.title.setTextColor(androidx.core.content.ContextCompat.getColor(this@WallpaperPreviewActivity, R.color.accent))
-            adapter.setTextColor(androidx.core.content.ContextCompat.getColor(this@WallpaperPreviewActivity, R.color.text), 0)
+            h.image.setBackgroundColor(bgColor)
+            h.title.setTextColor(onSurfaceColor)
+            adapter.setTextColor(onSurfaceColor, 0)
         } else {
             Thread {
                 try {
