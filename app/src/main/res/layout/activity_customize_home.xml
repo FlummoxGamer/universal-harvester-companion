@@ -75,23 +75,11 @@
                 android:paddingEnd="16dp"
                 android:clipToPadding="false" />
 
-            <TextView
+            <LinearLayout
+                android:id="@+id/defaultContainer"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Default Wallpapers"
-                android:textColor="@color/text"
-                android:textSize="18sp"
-                android:fontFamily="@font/app_font"
-                android:padding="16dp"
-                android:layout_marginTop="16dp" />
-
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/defaultRecycler"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:clipToPadding="false" />
+                android:orientation="vertical" />
 
             <Button
                 android:id="@+id/btnResetHome"
