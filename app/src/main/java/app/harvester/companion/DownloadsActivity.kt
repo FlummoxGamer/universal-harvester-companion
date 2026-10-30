@@ -270,6 +270,11 @@ class DownloadsActivity : AppCompatActivity() {
                 DownloadStore.Status.PENDING -> {
                     h.btnToggle.visibility = View.GONE
                 }
+                DownloadStore.Status.FAILED -> {
+                    h.btnToggle.setImageResource(android.R.drawable.ic_menu_revert)
+                    h.btnToggle.setOnClickListener { onResume(task.id) }
+                    h.btnToggle.visibility = View.VISIBLE
+                }
                 else -> {
                     h.btnToggle.visibility = View.GONE
                 }
