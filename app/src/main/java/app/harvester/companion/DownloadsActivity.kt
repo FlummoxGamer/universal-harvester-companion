@@ -250,6 +250,7 @@ class DownloadsActivity : AppCompatActivity() {
                 DownloadStore.Status.PENDING -> "Queued..."
                 DownloadStore.Status.PAUSED -> "Paused • $size"
                 DownloadStore.Status.FAILED -> "Failed • $size"
+                DownloadStore.Status.WAITING_FOR_NETWORK -> "Waiting for network • $size"
                 else -> "$size • $speed • $eta"
             }
             
