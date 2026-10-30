@@ -3,6 +3,10 @@ package app.harvester.companion
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -13,6 +17,7 @@ import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Call
+import java.io.IOException
 import java.io.InputStream
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -21,24 +26,35 @@ object DownloadEngine {
     private val jobs = mutableMapOf<String, Job>()
     private val calls = mutableMapOf<String, Call>()
     private val streams = mutableMapOf<String, InputStream>()
+    private var isNetworkListenerRegistered = false
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true)
         .addInterceptor(SecurityInterceptor())
-        .addInterceptor { chain ->
-            var request = chain.request()
-            var response = chain.proceed(request)
-            var tryCount = 0
-            while (response.code == 429 && tryCount < 3) {
-                tryCount++
-                Thread.sleep(2000L * tryCount)
-                response.close()
-                response = chain.proceed(request)
-            }
-            response
-        }
         .build()
+
+    fun initNetworkListener(ctx: Context) {
+        if (isNetworkListenerRegistered) return
+        val cm = ctx.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        try {
+            cm.registerNetworkCallback(request, object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    val waiting = DownloadStore.activeDownloads.value.filter { it.status == DownloadStore.Status.WAITING_FOR_NETWORK }
+                    if (waiting.isNotEmpty()) {
+                        for (task in waiting) {
+                            resumeDownload(ctx.applicationContext, task.id)
+                        }
+                    }
+                }
+            })
+            isNetworkListenerRegistered = true
+        } catch (_: Exception) {}
+    }
 
     fun startDownload(ctx: Context, url: String, filename: String, mime: String, base64Data: String? = null, userAgent: String? = null, referer: String? = null): String {
         val id = UUID.randomUUID().toString()
@@ -196,7 +212,7 @@ object DownloadEngine {
                         }
 
                         val currentTask = DownloadStore.getTask(task.id)
-                        if (currentTask == null || currentTask.status == DownloadStore.Status.CANCELLED || currentTask.status == DownloadStore.Status.PAUSED) return@launch
+                        if (currentTask == null || currentTask.status == DownloadStore.Status.CANCELLED || currentTask.status == DownloadStore.Status.PAUSED || currentTask.status == DownloadStore.Status.WAITING_FOR_NETWORK) return@launch
 
                         targetUri?.let { finishMediaStore(ctx, it) }
                         DownloadStore.updateTask(task.id) {
@@ -217,15 +233,12 @@ object DownloadEngine {
             } catch (e: Exception) {
                 val currentTask = DownloadStore.getTask(task.id) ?: return@launch
                 if (currentTask.status != DownloadStore.Status.CANCELLED && currentTask.status != DownloadStore.Status.PAUSED) {
-                    if (currentTask.retryCount < 3) {
+                    if (e is IOException) {
                         DownloadStore.updateTask(task.id) {
-                            it.status = DownloadStore.Status.PENDING
-                            it.retryCount++
-                            it.error = e.message
+                            it.status = DownloadStore.Status.WAITING_FOR_NETWORK
+                            it.error = "Waiting for network"
                         }
-                        DownloadService.start(ctx)
                         DownloadService.updateNotification(ctx, task.id)
-                        delay(2000L * currentTask.retryCount)
                     } else {
                         task.targetUri?.let { savedUri ->
                             if (savedUri.startsWith("content://com.android.externalstorage")) {
@@ -245,7 +258,7 @@ object DownloadEngine {
                     }
                 }
             } finally {
-                if (DownloadStore.getTask(task.id)?.status != DownloadStore.Status.PAUSED) {
+                if (DownloadStore.getTask(task.id)?.status != DownloadStore.Status.PAUSED && DownloadStore.getTask(task.id)?.status != DownloadStore.Status.WAITING_FOR_NETWORK) {
                     processQueue(ctx)
                 }
             }
@@ -310,7 +323,7 @@ object DownloadEngine {
                 }
 
                 val currentTask = DownloadStore.getTask(task.id)
-                if (currentTask == null || currentTask.status == DownloadStore.Status.CANCELLED || currentTask.status == DownloadStore.Status.PAUSED) return@launch
+                if (currentTask == null || currentTask.status == DownloadStore.Status.CANCELLED || currentTask.status == DownloadStore.Status.PAUSED || currentTask.status == DownloadStore.Status.WAITING_FOR_NETWORK) return@launch
 
                 targetUri?.let { finishMediaStore(ctx, it) }
                 DownloadStore.updateTask(task.id) {
@@ -336,7 +349,7 @@ object DownloadEngine {
                 }
             } finally {
                 streams.remove(task.id)
-                if (DownloadStore.getTask(task.id)?.status != DownloadStore.Status.PAUSED) {
+                if (DownloadStore.getTask(task.id)?.status != DownloadStore.Status.PAUSED && DownloadStore.getTask(task.id)?.status != DownloadStore.Status.WAITING_FOR_NETWORK) {
                     processQueue(ctx)
                 }
             }
