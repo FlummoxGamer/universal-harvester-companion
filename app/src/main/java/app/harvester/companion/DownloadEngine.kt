@@ -125,14 +125,35 @@ object DownloadEngine {
 
                         if (response.code == 200 && task.bytesDownloaded > 0) {
                             task.bytesDownloaded = 0
+                            DownloadStore.updateTask(task.id) { it.bytesDownloaded = 0 }
+                            task.targetUri?.let { savedUri ->
+                                if (savedUri.startsWith("content://com.android.externalstorage")) {
+                                    DocumentFile.fromSingleUri(ctx, Uri.parse(savedUri))?.delete()
+                                } else {
+                                    ctx.contentResolver.delete(Uri.parse(savedUri), null, null)
+                                }
+                            }
+                            task.targetUri = null
                         }
 
                         val total = if (response.code == 206) task.bytesDownloaded + body.contentLength() else body.contentLength()
                         if (total > 0) DownloadStore.updateTask(task.id) { it.totalBytes = total }
 
-                        val result = getDestination(ctx, task.filename, task.mime)
-                        targetUri = result.first
-                        targetDoc = result.second
+                        if (task.targetUri != null) {
+                            val savedUri = Uri.parse(task.targetUri)
+                            if (task.targetUri!!.startsWith("content://com.android.externalstorage")) {
+                                targetDoc = DocumentFile.fromSingleUri(ctx, savedUri)
+                            } else {
+                                targetUri = savedUri
+                            }
+                        } else {
+                            val result = getDestination(ctx, task.filename, task.mime)
+                            targetUri = result.first
+                            targetDoc = result.second
+                            DownloadStore.updateTask(task.id) {
+                                it.targetUri = (targetUri ?: targetDoc?.uri)?.toString()
+                            }
+                        }
 
                         val streamResult = if (targetUri != null) {
                             ctx.contentResolver.openOutputStream(targetUri, if (task.bytesDownloaded > 0) "wa" else "w")
@@ -202,14 +223,23 @@ object DownloadEngine {
                             it.retryCount++
                             it.error = e.message
                         }
+                        DownloadService.start(ctx)
                         DownloadService.updateNotification(ctx, task.id)
                         delay(2000L * currentTask.retryCount)
                     } else {
+                        task.targetUri?.let { savedUri ->
+                            if (savedUri.startsWith("content://com.android.externalstorage")) {
+                                DocumentFile.fromSingleUri(ctx, Uri.parse(savedUri))?.delete()
+                            } else {
+                                ctx.contentResolver.delete(Uri.parse(savedUri), null, null)
+                            }
+                        }
                         targetUri?.let { deletePartialFile(ctx, it) }
                         if (targetDoc != null) targetDoc?.delete()
                         DownloadStore.updateTask(task.id) {
                             it.status = DownloadStore.Status.FAILED
                             it.error = e.message
+                            it.targetUri = null
                         }
                         DownloadService.notifyFailed(ctx, task.id, task.filename, e.message ?: "Unknown error")
                     }
@@ -236,6 +266,9 @@ object DownloadEngine {
                 val result = getDestination(ctx, task.filename, task.mime)
                 targetUri = result.first
                 targetDoc = result.second
+                DownloadStore.updateTask(task.id) {
+                    it.targetUri = (targetUri ?: targetDoc?.uri)?.toString()
+                }
 
                 val streamResult = if (targetUri != null) {
                     ctx.contentResolver.openOutputStream(targetUri)
@@ -294,7 +327,11 @@ object DownloadEngine {
                 if (currentTask.status != DownloadStore.Status.CANCELLED && currentTask.status != DownloadStore.Status.PAUSED) {
                     targetUri?.let { deletePartialFile(ctx, it) }
                     if (targetDoc != null) targetDoc?.delete()
-                    DownloadStore.updateTask(task.id) { it.status = DownloadStore.Status.FAILED; it.error = e.message }
+                    DownloadStore.updateTask(task.id) { 
+                        it.status = DownloadStore.Status.FAILED
+                        it.error = e.message 
+                        it.targetUri = null
+                    }
                     DownloadService.notifyFailed(ctx, task.id, task.filename, e.message ?: "Unknown error")
                 }
             } finally {
@@ -322,6 +359,7 @@ object DownloadEngine {
             it.status = DownloadStore.Status.PENDING 
             it.retryCount = 0
         }
+        DownloadService.start(ctx)
         DownloadService.updateNotification(ctx, id)
         processQueue(ctx)
     }
@@ -337,17 +375,26 @@ object DownloadEngine {
         
         val task = DownloadStore.getTask(id)
         if (task != null) {
-            val uriStr = SettingsPrefs.getString(ctx, "custom_download_uri", "")
-            if (uriStr.isNotBlank()) {
-                val parent = DocumentFile.fromTreeUri(ctx, Uri.parse(uriStr))
-                parent?.findFile(task.filename)?.delete()
+            val uriStr = task.targetUri
+            if (uriStr != null) {
+                if (uriStr.startsWith("content://com.android.externalstorage")) {
+                    DocumentFile.fromSingleUri(ctx, Uri.parse(uriStr))?.delete()
+                } else {
+                    ctx.contentResolver.delete(Uri.parse(uriStr), null, null)
+                }
             } else {
-                val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ? AND ${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
-                try {
-                    ctx.contentResolver.delete(collection, selection, arrayOf(task.filename, "Download/%"))
-                } catch (e: Throwable) {
-                    UHLog.e("download", "cancel delete failed: ${e.message}")
+                val customUriStr = SettingsPrefs.getString(ctx, "custom_download_uri", "")
+                if (customUriStr.isNotBlank()) {
+                    val parent = DocumentFile.fromTreeUri(ctx, Uri.parse(customUriStr))
+                    parent?.findFile(task.filename)?.delete()
+                } else {
+                    val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                    val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ? AND ${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
+                    try {
+                        ctx.contentResolver.delete(collection, selection, arrayOf(task.filename, "Download/%"))
+                    } catch (e: Throwable) {
+                        UHLog.e("download", "cancel delete failed: ${e.message}")
+                    }
                 }
             }
             DownloadStore.removeTask(id)
