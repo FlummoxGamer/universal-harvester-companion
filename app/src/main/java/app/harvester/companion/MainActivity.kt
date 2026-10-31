@@ -1878,7 +1878,7 @@ private fun applyWallpaper() {
             }
         }
         homeVideoPlayer?.let {
-            it.setMediaItem(androidx.media3.common.MediaItem.fromUri(java.io.File(wpPath)))
+            it.setMediaItem(androidx.media3.common.MediaItem.fromUri(android.net.Uri.fromFile(java.io.File(wpPath))))
             it.prepare()
             it.play()
         }
