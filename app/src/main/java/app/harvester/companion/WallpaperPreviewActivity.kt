@@ -10,6 +10,8 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.graphics.drawable.toBitmap
+import coil.load
 import androidx.palette.graphics.Palette
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
@@ -153,29 +155,25 @@ inner class PreviewAdapter(private val items: List<String>) : RecyclerView.Adapt
             h.title.setTextColor(onSurfaceColor)
             adapter.setTextColor(onSurfaceColor, 0)
         } else {
-            Thread {
-                try {
-                    val bitmap = if (item.startsWith("http")) {
-                        java.net.URL(item).openStream().use { BitmapFactory.decodeStream(it) }
-                    } else {
-                        BitmapFactory.decodeFile(item)
-                    }
-                    if (bitmap != null) {
-                        val palette = Palette.from(bitmap).generate()
-                        val dominantColor = palette.getDominantColor(android.graphics.Color.GRAY)
-                        val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(dominantColor)
-                        val textColor = if (luminance > 0.5) android.graphics.Color.BLACK else android.graphics.Color.WHITE
-                        val shadowColor = if (textColor == android.graphics.Color.BLACK) android.graphics.Color.WHITE else android.graphics.Color.BLACK
-
-                        h.image.post {
-                            h.image.setImageBitmap(bitmap)
+            h.image.load(item) {
+                crossfade(true)
+                listener(
+                    onSuccess = { _, result ->
+                        val bitmap = result.drawable.toBitmap()
+                        if (bitmap != null) {
+                            val palette = Palette.from(bitmap).generate()
+                            val dominantColor = palette.getDominantColor(android.graphics.Color.GRAY)
+                            val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(dominantColor)
+                            val textColor = if (luminance > 0.5) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+                            val shadowColor = if (textColor == android.graphics.Color.BLACK) android.graphics.Color.WHITE else android.graphics.Color.BLACK
+                    
                             h.title.setTextColor(textColor)
                             h.title.setShadowLayer(8f, 0f, 2f, shadowColor)
                             adapter.setTextColor(textColor, shadowColor)
                         }
                     }
-                } catch (_: Exception) {}
-            }.start()
+                )
+            }
         }
     }
 
