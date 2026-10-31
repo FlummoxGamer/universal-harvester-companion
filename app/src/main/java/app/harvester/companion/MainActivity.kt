@@ -479,18 +479,34 @@ binding.shortcutsGrid.addOnItemTouchListener(object : androidx.recyclerview.widg
 }
 
 private fun showWidgetMenu(s: Shortcut, anchor: android.view.View) {
-    androidx.appcompat.app.AlertDialog.Builder(this)
-        .setTitle(s.name)
-        .setItems(arrayOf("Edit", "Remove")) { _, which ->
-            when (which) {
-                0 -> showShortcutEditor(s)
-                1 -> {
-                    ShortcutStore.remove(this, s.url)
-                    shortcutAdapter.submit(ShortcutStore.list(this))
-                }
-            }
-        }
-        .show()
+    val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
+    val v = layoutInflater.inflate(R.layout.dialog_tab_menu, null)
+    sheet.setContentView(v)
+    sheet.behavior.isDraggable = false
+    
+    val editRow = v.findViewById<android.view.View>(R.id.tmSelectTabs)
+    val removeRow = v.findViewById<android.view.View>(R.id.tmNewTab)
+    
+    (editRow as android.widget.LinearLayout).getChildAt(1).let { (it as android.widget.TextView).text = "Edit" }
+    (removeRow as android.widget.LinearLayout).getChildAt(1).let { (it as android.widget.TextView).text = "Remove" }
+    
+    v.findViewById<android.view.View>(R.id.tmNewIncognito)?.visibility = android.view.View.GONE
+    v.findViewById<android.view.View>(R.id.tmNewGroup)?.visibility = android.view.View.GONE
+    v.findViewById<android.view.View>(R.id.tmCloseAll)?.visibility = android.view.View.GONE
+    v.findViewById<android.view.View>(R.id.tmDeleteData)?.visibility = android.view.View.GONE
+
+    editRow.setOnClickListener {
+        sheet.dismiss()
+        showShortcutEditor(s)
+    }
+    
+    removeRow.setOnClickListener {
+        sheet.dismiss()
+        ShortcutStore.remove(this, s.url)
+        shortcutAdapter.submit(ShortcutStore.list(this))
+    }
+    
+    sheet.show()
 }
     private fun setupSwipeRefresh() {
         binding.swipeRefresh.setOnRefreshListener {
