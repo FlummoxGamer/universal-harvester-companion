@@ -9,25 +9,38 @@ import androidx.work.WorkManager
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 class UHApp : Application() {
+
+    val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     override fun onCreate() {
         super.onCreate()
         setupCrashHandler()
         checkSafeMode()
         ThemePrefs.applyCurrent(this)
-        UHLog.init(this)
-        SessionRecorder.init(this)
+        
+        applicationScope.launch {
+            UHLog.init(this@UHApp)
+            SessionRecorder.init(this@UHApp)
+            DownloadEngine.initNetworkListener(this@UHApp)
+            scheduleCleanup()
+        }
+        
         if (BuildConfig.DEBUG) {
             StrictModeManager.enableStrictMode(true)
-            LeakCanarySetup.setup(this)
+            applicationScope.launch {
+                LeakCanarySetup.setup(this@UHApp)
+            }
         }
+        
         try {
             startService(Intent(this, SessionService::class.java))
         } catch (_: Exception) {}
-        DownloadEngine.initNetworkListener(this)
-        scheduleCleanup()
     }
 
     private fun scheduleCleanup() {
@@ -51,9 +64,7 @@ class UHApp : Application() {
     }
 
     private fun checkSafeMode() {
-        val bootMarker = File(filesDir, "boot_marker.tmp")
         val crashFile = File(filesDir, "last_crash.txt")
-        
         if (crashFile.exists()) {
             val prefs = getSharedPreferences("uh_safe_mode", MODE_PRIVATE)
             prefs.edit().putBoolean("force_safe_mode", true).apply()
@@ -61,11 +72,7 @@ class UHApp : Application() {
             val crashDir = File(filesDir, "crashes").apply { mkdirs() }
             val dest = File(crashDir, "crash_${System.currentTimeMillis()}.txt")
             crashFile.renameTo(dest)
-            
-            if (bootMarker.exists()) bootMarker.delete()
         }
-        
-        bootMarker.createNewFile()
     }
 
     private fun setupCrashHandler() {
