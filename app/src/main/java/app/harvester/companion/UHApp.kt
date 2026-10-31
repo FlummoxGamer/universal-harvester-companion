@@ -33,16 +33,13 @@ class UHApp : Application() {
         
         if (BuildConfig.DEBUG) {
             StrictModeManager.enableStrictMode(true)
-            applicationScope.launch {
-                LeakCanarySetup.setup(this@UHApp)
-            }
+            LeakCanarySetup.setup(this)
         }
-        
+    
         try {
             startService(Intent(this, SessionService::class.java))
         } catch (_: Exception) {}
     }
-
     private fun scheduleCleanup() {
         try {
             val req = PeriodicWorkRequestBuilder<CleanupWorker>(6, TimeUnit.HOURS).build()
