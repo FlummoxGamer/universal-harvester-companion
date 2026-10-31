@@ -90,33 +90,59 @@ object DownloadHelper {
         ctx, filename, content.toByteArray(Charsets.UTF_8), "application/json", subfolder
     )
 
-    fun saveBytesToDownloads(
-        ctx: Context,
-        filename: String,
-        bytes: ByteArray,
-        mime: String = "application/octet-stream",
-        subfolder: String? = HARVESTER_DIR
-    ): Boolean {
-        return try {
-            val relPath = if (subfolder.isNullOrBlank()) Environment.DIRECTORY_DOWNLOADS
-                          else "${Environment.DIRECTORY_DOWNLOADS}/$subfolder"
-            val values = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-                put(MediaStore.MediaColumns.MIME_TYPE, mime)
-                put(MediaStore.MediaColumns.RELATIVE_PATH, relPath)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+fun saveBytesToDownloads(
+    ctx: Context,
+    filename: String,
+    bytes: ByteArray,
+    mime: String = "application/octet-stream",
+    subfolder: String? = HARVESTER_DIR
+): Boolean {
+    return try {
+        val customUriStr = SettingsPrefs.getString(ctx, "custom_download_uri", "")
+        if (customUriStr.isNotBlank()) {
+            val treeUri = android.net.Uri.parse(customUriStr)
+            val parent = androidx.documentfile.provider.DocumentFile.fromTreeUri(ctx, treeUri)
+            if (parent != null) {
+                var harvesterDir = parent.findFile(HARVESTER_DIR)
+                if (harvesterDir == null || !harvesterDir.isDirectory) {
+                    harvesterDir = parent.createDirectory(HARVESTER_DIR)
+                }
+                var subDir = harvesterDir
+                if (!subfolder.isNullOrBlank() && subfolder != HARVESTER_DIR) {
+                    subDir = harvesterDir?.findFile(subfolder)
+                    if (subDir == null || !subDir.isDirectory) {
+                        subDir = harvesterDir?.createDirectory(subfolder)
+                    }
+                }
+                var fileDoc = subDir?.findFile(filename)
+                if (fileDoc != null) fileDoc.delete()
+                fileDoc = subDir?.createFile(mime, filename)
+                if (fileDoc != null) {
+                    ctx.contentResolver.openOutputStream(fileDoc.uri)?.use { os -> os.write(bytes) }
+                    return true
                 }
             }
-            val uri = ctx.contentResolver.insert(
-                MediaStore.Downloads.EXTERNAL_CONTENT_URI, values
-            ) ?: return false
-            ctx.contentResolver.openOutputStream(uri)?.use { os -> os.write(bytes) }
+        }
+
+        val relPath = if (subfolder.isNullOrBlank()) Environment.DIRECTORY_DOWNLOADS
+                      else "${Environment.DIRECTORY_DOWNLOADS}/$subfolder"
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+            put(MediaStore.MediaColumns.MIME_TYPE, mime)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, relPath)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val done = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
-                ctx.contentResolver.update(uri, done, null, null)
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
-            true
-        } catch (_: Exception) { false }
-    }
+        }
+        val uri = ctx.contentResolver.insert(
+            MediaStore.Downloads.EXTERNAL_CONTENT_URI, values
+        ) ?: return false
+        ctx.contentResolver.openOutputStream(uri)?.use { os -> os.write(bytes) }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val done = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
+            ctx.contentResolver.update(uri, done, null, null)
+        }
+        true
+    } catch (_: Exception) { false }
+}
 }
