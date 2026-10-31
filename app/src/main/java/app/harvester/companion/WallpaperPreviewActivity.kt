@@ -155,6 +155,30 @@ inner class PreviewAdapter(private val items: List<String>) : RecyclerView.Adapt
             h.title.setTextColor(onSurfaceColor)
             adapter.setTextColor(onSurfaceColor, 0)
         } else {
+            val isVideo = item.endsWith(".mp4") || item.contains("sample")
+            val playerView = h.itemView.findViewById<androidx.media3.ui.PlayerView>(R.id.previewVideo)
+            if (isVideo) {
+                h.image.visibility = View.GONE
+                playerView.visibility = View.VISIBLE
+                val exoPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(this@WallpaperPreviewActivity).build()
+                playerView.player = exoPlayer
+                val mediaItem = androidx.media3.common.MediaItem.fromUri(item)
+                exoPlayer.setMediaItem(mediaItem)
+                exoPlayer.volume = 0f
+                exoPlayer.repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
+                exoPlayer.prepare()
+                exoPlayer.play()
+                h.itemView.tag = exoPlayer
+                h.title.setTextColor(android.graphics.Color.WHITE)
+                adapter.setTextColor(android.graphics.Color.WHITE, android.graphics.Color.BLACK)
+                return
+            } else {
+                playerView.visibility = View.GONE
+                val oldPlayer = h.itemView.tag as? androidx.media3.exoplayer.ExoPlayer
+                oldPlayer?.release()
+                h.itemView.tag = null
+            }
+
             val imageToLoad: Any = if (item.startsWith("http")) item else java.io.File(item)
             h.image.load(imageToLoad) {
                 crossfade(true)
