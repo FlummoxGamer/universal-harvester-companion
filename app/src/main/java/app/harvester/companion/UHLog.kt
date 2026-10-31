@@ -202,7 +202,7 @@ object UHLog {
                 }
             }
         } catch (e: Exception) {
-            try { Log.e(TAG, "Mirror failed: ${e.message}") } catch (_: Exception) {}
+                write("log", 'E', "Mirror failed: ${e.message} | ${e.stackTrace.take(3).joinToString("\n")}", false)
         }
     }
 
