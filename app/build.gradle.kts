@@ -116,6 +116,9 @@ dependencies {
     implementation("androidx.palette:palette-ktx:1.0.0")
     implementation("androidx.viewpager2:viewpager2:1.1.0")
     implementation("io.coil-kt:coil:2.6.0")
+    implementation("androidx.media3:media3-exoplayer:1.2.1")
+    implementation("androidx.media3:media3-ui:1.2.1")
+    implementation("com.arthenica:ffmpeg-kit-video:6.0-2")
 }
 
 
