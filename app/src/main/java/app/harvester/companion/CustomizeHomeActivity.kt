@@ -2,7 +2,10 @@ package app.harvester.companion
 
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
@@ -15,12 +18,14 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 class CustomizeHomeActivity : AppCompatActivity() {
 
@@ -30,15 +35,30 @@ class CustomizeHomeActivity : AppCompatActivity() {
     private val genreAdapters = mutableListOf<WallpaperAdapter>()
 
     private val categorizedWallpapers = linkedMapOf(
+        "Motion" to listOf(
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4",
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4",
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4",
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4"
+        ),
         "Anime" to listOf(
-            "https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=2000&auto=format&fit=crop",
-            "https://images.unsplash.com/photo-1541562232579-512a21360020?q=80&w=2000&auto=format&fit=crop",
-            "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=2000&auto=format&fit=crop",
-            "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?q=80&w=2000&auto=format&fit=crop",
-            "https://images.unsplash.com/photo-1581833971358-2c8b550f87b3?q=80&w=2000&auto=format&fit=crop",
-            "https://images.unsplash.com/photo-1528360983277-13d401cdc186?q=80&w=2000&auto=format&fit=crop",
-            "https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?q=80&w=2000&auto=format&fit=crop",
-            "https://images.unsplash.com/photo-1533038590840-1cde6e668a91?q=80&w=2000&auto=format&fit=crop"
+            "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/anime/anime_1.webp",
+            "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/anime/anime_2.webp",
+            "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/anime/anime_3.webp",
+            "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/anime/anime_4.webp",
+            "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/anime/anime_5.webp",
+            "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/anime/anime_6.webp",
+            "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/anime/anime_7.webp",
+            "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/anime/anime_8.webp",
+            "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/anime/anime_9.webp",
+            "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/anime/anime_10.webp",
+            "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/anime/anime_11.webp",
+            "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/anime/anime_12.webp",
+            "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/anime/anime_13.webp"
         ),
         "Cinematic" to listOf(
             "https://images.unsplash.com/photo-1478720568477-152d9b164e26?q=80&w=2000&auto=format&fit=crop",
@@ -97,6 +117,9 @@ class CustomizeHomeActivity : AppCompatActivity() {
         setContentView(R.layout.activity_customize_home)
 
         findViewById<View>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<View>(R.id.btnOpenRecently).setOnClickListener {
+            startActivity(Intent(this, RecentlyActivity::class.java))
+        }
 
         recentRecycler = findViewById(R.id.recentRecycler)
         recentRecycler.layoutManager = GridLayoutManager(this, 4)
@@ -107,7 +130,7 @@ class CustomizeHomeActivity : AppCompatActivity() {
             when (item) {
                 is WallpaperItem.Add -> pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 is WallpaperItem.Default -> {
-                    WallpaperStore.setCurrentWallpaper(this@CustomizeHomeActivity, "default", 0)
+                    WallpaperStore.setCurrentWallpaper(this@CustomizeHomeActivity, "default", 0, false)
                     finish()
                 }
                 is WallpaperItem.Custom -> {
@@ -117,14 +140,112 @@ class CustomizeHomeActivity : AppCompatActivity() {
                     }
                     startActivity(intent)
                 }
+                is WallpaperItem.Motion -> {
+                    val intent = Intent(this@CustomizeHomeActivity, WallpaperPreviewActivity::class.java).apply {
+                        putExtra("imagePath", item.uri)
+                        putExtra("isCustom", true)
+                        putExtra("isVideo", true)
+                    }
+                    startActivity(intent)
+                }
                 is WallpaperItem.Remote -> {}
             }
         }, onLongClick = { item ->
-            if (item is WallpaperItem.Custom) {
-                showContextMenu(recentRecycler.findViewHolderForAdapterPosition(0)?.itemView, item.uri)
+            if (item is WallpaperItem.Custom || item is WallpaperItem.Motion) {
+                val path = if (item is WallpaperItem.Custom) item.uri else (item as WallpaperItem.Motion).uri
+                showContextMenu(recentRecycler.findViewHolderForAdapterPosition(0)?.itemView, path)
             }
         })
         recentRecycler.adapter = recentAdapter
+
+        val callback = object : ItemTouchHelper.SimpleCallback(
+            ItemTouchHelper.UP or ItemTouchHelper.DOWN or ItemTouchHelper.START or ItemTouchHelper.END, 0
+        ) {
+            override fun onMove(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder): Boolean {
+                val fromPos = viewHolder.adapterPosition
+                val toPos = target.adapterPosition
+                if (fromPos < 0 || toPos < 0) return false
+                recentAdapter.moveItem(fromPos, toPos)
+                return true
+            }
+            override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {}
+            override fun isLongPressDragEnabled(): Boolean = false
+        }
+        val touchHelper = ItemTouchHelper(callback)
+        touchHelper.attachToRecyclerView(recentRecycler)
+
+        recentRecycler.addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
+            private val handler = Handler(Looper.getMainLooper())
+            private var dragRunnable: Runnable? = null
+            private var editRunnable: Runnable? = null
+            private var downX = 0f
+            private var downY = 0f
+            private var isDragReady = false
+            private var isDragging = false
+            private var isPopupShowing = false
+
+            override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
+                when (e.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downX = e.x
+                        downY = e.y
+                        isDragReady = false
+                        isDragging = false
+                        isPopupShowing = false
+                        val child = rv.findChildViewUnder(e.x, e.y)
+                        if (child != null) {
+                            val pos = rv.getChildAdapterPosition(child)
+                            if (pos in 0 until recentAdapter.itemCount) {
+                                dragRunnable = Runnable { isDragReady = true }
+                                handler.postDelayed(dragRunnable!!, 150)
+
+                                editRunnable = Runnable {
+                                    if (!isDragging && !isPopupShowing) {
+                                        isPopupShowing = true
+                                        val item = recentAdapter.getItem(pos)
+                                        if (item is WallpaperItem.Custom || item is WallpaperItem.Motion) {
+                                            val path = if (item is WallpaperItem.Custom) item.uri else (item as WallpaperItem.Motion).uri
+                                            showContextMenu(child, path)
+                                        }
+                                    }
+                                }
+                                handler.postDelayed(editRunnable!!, 500)
+                            }
+                        }
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        if (isPopupShowing) return false
+                        val dx = Math.abs(e.x - downX)
+                        val dy = Math.abs(e.y - downY)
+                        if (dx > 20 || dy > 20) {
+                            editRunnable?.let { handler.removeCallbacks(it) }
+                            editRunnable = null
+                            
+                            if (isDragReady && !isDragging) {
+                                isDragging = true
+                                val child = rv.findChildViewUnder(downX, downY)
+                                if (child != null) {
+                                    val pos = rv.getChildAdapterPosition(child)
+                                    if (pos in 0 until recentAdapter.itemCount) {
+                                        touchHelper.startDrag(rv.findViewHolderForAdapterPosition(pos)!!)
+                                    }
+                                }
+                            } else if (!isDragReady) {
+                                dragRunnable?.let { handler.removeCallbacks(it) }
+                                dragRunnable = null
+                            }
+                        }
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        dragRunnable?.let { handler.removeCallbacks(it) }
+                        dragRunnable = null
+                        editRunnable?.let { handler.removeCallbacks(it) }
+                        editRunnable = null
+                    }
+                }
+                return false
+            }
+        })
 
         for ((genre, urls) in categorizedWallpapers) {
             val title = TextView(this).apply {
@@ -139,8 +260,8 @@ class CustomizeHomeActivity : AppCompatActivity() {
             }
             defaultContainer.addView(title)
 
-            val rv = RecyclerView(this@CustomizeHomeActivity)
-            rv.layoutManager = GridLayoutManager(this@CustomizeHomeActivity, 4)
+            val rv = RecyclerView(this)
+            rv.layoutManager = GridLayoutManager(this, 4)
             rv.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             val rvPad = (16 * resources.displayMetrics.density).toInt()
             rv.setPadding(rvPad, 0, rvPad, 0)
@@ -149,9 +270,11 @@ class CustomizeHomeActivity : AppCompatActivity() {
 
             val adapter = WallpaperAdapter(onClick = { item ->
                 if (item is WallpaperItem.Remote) {
+                    val isVideo = genre == "Motion"
                     val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
                         putExtra("imageUrl", item.url)
                         putExtra("isCustom", false)
+                        putExtra("isVideo", isVideo)
                     }
                     startActivity(intent)
                 }
@@ -168,7 +291,7 @@ class CustomizeHomeActivity : AppCompatActivity() {
             builder.setTitle("Reset Home?")
             builder.setMessage("Are you sure you want to reset all widgets and wallpapers to defaults?")
             builder.setPositiveButton("Confirm") { _, _ ->
-                WallpaperStore.setCurrentWallpaper(this, "default", 0)
+                WallpaperStore.setCurrentWallpaper(this, "default", 0, false)
                 ShortcutStore.clear(this)
                 Toast.makeText(this, "Home reset to defaults", Toast.LENGTH_SHORT).show()
                 finish()
@@ -197,7 +320,9 @@ class CustomizeHomeActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             val recents = mutableListOf(WallpaperItem.Add, WallpaperItem.Default)
             val storedRecents = WallpaperStore.getRecent(this@CustomizeHomeActivity).take(2)
-            recents.addAll(storedRecents.map { WallpaperItem.Custom(it) })
+            recents.addAll(storedRecents.map { 
+                if (it.endsWith(".mp4")) WallpaperItem.Motion(it) else WallpaperItem.Custom(it) 
+            })
 
             withContext(Dispatchers.Main) {
                 recentAdapter.submitList(recents)
@@ -214,9 +339,11 @@ class CustomizeHomeActivity : AppCompatActivity() {
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> {
+                    val isVideo = path.endsWith(".mp4")
                     val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
                         putExtra("imagePath", path)
                         putExtra("isCustom", true)
+                        putExtra("isVideo", isVideo)
                     }
                     startActivity(intent)
                 }
@@ -235,6 +362,7 @@ sealed class WallpaperItem {
     object Add : WallpaperItem()
     object Default : WallpaperItem()
     data class Custom(val uri: String) : WallpaperItem()
+    data class Motion(val uri: String) : WallpaperItem()
     data class Remote(val url: String) : WallpaperItem()
 }
 
@@ -244,6 +372,27 @@ class WallpaperAdapter(
 ) : ListAdapter<WallpaperItem, WallpaperAdapter.VH>(DiffCallback) {
 
     private var activePath: String = "default"
+    private var items = mutableListOf<WallpaperItem>()
+
+    override fun submitList(list: List<WallpaperItem>?) {
+        items = list?.toMutableList() ?: mutableListOf()
+        super.submitList(list)
+    }
+
+    fun getItem(position: Int): WallpaperItem = items[position]
+
+    fun moveItem(fromPosition: Int, toPosition: Int) {
+        if (fromPosition < toPosition) {
+            for (i in fromPosition until toPosition) {
+                java.util.Collections.swap(items, i, i + 1)
+            }
+        } else {
+            for (i in fromPosition downTo toPosition + 1) {
+                java.util.Collections.swap(items, i, i - 1)
+            }
+        }
+        notifyItemMoved(fromPosition, toPosition)
+    }
 
     fun setActiveWallpaper(path: String) {
         if (activePath != path) {
@@ -273,6 +422,7 @@ class WallpaperAdapter(
         val isActive = when (item) {
             is WallpaperItem.Default -> activePath == "default"
             is WallpaperItem.Custom -> item.uri == activePath
+            is WallpaperItem.Motion -> item.uri == activePath
             is WallpaperItem.Remote -> item.url == activePath
             else -> false
         }
@@ -297,12 +447,26 @@ class WallpaperAdapter(
             }
             is WallpaperItem.Custom -> {
                 h.image.visibility = View.VISIBLE
-                h.image.load(item.uri)
+                val imageToLoad: Any = if (item.uri.startsWith("http")) item.uri else File(item.uri)
+                h.image.load(imageToLoad)
+            }
+            is WallpaperItem.Motion -> {
+                h.image.visibility = View.VISIBLE
+                val thumb = WallpaperStore.generateVideoThumbnail(item.uri)
+                if (thumb != null) {
+                    h.image.setImageBitmap(thumb)
+                } else {
+                    h.image.setImageResource(R.drawable.ic_downloads)
+                }
             }
             is WallpaperItem.Remote -> {
                 h.image.visibility = View.VISIBLE
-                h.image.load(item.url) {
-                    crossfade(true)
+                if (item.url.endsWith(".mp4")) {
+                    h.image.setImageResource(R.drawable.ic_downloads)
+                } else {
+                    h.image.load(item.url) {
+                        crossfade(true)
+                    }
                 }
             }
         }
@@ -316,6 +480,7 @@ class WallpaperAdapter(
             if (oldItem::class != newItem::class) return false
             return when (oldItem) {
                 is WallpaperItem.Custom -> oldItem.uri == (newItem as WallpaperItem.Custom).uri
+                is WallpaperItem.Motion -> oldItem.uri == (newItem as WallpaperItem.Motion).uri
                 is WallpaperItem.Remote -> oldItem.url == (newItem as WallpaperItem.Remote).url
                 else -> true
             }
