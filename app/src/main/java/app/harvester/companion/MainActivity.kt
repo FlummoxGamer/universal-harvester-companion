@@ -129,7 +129,14 @@ androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, 
     insets
 }
 tabs = TabManager.get(this)
-       setupWebExtensionBridge()
+        tabs.preWarm()
+        setupWebExtensionBridge()
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            GeckoEngine.getRuntime(this@MainActivity)?.warmUp()
+            val searchHost = SearchEnginePrefs.currentEntry(this@MainActivity).host
+            GeckoEngine.speculativeConnect("https://$searchHost")
+        }
 
         mainGeckoView = binding.webContainer.geckoView
 
@@ -155,7 +162,7 @@ tabs = TabManager.get(this)
         attachCurrent()
         applyAddressBarPosition()
 
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ hideSplash() }, 1200)
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ hideSplash() }, 3000)
 
     UHLog.d("main", "onCreate complete")
     }
