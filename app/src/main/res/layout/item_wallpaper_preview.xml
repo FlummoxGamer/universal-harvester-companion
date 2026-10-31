@@ -17,52 +17,42 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
-    <LinearLayout
+    <TextView
+        android:id="@+id/previewTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Universal Harvester"
+        android:textColor="@color/accent"
+        android:textSize="40sp"
+        android:fontFamily="@font/logo_font"
+        android:shadowColor="#99000000"
+        android:shadowDx="0"
+        android:shadowDy="2"
+        android:shadowRadius="6"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintVertical_bias="0.15" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/previewShortcuts"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:paddingBottom="60dp">
-
-        <Space
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="0.4" />
-
-        <TextView
-            android:id="@+id/previewTitle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:text="Universal Harvester"
-            android:textColor="@color/accent"
-            android:textSize="40sp"
-            android:fontFamily="@font/logo_font"
-            android:shadowColor="#99000000"
-            android:shadowDx="0"
-            android:shadowDy="2"
-            android:shadowRadius="6"
-            android:layout_marginBottom="24dp" />
-
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/previewShortcuts"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:clipToPadding="false"
-            android:overScrollMode="never" />
-
-        <Space
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="0.4" />
-    </LinearLayout>
+        android:layout_height="wrap_content"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:clipToPadding="false"
+        android:overScrollMode="never"
+        app:layout_constraintTop_toBottomOf="@id/previewTitle"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintVertical_bias="0.35" />
 
     <LinearLayout
         android:id="@+id/previewMockAddressBar"
         android:layout_width="match_parent"
         android:layout_height="60dp"
-        android:layout_gravity="bottom"
         android:layout_marginStart="8dp"
         android:layout_marginEnd="8dp"
         android:layout_marginBottom="16dp"
@@ -73,25 +63,25 @@
         android:paddingEnd="12dp"
         app:layout_constraintBottom_toBottomOf="parent">
 
-    <TextView
-        android:id="@+id/previewMockUrlText"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:text="Search or type URL"
-        android:textColor="@color/subtext"
-        android:textSize="14sp" />
+        <TextView
+            android:id="@+id/previewMockUrlText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Search or type URL"
+            android:textColor="@color/subtext"
+            android:textSize="14sp" />
 
-    <TextView
-        android:id="@+id/previewMockTabCount"
-        android:layout_width="wrap_content"
-        android:layout_height="24dp"
-        android:minWidth="24dp"
-        android:gravity="center"
-        android:background="@drawable/bg_tab_count"
-        android:text="1"
-        android:textColor="@color/text"
-        android:textSize="12sp"
-        android:textStyle="bold" />
-</LinearLayout>
+        <TextView
+            android:id="@+id/previewMockTabCount"
+            android:layout_width="wrap_content"
+            android:layout_height="24dp"
+            android:minWidth="24dp"
+            android:gravity="center"
+            android:background="@drawable/bg_tab_count"
+            android:text="1"
+            android:textColor="@color/text"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+    </LinearLayout>
 </androidx.constraintlayout.widget.ConstraintLayout>
