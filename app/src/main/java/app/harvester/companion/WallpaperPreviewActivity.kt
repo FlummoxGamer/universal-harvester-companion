@@ -1,5 +1,6 @@
 package app.harvester.companion
 
+import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.graphics.Bitmap
