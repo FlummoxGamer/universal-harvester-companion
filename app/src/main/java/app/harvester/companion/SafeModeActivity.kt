@@ -3,12 +3,15 @@ package app.harvester.companion
 import android.content.Intent
 import android.os.Bundle
 import android.os.Process
+import android.view.Gravity
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.work.WorkManager
 import java.io.File
 import java.text.SimpleDateFormat
@@ -19,93 +22,124 @@ class SafeModeActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_settings_simple)
-
-        findViewById<TextView>(R.id.simpleTitle).text = "Safe Mode"
-        findViewById<android.view.View>(R.id.simpleBack).setOnClickListener { finish() }
-
-        val content = findViewById<LinearLayout>(R.id.simpleContent)
         
+        val scroll = ScrollView(this).apply {
+            setBackgroundColor(ContextCompat.getColor(this@SafeModeActivity, R.color.bg))
+        }
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 64, 48, 48)
+            layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+        
+        val title = TextView(this).apply {
+            text = "Safe Mode"
+            setTextColor(ContextCompat.getColor(this@SafeModeActivity, R.color.text))
+            textSize = 26f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            gravity = Gravity.CENTER
+        }
+        root.addView(title)
+
+        val subtitle = TextView(this).apply {
+            text = "The app crashed on the last launch. Choose a recovery option below."
+            setTextColor(ContextCompat.getColor(this@SafeModeActivity, R.color.subtext))
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setPadding(0, 24, 0, 24)
+        }
+        root.addView(subtitle)
+
         val crashDir = File(filesDir, "crashes")
         val crashFiles = crashDir.listFiles()?.sortedByDescending { it.lastModified() }
         val latestCrash = crashFiles?.firstOrNull()
-        
-        val logText = if (latestCrash != null && latestCrash.exists()) {
-            latestCrash.readText()
-        } else {
-            "No crash log found."
+        val logText = if (latestCrash != null && latestCrash.exists()) latestCrash.readText() else "No crash log found."
+
+        val tv = TextView(this).apply {
+            text = logText
+            setTextColor(ContextCompat.getColor(this@SafeModeActivity, R.color.text))
+            textSize = 12f
+            setPadding(0, 16, 0, 32)
+            setTextIsSelectable(true)
         }
+        root.addView(tv)
 
-        val scroll = ScrollView(this)
-        val tv = TextView(this)
-        tv.text = logText
-        tv.textSize = 12f
-        tv.setPadding(16, 16, 16, 16)
-        tv.setTextIsSelectable(true)
-        scroll.addView(tv)
-        content.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 550))
+        val btnSafeRestart = createButton("Restart App (Keep Data)", R.color.surface)
+        btnSafeRestart.setOnClickListener {
+            stopAllProcesses()
+            getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().clear().apply()
+            val intent = packageManager.getLaunchIntentForPackage(packageName)
+            intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            startActivity(intent)
+            finishAffinity()
+            Process.killProcess(Process.myPid())
+        }
+        root.addView(btnSafeRestart)
 
-        val btnSave = Button(this).apply {
-            text = "Save Crash Log"
-            setOnClickListener {
-                try {
+        val btnClearCache = createButton("Clear Cache & Restart", R.color.accent)
+        btnClearCache.setTextColor(ContextCompat.getColor(this, R.color.bg))
+        btnClearCache.setOnClickListener {
+            stopAllProcesses()
+            try {
+                cacheDir.deleteRecursively()
+            } catch (_: Exception) {}
+            getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().clear().apply()
+            val intent = packageManager.getLaunchIntentForPackage(packageName)
+            intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            startActivity(intent)
+            finishAffinity()
+            Process.killProcess(Process.myPid())
+        }
+        root.addView(btnClearCache)
+
+        val btnClearData = createButton("Clear App Data (Nuclear)", R.color.red)
+        btnClearData.setTextColor(ContextCompat.getColor(this, R.color.bg))
+        btnClearData.setOnClickListener {
+            stopAllProcesses()
+            getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().clear().apply()
+            try {
+                cacheDir.deleteRecursively()
+                filesDir.deleteRecursively()
+                getExternalFilesDir(null)?.deleteRecursively()
+            } catch (_: Exception) {}
+            val intent = packageManager.getLaunchIntentForPackage(packageName)
+            intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            startActivity(intent)
+            finishAffinity()
+            Process.killProcess(Process.myPid())
+        }
+        root.addView(btnClearData)
+
+        val btnSaveLog = createButton("Export Crash Log", R.color.surface)
+        btnSaveLog.setOnClickListener {
+            try {
+                if (latestCrash != null && latestCrash.exists()) {
                     val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
                     val fname = "uh_crash_$ts.txt"
-                    val ok = DownloadHelper.saveTextToDownloads(this@SafeModeActivity, fname, logText)
-                    if (ok) Toast.makeText(this@SafeModeActivity, "Saved to Downloads/$fname", Toast.LENGTH_LONG).show()
-                    else Toast.makeText(this@SafeModeActivity, "Save failed", Toast.LENGTH_SHORT).show()
-                } catch (e: Exception) {
-                    Toast.makeText(this@SafeModeActivity, "Save failed", Toast.LENGTH_SHORT).show()
+                    val ok = DownloadHelper.saveTextToDownloads(this, fname, logText)
+                    Toast.makeText(this, if (ok) "Saved to Downloads" else "Save failed", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "No crash log found", Toast.LENGTH_SHORT).show()
                 }
-            }
+            } catch (_: Exception) {}
         }
-        content.addView(btnSave)
+        root.addView(btnSaveLog)
 
-        val btnRestartKeep = Button(this).apply {
-            text = "Restart Browser (Keep Data)"
-            setOnClickListener {
-                stopAllProcesses()
-                val prefs = getSharedPreferences("uh_safe_mode", MODE_PRIVATE)
-                prefs.edit().putBoolean("force_safe_mode", false).apply()
-                
-                val bootMarker = File(filesDir, "boot_marker.tmp")
-                if (bootMarker.exists()) bootMarker.delete()
-                
-                val intent = packageManager.getLaunchIntentForPackage(packageName)
-                intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                startActivity(intent)
-                finishAffinity()
-                Process.killProcess(Process.myPid())
-            }
-        }
-        content.addView(btnRestartKeep)
+        scroll.addView(root)
+        setContentView(scroll)
+    }
 
-        val btnReset = Button(this).apply {
-            text = "Clear Data & Restart"
-            setOnClickListener {
-                stopAllProcesses()
-                val prefs = getSharedPreferences("uh_safe_mode", MODE_PRIVATE)
-                prefs.edit().clear().apply()
-                
-                val bootMarker = File(filesDir, "boot_marker.tmp")
-                if (bootMarker.exists()) bootMarker.delete()
-                
-                crashDir.deleteRecursively()
-                
-                val intent = packageManager.getLaunchIntentForPackage(packageName)
-                intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                startActivity(intent)
-                finishAffinity()
-                Process.killProcess(Process.myPid())
-            }
+    private fun createButton(text: String, bgColorRes: Int): Button {
+        return Button(this).apply {
+            this.text = text
+            isAllCaps = false
+            setTextColor(ContextCompat.getColor(this@SafeModeActivity, R.color.text))
+            setBackgroundColor(ContextCompat.getColor(this@SafeModeActivity, bgColorRes))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 24 }
         }
-        content.addView(btnReset)
-        
-        val btnExit = Button(this).apply {
-            text = "Exit"
-            setOnClickListener { finishAffinity() }
-        }
-        content.addView(btnExit)
     }
 
     private fun stopAllProcesses() {
