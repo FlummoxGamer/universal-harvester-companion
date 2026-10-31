@@ -103,6 +103,65 @@ class CustomizeHomeActivity : AppCompatActivity() {
         
         defaultContainer = findViewById(R.id.defaultContainer)
 
+        recentAdapter = WallpaperAdapter(onClick = { item ->
+            when (item) {
+                is WallpaperItem.Add -> pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                is WallpaperItem.Default -> {
+                    WallpaperStore.setCurrentWallpaper(this@CustomizeHomeActivity, "default", 0)
+                    finish()
+                }
+                is WallpaperItem.Custom -> {
+                    val intent = Intent(this@CustomizeHomeActivity, WallpaperPreviewActivity::class.java).apply {
+                        putExtra("imagePath", item.uri)
+                        putExtra("isCustom", true)
+                    }
+                    startActivity(intent)
+                }
+                is WallpaperItem.Remote -> {}
+            }
+        }, onLongClick = { item ->
+            if (item is WallpaperItem.Custom) {
+                showContextMenu(recentRecycler.findViewHolderForAdapterPosition(0)?.itemView, item.uri)
+            }
+        })
+        recentRecycler.adapter = recentAdapter
+
+        for ((genre, urls) in categorizedWallpapers) {
+            val title = TextView(this).apply {
+                text = genre
+                setTextColor(androidx.core.content.ContextCompat.getColor(this@CustomizeHomeActivity, R.color.text))
+                textSize = 18f
+                val pad = (16 * resources.displayMetrics.density).toInt()
+                val padTop = (24 * resources.displayMetrics.density).toInt()
+                val padBottom = (8 * resources.displayMetrics.density).toInt()
+                setPadding(pad, padTop, pad, padBottom)
+                typeface = androidx.core.content.res.ResourcesCompat.getFont(this@CustomizeHomeActivity, R.font.app_font)
+            }
+            defaultContainer.addView(title)
+
+            val rv = RecyclerView(this)
+            rv.layoutManager = GridLayoutManager(this, 4)
+            rv.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            val rvPad = (16 * resources.displayMetrics.density).toInt()
+            rv.setPadding(rvPad, 0, rvPad, 0)
+            rv.clipToPadding = false
+
+            val adapter = WallpaperAdapter(onClick = { item ->
+                if (item is WallpaperItem.Remote) {
+                    val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
+                        putExtra("imageUrl", item.url)
+                        putExtra("isCustom", false)
+                    }
+                    startActivity(intent)
+                }
+            }, onLongClick = { })
+            rv.adapter = adapter
+            genreAdapters.add(adapter)
+            defaultContainer.addView(rv)
+            
+            adapter.submitList(urls.map { WallpaperItem.Remote(it) })
+        }
+
         findViewById<View>(R.id.btnResetHome).setOnClickListener {
             val builder = com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             builder.setTitle("Reset Home?")
@@ -140,69 +199,7 @@ class CustomizeHomeActivity : AppCompatActivity() {
             recents.addAll(storedRecents.map { WallpaperItem.Custom(it) })
 
             withContext(Dispatchers.Main) {
-                if (!::recentAdapter.isInitialized) {
-                    recentAdapter = WallpaperAdapter(onClick = { item ->
-                        when (item) {
-                            is WallpaperItem.Add -> pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                            is WallpaperItem.Default -> {
-                                WallpaperStore.setCurrentWallpaper(this@CustomizeHomeActivity, "default", 0)
-                                finish()
-                            }
-                            is WallpaperItem.Custom -> {
-                                val intent = Intent(this@CustomizeHomeActivity, WallpaperPreviewActivity::class.java).apply {
-                                    putExtra("imagePath", item.uri)
-                                    putExtra("isCustom", true)
-                                }
-                                startActivity(intent)
-                            }
-                            is WallpaperItem.Remote -> {}
-                        }
-                    }, onLongClick = { item ->
-                        if (item is WallpaperItem.Custom) {
-                            showContextMenu(recentRecycler.findViewHolderForAdapterPosition(recents.indexOf(item))?.itemView, item.uri)
-                        }
-                    })
-                    recentRecycler.adapter = recentAdapter
-                }
                 recentAdapter.submitList(recents)
-
-                if (genreAdapters.isEmpty()) {
-                    for ((genre, urls) in categorizedWallpapers) {
-                        val title = TextView(this@CustomizeHomeActivity).apply {
-                            text = genre
-                            setTextColor(androidx.core.content.ContextCompat.getColor(this@CustomizeHomeActivity, R.color.text))
-                            textSize = 18f
-                            val pad = (16 * resources.displayMetrics.density).toInt()
-                            val padTop = (24 * resources.displayMetrics.density).toInt()
-                            val padBottom = (8 * resources.displayMetrics.density).toInt()
-                            setPadding(pad, padTop, pad, padBottom)
-                            typeface = androidx.core.content.res.ResourcesCompat.getFont(this@CustomizeHomeActivity, R.font.app_font)
-                        }
-                        defaultContainer.addView(title)
-
-                        val rv = RecyclerView(this@CustomizeHomeActivity)
-                        rv.layoutManager = GridLayoutManager(this@CustomizeHomeActivity, 4)
-                        rv.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                        val rvPad = (16 * resources.displayMetrics.density).toInt()
-                        rv.setPadding(rvPad, 0, rvPad, 0)
-                        rv.clipToPadding = false
-
-                        val adapter = WallpaperAdapter(onClick = { item ->
-                            if (item is WallpaperItem.Remote) {
-                                val intent = Intent(this@CustomizeHomeActivity, WallpaperPreviewActivity::class.java).apply {
-                                    putExtra("imageUrl", item.url)
-                                    putExtra("isCustom", false)
-                                }
-                                startActivity(intent)
-                            }
-                        }, onLongClick = { })
-                        rv.adapter = adapter
-                        genreAdapters.add(adapter)
-                        defaultContainer.addView(rv)
-                        
-                        adapter.submitList(urls.map { WallpaperItem.Remote(it) })
-                    }
-                }
             }
         }
     }
