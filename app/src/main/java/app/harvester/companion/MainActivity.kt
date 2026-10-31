@@ -54,6 +54,7 @@ class MainActivity : AppCompatActivity() {
     private val page3p = mutableMapOf<Long, MutableSet<String>>()
     private val recentUrls = LinkedHashMap<String, Long>()
     private var lastBackPress = 0L
+    private var homeVideoPlayer: androidx.media3.exoplayer.ExoPlayer? = null
     private var engineIconCache: Bitmap? = null
     private var currentEngineId: String = ""
     private var suggestJob: Job? = null
@@ -1856,12 +1857,38 @@ override fun onResume() {
     applyWallpaper()
     shortcutAdapter.submit(ShortcutStore.list(this))
     updateUi()
+    homeVideoPlayer?.play()
 }
 
 private fun applyWallpaper() {
     val wpPath = WallpaperStore.getCurrentWallpaper(this)
     val textColor = WallpaperStore.getTextColor(this)
-    
+    val isVideo = WallpaperStore.isCurrentVideo(this)
+    val videoView = findViewById<androidx.media3.ui.PlayerView>(R.id.wallpaperVideo)
+    val player = homeVideoPlayer
+
+    if (isVideo && wpPath != null && wpPath != "default" && videoView != null) {
+        binding.wallpaperBackground.visibility = View.GONE
+        videoView.visibility = View.VISIBLE
+        if (player == null) {
+            homeVideoPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(this).build().also {
+                videoView.player = it
+                it.volume = 0f
+                it.repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
+            }
+        }
+        homeVideoPlayer?.let {
+            it.setMediaItem(androidx.media3.common.MediaItem.fromUri(java.io.File(wpPath)))
+            it.prepare()
+            it.play()
+        }
+        binding.homeScreen.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        return
+    } else if (videoView != null) {
+        videoView.visibility = View.GONE
+        homeVideoPlayer?.pause()
+    }
+
 if (wpPath == null || wpPath == "default") {
     binding.wallpaperBackground.visibility = View.GONE
     binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
@@ -1934,6 +1961,7 @@ override fun onPause() {
     super.onPause()
     currentSession?.setActive(false)
     currentSession?.setFocused(false)
+    homeVideoPlayer?.pause()
     if (::tabs.isInitialized) {
         tabs.saveAll()
     }
