@@ -155,11 +155,12 @@ inner class PreviewAdapter(private val items: List<String>) : RecyclerView.Adapt
             h.title.setTextColor(onSurfaceColor)
             adapter.setTextColor(onSurfaceColor, 0)
         } else {
-            h.image.load(item) {
+            val imageToLoad: Any = if (item.startsWith("http")) item else java.io.File(item)
+            h.image.load(imageToLoad) {
                 crossfade(true)
                 listener(
                     onSuccess = { _, result ->
-                        val bitmap = result.drawable.toBitmap()
+                        val bitmap = (result.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
                         if (bitmap != null) {
                             val palette = Palette.from(bitmap).generate()
                             val dominantColor = palette.getDominantColor(android.graphics.Color.GRAY)
