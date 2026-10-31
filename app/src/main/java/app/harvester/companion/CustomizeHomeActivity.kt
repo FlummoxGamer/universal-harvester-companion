@@ -139,12 +139,13 @@ class CustomizeHomeActivity : AppCompatActivity() {
             }
             defaultContainer.addView(title)
 
-            val rv = RecyclerView(this)
-            rv.layoutManager = GridLayoutManager(this, 4)
+            val rv = RecyclerView(this@CustomizeHomeActivity)
+            rv.layoutManager = GridLayoutManager(this@CustomizeHomeActivity, 4)
             rv.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             val rvPad = (16 * resources.displayMetrics.density).toInt()
             rv.setPadding(rvPad, 0, rvPad, 0)
             rv.clipToPadding = false
+            rv.isNestedScrollingEnabled = false
 
             val adapter = WallpaperAdapter(onClick = { item ->
                 if (item is WallpaperItem.Remote) {
