@@ -1,0 +1,9 @@
+{
+  "versionCode": 116,
+  "versionName": "2.4.46",
+  "apkUrlArm64": "https://gh-proxy.com/https://github.com/FlummoxGamer/universal-harvester-companion/releases/download/v2.4.46-116-dev/uh-companion-2.4.46-arm64-v8a.apk",
+  "apkUrlArm32": "https://gh-proxy.com/https://github.com/FlummoxGamer/universal-harvester-companion/releases/download/v2.4.46-116-dev/uh-companion-2.4.46-armeabi-v7a.apk",
+  "apkUrl": "https://gh-proxy.com/https://github.com/FlummoxGamer/universal-harvester-companion/releases/download/v2.4.46-116-dev/uh-companion-2.4.46-arm64-v8a.apk",
+  "changelog": "",
+  "builtAt": "2026-10-31T12:38:42Z"
+}
