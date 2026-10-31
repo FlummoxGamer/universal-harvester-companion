@@ -1,8 +1,6 @@
 package app.harvester.companion
 
 import android.content.Intent
-import android.graphics.BitmapFactory
-import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -14,10 +12,15 @@ import android.widget.Toast
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import java.io.File
-import java.net.URL
+import coil.load
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class CustomizeHomeActivity : AppCompatActivity() {
 
@@ -34,7 +37,8 @@ class CustomizeHomeActivity : AppCompatActivity() {
             "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?q=80&w=2000&auto=format&fit=crop",
             "https://images.unsplash.com/photo-1581833971358-2c8b550f87b3?q=80&w=2000&auto=format&fit=crop",
             "https://images.unsplash.com/photo-1528360983277-13d401cdc186?q=80&w=2000&auto=format&fit=crop",
-            "https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?q=80&w=2000&auto=format&fit=crop"
+            "https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?q=80&w=2000&auto=format&fit=crop",
+            "https://images.unsplash.com/photo-1533038590840-1cde6e668a91?q=80&w=2000&auto=format&fit=crop"
         ),
         "Cinematic" to listOf(
             "https://images.unsplash.com/photo-1478720568477-152d9b164e26?q=80&w=2000&auto=format&fit=crop",
@@ -43,7 +47,8 @@ class CustomizeHomeActivity : AppCompatActivity() {
             "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?q=80&w=2000&auto=format&fit=crop",
             "https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?q=80&w=2000&auto=format&fit=crop",
             "https://images.unsplash.com/photo-1440404653325-ab127d49abc1?q=80&w=2000&auto=format&fit=crop",
-            "https://images.unsplash.com/photo-1485095329183-d0797cdc5676?q=80&w=2000&auto=format&fit=crop"
+            "https://images.unsplash.com/photo-1485095329183-d0797cdc5676?q=80&w=2000&auto=format&fit=crop",
+            "https://images.unsplash.com/photo-1478720568477-152d9b164e26?q=80&w=2000&auto=format&fit=crop"
         ),
         "Abstract" to listOf(
             "https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?q=80&w=2000&auto=format&fit=crop",
@@ -52,9 +57,10 @@ class CustomizeHomeActivity : AppCompatActivity() {
             "https://images.unsplash.com/photo-1554034483-04fda0d3507b?q=80&w=2000&auto=format&fit=crop",
             "https://images.unsplash.com/photo-1507608616759-54f48f0af0ee?q=80&w=2000&auto=format&fit=crop",
             "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2000&auto=format&fit=crop",
-            "https://images.unsplash.com/photo-1557672172-298e090bd0f1?q=80&w=2000&auto=format&fit=crop"
+            "https://images.unsplash.com/photo-1557672172-298e090bd0f1?q=80&w=2000&auto=format&fit=crop",
+            "https://images.unsplash.com/photo-1604871000636-074fa5117945?q=80&w=2000&auto=format&fit=crop"
         ),
-        "Nature" to listOf(
+        "Minimal" to listOf(
             "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?q=80&w=2000&auto=format&fit=crop",
             "https://images.unsplash.com/photo-1472214103451-9374bd1c798e?q=80&w=2000&auto=format&fit=crop",
             "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?q=80&w=2000&auto=format&fit=crop",
@@ -62,28 +68,27 @@ class CustomizeHomeActivity : AppCompatActivity() {
             "https://images.unsplash.com/photo-1426604966848-d7adac402bff?q=80&w=2000&auto=format&fit=crop",
             "https://images.unsplash.com/photo-1501854140801-50d01698950b?q=80&w=2000&auto=format&fit=crop",
             "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?q=80&w=2000&auto=format&fit=crop",
-            "https://images.unsplash.com/photo-1497436072909-60f360e1d4b1?q=80&w=2000&auto=format&fit=crop",
-            "https://images.unsplash.com/photo-1542273917363-3b1817f69a2d?q=80&w=2000&auto=format&fit=crop"
+            "https://images.unsplash.com/photo-1497436072909-60f360e1d4b1?q=80&w=2000&auto=format&fit=crop"
         )
     )
 
     private val pickImage = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             Toast.makeText(this, "Processing image...", Toast.LENGTH_SHORT).show()
-            Thread {
-                val localPath = WallpaperStore.saveWallpaper(this, uri)
-                runOnUiThread {
+            lifecycleScope.launch(Dispatchers.IO) {
+                val localPath = WallpaperStore.saveWallpaper(this@CustomizeHomeActivity, uri)
+                withContext(Dispatchers.Main) {
                     if (localPath != null) {
-                        val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
+                        val intent = Intent(this@CustomizeHomeActivity, WallpaperPreviewActivity::class.java).apply {
                             putExtra("imagePath", localPath)
                             putExtra("isCustom", true)
                         }
                         startActivity(intent)
                     } else {
-                        Toast.makeText(this, "Failed to save wallpaper", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@CustomizeHomeActivity, "Failed to save wallpaper", Toast.LENGTH_SHORT).show()
                     }
                 }
-            }.start()
+            }
         }
     }
 
@@ -99,7 +104,7 @@ class CustomizeHomeActivity : AppCompatActivity() {
         defaultContainer = findViewById(R.id.defaultContainer)
 
         findViewById<View>(R.id.btnResetHome).setOnClickListener {
-            val builder = androidx.appcompat.app.AlertDialog.Builder(this, R.style.Theme_UHCompanion)
+            val builder = com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             builder.setTitle("Reset Home?")
             builder.setMessage("Are you sure you want to reset all widgets and wallpapers to defaults?")
             builder.setPositiveButton("Confirm") { _, _ ->
@@ -109,7 +114,10 @@ class CustomizeHomeActivity : AppCompatActivity() {
                 finish()
             }
             builder.setNegativeButton("Cancel", null)
-            builder.show()
+            val dialog = builder.create()
+            dialog.show()
+            val width = (resources.displayMetrics.widthPixels * 0.90).toInt()
+            dialog.window?.setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
 
         loadWallpapers()
@@ -126,76 +134,75 @@ class CustomizeHomeActivity : AppCompatActivity() {
     }
 
     private fun loadWallpapers() {
-        val recents = mutableListOf(WallpaperItem.Add, WallpaperItem.Default)
-        val storedRecents = WallpaperStore.getRecent(this).take(2)
-        recents.addAll(storedRecents.map { WallpaperItem.Custom(it) })
+        lifecycleScope.launch(Dispatchers.IO) {
+            val recents = mutableListOf(WallpaperItem.Add, WallpaperItem.Default)
+            val storedRecents = WallpaperStore.getRecent(this@CustomizeHomeActivity).take(2)
+            recents.addAll(storedRecents.map { WallpaperItem.Custom(it) })
 
-        if (!::recentAdapter.isInitialized) {
-            recentAdapter = WallpaperAdapter(recents, onClick = { item ->
-                when (item) {
-                    is WallpaperItem.Add -> pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                    is WallpaperItem.Default -> {
-                        WallpaperStore.setCurrentWallpaper(this, "default", 0)
-                        finish()
-                    }
-                    is WallpaperItem.Custom -> {
-                        val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
-                            putExtra("imagePath", item.uri)
-                            putExtra("isCustom", true)
+            withContext(Dispatchers.Main) {
+                if (!::recentAdapter.isInitialized) {
+                    recentAdapter = WallpaperAdapter(onClick = { item ->
+                        when (item) {
+                            is WallpaperItem.Add -> pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            is WallpaperItem.Default -> {
+                                WallpaperStore.setCurrentWallpaper(this@CustomizeHomeActivity, "default", 0)
+                                finish()
+                            }
+                            is WallpaperItem.Custom -> {
+                                val intent = Intent(this@CustomizeHomeActivity, WallpaperPreviewActivity::class.java).apply {
+                                    putExtra("imagePath", item.uri)
+                                    putExtra("isCustom", true)
+                                }
+                                startActivity(intent)
+                            }
+                            is WallpaperItem.Remote -> {}
                         }
-                        startActivity(intent)
-                    }
-                    is WallpaperItem.Remote -> {}
-                }
-            }, onLongClick = { item ->
-                if (item is WallpaperItem.Custom) {
-                    showContextMenu(recentRecycler.findViewHolderForAdapterPosition(recents.indexOf(item))?.itemView, item.uri)
-                }
-            })
-            recentRecycler.adapter = recentAdapter
-        } else {
-            recentAdapter.updateItems(recents)
-        }
-
-        if (genreAdapters.isEmpty()) {
-            for ((genre, urls) in categorizedWallpapers) {
-                val title = TextView(this).apply {
-                    text = genre
-                    setTextColor(androidx.core.content.ContextCompat.getColor(this@CustomizeHomeActivity, R.color.text))
-                    textSize = 18f
-                    val pad = (16 * resources.displayMetrics.density).toInt()
-                    val padTop = (24 * resources.displayMetrics.density).toInt()
-                    val padBottom = (8 * resources.displayMetrics.density).toInt()
-                    setPadding(pad, padTop, pad, padBottom)
-                    typeface = androidx.core.content.res.ResourcesCompat.getFont(this@CustomizeHomeActivity, R.font.app_font)
-                }
-                defaultContainer.addView(title)
-
-                val rv = RecyclerView(this)
-                rv.layoutManager = GridLayoutManager(this, 4)
-                rv.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                val rvPad = (16 * resources.displayMetrics.density).toInt()
-                rv.setPadding(rvPad, 0, rvPad, 0)
-                rv.clipToPadding = false
-
-                val adapter = WallpaperAdapter(urls.map { WallpaperItem.Remote(it) }, onClick = { item ->
-                    if (item is WallpaperItem.Remote) {
-                        val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
-                            putExtra("imageUrl", item.url)
-                            putExtra("isCustom", false)
+                    }, onLongClick = { item ->
+                        if (item is WallpaperItem.Custom) {
+                            showContextMenu(recentRecycler.findViewHolderForAdapterPosition(recents.indexOf(item))?.itemView, item.uri)
                         }
-                        startActivity(intent)
+                    })
+                    recentRecycler.adapter = recentAdapter
+                }
+                recentAdapter.submitList(recents)
+
+                if (genreAdapters.isEmpty()) {
+                    for ((genre, urls) in categorizedWallpapers) {
+                        val title = TextView(this@CustomizeHomeActivity).apply {
+                            text = genre
+                            setTextColor(androidx.core.content.ContextCompat.getColor(this@CustomizeHomeActivity, R.color.text))
+                            textSize = 18f
+                            val pad = (16 * resources.displayMetrics.density).toInt()
+                            val padTop = (24 * resources.displayMetrics.density).toInt()
+                            val padBottom = (8 * resources.displayMetrics.density).toInt()
+                            setPadding(pad, padTop, pad, padBottom)
+                            typeface = androidx.core.content.res.ResourcesCompat.getFont(this@CustomizeHomeActivity, R.font.app_font)
+                        }
+                        defaultContainer.addView(title)
+
+                        val rv = RecyclerView(this@CustomizeHomeActivity)
+                        rv.layoutManager = GridLayoutManager(this@CustomizeHomeActivity, 4)
+                        rv.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                        val rvPad = (16 * resources.displayMetrics.density).toInt()
+                        rv.setPadding(rvPad, 0, rvPad, 0)
+                        rv.clipToPadding = false
+
+                        val adapter = WallpaperAdapter(onClick = { item ->
+                            if (item is WallpaperItem.Remote) {
+                                val intent = Intent(this@CustomizeHomeActivity, WallpaperPreviewActivity::class.java).apply {
+                                    putExtra("imageUrl", item.url)
+                                    putExtra("isCustom", false)
+                                }
+                                startActivity(intent)
+                            }
+                        }, onLongClick = { })
+                        rv.adapter = adapter
+                        genreAdapters.add(adapter)
+                        defaultContainer.addView(rv)
+                        
+                        adapter.submitList(urls.map { WallpaperItem.Remote(it) })
                     }
-                }, onLongClick = { })
-                rv.adapter = adapter
-                genreAdapters.add(adapter)
-                defaultContainer.addView(rv)
-            }
-        } else {
-            var index = 0
-            for ((_, urls) in categorizedWallpapers) {
-                genreAdapters[index].updateItems(urls.map { WallpaperItem.Remote(it) })
-                index++
+                }
             }
         }
     }
@@ -234,17 +241,11 @@ sealed class WallpaperItem {
 }
 
 class WallpaperAdapter(
-    private var items: List<WallpaperItem>,
     private val onClick: (WallpaperItem) -> Unit,
     private val onLongClick: (WallpaperItem) -> Unit
-) : RecyclerView.Adapter<WallpaperAdapter.VH>() {
+) : ListAdapter<WallpaperItem, WallpaperAdapter.VH>(DiffCallback) {
 
     private var activePath: String = "default"
-
-    fun updateItems(newItems: List<WallpaperItem>) {
-        items = newItems
-        notifyDataSetChanged()
-    }
 
     fun setActiveWallpaper(path: String) {
         if (activePath != path) {
@@ -266,7 +267,7 @@ class WallpaperAdapter(
     }
 
     override fun onBindViewHolder(h: VH, position: Int) {
-        val item = items[position]
+        val item = getItem(position)
         h.placeholder.visibility = View.GONE
         h.image.visibility = View.GONE
         h.activeCheck.visibility = View.GONE
@@ -298,25 +299,13 @@ class WallpaperAdapter(
             }
             is WallpaperItem.Custom -> {
                 h.image.visibility = View.VISIBLE
-                Thread {
-                    try {
-                        val bitmap = WallpaperStore.getSampledBitmap(item.uri, 300, 300)
-                        if (bitmap != null) {
-                            h.image.post { h.image.setImageBitmap(bitmap) }
-                        }
-                    } catch (_: Exception) {
-                        h.image.post { h.image.setImageResource(R.drawable.ic_home) }
-                    }
-                }.start()
+                h.image.load(item.uri)
             }
             is WallpaperItem.Remote -> {
                 h.image.visibility = View.VISIBLE
-                Thread {
-                    try {
-                        val bmp = URL(item.url).openStream().use { BitmapFactory.decodeStream(it) }
-                        h.image.post { if (bmp != null) h.image.setImageBitmap(bmp) }
-                    } catch (_: Exception) {}
-                }.start()
+                h.image.load(item.url) {
+                    crossfade(true)
+                }
             }
         }
 
@@ -324,5 +313,18 @@ class WallpaperAdapter(
         h.itemView.setOnLongClickListener { onLongClick(item); true }
     }
 
-    override fun getItemCount() = items.size
+    companion object DiffCallback : DiffUtil.ItemCallback<WallpaperItem>() {
+        override fun areItemsTheSame(oldItem: WallpaperItem, newItem: WallpaperItem): Boolean {
+            if (oldItem::class != newItem::class) return false
+            return when (oldItem) {
+                is WallpaperItem.Custom -> oldItem.uri == (newItem as WallpaperItem.Custom).uri
+                is WallpaperItem.Remote -> oldItem.url == (newItem as WallpaperItem.Remote).url
+                else -> true
+            }
+        }
+
+        override fun areContentsTheSame(oldItem: WallpaperItem, newItem: WallpaperItem): Boolean {
+            return oldItem == newItem
+        }
+    }
 }
