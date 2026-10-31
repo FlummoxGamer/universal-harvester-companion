@@ -202,7 +202,7 @@ class CustomizeHomeActivity : AppCompatActivity() {
                                 editRunnable = Runnable {
                                     if (!isDragging && !isPopupShowing) {
                                         isPopupShowing = true
-                                        val item = recentAdapter.getItem(pos)
+                                        val item = recentAdapter.getItemAt(pos)
                                         if (item is WallpaperItem.Custom || item is WallpaperItem.Motion) {
                                             val path = if (item is WallpaperItem.Custom) item.uri else (item as WallpaperItem.Motion).uri
                                             showContextMenu(child, path)
@@ -379,7 +379,7 @@ class WallpaperAdapter(
         super.submitList(list)
     }
 
-    fun getItem(position: Int): WallpaperItem = items[position]
+    fun getItemAt(position: Int): WallpaperItem = items[position]
 
     fun moveItem(fromPosition: Int, toPosition: Int) {
         if (fromPosition < toPosition) {
