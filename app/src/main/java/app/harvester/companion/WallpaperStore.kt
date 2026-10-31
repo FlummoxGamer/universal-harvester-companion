@@ -3,6 +3,7 @@ package app.harvester.companion
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import java.io.File
 import java.security.MessageDigest
@@ -11,6 +12,7 @@ object WallpaperStore {
     private const val PREFS_NAME = "uh_wallpapers"
     private const val KEY_CURRENT = "current_wallpaper_path"
     private const val KEY_TEXT_COLOR = "wallpaper_text_color"
+    private const val KEY_IS_VIDEO = "wallpaper_is_video"
 
     private fun getPrefs(ctx: Context) = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -56,9 +58,28 @@ object WallpaperStore {
         }
     }
 
+    fun saveMotionWallpaper(ctx: Context, uri: Uri): String? {
+        return try {
+            val file = File(getWallpaperDir(ctx), "motion_${System.currentTimeMillis()}.mp4")
+            ctx.contentResolver.openInputStream(uri)?.use { input ->
+                file.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            cleanOldWallpapers(ctx)
+            file.absolutePath
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     fun downloadRemoteWallpaper(ctx: Context, url: String): String? {
         return try {
-            val file = File(getWallpaperDir(ctx), "wall_${System.currentTimeMillis()}.jpg")
+            val isVideo = url.endsWith(".mp4") || url.contains("video")
+            val ext = if (isVideo) "mp4" else "jpg"
+            val prefix = if (isVideo) "motion_" else "wall_"
+            val file = File(getWallpaperDir(ctx), "$prefix${System.currentTimeMillis()}.$ext")
+            
             val request = okhttp3.Request.Builder().url(url).build()
             val response = okhttp3.OkHttpClient().newCall(request).execute()
             if (response.isSuccessful && response.body != null) {
@@ -67,21 +88,23 @@ object WallpaperStore {
                         input.copyTo(output)
                     }
                 }
-                
-                val hash = getFastHash(file)
-                if (hash.isNotEmpty()) {
-                    val existing = getWallpaperDir(ctx).listFiles { f -> f.name.startsWith("wall_") }?.find {
-                        it.absolutePath != file.absolutePath && getFastHash(it) == hash
-                    }
-                    if (existing != null) {
-                        existing.delete()
-                    }
-                }
                 cleanOldWallpapers(ctx)
                 file.absolutePath
             } else null
         } catch (_: Exception) {
             null
+        }
+    }
+
+    fun generateVideoThumbnail(videoPath: String): Bitmap? {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(videoPath)
+            retriever.getFrameAtTime(1000000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+        } catch (_: Exception) {
+            null
+        } finally {
+            try { retriever.release() } catch (_: Exception) {}
         }
     }
 
@@ -99,21 +122,26 @@ object WallpaperStore {
 
     private fun cleanOldWallpapers(ctx: Context) {
         val dir = getWallpaperDir(ctx)
-        val files = dir.listFiles { f -> f.isFile && f.name.startsWith("wall_") } ?: return
+        val files = dir.listFiles { f -> f.isFile && (f.name.startsWith("wall_") || f.name.startsWith("motion_")) } ?: return
         if (files.size > 20) {
             files.sortedBy { it.lastModified() }.take(files.size - 20).forEach { it.delete() }
         }
     }
 
-    fun setCurrentWallpaper(ctx: Context, path: String?, textColor: Int) {
+    fun setCurrentWallpaper(ctx: Context, path: String?, textColor: Int, isVideo: Boolean = false) {
         getPrefs(ctx).edit()
             .putString(KEY_CURRENT, path)
             .putInt(KEY_TEXT_COLOR, textColor)
+            .putBoolean(KEY_IS_VIDEO, isVideo)
             .apply()
     }
 
     fun getCurrentWallpaper(ctx: Context): String? {
         return getPrefs(ctx).getString(KEY_CURRENT, null)
+    }
+
+    fun isCurrentVideo(ctx: Context): Boolean {
+        return getPrefs(ctx).getBoolean(KEY_IS_VIDEO, false)
     }
 
     fun getTextColor(ctx: Context): Int {
@@ -122,7 +150,7 @@ object WallpaperStore {
 
     fun getRecent(ctx: Context): List<String> {
         val dir = getWallpaperDir(ctx)
-        return dir.listFiles { file -> file.isFile && file.name.startsWith("wall_") }
+        return dir.listFiles { file -> file.isFile && (file.name.startsWith("wall_") || file.name.startsWith("motion_")) }
             ?.sortedByDescending { it.lastModified() }
             ?.map { it.absolutePath }
             ?.take(20) ?: emptyList()
