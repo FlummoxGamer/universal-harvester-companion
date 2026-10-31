@@ -129,17 +129,16 @@ androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, 
     insets
 }
 tabs = TabManager.get(this)
-        tabs.preWarm()
         setupWebExtensionBridge()
 
-        lifecycleScope.launch(Dispatchers.IO) {
-            GeckoEngine.getRuntime(this@MainActivity)?.warmUp()
-            val searchHost = SearchEnginePrefs.currentEntry(this@MainActivity).host
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            tabs.preWarm()
+            GeckoEngine.getRuntime(this)?.warmUp()
+            val searchHost = SearchEnginePrefs.currentEntry(this).host
             GeckoEngine.speculativeConnect("https://$searchHost")
-        }
+        }, 200)
 
         mainGeckoView = binding.webContainer.geckoView
-
         MenuCommandStore.listener = { runOnUiThread { updateUi() } }
 
         setupHomeGrid()
