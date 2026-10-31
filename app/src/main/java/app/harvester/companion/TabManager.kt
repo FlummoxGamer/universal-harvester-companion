@@ -26,10 +26,28 @@ class TabManager private constructor(private val ctx: Context) {
     private val lock = Any()
     private var currentId: Long = -1L
     private val attachedSessions = mutableSetOf<GeckoSession>()
+    private var preWarmedSession: GeckoSession? = null
+    private var isPreWarming = false
 
-    init {
-        currentId = ctx.getSharedPreferences("uh_tabs", Context.MODE_PRIVATE).getLong("last_tab_id", -1L)
-    }
+init {
+    currentId = ctx.getSharedPreferences("uh_tabs", Context.MODE_PRIVATE).getLong("last_tab_id", -1L)
+}
+
+fun preWarm() {
+    if (isPreWarming || preWarmedSession != null) return
+    isPreWarming = true
+    val runtime = GeckoEngine.getRuntime(ctx) ?: return
+    val settings = GeckoSessionSettings.Builder()
+        .usePrivateMode(false)
+        .userAgentMode(GeckoSessionSettings.USER_AGENT_MODE_MOBILE)
+        .viewportMode(GeckoSessionSettings.VIEWPORT_MODE_MOBILE)
+        .build()
+    val session = GeckoSession(settings)
+    session.open(runtime)
+    session.loadUri("about:blank")
+    preWarmedSession = session
+    isPreWarming = false
+}
 
     fun pushHistory(id: Long) {
         if (tabHistory.isNotEmpty() && tabHistory.last() == id) return
@@ -64,24 +82,30 @@ class TabManager private constructor(private val ctx: Context) {
         }
     }
 
-    fun openNew(url: String, incognito: Boolean = false, groupId: Long = 0L, parentId: Long = 0L): Long {
-        synchronized(lock) {
-            val id = db.insert(url, incognito, groupId, parentId)
-            val runtime = GeckoEngine.getRuntime(ctx) ?: return id
+fun openNew(url: String, incognito: Boolean = false, groupId: Long = 0L, parentId: Long = 0L): Long {
+    synchronized(lock) {
+        val id = db.insert(url, incognito, groupId, parentId)
+        val runtime = GeckoEngine.getRuntime(ctx) ?: return id
+        val session: GeckoSession
+        if (!incognito && preWarmedSession != null) {
+            session = preWarmedSession!!
+            preWarmedSession = null
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch { preWarm() }
+        } else {
             val settings = GeckoSessionSettings.Builder()
                 .usePrivateMode(incognito)
                 .userAgentMode(GeckoSessionSettings.USER_AGENT_MODE_MOBILE)
                 .viewportMode(GeckoSessionSettings.VIEWPORT_MODE_MOBILE)
                 .build()
-            val session = GeckoSession(settings)
+            session = GeckoSession(settings)
             session.open(runtime)
-            
-            alive[id] = Slot(session, incognito)
-            currentId = id
-            if (url.isNotBlank() && url != "about:blank") session.loadUri(url)
-            return id
         }
+        alive[id] = Slot(session, incognito)
+        currentId = id
+        if (url.isNotBlank() && url != "about:blank") session.loadUri(url)
+        return id
     }
+}
 
     fun openBlankTab(incognito: Boolean = false, groupId: Long = 0L, parentId: Long = 0L): Long =
         openNew("about:blank", incognito, groupId, parentId)
