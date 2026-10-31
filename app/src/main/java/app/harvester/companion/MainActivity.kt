@@ -73,21 +73,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-UHLog.init(this)
-SessionRecorder.init(this)
 UHLog.section("MAIN")
-
-try {
-    GeckoEngine.getRuntime(this)
-} catch (e: Throwable) {
-    UHLog.e("gecko", "GeckoRuntime init failed: ${e.message}")
-    UHLog.throwable("gecko", "GeckoRuntime init failed", e)
-    try { UHLog.mirrorToPublic(this) } catch (_: Exception) {}
-    getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().putBoolean("force_safe_mode", true).apply()
-    startActivity(Intent(this, SafeModeActivity::class.java))
-    finish()
-    return
-}
 
 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
     if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
@@ -128,15 +114,26 @@ androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, 
 
     insets
 }
-tabs = TabManager.get(this)
-        setupWebExtensionBridge()
+try {
+    GeckoEngine.getRuntime(this)
+} catch (e: Throwable) {
+    UHLog.e("gecko", "GeckoRuntime init failed: ${e.message}")
+    UHLog.throwable("gecko", "GeckoRuntime init failed", e)
+    getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().putBoolean("force_safe_mode", true).apply()
+    startActivity(Intent(this, SafeModeActivity::class.java))
+    finish()
+    return
+}
 
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            tabs.preWarm()
-            GeckoEngine.getRuntime(this)?.warmUp()
-            val searchHost = SearchEnginePrefs.currentEntry(this).host
-            GeckoEngine.speculativeConnect("https://$searchHost")
-        }, 200)
+tabs = TabManager.get(this)
+setupWebExtensionBridge()
+
+android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+    tabs.preWarm()
+    GeckoEngine.getRuntime(this)?.warmUp()
+    val searchHost = SearchEnginePrefs.currentEntry(this).host
+    GeckoEngine.speculativeConnect("https://$searchHost")
+}, 150)
 
         mainGeckoView = binding.webContainer.geckoView
         MenuCommandStore.listener = { runOnUiThread { updateUi() } }
