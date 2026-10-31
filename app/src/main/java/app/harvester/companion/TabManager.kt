@@ -3,6 +3,9 @@ package app.harvester.companion
 import android.content.Context
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class TabManager private constructor(private val ctx: Context) {
 
@@ -90,7 +93,7 @@ fun openNew(url: String, incognito: Boolean = false, groupId: Long = 0L, parentI
         if (!incognito && preWarmedSession != null) {
             session = preWarmedSession!!
             preWarmedSession = null
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch { preWarm() }
+        CoroutineScope(Dispatchers.IO).launch { preWarm() }
         } else {
             val settings = GeckoSessionSettings.Builder()
                 .usePrivateMode(incognito)
