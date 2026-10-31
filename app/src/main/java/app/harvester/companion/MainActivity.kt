@@ -162,8 +162,6 @@ tabs = TabManager.get(this)
         attachCurrent()
         applyAddressBarPosition()
 
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ hideSplash() }, 3000)
-
     UHLog.d("main", "onCreate complete")
     }
     private fun setupWebExtensionBridge() {
@@ -1145,6 +1143,10 @@ override fun onSessionStateChange(session: GeckoSession, sessionState: GeckoSess
 }
 
         session.contentDelegate = object : GeckoSession.ContentDelegate {
+            override fun onFirstComposite(session: GeckoSession) {
+                runOnUiThread { hideSplash() }
+            }
+
             override fun onTitleChange(session: GeckoSession, title: String?) {
                 if (title.isNullOrBlank()) return
                 val id = tabs.idForSession(session)
