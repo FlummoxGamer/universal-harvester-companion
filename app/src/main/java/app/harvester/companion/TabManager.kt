@@ -93,7 +93,7 @@ fun openNew(url: String, incognito: Boolean = false, groupId: Long = 0L, parentI
         if (!incognito && preWarmedSession != null) {
             session = preWarmedSession!!
             preWarmedSession = null
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ preWarm() }, 200)
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ preWarm() }, 100)
         } else {
             val settings = GeckoSessionSettings.Builder()
                 .usePrivateMode(incognito)
