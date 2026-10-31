@@ -84,6 +84,10 @@ if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU)
 binding = ActivityMainBinding.inflate(layoutInflater)
 setContentView(binding.root)
 
+if (savedInstanceState != null) {
+    binding.splashScreen.visibility = View.GONE
+}
+
 androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, insets ->
     val systemBars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
     val ime = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())
@@ -480,34 +484,20 @@ binding.shortcutsGrid.addOnItemTouchListener(object : androidx.recyclerview.widg
 }
 
 private fun showWidgetMenu(s: Shortcut, anchor: android.view.View) {
-    val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
-    val v = layoutInflater.inflate(R.layout.dialog_tab_menu, null)
-    sheet.setContentView(v)
-    sheet.behavior.isDraggable = false
-    
-    val editRow = v.findViewById<android.view.View>(R.id.tmSelectTabs)
-    val removeRow = v.findViewById<android.view.View>(R.id.tmNewTab)
-    
-    (editRow as android.widget.LinearLayout).getChildAt(1).let { (it as android.widget.TextView).text = "Edit" }
-    (removeRow as android.widget.LinearLayout).getChildAt(1).let { (it as android.widget.TextView).text = "Remove" }
-    
-    v.findViewById<android.view.View>(R.id.tmNewIncognito)?.visibility = android.view.View.GONE
-    v.findViewById<android.view.View>(R.id.tmNewGroup)?.visibility = android.view.View.GONE
-    v.findViewById<android.view.View>(R.id.tmCloseAll)?.visibility = android.view.View.GONE
-    v.findViewById<android.view.View>(R.id.tmDeleteData)?.visibility = android.view.View.GONE
-
-    editRow.setOnClickListener {
-        sheet.dismiss()
-        showShortcutEditor(s)
+    val popup = android.widget.PopupMenu(this, anchor)
+    popup.menu.add(0, 1, 0, "Edit")
+    popup.menu.add(0, 2, 1, "Remove")
+    popup.setOnMenuItemClickListener { item ->
+        when (item.itemId) {
+            1 -> showShortcutEditor(s)
+            2 -> {
+                ShortcutStore.remove(this, s.url)
+                shortcutAdapter.submit(ShortcutStore.list(this))
+            }
+        }
+        true
     }
-    
-    removeRow.setOnClickListener {
-        sheet.dismiss()
-        ShortcutStore.remove(this, s.url)
-        shortcutAdapter.submit(ShortcutStore.list(this))
-    }
-    
-    sheet.show()
+    popup.show()
 }
     private fun setupSwipeRefresh() {
         binding.swipeRefresh.setOnRefreshListener {
