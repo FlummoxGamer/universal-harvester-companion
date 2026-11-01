@@ -118,7 +118,8 @@ dependencies {
     implementation("io.coil-kt:coil:2.6.0")
     implementation("androidx.media3:media3-exoplayer:1.2.1")
     implementation("androidx.media3:media3-ui:1.2.1")
-    implementation("dev.ffmpegkit-maintained:ffmpeg-kit-video:8.1.9")
+    implementation("io.coil-kt:coil-video:2.6.0")
+    implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.9")
 }
 
 
