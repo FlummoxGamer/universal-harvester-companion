@@ -28,27 +28,27 @@ class SafeModeActivity : AppCompatActivity() {
 
         findViewById<MaterialButton>(R.id.btnSafeRestart).setOnClickListener {
             stopAllProcesses()
-            getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().clear().apply()
+            clearCrashState()
             restartApp()
         }
 
         findViewById<MaterialButton>(R.id.btnClearCache).setOnClickListener {
             stopAllProcesses()
             try { cacheDir.deleteRecursively() } catch (_: Exception) {}
-            getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().clear().apply()
+            clearCrashState()
             restartApp()
         }
 
         findViewById<MaterialButton>(R.id.btnClearData).setOnClickListener {
             stopAllProcesses()
-            getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().clear().apply()
             try {
                 cacheDir.deleteRecursively()
                 filesDir.deleteRecursively()
                 getExternalFilesDir(null)?.deleteRecursively()
             } catch (_: Exception) {}
-            restartApp()
-        }
+                clearCrashState()
+                restartApp()
+         }
 
         findViewById<MaterialButton>(R.id.btnExportLog).setOnClickListener {
             try {
@@ -62,6 +62,16 @@ class SafeModeActivity : AppCompatActivity() {
                 }
             } catch (_: Exception) {}
         }
+    }
+
+    private fun clearCrashState() {
+        try {
+            val crashFile = File(filesDir, "last_crash.txt")
+            if (crashFile.exists()) crashFile.delete()
+            val crashDir = File(filesDir, "crashes")
+            crashDir.deleteRecursively()
+        } catch (_: Exception) {}
+        getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().clear().apply()
     }
 
     private fun restartApp() {
