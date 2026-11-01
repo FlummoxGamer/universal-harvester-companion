@@ -115,6 +115,13 @@ if (recent.isEmpty()) {
     }
 
 inner class PreviewAdapter(private val items: List<String>) : RecyclerView.Adapter<PreviewAdapter.VH>() {
+
+    override fun onViewRecycled(holder: VH) {
+        super.onViewRecycled(holder)
+        val player = holder.itemView.tag as? androidx.media3.exoplayer.ExoPlayer
+        player?.release()
+        holder.itemView.tag = null
+    }
     inner class VH(v: android.view.View) : RecyclerView.ViewHolder(v) {
         val image: ImageView = v.findViewById(R.id.previewImage)
         val title: android.widget.TextView = v.findViewById(R.id.previewTitle)
@@ -163,11 +170,15 @@ inner class PreviewAdapter(private val items: List<String>) : RecyclerView.Adapt
                 playerView.visibility = View.VISIBLE
                 val exoPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(this@WallpaperPreviewActivity).build()
                 playerView.player = exoPlayer
-                val mediaUri: android.net.Uri = if (item.startsWith("http")) android.net.Uri.parse(item) else android.net.Uri.fromFile(java.io.File(item))
                 val mediaItem = androidx.media3.common.MediaItem.fromUri(mediaUri)
                 exoPlayer.setMediaItem(mediaItem)
                 exoPlayer.volume = 0f
                 exoPlayer.repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
+                exoPlayer.addListener(object : androidx.media3.common.Player.Listener {
+                    override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                        UHLog.e("video", "ExoPlayer Error: ${error.message}")
+                    }
+                })
                 exoPlayer.prepare()
                 exoPlayer.play()
                 h.itemView.tag = exoPlayer
