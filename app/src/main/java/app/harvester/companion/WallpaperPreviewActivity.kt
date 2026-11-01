@@ -170,6 +170,7 @@ inner class PreviewAdapter(private val items: List<String>) : RecyclerView.Adapt
                 playerView.visibility = View.VISIBLE
                 val exoPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(this@WallpaperPreviewActivity).build()
                 playerView.player = exoPlayer
+                val mediaUri: android.net.Uri = if (item.startsWith("http")) android.net.Uri.parse(item) else android.net.Uri.fromFile(java.io.File(item))
                 val mediaItem = androidx.media3.common.MediaItem.fromUri(mediaUri)
                 exoPlayer.setMediaItem(mediaItem)
                 exoPlayer.volume = 0f
