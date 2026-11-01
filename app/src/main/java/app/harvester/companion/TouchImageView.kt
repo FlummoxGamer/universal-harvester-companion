@@ -998,4 +998,4 @@ enum class ImageActionState { NONE, DRAG, ZOOM, FLING, ANIMATE_ZOOM }
 interface OnTouchImageViewListener { fun onMove() }
 interface OnTouchCoordinatesListener { fun onTouchCoordinate(view: View, event: MotionEvent, bitmapPoint: PointF) }
 interface OnZoomFinishedListener { fun onZoomFinished() }
-data class ZoomVariables(val scale: Float, val focusX: Float, val focusY: Float, val scaleType: ScaleType?)
+data class ZoomVariables(val scale: Float, val focusX: Float, val focusY: Float, val scaleType: android.widget.ImageView.ScaleType?)
