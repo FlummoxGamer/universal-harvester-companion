@@ -6,11 +6,10 @@
     android:layout_height="match_parent"
     android:background="@color/bg">
 
-    <ImageView
+    <app.harvester.companion.ZoomableImageView
         android:id="@+id/wallpaperBackground"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:scaleType="centerCrop"
         android:visibility="gone"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"
