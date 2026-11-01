@@ -915,7 +915,7 @@ if (position == 0) {
 private fun updateSearchEngineIcon() {
     val entry = SearchEnginePrefs.currentEntry(this)
     val url = currentUrl
-    val isBlank = url.isBlank() || url == "about:blank"
+    val isBlank = url.isBlank() || url == "about:blank" || tabs.list().isEmpty()
 
     if (isBlank || binding.urlEdit.visibility == View.VISIBLE) {
         binding.searchEngineIcon.visibility = View.VISIBLE
