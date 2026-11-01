@@ -108,17 +108,17 @@ object WallpaperStore {
         }
     }
 
-    private fun getFastHash(file: File): String {
-        return try {
-            if (!file.exists() || file.length() == 0L) return ""
-            val md = MessageDigest.getInstance("MD5")
-            md.update(file.length().toString().toByteArray())
-            val buffer = ByteArray(1024)
-            file.inputStream().use { it.read(buffer) }
-            md.update(buffer)
-            md.digest().joinToString("") { "%02x".format(it) }
-        } catch (_: Exception) { "" }
-    }
+private fun getFastHash(file: File): String {
+    return try {
+        if (!file.exists() || file.length() == 0L) return ""
+        val md = MessageDigest.getInstance("MD5")
+        md.update(file.length().toString().toByteArray())
+        val buffer = ByteArray(1024)
+        file.inputStream().use { it.read(buffer) }
+        md.update(buffer)
+        md.digest().joinToString("") { "%02x".format(it) }
+    } catch (_: Exception) { "" }
+}
 
     private fun cleanOldWallpapers(ctx: Context) {
         val dir = getWallpaperDir(ctx)
