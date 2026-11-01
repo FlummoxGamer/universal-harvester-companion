@@ -119,26 +119,11 @@ androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, 
 
     insets
 }
-try {
-    GeckoEngine.getRuntime(this)
-} catch (e: Throwable) {
-    UHLog.e("gecko", "GeckoRuntime init failed: ${e.message}")
-    UHLog.throwable("gecko", "GeckoRuntime init failed", e)
-    getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().putBoolean("force_safe_mode", true).apply()
-    startActivity(Intent(this, SafeModeActivity::class.java))
-    finish()
-    return
-}
-
 tabs = TabManager.get(this)
 setupWebExtensionBridge()
 
-android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-    tabs.preWarm()
-    GeckoEngine.getRuntime(this)?.warmUp()
-    val searchHost = SearchEnginePrefs.currentEntry(this).host
-    GeckoEngine.speculativeConnect("https://$searchHost")
-}, 150)
+val searchHost = SearchEnginePrefs.currentEntry(this).host
+GeckoEngine.speculativeConnect("https://$searchHost")
 
         mainGeckoView = binding.webContainer.geckoView
         MenuCommandStore.listener = { runOnUiThread { updateUi() } }
