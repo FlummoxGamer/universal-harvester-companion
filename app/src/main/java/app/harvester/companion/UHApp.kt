@@ -14,9 +14,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-class UHApp : Application() {
+class UHApp : Application(), coil.ImageLoaderFactory {
 
     val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    override fun newImageLoader(): coil.ImageLoader {
+        return coil.ImageLoader.Builder(this)
+            .components {
+                add(coil.decode.VideoFrameDecoder.Factory())
+            }
+            .crossfade(true)
+            .build()
+    }
 
     override fun onCreate() {
         val start = System.currentTimeMillis()
