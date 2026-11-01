@@ -330,32 +330,31 @@ class CustomizeHomeActivity : AppCompatActivity() {
         }
     }
 
-    private fun showContextMenu(anchor: View?, path: String) {
-        if (anchor == null) return
-        val popup = android.widget.PopupMenu(this, anchor)
-        popup.menu.add(0, 1, 0, "Set Wallpaper")
-        popup.menu.add(0, 2, 1, "Delete")
-        popup.setForceShowIcon(true)
-        popup.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                1 -> {
-                    val isVideo = path.endsWith(".mp4")
-                    val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
-                        putExtra("imagePath", path)
-                        putExtra("isCustom", true)
-                        putExtra("isVideo", isVideo)
-                    }
-                    startActivity(intent)
+private fun showContextMenu(anchor: View?, path: String) {
+    if (anchor == null) return
+    val builder = com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+    builder.setItems(arrayOf("Set Wallpaper", "Delete")) { _, which ->
+        when (which) {
+            0 -> {
+                val isVideo = path.endsWith(".mp4")
+                val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
+                    putExtra("imagePath", path)
+                    putExtra("isCustom", true)
+                    putExtra("isVideo", isVideo)
                 }
-                2 -> {
-                    WallpaperStore.deleteWallpaper(path)
-                    loadWallpapers()
-                }
+                startActivity(intent)
             }
-            true
+            1 -> {
+                WallpaperStore.deleteWallpaper(path)
+                loadWallpapers()
+            }
         }
-        popup.show()
     }
+    val dialog = builder.create()
+    dialog.show()
+    val width = (resources.displayMetrics.widthPixels * 0.90).toInt()
+    dialog.window?.setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
+}
 }
 
 sealed class WallpaperItem {
@@ -472,7 +471,6 @@ class WallpaperAdapter(
         }
 
         h.itemView.setOnClickListener { onClick(item) }
-        h.itemView.setOnLongClickListener { onLongClick(item); true }
     }
 
     companion object DiffCallback : DiffUtil.ItemCallback<WallpaperItem>() {
