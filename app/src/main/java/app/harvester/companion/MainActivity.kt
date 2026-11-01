@@ -122,8 +122,17 @@ androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, 
 tabs = TabManager.get(this)
 setupWebExtensionBridge()
 
-val searchHost = SearchEnginePrefs.currentEntry(this).host
-GeckoEngine.speculativeConnect("https://$searchHost")
+android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+    try {
+        GeckoEngine.getRuntime(this@MainActivity)
+        tabs.preWarm()
+        GeckoEngine.getRuntime(this@MainActivity)?.warmUp()
+        val searchHost = SearchEnginePrefs.currentEntry(this@MainActivity).host
+        GeckoEngine.speculativeConnect("https://$searchHost")
+    } catch (e: Throwable) {
+        UHLog.e("gecko", "GeckoRuntime init failed: ${e.message}")
+    }
+}, 300)
 
         mainGeckoView = binding.webContainer.geckoView
         MenuCommandStore.listener = { runOnUiThread { updateUi() } }
