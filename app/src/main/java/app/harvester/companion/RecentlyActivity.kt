@@ -81,29 +81,38 @@ class RecentlyActivity : AppCompatActivity() {
         }
     }
 
-    private fun showContextMenu(anchor: View?, path: String) {
-        if (anchor == null) return
-        val popup = android.widget.PopupMenu(this, anchor)
-        popup.menu.add(0, 1, 0, "Set Wallpaper")
-        popup.menu.add(0, 2, 1, "Delete")
-        popup.setForceShowIcon(true)
-        popup.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                1 -> {
-                    val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
-                        putExtra("imagePath", path)
-                        putExtra("isCustom", true)
-                        putExtra("isVideo", path.endsWith(".mp4"))
-                    }
-                    startActivity(intent)
-                }
-                2 -> {
-                    WallpaperStore.deleteWallpaper(path)
-                    loadWallpapers()
-                }
-            }
-            true
+private fun showContextMenu(anchor: View?, path: String) {
+    if (anchor == null) return
+    val popupView = layoutInflater.inflate(R.layout.dialog_context_menu, null)
+    val popup = android.widget.PopupWindow(
+        popupView,
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+        true
+    )
+    popup.elevation = 16f
+
+    popupView.findViewById<View>(R.id.rowSetWallpaper).setOnClickListener {
+        popup.dismiss()
+        val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
+            putExtra("imagePath", path)
+            putExtra("isCustom", true)
+            putExtra("isVideo", path.endsWith(".mp4"))
         }
-        popup.show()
+        startActivity(intent)
     }
+
+    popupView.findViewById<View>(R.id.rowDelete).setOnClickListener {
+        popup.dismiss()
+        WallpaperStore.deleteWallpaper(path)
+        loadWallpapers()
+    }
+
+    val location = IntArray(2)
+    anchor.getLocationOnScreen(location)
+    val x = location[0]
+    val y = location[1] + anchor.height - 16
+
+    popup.showAtLocation(anchor, android.view.Gravity.NO_GRAVITY, x, y)
+}
 }
