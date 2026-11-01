@@ -141,6 +141,10 @@
             android:exported="false"
             android:theme="@style/Theme.UHCompanion" />
         <activity
+            android:name=".RecentlyActivity"
+            android:exported="false"
+            android:theme="@style/Theme.UHCompanion" />
+        <activity
             android:name=".WallpaperPreviewActivity"
             android:exported="false"
             android:theme="@style/Theme.UHCompanion" />
