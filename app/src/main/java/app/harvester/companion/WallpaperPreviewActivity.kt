@@ -150,6 +150,11 @@ inner class PreviewAdapter(private val items: List<String>) : RecyclerView.Adapt
         val onSurfaceColor = com.google.android.material.color.MaterialColors.getColor(h.itemView, com.google.android.material.R.attr.colorOnSurface)
         val bgColor = com.google.android.material.color.MaterialColors.getColor(h.itemView, androidx.appcompat.R.attr.colorBackgroundFloating)
 
+        val touchImage = h.itemView.findViewById<app.harvester.companion.TouchImageView>(R.id.previewImage)
+        touchImage?.minZoom = app.harvester.companion.TouchImageView.AUTOMATIC_MIN_ZOOM
+        touchImage?.maxZoom = 3f
+        touchImage?.isZoomEnabled = true
+
         val mockAddressBar = h.itemView.findViewById<LinearLayout>(R.id.previewMockAddressBar)
         mockAddressBar?.setBackgroundColor(surfaceColor)
         val mockUrlText = h.itemView.findViewById<TextView>(R.id.previewMockUrlText)
@@ -196,10 +201,8 @@ inner class PreviewAdapter(private val items: List<String>) : RecyclerView.Adapt
             val imageToLoad: Any = if (item.startsWith("http")) item else java.io.File(item)
             h.image.load(imageToLoad) {
                 crossfade(true)
+                allowHardware(false)
                 listener(
-                    onError = { _, result ->
-                        UHLog.e("preview", "Coil load error: ${result.throwable.message}")
-                    },
                     onSuccess = { _, result ->
                         val bitmap = (result.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
                         if (bitmap != null) {
@@ -208,13 +211,16 @@ inner class PreviewAdapter(private val items: List<String>) : RecyclerView.Adapt
                             val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(dominantColor)
                             val textColor = if (luminance > 0.5) android.graphics.Color.BLACK else android.graphics.Color.WHITE
                             val shadowColor = if (textColor == android.graphics.Color.BLACK) android.graphics.Color.WHITE else android.graphics.Color.BLACK
-                    
+       
                             h.title.setTextColor(textColor)
                             h.title.setShadowLayer(8f, 0f, 2f, shadowColor)
                             adapter.setTextColor(textColor, shadowColor)
-                        }
-                    }
-                )
+                       }
+                  },
+                  onError = { _, result ->
+                      UHLog.e("preview", "Coil error: ${result.throwable.message}")
+                  }
+               )
             }
         }
     }
