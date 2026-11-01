@@ -22,6 +22,7 @@ import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
+import coil.request.videoFrameMillis
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -109,7 +110,7 @@ class CustomizeHomeActivity : AppCompatActivity() {
                             }
                             startActivity(intent)
                         } else {
-                            Toast.makeText(this, "Failed to save wallpaper", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this@CustomizeHomeActivity, "Failed to save wallpaper", Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
@@ -552,20 +553,20 @@ class WallpaperAdapter(
             is WallpaperItem.Motion -> {
                 h.image.visibility = View.VISIBLE
                 val imageToLoad: Any = if (item.uri.startsWith("http")) item.uri else File(item.uri)
-                h.image.load(imageToLoad) {
-                    videoFrameMillis(1000)
-                    crossfade(true)
-                    error(R.drawable.ic_downloads)
-                }
-            }
-            is WallpaperItem.Remote -> {
-                h.image.visibility = View.VISIBLE
-                if (item.url.endsWith(".mp4")) {
-                    h.image.load(item.url) {
-                        videoFrameMillis(1000)
+                    h.image.load(imageToLoad) {
+                        videoFrameMillis(1000L)
                         crossfade(true)
                         error(R.drawable.ic_downloads)
                     }
+                }
+                is WallpaperItem.Remote -> {
+                    h.image.visibility = View.VISIBLE
+                    if (item.url.endsWith(".mp4")) {
+                        h.image.load(item.url) {
+                            videoFrameMillis(1000L)
+                            crossfade(true)
+                            error(R.drawable.ic_downloads)
+                        }
                 } else {
                     h.image.load(item.url) {
                         crossfade(true)
