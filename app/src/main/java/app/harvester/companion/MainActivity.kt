@@ -1986,6 +1986,8 @@ override fun onPause() {
 }
 
 override fun onDestroy() {
+    val videoView = findViewById<androidx.media3.ui.PlayerView>(R.id.wallpaperVideo)
+    videoView?.player = null
     homeVideoPlayer?.release()
     homeVideoPlayer = null
     if (::tabs.isInitialized) {
