@@ -114,8 +114,10 @@ private fun getFastHash(file: File): String {
         val md = MessageDigest.getInstance("MD5")
         md.update(file.length().toString().toByteArray())
         val buffer = ByteArray(1024)
-        file.inputStream().use { it.read(buffer) }
-        md.update(buffer)
+        val bytesRead = file.inputStream().use { it.read(buffer) }
+        if (bytesRead > 0) {
+            md.update(buffer, 0, bytesRead)
+        }
         md.digest().joinToString("") { "%02x".format(it) }
     } catch (_: Exception) { "" }
 }
