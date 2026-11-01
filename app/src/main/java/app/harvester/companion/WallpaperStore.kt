@@ -73,28 +73,36 @@ object WallpaperStore {
         }
     }
 
-    fun downloadRemoteWallpaper(ctx: Context, url: String): String? {
-        return try {
-            val isVideo = url.endsWith(".mp4") || url.contains("video")
-            val ext = if (isVideo) "mp4" else "jpg"
-            val prefix = if (isVideo) "motion_" else "wall_"
-            val file = File(getWallpaperDir(ctx), "$prefix${System.currentTimeMillis()}.$ext")
-            
-            val request = okhttp3.Request.Builder().url(url).build()
-            val response = okhttp3.OkHttpClient().newCall(request).execute()
-            if (response.isSuccessful && response.body != null) {
-                response.body!!.byteStream().use { input ->
-                    file.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
-                }
-                cleanOldWallpapers(ctx)
-                file.absolutePath
-            } else null
-        } catch (_: Exception) {
-            null
+fun downloadRemoteWallpaper(ctx: Context, url: String): String? {
+    return try {
+        val isVideo = url.endsWith(".mp4") || url.contains("sample")
+        val ext = if (isVideo) "mp4" else "jpg"
+        val prefix = if (isVideo) "motion_" else "wall_"
+        
+        val md = MessageDigest.getInstance("MD5")
+        val hash = md.digest(url.toByteArray()).joinToString("") { "%02x".format(it) }
+        val file = File(getWallpaperDir(ctx), "$prefix$hash.$ext")
+        
+        if (file.exists()) {
+            UHLog.d("dedupe", "Remote wallpaper already exists. Returning cached path.")
+            return file.absolutePath
         }
+
+        val request = okhttp3.Request.Builder().url(url).build()
+        val response = okhttp3.OkHttpClient().newCall(request).execute()
+        if (response.isSuccessful && response.body != null) {
+            response.body!!.byteStream().use { input ->
+                file.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            cleanOldWallpapers(ctx)
+            file.absolutePath
+        } else null
+    } catch (_: Exception) {
+        null
     }
+}
 
     fun generateVideoThumbnail(videoPath: String): Bitmap? {
         val retriever = MediaMetadataRetriever()
