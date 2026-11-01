@@ -61,6 +61,7 @@ class MainActivity : AppCompatActivity() {
     private var urlTextWatcher: android.text.TextWatcher? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val start = System.currentTimeMillis()
         setTheme(R.style.Theme_UHCompanion)
         super.onCreate(savedInstanceState)
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -84,6 +85,7 @@ if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU)
 
 binding = ActivityMainBinding.inflate(layoutInflater)
 setContentView(binding.root)
+UHLog.d("perf", "MainActivity setContentView took ${System.currentTimeMillis() - start}ms")
 
 if (savedInstanceState != null) {
     binding.splashScreen.visibility = View.GONE
@@ -1125,7 +1127,10 @@ override fun onSessionStateChange(session: GeckoSession, sessionState: GeckoSess
 
         session.contentDelegate = object : GeckoSession.ContentDelegate {
             override fun onFirstComposite(session: GeckoSession) {
-                runOnUiThread { hideSplash() }
+                runOnUiThread { 
+                    UHLog.d("perf", "Gecko onFirstComposite fired")
+                    hideSplash() 
+                }
             }
 
             override fun onTitleChange(session: GeckoSession, title: String?) {
@@ -1963,6 +1968,8 @@ override fun onPause() {
 }
 
 override fun onDestroy() {
+    homeVideoPlayer?.release()
+    homeVideoPlayer = null
     if (::tabs.isInitialized) {
         tabs.saveAll()
         if (isFinishing) {
