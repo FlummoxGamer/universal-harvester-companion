@@ -197,6 +197,9 @@ inner class PreviewAdapter(private val items: List<String>) : RecyclerView.Adapt
             h.image.load(imageToLoad) {
                 crossfade(true)
                 listener(
+                    onError = { _, result ->
+                        UHLog.e("preview", "Coil load error: ${result.throwable.message}")
+                    },
                     onSuccess = { _, result ->
                         val bitmap = (result.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
                         if (bitmap != null) {
