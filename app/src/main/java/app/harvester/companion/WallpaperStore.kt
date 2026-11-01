@@ -58,20 +58,31 @@ object WallpaperStore {
         }
     }
 
-    fun saveMotionWallpaper(ctx: Context, uri: Uri): String? {
-        return try {
-            val file = File(getWallpaperDir(ctx), "motion_${System.currentTimeMillis()}.mp4")
-            ctx.contentResolver.openInputStream(uri)?.use { input ->
-                file.outputStream().use { output ->
-                    input.copyTo(output)
-                }
+fun saveMotionWallpaper(ctx: Context, uri: Uri): String? {
+    return try {
+        val file = File(getWallpaperDir(ctx), "motion_${System.currentTimeMillis()}.mp4")
+        ctx.contentResolver.openInputStream(uri)?.use { input ->
+            file.outputStream().use { output ->
+                input.copyTo(output)
             }
-            cleanOldWallpapers(ctx)
-            file.absolutePath
-        } catch (_: Exception) {
-            null
         }
+        cleanOldWallpapers(ctx)
+        file.absolutePath
+    } catch (_: Exception) {
+        null
     }
+}
+
+fun saveMotionWallpaperFile(ctx: Context, fileToCopy: File): String? {
+    return try {
+        val file = File(getWallpaperDir(ctx), "motion_${System.currentTimeMillis()}.mp4")
+        fileToCopy.copyTo(file, overwrite = true)
+        cleanOldWallpapers(ctx)
+        file.absolutePath
+    } catch (_: Exception) {
+        null
+    }
+}
 
 fun downloadRemoteWallpaper(ctx: Context, url: String): String? {
     return try {
