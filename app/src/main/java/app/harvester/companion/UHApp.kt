@@ -36,22 +36,9 @@ class UHApp : Application() {
                 LeakCanarySetup.setup(this)
             }
     
-            try {
-                startService(Intent(this, SessionService::class.java))
-            } catch (_: Exception) {}
-
-            try {
-                GeckoEngine.getRuntime(this)
-            } catch (e: Throwable) {
-                UHLog.e("gecko", "GeckoRuntime init failed: ${e.message}")
-            }
-
-            applicationScope.launch(Dispatchers.Main) {
-                try {
-                    GeckoEngine.getRuntime(this@UHApp)?.warmUp()
-                    TabManager.get(this@UHApp).preWarm()
-                } catch (_: Exception) {}
-            }
+        try {
+            startService(Intent(this, SessionService::class.java))
+        } catch (_: Exception) {}
     }
     private fun scheduleCleanup() {
         try {
