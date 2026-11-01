@@ -19,6 +19,7 @@ class UHApp : Application() {
     val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
+        val start = System.currentTimeMillis()
         super.onCreate()
         setupCrashHandler()
         checkSafeMode()
@@ -31,14 +32,16 @@ class UHApp : Application() {
             scheduleCleanup()
         }
         
-            if (BuildConfig.DEBUG) {
-                StrictModeManager.enableStrictMode(true)
-                LeakCanarySetup.setup(this)
-            }
+        if (BuildConfig.DEBUG) {
+            StrictModeManager.enableStrictMode(true)
+            LeakCanarySetup.setup(this)
+        }
     
         try {
             startService(Intent(this, SessionService::class.java))
         } catch (_: Exception) {}
+    
+        UHLog.d("perf", "UHApp.onCreate took ${System.currentTimeMillis() - start}ms")
     }
     private fun scheduleCleanup() {
         try {
