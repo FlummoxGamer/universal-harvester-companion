@@ -7,7 +7,7 @@
     android:background="@color/bg"
     android:clipToOutline="true">
 
-    <app.harvester.companion.ZoomableImageView
+    <app.harvester.companion.TouchImageView
         android:id="@+id/previewImage"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
