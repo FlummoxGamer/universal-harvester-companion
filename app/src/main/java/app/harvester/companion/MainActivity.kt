@@ -481,20 +481,38 @@ binding.shortcutsGrid.addOnItemTouchListener(object : androidx.recyclerview.widg
 }
 
 private fun showWidgetMenu(s: Shortcut, anchor: android.view.View) {
-    val popup = android.widget.PopupMenu(this, anchor)
-    popup.menu.add(0, 1, 0, "Edit")
-    popup.menu.add(0, 2, 1, "Remove")
-    popup.setOnMenuItemClickListener { item ->
-        when (item.itemId) {
-            1 -> showShortcutEditor(s)
-            2 -> {
-                ShortcutStore.remove(this, s.url)
-                shortcutAdapter.submit(ShortcutStore.list(this))
-            }
-        }
+    val popupView = layoutInflater.inflate(R.layout.dialog_context_menu, null)
+    val popup = android.widget.PopupWindow(
+        popupView,
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT,
         true
+    )
+    popup.elevation = 16f
+
+    val setWpRow = popupView.findViewById<View>(R.id.rowSetWallpaper)
+    val deleteRow = popupView.findViewById<View>(R.id.rowDelete)
+    
+    (setWpRow as android.widget.LinearLayout).getChildAt(0).let { (it as android.widget.TextView).text = "Edit" }
+    (deleteRow as android.widget.LinearLayout).getChildAt(0).let { (it as android.widget.TextView).text = "Remove" }
+    
+    setWpRow.setOnClickListener {
+        popup.dismiss()
+        showShortcutEditor(s)
     }
-    popup.show()
+
+    deleteRow.setOnClickListener {
+        popup.dismiss()
+        ShortcutStore.remove(this, s.url)
+        shortcutAdapter.submit(ShortcutStore.list(this))
+    }
+
+    val location = IntArray(2)
+    anchor.getLocationOnScreen(location)
+    val x = location[0]
+    val y = location[1] + anchor.height - 16
+
+    popup.showAtLocation(anchor, android.view.Gravity.NO_GRAVITY, x, y)
 }
     private fun setupSwipeRefresh() {
         binding.swipeRefresh.setOnRefreshListener {
