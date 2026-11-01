@@ -1,5 +1,6 @@
 package app.harvester.companion
 
+import android.view.ViewGroup
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
