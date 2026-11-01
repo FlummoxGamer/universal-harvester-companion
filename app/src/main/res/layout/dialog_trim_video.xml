@@ -30,7 +30,6 @@
         android:layout_marginTop="16dp"
         android:valueFrom="0f"
         android:valueTo="15f"
-        app:values="@array/initial_slider_values"
         app:trackColorActive="@color/accent"
         app:trackColorInactive="@color/border"
         app:thumbColor="@color/accent" />
