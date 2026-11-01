@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:background="@color/surface">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Trim Video"
+        android:textColor="@color/text"
+        android:textSize="20sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/tvTrimDuration"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Selected: 0s - 10s"
+        android:textColor="@color/subtext" />
+
+    <com.google.android.material.slider.RangeSlider
+        android:id="@+id/rangeSlider"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:valueFrom="0f"
+        android:valueTo="15f"
+        app:values="@array/initial_slider_values"
+        app:trackColorActive="@color/accent"
+        app:trackColorInactive="@color/border"
+        app:thumbColor="@color/accent" />
+
+    <Button
+        android:id="@+id/btnApplyTrim"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:layout_marginTop="24dp"
+        android:text="Apply &amp; Save"
+        android:backgroundTint="@color/accent"
+        android:textColor="@color/bg" />
+</LinearLayout>
