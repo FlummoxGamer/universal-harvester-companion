@@ -92,116 +92,116 @@ class CustomizeHomeActivity : AppCompatActivity() {
         )
     )
 
-private val pickImage = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-    if (uri != null) {
-        val mime = contentResolver.getType(uri)
-        if (mime != null && mime.startsWith("video/")) {
-            showTrimDialog(uri)
-        } else {
-            Toast.makeText(this, "Processing image...", Toast.LENGTH_SHORT).show()
-            lifecycleScope.launch(Dispatchers.IO) {
-                val localPath = WallpaperStore.saveWallpaper(this@CustomizeHomeActivity, uri)
-                withContext(Dispatchers.Main) {
-                    if (localPath != null) {
-                        val intent = Intent(this@CustomizeHomeActivity, WallpaperPreviewActivity::class.java).apply {
-                            putExtra("imagePath", localPath)
-                            putExtra("isCustom", true)
-                        }
-                        startActivity(intent)
-                    } else {
-                        Toast.makeText(this, "Failed to save wallpaper", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-        }
-    }
-}
-
-private fun showTrimDialog(uri: android.net.Uri) {
-    val retriever = android.media.MediaMetadataRetriever()
-    retriever.setDataSource(this, uri)
-    val durationMs = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-    val durationSec = (durationMs / 1000).toFloat()
-
-    val view = layoutInflater.inflate(R.layout.dialog_trim_video, null)
-    val slider = view.findViewById<com.google.android.material.slider.RangeSlider>(R.id.rangeSlider)
-    val tvDuration = view.findViewById<android.widget.TextView>(R.id.tvTrimDuration)
-
-    slider.valueTo = durationSec
-    slider.values = listOf(0f, kotlin.math.min(durationSec, 15f))
-
-    slider.addOnChangeListener { _, _, _ ->
-        tvDuration.text = "Selected: ${slider.values[0].toInt()}s - ${slider.values[1].toInt()}s"
-    }
-
-    val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
-        .setView(view)
-        .setCancelable(false)
-        .create()
-
-    view.findViewById<android.widget.Button>(R.id.btnApplyTrim).setOnClickListener {
-        val start = slider.values[0].toInt()
-        val end = slider.values[1].toInt()
-        dialog.dismiss()
-        processAndSaveVideo(uri, start, end)
-    }
-    dialog.show()
-}
-
-private fun processAndSaveVideo(uri: android.net.Uri, startSec: Int, endSec: Int) {
-    val progress = android.app.ProgressDialog(this).apply {
-        setMessage("Compressing video...")
-        setCancelable(false)
-        show()
-    }
-
-    val inputFile = java.io.File(cacheDir, "input_${System.currentTimeMillis()}.mp4")
-    val outputFile = java.io.File(cacheDir, "output_${System.currentTimeMillis()}.mp4")
-
-    lifecycleScope.launch(Dispatchers.IO) {
-        try {
-            contentResolver.openInputStream(uri)?.use { input ->
-                inputFile.outputStream().use { output -> input.copyTo(output) }
-            }
-
-            val cmd = "-y -ss $startSec -to $endSec -i ${inputFile.absolutePath} -c:v libx264 -crf 23 -preset ultrafast ${outputFile.absolutePath}"
-            
-            com.arthenica.ffmpegkit.FFmpegKit.executeAsync(cmd) { session ->
-                val returnCode = session.returnCode
-                if (com.arthenica.ffmpegkit.ReturnCode.isSuccess(returnCode)) {
-                    val finalPath = WallpaperStore.saveMotionWallpaperFile(this@CustomizeHomeActivity, outputFile)
-                    runOnUiThread {
-                        progress.dismiss()
-                        if (finalPath != null) {
+    private val pickImage = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            val mime = contentResolver.getType(uri)
+            if (mime != null && mime.startsWith("video/")) {
+                showTrimDialog(uri)
+            } else {
+                Toast.makeText(this, "Processing image...", Toast.LENGTH_SHORT).show()
+                lifecycleScope.launch(Dispatchers.IO) {
+                    val localPath = WallpaperStore.saveWallpaper(this@CustomizeHomeActivity, uri)
+                    withContext(Dispatchers.Main) {
+                        if (localPath != null) {
                             val intent = Intent(this@CustomizeHomeActivity, WallpaperPreviewActivity::class.java).apply {
-                                putExtra("imagePath", finalPath)
+                                putExtra("imagePath", localPath)
                                 putExtra("isCustom", true)
-                                putExtra("isVideo", true)
                             }
                             startActivity(intent)
                         } else {
-                            Toast.makeText(this@CustomizeHomeActivity, "Failed to save video", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this, "Failed to save wallpaper", Toast.LENGTH_SHORT).show()
                         }
                     }
-                } else {
-                    runOnUiThread {
-                        progress.dismiss()
-                        UHLog.e("video", "FFmpeg failed: ${session.failStackTrace}")
-                        Toast.makeText(this@CustomizeHomeActivity, "Compression failed", Toast.LENGTH_SHORT).show()
-                    }
                 }
-                inputFile.delete()
-                outputFile.delete()
-            }
-        } catch (e: Exception) {
-            runOnUiThread {
-                progress.dismiss()
-                UHLog.e("video", "Video processing error: ${e.message}")
-                Toast.makeText(this@CustomizeHomeActivity, "Error processing video", Toast.LENGTH_SHORT).show()
             }
         }
     }
-}
+
+    private fun showTrimDialog(uri: android.net.Uri) {
+        val retriever = android.media.MediaMetadataRetriever()
+        retriever.setDataSource(this, uri)
+        val durationMs = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+        val durationSec = (durationMs / 1000).toFloat()
+
+        val view = layoutInflater.inflate(R.layout.dialog_trim_video, null)
+        val slider = view.findViewById<com.google.android.material.slider.RangeSlider>(R.id.rangeSlider)
+        val tvDuration = view.findViewById<android.widget.TextView>(R.id.tvTrimDuration)
+
+        slider.valueTo = durationSec
+        slider.values = listOf(0f, kotlin.math.min(durationSec, 15f))
+
+        slider.addOnChangeListener { _, _, _ ->
+            tvDuration.text = "Selected: ${slider.values[0].toInt()}s - ${slider.values[1].toInt()}s"
+        }
+
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setView(view)
+            .setCancelable(false)
+            .create()
+
+        view.findViewById<android.widget.Button>(R.id.btnApplyTrim).setOnClickListener {
+            val start = slider.values[0].toInt()
+            val end = slider.values[1].toInt()
+            dialog.dismiss()
+            processAndSaveVideo(uri, start, end)
+        }
+        dialog.show()
+    }
+
+    private fun processAndSaveVideo(uri: android.net.Uri, startSec: Int, endSec: Int) {
+        val progress = android.app.ProgressDialog(this).apply {
+            setMessage("Compressing video...")
+            setCancelable(false)
+            show()
+        }
+
+        val inputFile = java.io.File(cacheDir, "input_${System.currentTimeMillis()}.mp4")
+        val outputFile = java.io.File(cacheDir, "output_${System.currentTimeMillis()}.mp4")
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                contentResolver.openInputStream(uri)?.use { input ->
+                    inputFile.outputStream().use { output -> input.copyTo(output) }
+                }
+
+                val cmd = "-y -ss $startSec -to $endSec -i ${inputFile.absolutePath} -c:v libx264 -crf 23 -preset ultrafast ${outputFile.absolutePath}"
+                
+                com.arthenica.ffmpegkit.FFmpegKit.executeAsync(cmd) { session ->
+                    val returnCode = session.returnCode
+                    if (com.arthenica.ffmpegkit.ReturnCode.isSuccess(returnCode)) {
+                        val finalPath = WallpaperStore.saveMotionWallpaperFile(this@CustomizeHomeActivity, outputFile)
+                        runOnUiThread {
+                            progress.dismiss()
+                            if (finalPath != null) {
+                                val intent = Intent(this@CustomizeHomeActivity, WallpaperPreviewActivity::class.java).apply {
+                                    putExtra("imagePath", finalPath)
+                                    putExtra("isCustom", true)
+                                    putExtra("isVideo", true)
+                                }
+                                startActivity(intent)
+                            } else {
+                                Toast.makeText(this@CustomizeHomeActivity, "Failed to save video", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    } else {
+                        runOnUiThread {
+                            progress.dismiss()
+                            UHLog.e("video", "FFmpeg failed: ${session.failStackTrace}")
+                            Toast.makeText(this@CustomizeHomeActivity, "Compression failed", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    inputFile.delete()
+                    outputFile.delete()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    progress.dismiss()
+                    UHLog.e("video", "Video processing error: ${e.message}")
+                    Toast.makeText(this@CustomizeHomeActivity, "Error processing video", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -241,12 +241,7 @@ private fun processAndSaveVideo(uri: android.net.Uri, startSec: Int, endSec: Int
                 }
                 is WallpaperItem.Remote -> {}
             }
-        }, onLongClick = { item ->
-            if (item is WallpaperItem.Custom || item is WallpaperItem.Motion) {
-                val path = if (item is WallpaperItem.Custom) item.uri else (item as WallpaperItem.Motion).uri
-                showContextMenu(recentRecycler.findViewHolderForAdapterPosition(0)?.itemView, path)
-            }
-        })
+        }, onLongClick = { _, _ -> })
         recentRecycler.adapter = recentAdapter
 
         val callback = object : ItemTouchHelper.SimpleCallback(
@@ -369,7 +364,7 @@ private fun processAndSaveVideo(uri: android.net.Uri, startSec: Int, endSec: Int
                     }
                     startActivity(intent)
                 }
-            }, onLongClick = { })
+            }, onLongClick = { _, _ -> })
             rv.adapter = adapter
             genreAdapters.add(adapter)
             defaultContainer.addView(rv)
@@ -421,41 +416,45 @@ private fun processAndSaveVideo(uri: android.net.Uri, startSec: Int, endSec: Int
         }
     }
 
-private fun showContextMenu(anchor: View?, path: String) {
-    if (anchor == null) return
-    val popupView = layoutInflater.inflate(R.layout.dialog_context_menu, null)
-    val popup = android.widget.PopupWindow(
-        popupView,
-        ViewGroup.LayoutParams.WRAP_CONTENT,
-        ViewGroup.LayoutParams.WRAP_CONTENT,
-        true
-    )
-    popup.elevation = 16f
+    private fun showContextMenu(anchor: View?, path: String) {
+        if (anchor == null) return
+        val popupView = layoutInflater.inflate(R.layout.dialog_context_menu, null)
+        
+        popupView.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+        
+        val popup = android.widget.PopupWindow(
+            popupView,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            true
+        )
+        popup.elevation = 16f
 
-    popupView.findViewById<View>(R.id.rowSetWallpaper).setOnClickListener {
-        popup.dismiss()
-        val isVideo = path.endsWith(".mp4")
-        val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
-            putExtra("imagePath", path)
-            putExtra("isCustom", true)
-            putExtra("isVideo", isVideo)
+        popupView.findViewById<View>(R.id.rowSetWallpaper).setOnClickListener {
+            popup.dismiss()
+            val isVideo = path.endsWith(".mp4")
+            val intent = Intent(this, WallpaperPreviewActivity::class.java).apply {
+                putExtra("imagePath", path)
+                putExtra("isCustom", true)
+                putExtra("isVideo", isVideo)
+            }
+            startActivity(intent)
         }
-        startActivity(intent)
+
+        popupView.findViewById<View>(R.id.rowDelete).setOnClickListener {
+            popup.dismiss()
+            WallpaperStore.deleteWallpaper(path)
+            loadWallpapers()
+        }
+
+        val location = IntArray(2)
+        anchor.getLocationOnScreen(location)
+        
+        val x = location[0] + (anchor.width / 2) - (popupView.measuredWidth / 2)
+        val y = location[1] + anchor.height - 16
+
+        popup.showAtLocation(anchor, android.view.Gravity.NO_GRAVITY, Math.max(0, x), y)
     }
-
-    popupView.findViewById<View>(R.id.rowDelete).setOnClickListener {
-        popup.dismiss()
-        WallpaperStore.deleteWallpaper(path)
-        loadWallpapers()
-    }
-
-    val location = IntArray(2)
-    anchor.getLocationOnScreen(location)
-    val x = location[0]
-    val y = location[1] + anchor.height - 16
-
-    popup.showAtLocation(anchor, android.view.Gravity.NO_GRAVITY, x, y)
-}
 }
 
 sealed class WallpaperItem {
@@ -552,17 +551,21 @@ class WallpaperAdapter(
             }
             is WallpaperItem.Motion -> {
                 h.image.visibility = View.VISIBLE
-                val thumb = WallpaperStore.generateVideoThumbnail(item.uri)
-                if (thumb != null) {
-                    h.image.setImageBitmap(thumb)
-                } else {
-                    h.image.setImageResource(R.drawable.ic_downloads)
+                val imageToLoad: Any = if (item.uri.startsWith("http")) item.uri else File(item.uri)
+                h.image.load(imageToLoad) {
+                    videoFrameMillis(1000)
+                    crossfade(true)
+                    error(R.drawable.ic_downloads)
                 }
             }
             is WallpaperItem.Remote -> {
                 h.image.visibility = View.VISIBLE
                 if (item.url.endsWith(".mp4")) {
-                    h.image.setImageResource(R.drawable.ic_downloads)
+                    h.image.load(item.url) {
+                        videoFrameMillis(1000)
+                        crossfade(true)
+                        error(R.drawable.ic_downloads)
+                    }
                 } else {
                     h.image.load(item.url) {
                         crossfade(true)
@@ -572,6 +575,7 @@ class WallpaperAdapter(
         }
 
         h.itemView.setOnClickListener { onClick(item) }
+        h.itemView.setOnLongClickListener { onLongClick(item, h.itemView); true }
     }
 
     companion object DiffCallback : DiffUtil.ItemCallback<WallpaperItem>() {
