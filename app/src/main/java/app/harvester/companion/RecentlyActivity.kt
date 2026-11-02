@@ -59,19 +59,96 @@ class RecentlyActivity : AppCompatActivity() {
         })
         recycler.adapter = recentAdapter
 
-        val touchHelper = ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
-            ItemTouchHelper.UP or ItemTouchHelper.DOWN or ItemTouchHelper.START or ItemTouchHelper.END, 0
-        ) {
-            override fun onMove(rv: RecyclerView, vh: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder): Boolean {
-                val fromPos = vh.adapterPosition
-                val toPos = target.adapterPosition
-                if (fromPos < 0 || toPos < 0) return false
-                recentAdapter.moveItem(fromPos, toPos)
-                return true
+val touchHelper = ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
+    ItemTouchHelper.UP or ItemTouchHelper.DOWN or ItemTouchHelper.START or ItemTouchHelper.END, 0
+) {
+    override fun onMove(rv: RecyclerView, vh: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder): Boolean {
+        val fromPos = vh.adapterPosition
+        val toPos = target.adapterPosition
+        if (fromPos < 0 || toPos < 0) return false
+        recentAdapter.moveItem(fromPos, toPos)
+        return true
+    }
+    override fun onSwiped(vh: RecyclerView.ViewHolder, direction: Int) {}
+    override fun isLongPressDragEnabled(): Boolean = false
+})
+touchHelper.attachToRecyclerView(recycler)
+
+recycler.addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var dragRunnable: Runnable? = null
+    private var editRunnable: Runnable? = null
+    private var downX = 0f
+    private var downY = 0f
+    private var isDragReady = false
+    private var isDragging = false
+    private var isPopupShowing = false
+
+    override fun onInterceptTouchEvent(rv: RecyclerView, e: android.view.MotionEvent): Boolean {
+        when (e.action) {
+            android.view.MotionEvent.ACTION_DOWN -> {
+                downX = e.x
+                downY = e.y
+                isDragReady = false
+                isDragging = false
+                isPopupShowing = false
+                val child = rv.findChildViewUnder(e.x, e.y)
+                if (child != null) {
+                    val pos = rv.getChildAdapterPosition(child)
+                    if (pos in 0 until recentAdapter.itemCount) {
+                        dragRunnable = Runnable { isDragReady = true }
+                        handler.postDelayed(dragRunnable!!, 150)
+
+                        editRunnable = Runnable {
+                            if (!isDragging && !isPopupShowing) {
+                                isPopupShowing = true
+                                val item = recentAdapter.getItemAt(pos)
+                                val path = when(item) {
+                                    is WallpaperItem.Custom -> item.uri
+                                    is WallpaperItem.Motion -> item.uri
+                                    is WallpaperItem.Remote -> item.url
+                                    else -> ""
+                                }
+                                if (path.isNotEmpty()) showContextMenu(child, path)
+                            }
+                        }
+                        handler.postDelayed(editRunnable!!, 500)
+                    }
+                }
             }
-            override fun onSwiped(vh: RecyclerView.ViewHolder, direction: Int) {}
-        })
-        touchHelper.attachToRecyclerView(recycler)
+            android.view.MotionEvent.ACTION_MOVE -> {
+                if (isPopupShowing) return false
+                val dx = Math.abs(e.x - downX)
+                val dy = Math.abs(e.y - downY)
+                if (dx > 20 || dy > 20) {
+                    editRunnable?.let { handler.removeCallbacks(it) }
+                    editRunnable = null
+                    
+                    if (isDragReady && !isDragging) {
+                        isDragging = true
+                        val child = rv.findChildViewUnder(downX, downY)
+                        if (child != null) {
+                            val pos = rv.getChildAdapterPosition(child)
+                            if (pos in 0 until recentAdapter.itemCount) {
+                                touchHelper.startDrag(rv.findViewHolderForAdapterPosition(pos)!!)
+                            }
+                        }
+                    } else if (!isDragReady) {
+                        dragRunnable?.let { handler.removeCallbacks(it) }
+                        dragRunnable = null
+                    }
+                }
+            }
+            android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                dragRunnable?.let { handler.removeCallbacks(it) }
+                dragRunnable = null
+                editRunnable?.let { handler.removeCallbacks(it) }
+                editRunnable = null
+            }
+        }
+        return false
+    }
+})
 
         loadWallpapers()
     }
@@ -106,6 +183,7 @@ class RecentlyActivity : AppCompatActivity() {
             true
         )
         popup.elevation = 16f
+        popup.width = (240 * resources.displayMetrics.density).toInt()
 
         popupView.findViewById<View>(R.id.rowSetWallpaper).setOnClickListener {
             popup.dismiss()
