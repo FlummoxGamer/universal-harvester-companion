@@ -166,9 +166,11 @@ inner class PreviewAdapter(private val items: List<String>) : RecyclerView.Adapt
         val bgColor = com.google.android.material.color.MaterialColors.getColor(h.itemView, androidx.appcompat.R.attr.colorBackgroundFloating)
 
         val touchImage = h.itemView.findViewById<app.harvester.companion.TouchImageView>(R.id.previewImage)
+        touchImage?.scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
         touchImage?.minZoom = app.harvester.companion.TouchImageView.AUTOMATIC_MIN_ZOOM
         touchImage?.maxZoom = 3f
         touchImage?.isZoomEnabled = true
+        touchImage?.resetZoom()
 
         val mockAddressBar = h.itemView.findViewById<LinearLayout>(R.id.previewMockAddressBar)
         mockAddressBar?.setBackgroundColor(surfaceColor)
