@@ -2,18 +2,24 @@ package app.harvester.companion
 
 import android.app.ProgressDialog
 import android.content.Intent
+import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
-import android.view.View
+import android.view.LayoutInflater
+import android.view.ViewGroup
 import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.slider.RangeSlider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class TrimVideoActivity : AppCompatActivity() {
@@ -22,8 +28,10 @@ class TrimVideoActivity : AppCompatActivity() {
     private lateinit var exoPlayer: androidx.media3.exoplayer.ExoPlayer
     private lateinit var slider: RangeSlider
     private lateinit var tvDuration: TextView
+    private lateinit var framesRecycler: RecyclerView
     private var videoUri: Uri? = null
     private var durationSec: Float = 0f
+    private var isDragging = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,6 +47,7 @@ class TrimVideoActivity : AppCompatActivity() {
         playerView = findViewById(R.id.trimPlayerView)
         slider = findViewById(R.id.rangeSlider)
         tvDuration = findViewById(R.id.tvTrimDuration)
+        framesRecycler = findViewById(R.id.framesRecycler)
 
         val retriever = MediaMetadataRetriever()
         retriever.setDataSource(this, videoUri)
@@ -47,16 +56,31 @@ class TrimVideoActivity : AppCompatActivity() {
         retriever.release()
 
         slider.valueTo = durationSec
-        slider.values = listOf(0f, kotlin.math.min(durationSec, 10f))
+        slider.values = listOf(0f, kotlin.math.min(durationSec, 15f))
         updateDurationText()
 
-        slider.addOnChangeListener { _, _, _ -> updateDurationText() }
+        framesRecycler.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
+        
+        lifecycleScope.launch(Dispatchers.IO) {
+            val frames = extractFrames(videoUri!!, durationSec)
+            withContext(Dispatchers.Main) {
+                framesRecycler.adapter = FrameAdapter(frames)
+            }
+        }
+
+        slider.addOnChangeListener { _, _, fromUser ->
+            if (fromUser) {
+                updateDurationText()
+                exoPlayer.seekTo((slider.values[0] * 1000).toLong())
+            }
+        }
 
         exoPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(this).build()
         playerView.player = exoPlayer
         val mediaItem = androidx.media3.common.MediaItem.fromUri(videoUri)
         exoPlayer.setMediaItem(mediaItem)
         exoPlayer.volume = 0f
+        exoPlayer.repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
         exoPlayer.prepare()
         exoPlayer.play()
 
@@ -66,6 +90,25 @@ class TrimVideoActivity : AppCompatActivity() {
             val end = slider.values[1].toInt()
             processAndSaveVideo(start, end)
         }
+    }
+
+    private fun extractFrames(uri: Uri, duration: Float): List<Bitmap> {
+        val frames = mutableListOf<Bitmap>()
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(this, uri)
+            val numFrames = 10
+            val interval = (duration / numFrames).coerceAtLeast(1f)
+            for (i in 0 until numFrames) {
+                val timeUs = (i * interval * 1_000_000).toLong()
+                val bmp = retriever.getScaledFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 128, 128)
+                if (bmp != null) frames.add(bmp)
+            }
+        } catch (_: Exception) {
+        } finally {
+            retriever.release()
+        }
+        return frames
     }
 
     private fun updateDurationText() {
@@ -132,5 +175,22 @@ class TrimVideoActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         exoPlayer.release()
+    }
+
+    private class FrameAdapter(private val frames: List<Bitmap>) : RecyclerView.Adapter<FrameAdapter.VH>() {
+        class VH(v: android.view.View) : RecyclerView.ViewHolder(v) {
+            val image: ImageView = v.findViewById(R.id.frameImage)
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
+            val v = LayoutInflater.from(parent.context).inflate(R.layout.item_trim_frame, parent, false)
+            return VH(v)
+        }
+
+        override fun onBindViewHolder(holder: VH, position: Int) {
+            holder.image.setImageBitmap(frames[position])
+        }
+
+        override fun getItemCount() = frames.size
     }
 }
