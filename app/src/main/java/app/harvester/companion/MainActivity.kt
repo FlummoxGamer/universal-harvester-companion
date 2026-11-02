@@ -119,8 +119,8 @@ androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, 
     binding.suggestionsPanel.setPadding(0, systemBars.top, 0, 0)
     try {
         val barH = binding.bottomBar.height
-        if (barH > 0) {
-            binding.webContainer.geckoView.updateVerticalClipping(barH, if (imeVisible) ime.bottom else 0)
+        if (barH > 0 && ::mainGeckoView.isInitialized) {
+            mainGeckoView.updateVerticalClipping(barH, if (imeVisible) ime.bottom else 0)
         }
     } catch (e: Throwable) {
         UHLog.e("insets", "clip update failed: ${e.message}")
