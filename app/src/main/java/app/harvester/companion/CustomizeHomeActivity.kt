@@ -37,14 +37,16 @@ class CustomizeHomeActivity : AppCompatActivity() {
 
     private val categorizedWallpapers = linkedMapOf(
         "Motion" to listOf(
-            "https://assets.mixkit.co/videos/preview/mixkit-stars-in-space-background-1610-large.mp4",
-            "https://assets.mixkit.co/videos/preview/mixkit-abstract-spheres-in-a-fluid-3d-animation-32853-large.mp4",
-            "https://assets.mixkit.co/videos/preview/mixkit-white-lines-moving-in-a-3d-space-32851-large.mp4",
-            "https://assets.mixkit.co/videos/preview/mixkit-blue-and-purple-lights-in-a-3d-space-32849-large.mp4",
-            "https://assets.mixkit.co/videos/preview/mixkit-abstract-background-with-flowing-particles-32855-large.mp4",
-            "https://assets.mixkit.co/videos/preview/mixkit-a-3d-render-of-a-molecular-structure-32856-large.mp4",
-            "https://assets.mixkit.co/videos/preview/mixkit-digital-animation-of-a-wireframe-globe-32857-large.mp4",
-            "https://assets.mixkit.co/videos/preview/mixkit-abstract-3d-fluid-animation-32858-large.mp4"
+            "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/motion/motion_1.mp4",
+            "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/motion/motion_2.mp4",
+            "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/motion/motion_3.mp4",
+            "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/motion/motion_4.mp4",
+            "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/motion/motion_5.mp4",
+            "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/motion/motion_6.mp4",
+            "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/motion/motion_7.mp4",
+            "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/motion/motion_8.mp4",
+            "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/motion/motion_9.mp4",
+            "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/motion/motion_10.mp4"
         ),
         "Anime" to listOf(
             "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/anime/anime_1.webp",
