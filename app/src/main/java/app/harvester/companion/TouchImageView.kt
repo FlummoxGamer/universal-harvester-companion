@@ -348,7 +348,8 @@ open class TouchImageView @JvmOverloads constructor(context: Context, attrs: Att
         }
 
     private fun orientationMismatch(drawable: Drawable?): Boolean {
-        return viewWidth > viewHeight != drawable!!.intrinsicWidth > drawable.intrinsicHeight
+        if (drawable == null) return false
+        return viewWidth > viewHeight != drawable.intrinsicWidth > drawable.intrinsicHeight
     }
 
     private fun getDrawableWidth(drawable: Drawable?): Int {
