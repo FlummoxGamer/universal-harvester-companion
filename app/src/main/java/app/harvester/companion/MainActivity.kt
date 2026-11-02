@@ -496,7 +496,7 @@ private fun showWidgetMenu(s: Shortcut, anchor: android.view.View) {
         true
     )
     popup.elevation = 16f
-    popup.width = (320 * resources.displayMetrics.density).toInt()
+    popup.width = (240 * resources.displayMetrics.density).toInt()
 
     popupView.findViewById<View>(R.id.rowEdit).setOnClickListener {
         popup.dismiss()
