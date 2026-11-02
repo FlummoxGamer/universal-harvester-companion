@@ -1917,7 +1917,8 @@ if (wpPath == null || wpPath == "default") {
             binding.wallpaperBackground.visibility = View.VISIBLE
             binding.homeScreen.setBackgroundColor(android.graphics.Color.TRANSPARENT)
 
-            val (zoom, panX, panY) = WallpaperStore.getWallpaperTransform(this)
+            val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            val (zoom, panX, panY) = WallpaperStore.getWallpaperTransform(this, isLandscape)
             val dw = bitmap.width.toFloat()
             val dh = bitmap.height.toFloat()
             val vw = binding.wallpaperBackground.width.toFloat()
