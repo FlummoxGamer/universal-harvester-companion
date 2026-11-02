@@ -68,6 +68,11 @@ class TrimVideoActivity : AppCompatActivity() {
 
         slider.addOnChangeListener { _, _, fromUser ->
             if (fromUser) {
+                val start = slider.values[0]
+                val end = slider.values[1]
+                if (end - start > 15f) {
+                    slider.values = listOf(start, start + 15f)
+                }
                 updateDurationText()
                 exoPlayer.seekTo((slider.values[0] * 1000).toLong())
             }
@@ -160,7 +165,7 @@ class TrimVideoActivity : AppCompatActivity() {
                     } else {
                         runOnUiThread {
                             progress.dismiss()
-                            UHLog.e("video", "FFmpeg failed: ${session.failStackTrace}")
+                            UHLog.e("video", "FFmpeg failed: ${session.failStackTrace} | Logs: ${session.allLogsAsString}")
                             Toast.makeText(this@TrimVideoActivity, "Compression failed", Toast.LENGTH_SHORT).show()
                         }
                     }
@@ -177,10 +182,12 @@ class TrimVideoActivity : AppCompatActivity() {
         }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        exoPlayer.release()
-    }
+override fun onDestroy() {
+    super.onDestroy()
+    playerView.player = null
+    exoPlayer.release()
+    com.arthenica.ffmpegkit.FFmpegKitConfig.clearSessions()
+}
 
     private class FrameAdapter(private val frames: List<Bitmap>) : RecyclerView.Adapter<FrameAdapter.VH>() {
         class VH(v: View) : RecyclerView.ViewHolder(v) {
