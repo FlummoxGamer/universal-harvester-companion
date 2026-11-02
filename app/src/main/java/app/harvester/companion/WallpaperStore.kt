@@ -13,6 +13,9 @@ object WallpaperStore {
     private const val KEY_CURRENT = "current_wallpaper_path"
     private const val KEY_TEXT_COLOR = "wallpaper_text_color"
     private const val KEY_IS_VIDEO = "wallpaper_is_video"
+    private const val KEY_ZOOM = "wallpaper_zoom"
+    private const val KEY_PAN_X = "wallpaper_pan_x"
+    private const val KEY_PAN_Y = "wallpaper_pan_y"
 
     private fun getPrefs(ctx: Context) = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -165,9 +168,24 @@ private fun getFastHash(file: File): String {
         return getPrefs(ctx).getBoolean(KEY_IS_VIDEO, false)
     }
 
-    fun getTextColor(ctx: Context): Int {
-        return getPrefs(ctx).getInt(KEY_TEXT_COLOR, 0)
-    }
+fun getTextColor(ctx: Context): Int {
+    return getPrefs(ctx).getInt(KEY_TEXT_COLOR, 0)
+}
+
+fun setWallpaperTransform(ctx: Context, zoom: Float, panX: Float, panY: Float) {
+    getPrefs(ctx).edit()
+        .putFloat(KEY_ZOOM, zoom)
+        .putFloat(KEY_PAN_X, panX)
+        .putFloat(KEY_PAN_Y, panY)
+        .apply()
+}
+
+fun getWallpaperTransform(ctx: Context): Triple<Float, Float, Float> {
+    val zoom = getPrefs(ctx).getFloat(KEY_ZOOM, 1f)
+    val panX = getPrefs(ctx).getFloat(KEY_PAN_X, 0.5f)
+    val panY = getPrefs(ctx).getFloat(KEY_PAN_Y, 0.5f)
+    return Triple(zoom, panX, panY)
+}
 
     fun getRecent(ctx: Context): List<String> {
         val dir = getWallpaperDir(ctx)
