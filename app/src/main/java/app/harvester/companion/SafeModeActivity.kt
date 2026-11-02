@@ -73,7 +73,7 @@ private fun clearCrashState() {
         val geckoDir = File(filesDir, "mozilla")
         if (geckoDir.exists()) geckoDir.deleteRecursively()
     } catch (_: Exception) {}
-    getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().clear().apply()
+    getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().putBoolean("force_safe_mode", false).apply()
 }
 
     private fun restartApp() {
@@ -81,7 +81,7 @@ private fun clearCrashState() {
         intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         startActivity(intent)
         finishAffinity()
-        Process.killProcess(Process.myPid())
+        Runtime.getRuntime().exit(0)
     }
 
     private fun stopAllProcesses() {
