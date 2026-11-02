@@ -13,9 +13,12 @@ object WallpaperStore {
     private const val KEY_CURRENT = "current_wallpaper_path"
     private const val KEY_TEXT_COLOR = "wallpaper_text_color"
     private const val KEY_IS_VIDEO = "wallpaper_is_video"
-    private const val KEY_ZOOM = "wallpaper_zoom"
-    private const val KEY_PAN_X = "wallpaper_pan_x"
-    private const val KEY_PAN_Y = "wallpaper_pan_y"
+    private const val KEY_ZOOM_PORTRAIT = "wallpaper_zoom_portrait"
+    private const val KEY_PAN_X_PORTRAIT = "wallpaper_pan_x_portrait"
+    private const val KEY_PAN_Y_PORTRAIT = "wallpaper_pan_y_portrait"
+    private const val KEY_ZOOM_LANDSCAPE = "wallpaper_zoom_landscape"
+    private const val KEY_PAN_X_LANDSCAPE = "wallpaper_pan_x_landscape"
+    private const val KEY_PAN_Y_LANDSCAPE = "wallpaper_pan_y_landscape"
 
     private fun getPrefs(ctx: Context) = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -172,18 +175,26 @@ fun getTextColor(ctx: Context): Int {
     return getPrefs(ctx).getInt(KEY_TEXT_COLOR, 0)
 }
 
-fun setWallpaperTransform(ctx: Context, zoom: Float, panX: Float, panY: Float) {
+fun setWallpaperTransform(ctx: Context, isLandscape: Boolean, zoom: Float, panX: Float, panY: Float) {
+    val zoomKey = if (isLandscape) KEY_ZOOM_LANDSCAPE else KEY_ZOOM_PORTRAIT
+    val panXKey = if (isLandscape) KEY_PAN_X_LANDSCAPE else KEY_PAN_X_PORTRAIT
+    val panYKey = if (isLandscape) KEY_PAN_Y_LANDSCAPE else KEY_PAN_Y_PORTRAIT
+    
     getPrefs(ctx).edit()
-        .putFloat(KEY_ZOOM, zoom)
-        .putFloat(KEY_PAN_X, panX)
-        .putFloat(KEY_PAN_Y, panY)
+        .putFloat(zoomKey, zoom)
+        .putFloat(panXKey, panX)
+        .putFloat(panYKey, panY)
         .apply()
 }
 
-fun getWallpaperTransform(ctx: Context): Triple<Float, Float, Float> {
-    val zoom = getPrefs(ctx).getFloat(KEY_ZOOM, 1f)
-    val panX = getPrefs(ctx).getFloat(KEY_PAN_X, 0.5f)
-    val panY = getPrefs(ctx).getFloat(KEY_PAN_Y, 0.5f)
+fun getWallpaperTransform(ctx: Context, isLandscape: Boolean): Triple<Float, Float, Float> {
+    val zoomKey = if (isLandscape) KEY_ZOOM_LANDSCAPE else KEY_ZOOM_PORTRAIT
+    val panXKey = if (isLandscape) KEY_PAN_X_LANDSCAPE else KEY_PAN_X_PORTRAIT
+    val panYKey = if (isLandscape) KEY_PAN_Y_LANDSCAPE else KEY_PAN_Y_PORTRAIT
+    
+    val zoom = getPrefs(ctx).getFloat(zoomKey, 1f)
+    val panX = getPrefs(ctx).getFloat(panXKey, 0.5f)
+    val panY = getPrefs(ctx).getFloat(panYKey, 0.5f)
     return Triple(zoom, panX, panY)
 }
 
