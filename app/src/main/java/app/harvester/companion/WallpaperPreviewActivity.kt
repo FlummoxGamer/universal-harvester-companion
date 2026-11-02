@@ -68,13 +68,12 @@ findViewById<android.view.View>(R.id.btnSet).setOnClickListener {
             WallpaperStore.setCurrentWallpaper(this, "default", 0, false)
             finish()
         } else {
+            val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
             val recyclerView = viewPager.getChildAt(0) as? RecyclerView
             val viewHolder = recyclerView?.findViewHolderForAdapterPosition(currentPos)
             val touchImage = viewHolder?.itemView?.findViewById<app.harvester.companion.TouchImageView>(R.id.previewImage)
             if (touchImage != null) {
-                val zoom = touchImage.currentZoom
-                val scroll = touchImage.scrollPosition
-                WallpaperStore.setWallpaperTransform(this, zoom, scroll.x, scroll.y)
+                WallpaperStore.setWallpaperTransform(this, isLandscape, touchImage.currentZoom, touchImage.scrollPosition.x, touchImage.scrollPosition.y)
             }
             extractColorAndSave(selectedUri)
         }
@@ -129,6 +128,29 @@ override fun onConfigurationChanged(newConfig: android.content.res.Configuration
     viewPager.setCurrentItem(currentPos, false)
 }
 
+override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+    super.onConfigurationChanged(newConfig)
+    
+    val oldIsLandscape = newConfig.orientation != android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val recyclerView = viewPager.getChildAt(0) as? RecyclerView
+    val currentPos = viewPager.currentItem
+    val holder = recyclerView?.findViewHolderForAdapterPosition(currentPos)
+    val touchImage = holder?.itemView?.findViewById<app.harvester.companion.TouchImageView>(R.id.previewImage)
+    
+    if (touchImage != null) {
+        WallpaperStore.setWallpaperTransform(
+            this@WallpaperPreviewActivity, 
+            oldIsLandscape, 
+            touchImage.currentZoom, 
+            touchImage.scrollPosition.x, 
+            touchImage.scrollPosition.y
+        )
+    }
+    
+    viewPager.adapter?.notifyDataSetChanged()
+    viewPager.setCurrentItem(currentPos, false)
+}
+
 inner class PreviewAdapter(private val items: List<String>) : RecyclerView.Adapter<PreviewAdapter.VH>() {
 
     override fun onViewRecycled(holder: VH) {
@@ -170,7 +192,16 @@ inner class PreviewAdapter(private val items: List<String>) : RecyclerView.Adapt
         touchImage?.minZoom = app.harvester.companion.TouchImageView.AUTOMATIC_MIN_ZOOM
         touchImage?.maxZoom = 3f
         touchImage?.isZoomEnabled = true
-        touchImage?.resetZoom()
+
+        val isLandscape = h.itemView.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        val (savedZoom, savedPanX, savedPanY) = WallpaperStore.getWallpaperTransform(this@WallpaperPreviewActivity, isLandscape)
+        if (savedZoom != 1f || savedPanX != 0.5f || savedPanY != 0.5f) {
+            h.itemView.post {
+                touchImage?.setZoom(savedZoom, savedPanX, savedPanY)
+            }
+        } else {
+            touchImage?.resetZoom()
+        }
 
         val mockAddressBar = h.itemView.findViewById<LinearLayout>(R.id.previewMockAddressBar)
         mockAddressBar?.setBackgroundColor(surfaceColor)
