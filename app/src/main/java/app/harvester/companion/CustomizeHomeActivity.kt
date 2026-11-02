@@ -118,36 +118,12 @@ class CustomizeHomeActivity : AppCompatActivity() {
         }
     }
 
-    private fun showTrimDialog(uri: android.net.Uri) {
-        val retriever = android.media.MediaMetadataRetriever()
-        retriever.setDataSource(this, uri)
-        val durationMs = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-        val durationSec = (durationMs / 1000).toFloat()
-
-        val view = layoutInflater.inflate(R.layout.dialog_trim_video, null)
-        val slider = view.findViewById<com.google.android.material.slider.RangeSlider>(R.id.rangeSlider)
-        val tvDuration = view.findViewById<android.widget.TextView>(R.id.tvTrimDuration)
-
-        slider.valueTo = durationSec
-        slider.values = listOf(0f, kotlin.math.min(durationSec, 15f))
-
-        slider.addOnChangeListener { _, _, _ ->
-            tvDuration.text = "Selected: ${slider.values[0].toInt()}s - ${slider.values[1].toInt()}s"
-        }
-
-        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
-            .setView(view)
-            .setCancelable(false)
-            .create()
-
-        view.findViewById<android.widget.Button>(R.id.btnApplyTrim).setOnClickListener {
-            val start = slider.values[0].toInt()
-            val end = slider.values[1].toInt()
-            dialog.dismiss()
-            processAndSaveVideo(uri, start, end)
-        }
-        dialog.show()
+private fun showTrimDialog(uri: android.net.Uri) {
+    val intent = Intent(this, TrimVideoActivity::class.java).apply {
+        putExtra("videoUri", uri.toString())
     }
+    startActivity(intent)
+}
 
     private fun processAndSaveVideo(uri: android.net.Uri, startSec: Int, endSec: Int) {
         val progress = android.app.ProgressDialog(this).apply {
