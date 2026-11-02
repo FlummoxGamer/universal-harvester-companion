@@ -43,10 +43,10 @@
             android:id="@+id/swipeRefresh"
             android:layout_width="match_parent"
             android:layout_height="match_parent">
-            <app.harvester.companion.GeckoEngineView
-                android:id="@+id/webContainer"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent" />
+            <FrameLayout
+                 android:id="@+id/webContainer"
+                 android:layout_width="match_parent"
+                 android:layout_height="match_parent" />
         </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
         <LinearLayout
