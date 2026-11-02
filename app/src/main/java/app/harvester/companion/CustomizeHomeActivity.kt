@@ -430,6 +430,7 @@ class CustomizeHomeActivity : AppCompatActivity() {
             true
         )
         popup.elevation = 16f
+        popup.width = (320 * resources.displayMetrics.density).toInt()
 
         popupView.findViewById<View>(R.id.rowSetWallpaper).setOnClickListener {
             popup.dismiss()
