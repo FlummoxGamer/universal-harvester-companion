@@ -22,7 +22,7 @@ override fun newImageLoader(): coil.ImageLoader {
     return coil.ImageLoader.Builder(this)
         .components {
             add(coil.decode.VideoFrameDecoder.Factory())
-            add(coil.gif.GifDecoder.Factory())
+            add(coil.decode.GifDecoder.Factory())
         }
         .crossfade(true)
         .build()
