@@ -7,6 +7,7 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.ImageView
@@ -29,9 +30,6 @@ class TrimVideoActivity : AppCompatActivity() {
     private lateinit var slider: RangeSlider
     private lateinit var tvDuration: TextView
     private lateinit var framesRecycler: RecyclerView
-    private var videoUri: Uri? = null
-    private var durationSec: Float = 0f
-    private var isDragging = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,7 +40,7 @@ class TrimVideoActivity : AppCompatActivity() {
 
         val uriString = intent.getStringExtra("videoUri")
         if (uriString == null) { finish(); return }
-        videoUri = Uri.parse(uriString)
+        val videoUri = Uri.parse(uriString)
 
         playerView = findViewById(R.id.trimPlayerView)
         slider = findViewById(R.id.rangeSlider)
@@ -50,9 +48,9 @@ class TrimVideoActivity : AppCompatActivity() {
         framesRecycler = findViewById(R.id.framesRecycler)
 
         val retriever = MediaMetadataRetriever()
-        retriever.setDataSource(this, videoUri!!)
+        retriever.setDataSource(this, videoUri)
         val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-        durationSec = (durationMs / 1000).toFloat()
+        val durationSec = (durationMs / 1000).toFloat()
         retriever.release()
 
         slider.valueTo = durationSec
@@ -62,7 +60,7 @@ class TrimVideoActivity : AppCompatActivity() {
         framesRecycler.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         
         lifecycleScope.launch(Dispatchers.IO) {
-            val frames = extractFrames(videoUri!!, durationSec)
+            val frames = extractFrames(videoUri, durationSec)
             withContext(Dispatchers.Main) {
                 framesRecycler.adapter = FrameAdapter(frames)
             }
@@ -76,6 +74,13 @@ class TrimVideoActivity : AppCompatActivity() {
         }
 
         exoPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(this).build()
+        exoPlayer.addListener(object : androidx.media3.common.Player.Listener {
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                UHLog.e("video", "Trim preview error: ${error.message}")
+                Toast.makeText(this@TrimVideoActivity, "Cannot play this video format", Toast.LENGTH_SHORT).show()
+            }
+        })
+        
         playerView.player = exoPlayer
         val mediaItem = androidx.media3.common.MediaItem.fromUri(videoUri)
         exoPlayer.setMediaItem(mediaItem)
@@ -88,7 +93,7 @@ class TrimVideoActivity : AppCompatActivity() {
         findViewById<ImageButton>(R.id.btnSaveTrim).setOnClickListener {
             val start = slider.values[0].toInt()
             val end = slider.values[1].toInt()
-            processAndSaveVideo(start, end)
+            processAndSaveVideo(videoUri, start, end)
         }
     }
 
@@ -115,8 +120,7 @@ class TrimVideoActivity : AppCompatActivity() {
         tvDuration.text = "Selected: ${slider.values[0].toInt()}s - ${slider.values[1].toInt()}s"
     }
 
-    private fun processAndSaveVideo(startSec: Int, endSec: Int) {
-        val uri = videoUri ?: return
+    private fun processAndSaveVideo(uri: Uri, startSec: Int, endSec: Int) {
         val progress = ProgressDialog(this).apply {
             setMessage("Compressing video...")
             setCancelable(false)
@@ -132,7 +136,8 @@ class TrimVideoActivity : AppCompatActivity() {
                     inputFile.outputStream().use { output -> input.copyTo(output) }
                 }
 
-                val cmd = "-y -ss $startSec -to $endSec -i ${inputFile.absolutePath} -c:v libx264 -crf 23 -preset ultrafast ${outputFile.absolutePath}"
+                val duration = endSec - startSec
+                val cmd = "-y -ss $startSec -t $duration -i ${inputFile.absolutePath} -c:v libx264 -crf 23 -preset ultrafast ${outputFile.absolutePath}"
                 
                 com.arthenica.ffmpegkit.FFmpegKit.executeAsync(cmd) { session ->
                     val returnCode = session.returnCode
@@ -178,7 +183,7 @@ class TrimVideoActivity : AppCompatActivity() {
     }
 
     private class FrameAdapter(private val frames: List<Bitmap>) : RecyclerView.Adapter<FrameAdapter.VH>() {
-        class VH(v: android.view.View) : RecyclerView.ViewHolder(v) {
+        class VH(v: View) : RecyclerView.ViewHolder(v) {
             val image: ImageView = v.findViewById(R.id.frameImage)
         }
 
