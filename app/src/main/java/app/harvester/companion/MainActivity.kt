@@ -90,10 +90,10 @@ setContentView(binding.root)
 val t2 = System.currentTimeMillis()
 UHLog.d("perf", "inflate: ${t1 - t0}ms, setContentView: ${t2 - t1}ms")
 
-val geckoView = GeckoEngineView(this)
-geckoView.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-binding.webContainer.addView(geckoView)
-mainGeckoView = geckoView.geckoView
+val engineView = GeckoEngineView(this)
+engineView.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+binding.webContainer.addView(engineView)
+mainGeckoView = engineView.geckoView
 
 if (savedInstanceState != null) {
     binding.splashScreen.visibility = View.GONE
