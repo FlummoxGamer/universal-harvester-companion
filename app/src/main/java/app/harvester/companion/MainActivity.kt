@@ -83,8 +83,12 @@ if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU)
     }
 }
 
+val t0 = System.currentTimeMillis()
 binding = ActivityMainBinding.inflate(layoutInflater)
+val t1 = System.currentTimeMillis()
 setContentView(binding.root)
+val t2 = System.currentTimeMillis()
+UHLog.d("perf", "inflate: ${t1 - t0}ms, setContentView: ${t2 - t1}ms")
 
 if (savedInstanceState != null) {
     binding.splashScreen.visibility = View.GONE
