@@ -60,18 +60,26 @@ if (recent.isEmpty()) {
             viewPager.setCurrentItem(initialIndex, false)
         }
 
-        findViewById<android.view.View>(R.id.btnSet).setOnClickListener {
-            val currentPos = viewPager.currentItem
-            if (currentPos in uris.indices) {
-                val selectedUri = uris[currentPos]
-                if (selectedUri == "default") {
-                    WallpaperStore.setCurrentWallpaper(this, "default", 0)
-                    finish()
-                } else {
-                    extractColorAndSave(selectedUri)
-                }
+findViewById<android.view.View>(R.id.btnSet).setOnClickListener {
+    val currentPos = viewPager.currentItem
+    if (currentPos in uris.indices) {
+        val selectedUri = uris[currentPos]
+        if (selectedUri == "default") {
+            WallpaperStore.setCurrentWallpaper(this, "default", 0, false)
+            finish()
+        } else {
+            val recyclerView = viewPager.getChildAt(0) as? RecyclerView
+            val viewHolder = recyclerView?.findViewHolderForAdapterPosition(currentPos)
+            val touchImage = viewHolder?.itemView?.findViewById<app.harvester.companion.TouchImageView>(R.id.previewImage)
+            if (touchImage != null) {
+                val zoom = touchImage.currentZoom
+                val scroll = touchImage.scrollPosition
+                WallpaperStore.setWallpaperTransform(this, zoom, scroll.x, scroll.y)
             }
+            extractColorAndSave(selectedUri)
         }
+    }
+}
     }
 
     private fun extractColorAndSave(uriString: String) {
@@ -113,6 +121,13 @@ if (recent.isEmpty()) {
             }
         }
     }
+
+override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+    super.onConfigurationChanged(newConfig)
+    viewPager.adapter?.notifyDataSetChanged()
+    val currentPos = viewPager.currentItem
+    viewPager.setCurrentItem(currentPos, false)
+}
 
 inner class PreviewAdapter(private val items: List<String>) : RecyclerView.Adapter<PreviewAdapter.VH>() {
 
@@ -176,7 +191,10 @@ inner class PreviewAdapter(private val items: List<String>) : RecyclerView.Adapt
                 val exoPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(this@WallpaperPreviewActivity).build()
                 playerView.player = exoPlayer
                 val mediaUri: android.net.Uri = if (item.startsWith("http")) android.net.Uri.parse(item) else android.net.Uri.fromFile(java.io.File(item))
-                val mediaItem = androidx.media3.common.MediaItem.fromUri(mediaUri)
+                val mediaItem = androidx.media3.common.MediaItem.Builder()
+                    .setUri(mediaUri)
+                    .setMimeType(androidx.media3.common.MimeTypes.APPLICATION_MP4)
+                    .build()
                 exoPlayer.setMediaItem(mediaItem)
                 exoPlayer.volume = 0f
                 exoPlayer.repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
