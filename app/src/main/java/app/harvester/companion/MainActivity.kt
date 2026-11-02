@@ -85,7 +85,6 @@ if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU)
 
 binding = ActivityMainBinding.inflate(layoutInflater)
 setContentView(binding.root)
-UHLog.d("perf", "MainActivity setContentView took ${System.currentTimeMillis() - start}ms")
 
 if (savedInstanceState != null) {
     binding.splashScreen.visibility = View.GONE
@@ -121,29 +120,22 @@ androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, 
 
     insets
 }
+
 tabs = TabManager.get(this)
-setupWebExtensionBridge()
+mainGeckoView = binding.webContainer.geckoView
+MenuCommandStore.listener = { runOnUiThread { updateUi() } }
+setupHomeGrid()
+setupBottomBar()
+setupSuggestions()
+setupSwipeRefresh()
+setupBackDispatcher()
 
 android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
     try {
-        GeckoEngine.getRuntime(this@MainActivity)
-        tabs.preWarm()
-        GeckoEngine.getRuntime(this@MainActivity)?.warmUp()
-        val searchHost = SearchEnginePrefs.currentEntry(this@MainActivity).host
+        GeckoEngine.getRuntime(this)
+        setupWebExtensionBridge()
+        val searchHost = SearchEnginePrefs.currentEntry(this).host
         GeckoEngine.speculativeConnect("https://$searchHost")
-    } catch (e: Throwable) {
-        UHLog.e("gecko", "GeckoRuntime init failed: ${e.message}")
-    }
-}, 300)
-
-        mainGeckoView = binding.webContainer.geckoView
-        MenuCommandStore.listener = { runOnUiThread { updateUi() } }
-
-        setupHomeGrid()
-        setupBottomBar()
-        setupSuggestions()
-        setupSwipeRefresh()
-        setupBackDispatcher()
 
         val existing = tabs.list()
         if (existing.isEmpty()) {
@@ -158,8 +150,14 @@ android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
         }
         attachCurrent()
         applyAddressBarPosition()
-
-    UHLog.d("main", "onCreate complete")
+        UHLog.d("main", "onCreate complete")
+    } catch (e: Throwable) {
+        UHLog.e("gecko", "GeckoRuntime init failed: ${e.message}")
+        getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().putBoolean("force_safe_mode", true).apply()
+        startActivity(Intent(this, SafeModeActivity::class.java))
+        finish()
+    }
+}, 100)
     }
     private fun setupWebExtensionBridge() {
         val runtime = GeckoEngine.getRuntime(this) ?: return
