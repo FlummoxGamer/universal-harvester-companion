@@ -408,7 +408,7 @@ private fun showTrimDialog(uri: android.net.Uri) {
             true
         )
         popup.elevation = 16f
-        popup.width = (320 * resources.displayMetrics.density).toInt()
+        popup.width = (240 * resources.displayMetrics.density).toInt()
 
         popupView.findViewById<View>(R.id.rowSetWallpaper).setOnClickListener {
             popup.dismiss()
