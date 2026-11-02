@@ -50,7 +50,7 @@ class TrimVideoActivity : AppCompatActivity() {
         framesRecycler = findViewById(R.id.framesRecycler)
 
         val retriever = MediaMetadataRetriever()
-        retriever.setDataSource(this, videoUri)
+        retriever.setDataSource(this, videoUri!!)
         val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
         durationSec = (durationMs / 1000).toFloat()
         retriever.release()
