@@ -147,6 +147,7 @@
         <activity
             android:name=".WallpaperPreviewActivity"
             android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden"
             android:theme="@style/Theme.UHCompanion" />
 
         <service
