@@ -147,11 +147,14 @@ override fun onConfigurationChanged(newConfig: android.content.res.Configuration
 override fun onDestroy() {
     super.onDestroy()
     val recyclerView = viewPager.getChildAt(0) as? RecyclerView
-    recyclerView?.forEach { child ->
-        val player = child.tag as? androidx.media3.exoplayer.ExoPlayer
-        val playerView = child.findViewById<androidx.media3.ui.PlayerView>(R.id.previewVideo)
-        playerView?.player = null
-        player?.release()
+    if (recyclerView != null) {
+        for (i in 0 until recyclerView.childCount) {
+            val child = recyclerView.getChildAt(i)
+            val player = child.tag as? androidx.media3.exoplayer.ExoPlayer
+            val playerView = child.findViewById<androidx.media3.ui.PlayerView>(R.id.previewVideo)
+            playerView?.player = null
+            player?.release()
+        }
     }
 }
 
