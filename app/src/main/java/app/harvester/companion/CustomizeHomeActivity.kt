@@ -37,14 +37,14 @@ class CustomizeHomeActivity : AppCompatActivity() {
 
     private val categorizedWallpapers = linkedMapOf(
         "Motion" to listOf(
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4",
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4",
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4",
-            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4"
+            "https://cdn.pixabay.com/video/2020/05/25/40130-424930032_tiny.mp4",
+            "https://cdn.pixabay.com/video/2021/08/04/84042-585474762_tiny.mp4",
+            "https://cdn.pixabay.com/video/2020/08/12/47157-449472192_tiny.mp4",
+            "https://cdn.pixabay.com/video/2019/04/06/22634-329372938_tiny.mp4",
+            "https://cdn.pixabay.com/video/2020/11/02/54225-477675409_tiny.mp4",
+            "https://cdn.pixabay.com/video/2021/04/12/70724-536353928_tiny.mp4",
+            "https://cdn.pixabay.com/video/2019/11/01/28473-370139283_tiny.mp4",
+            "https://cdn.pixabay.com/video/2020/04/15/36356-409314064_tiny.mp4"
         ),
         "Anime" to listOf(
             "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers/anime/anime_1.webp",
