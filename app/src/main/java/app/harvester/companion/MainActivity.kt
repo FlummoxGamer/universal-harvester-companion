@@ -90,10 +90,14 @@ setContentView(binding.root)
 val t2 = System.currentTimeMillis()
 UHLog.d("perf", "inflate: ${t1 - t0}ms, setContentView: ${t2 - t1}ms")
 
+val geckoView = GeckoEngineView(this)
+geckoView.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+binding.webContainer.addView(geckoView)
+mainGeckoView = geckoView.geckoView
+
 if (savedInstanceState != null) {
     binding.splashScreen.visibility = View.GONE
 }
-
 androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, insets ->
     val systemBars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
     val ime = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())
@@ -126,7 +130,6 @@ androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, 
 }
 
 tabs = TabManager.get(this)
-mainGeckoView = binding.webContainer.geckoView
 MenuCommandStore.listener = { runOnUiThread { updateUi() } }
 setupHomeGrid()
 setupBottomBar()
@@ -2010,6 +2013,7 @@ override fun onPause() {
 override fun onDestroy() {
     val videoView = findViewById<androidx.media3.ui.PlayerView>(R.id.wallpaperVideo)
     videoView?.player = null
+    homeVideoPlayer?.stop()
     homeVideoPlayer?.release()
     homeVideoPlayer = null
     if (::tabs.isInitialized) {
