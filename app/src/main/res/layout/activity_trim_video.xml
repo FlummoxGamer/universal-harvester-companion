@@ -20,9 +20,9 @@
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_close"
+            android:src="@drawable/ic_trim_close"
             app:tint="@color/text" />
-
+        
         <Space
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -33,7 +33,7 @@
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_forward"
+            android:src="@drawable/ic_trim_save"
             app:tint="@color/accent" />
     </LinearLayout>
 
