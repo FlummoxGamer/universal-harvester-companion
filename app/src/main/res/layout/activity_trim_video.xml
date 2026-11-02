@@ -44,35 +44,48 @@
         app:use_controller="false"
         app:resize_mode="fit"
         app:layout_constraintTop_toBottomOf="@id/topBar"
-        app:layout_constraintBottom_toTopOf="@id/bottomControls" />
+        app:layout_constraintBottom_toTopOf="@id/timelineContainer" />
 
-    <LinearLayout
-        android:id="@+id/bottomControls"
+    <FrameLayout
+        android:id="@+id/timelineContainer"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="24dp"
-        android:background="@color/surface"
+        android:layout_height="64dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="32dp"
         app:layout_constraintBottom_toBottomOf="parent">
 
-        <TextView
-            android:id="@+id/tvTrimDuration"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Selected: 0s - 10s"
-            android:textColor="@color/text"
-            android:textSize="16sp"
-            android:textStyle="bold" />
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/framesRecycler"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
 
         <com.google.android.material.slider.RangeSlider
             android:id="@+id/rangeSlider"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_gravity="center_vertical"
             android:valueFrom="0f"
             android:valueTo="15f"
-            app:trackColorActive="@color/accent"
-            app:trackColorInactive="@color/border"
-            app:thumbColor="@color/accent" />
-    </LinearLayout>
+            android:stepSize="1f"
+            app:trackColorActive="@android:color/transparent"
+            app:trackColorInactive="@android:color/transparent"
+            app:thumbColor="@color/accent"
+            app:thumbStrokeColor="@color/accent"
+            app:haloColor="@color/accent" />
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/tvTrimDuration"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:text="Selected: 0s - 10s"
+        android:textColor="@color/text"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        app:layout_constraintBottom_toTopOf="@id/timelineContainer"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
 </androidx.constraintlayout.widget.ConstraintLayout>
