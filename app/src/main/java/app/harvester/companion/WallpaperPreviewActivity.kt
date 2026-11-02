@@ -123,13 +123,6 @@ findViewById<android.view.View>(R.id.btnSet).setOnClickListener {
 
 override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
     super.onConfigurationChanged(newConfig)
-    viewPager.adapter?.notifyDataSetChanged()
-    val currentPos = viewPager.currentItem
-    viewPager.setCurrentItem(currentPos, false)
-}
-
-override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
-    super.onConfigurationChanged(newConfig)
     
     val oldIsLandscape = newConfig.orientation != android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val recyclerView = viewPager.getChildAt(0) as? RecyclerView
