@@ -220,7 +220,7 @@ class CustomizeHomeActivity : AppCompatActivity() {
 
         recentAdapter = WallpaperAdapter(onClick = { item ->
             when (item) {
-                is WallpaperItem.Add -> pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                is WallpaperItem.Add -> pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
                 is WallpaperItem.Default -> {
                     WallpaperStore.setCurrentWallpaper(this@CustomizeHomeActivity, "default", 0, false)
                     finish()
@@ -307,7 +307,7 @@ class CustomizeHomeActivity : AppCompatActivity() {
                         if (dx > 20 || dy > 20) {
                             editRunnable?.let { handler.removeCallbacks(it) }
                             editRunnable = null
-                            
+        
                             if (isDragReady && !isDragging) {
                                 isDragging = true
                                 val child = rv.findChildViewUnder(downX, downY)
@@ -553,12 +553,12 @@ class WallpaperAdapter(
             is WallpaperItem.Motion -> {
                 h.image.visibility = View.VISIBLE
                 val imageToLoad: Any = if (item.uri.startsWith("http")) item.uri else File(item.uri)
-                    h.image.load(imageToLoad) {
-                        videoFrameMillis(1000L)
-                        crossfade(true)
-                        error(R.drawable.ic_downloads)
-                    }
+                h.image.load(imageToLoad) {
+                    videoFrameMillis(1000L)
+                    crossfade(true)
+                    error(R.drawable.ic_downloads)
                 }
+            }
                 is WallpaperItem.Remote -> {
                     h.image.visibility = View.VISIBLE
                     if (item.url.endsWith(".mp4")) {
