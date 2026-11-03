@@ -82,13 +82,13 @@ jobs:
             echo "=========================================================="
             echo "TOP 50 LARGEST FILES IN APK (Uncompressed Size)"
             echo "=========================================================="
-            unzip -v "$APK" | awk 'NR>3 && $1 ~ /^[0-9]+$/ {print $1, $8}' | sort -gr | head -n 50 | awk '
+            (unzip -v "$APK" | awk 'NR>3 && $1 ~ /^[0-9]+$/ {print $1, $8}' | sort -gr | head -n 50 | awk '
             function human(x) {
                 s=" B"; if (x>=1024) { x/=1024; s=" KB" } if (x>=1024) { x/=1024; s=" MB" } if (x>=1024) { x/=1024; s=" GB" }
                 return sprintf("%.2f%s", x, s)
             }
             { size=$1; $1=""; printf "%-12s %s\n", human(size), substr($0,2) }
-            '
+            ') || true
             echo "=========================================================="
             echo "TOTAL APK SIZE:"
             ls -lh "$APK" | awk '{print $5, $9}'
