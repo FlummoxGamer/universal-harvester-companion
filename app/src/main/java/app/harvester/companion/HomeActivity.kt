@@ -7,6 +7,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentContainerView
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -24,7 +27,21 @@ class HomeActivity : AppCompatActivity() {
                     NavHost(navController = navController, startDestination = "startup") {
                         composable("startup") { StartupFragment(navController) }
                         composable("home") { HomeFragment(navController) }
-                        composable("browser") { BrowserFragment() }
+                        composable("browser") {
+                            AndroidView(
+                                factory = { ctx ->
+                                    FragmentContainerView(ctx).apply {
+                                        id = android.R.id.content
+                                    }
+                                },
+                                update = { view ->
+                                    val fragment = BrowserFragment()
+                                    (view.context as AppCompatActivity).supportFragmentManager.beginTransaction()
+                                        .replace(android.R.id.content, fragment)
+                                        .commit()
+                                }
+                            )
+                        }
                     }
                 }
             }
