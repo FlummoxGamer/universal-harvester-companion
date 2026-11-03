@@ -13,7 +13,9 @@ class Components(
     val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     val engine: GeckoEngine by lazy {
-        GeckoEngine(context)
+        val runtime = app.harvester.companion.GeckoEngine.getRuntime(context)
+            ?: throw IllegalStateException("GeckoRuntime initialization failed")
+        GeckoEngine(context, runtime = runtime)
     }
 
     val store: BrowserStore by lazy {
