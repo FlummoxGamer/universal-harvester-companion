@@ -197,14 +197,8 @@ inner class PreviewAdapter(private val items: List<String>) : RecyclerView.Adapt
         val onSurfaceColor = com.google.android.material.color.MaterialColors.getColor(h.itemView, com.google.android.material.R.attr.colorOnSurface)
         val bgColor = com.google.android.material.color.MaterialColors.getColor(h.itemView, androidx.appcompat.R.attr.colorBackgroundFloating)
 
-        val touchImage = h.itemView.findViewById<app.harvester.companion.TouchImageView>(R.id.previewImage)
-        touchImage?.scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
-        touchImage?.maxZoom = 3f
-        touchImage?.isZoomEnabled = true
-
-        val isLandscape = h.itemView.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-        val (savedZoom, savedPanX, savedPanY) = WallpaperStore.getWallpaperTransform(this@WallpaperPreviewActivity, isLandscape)
-
+        val imageView = h.itemView.findViewById<android.widget.ImageView>(R.id.previewImage)
+        imageView?.scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
         val mockAddressBar = h.itemView.findViewById<LinearLayout>(R.id.previewMockAddressBar)
         mockAddressBar?.setBackgroundColor(surfaceColor)
         val mockUrlText = h.itemView.findViewById<TextView>(R.id.previewMockUrlText)
@@ -270,15 +264,6 @@ inner class PreviewAdapter(private val items: List<String>) : RecyclerView.Adapt
                             h.title.setTextColor(textColor)
                             h.title.setShadowLayer(8f, 0f, 2f, shadowColor)
                             adapter.setTextColor(textColor, shadowColor)
-
-                             h.itemView.post {
-                                 touchImage?.minZoom = app.harvester.companion.TouchImageView.AUTOMATIC_MIN_ZOOM
-                                 if (savedZoom != 1f || savedPanX != 0.5f || savedPanY != 0.5f) {
-                                     touchImage?.setZoom(savedZoom, savedPanX, savedPanY)
-                                 } else {
-                                     touchImage?.resetZoom()
-                                 }
-                             }
                        }
                   },
                   onError = { _, result ->
