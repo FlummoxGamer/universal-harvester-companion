@@ -74,6 +74,24 @@ jobs:
           echo "arm64=$ARM64" >> $GITHUB_OUTPUT
           echo "arm32=$ARM32" >> $GITHUB_OUTPUT
 
+      - name: Print APK Size Breakdown
+        working-directory: src
+        run: |
+          APK="${{ steps.apks.outputs.arm64 }}"
+          if [ -f "$APK" ]; then
+            echo "=========================================================="
+            echo "TOP 50 LARGEST FILES IN APK (Uncompressed Size)"
+            echo "=========================================================="
+            unzip -v "$APK" | awk 'NR>3 {print $1, $8}' | sort -gr | head -n 50
+            echo "=========================================================="
+            echo "TOTAL APK SIZE:"
+            ls -lh "$APK" | awk '{print $5, $9}'
+            echo "=========================================================="
+          else
+            echo "APK not found to analyze."
+          fi
+
+
       - name: Stage artifacts
         run: |
           mkdir -p out
