@@ -164,7 +164,25 @@ android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
         startActivity(Intent(this, SafeModeActivity::class.java))
         finish()
     }
-}, 100)
+    }, 100)
+    
+    val testButton = android.widget.Button(this).apply {
+        text = "New UI"
+        setBackgroundColor(android.graphics.Color.RED)
+        setTextColor(android.graphics.Color.WHITE)
+        setOnClickListener {
+            startActivity(android.content.Intent(this@MainActivity, HomeActivity::class.java))
+        }
+    }
+    val params = ConstraintLayout.LayoutParams(
+        ConstraintLayout.LayoutParams.WRAP_CONTENT,
+        ConstraintLayout.LayoutParams.WRAP_CONTENT
+    ).apply {
+        topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+        endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+        setMargins(16, 150, 16, 16)
+    }
+    binding.root.addView(testButton, params)
     }
     private fun setupWebExtensionBridge() {
         val runtime = GeckoEngine.getRuntime(this) ?: return
