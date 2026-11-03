@@ -51,9 +51,9 @@ jobs:
             echo "RELEASE_NOTES=Automated Stable Build" >> $GITHUB_OUTPUT
           fi
 
-      - name: Build release APK
+      - name: Build debug APK
         working-directory: src
-        run: gradle assemble${{ steps.vars.outputs.FLAVOR }}Release --no-daemon --no-configuration-cache
+        run: gradle assemble${{ steps.vars.outputs.FLAVOR }}Debug --no-daemon --no-configuration-cache
 
       - name: Read version
         id: ver
@@ -69,8 +69,8 @@ jobs:
         working-directory: src
         run: |
           FLAVOR_DIR="${{ steps.vars.outputs.FLAVOR }}"
-          ARM64=$(find app/build/outputs/apk/$FLAVOR_DIR/release -name "*-arm64-v8a-release.apk" | head -1)
-          ARM32=$(find app/build/outputs/apk/$FLAVOR_DIR/release -name "*-armeabi-v7a-release.apk" | head -1)
+          ARM64=$(find app/build/outputs/apk/$FLAVOR_DIR/debug -name "*-arm64-v8a-debug.apk" | head -1)
+          ARM32=$(find app/build/outputs/apk/$FLAVOR_DIR/debug -name "*-armeabi-v7a-debug.apk" | head -1)
           echo "arm64=$ARM64" >> $GITHUB_OUTPUT
           echo "arm32=$ARM32" >> $GITHUB_OUTPUT
 
@@ -82,7 +82,13 @@ jobs:
             echo "=========================================================="
             echo "TOP 50 LARGEST FILES IN APK (Uncompressed Size)"
             echo "=========================================================="
-            unzip -v "$APK" | awk 'NR>3 {print $1, $8}' | sort -gr | head -n 50
+            unzip -v "$APK" | awk 'NR>3 && $1 ~ /^[0-9]+$/ {print $1, $8}' | sort -gr | head -n 50 | awk '
+            function human(x) {
+                s=" B"; if (x>=1024) { x/=1024; s=" KB" } if (x>=1024) { x/=1024; s=" MB" } if (x>=1024) { x/=1024; s=" GB" }
+                return sprintf("%.2f%s", x, s)
+            }
+            { size=$1; $1=""; printf "%-12s %s\n", human(size), substr($0,2) }
+            '
             echo "=========================================================="
             echo "TOTAL APK SIZE:"
             ls -lh "$APK" | awk '{print $5, $9}'
@@ -90,7 +96,6 @@ jobs:
           else
             echo "APK not found to analyze."
           fi
-
 
       - name: Stage artifacts
         run: |
