@@ -1,0 +1,33 @@
+package app.harvester.companion
+
+import android.os.Bundle
+import androidx.activity.compose.setContent
+import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Modifier
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import app.harvester.companion.ui.BrowserFragment
+import app.harvester.companion.ui.HomeFragment
+import app.harvester.companion.ui.StartupFragment
+
+class HomeActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            MaterialTheme {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    val navController = rememberNavController()
+                    NavHost(navController = navController, startDestination = "startup") {
+                        composable("startup") { StartupFragment(navController) }
+                        composable("home") { HomeFragment(navController) }
+                        composable("browser") { BrowserFragment() }
+                    }
+                }
+            }
+        }
+    }
+}
