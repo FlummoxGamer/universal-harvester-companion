@@ -1,193 +1,173 @@
-name: Build
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
 
-on:
-  push:
-    branches: [ main, dev ]
-  workflow_dispatch:
+android {
+    namespace = "app.harvester.companion"
+    compileSdk = 36
 
-concurrency:
-  group: build-${{ github.ref }}
-  cancel-in-progress: true
+    defaultConfig {
+        applicationId = "app.harvester.companion"
+        minSdk = 29
+        targetSdk = 36
+        versionCode = 127
+        versionName = "2.4.57"
+    }
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          path: src
+    flavorDimensions += "version"
+    productFlavors {
+        create("stable") {
+            dimension = "version"
+            applicationIdSuffix = ""
+            versionNameSuffix = ""
+            resValue("string", "app_name", "Universal Harvester")
+        }
+        create("dev") {
+            dimension = "version"
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            resValue("string", "app_name", "UH Dev")
+        }
+    }
 
-      - uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
+    buildFeatures {
+        viewBinding = true
+        buildConfig = true
+        compose = true
+    }
 
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.13'
+    androidResources {
+        noCompress += "ja"
+    }
 
-      - name: Decode keystore
-        working-directory: src
-        run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > uh-debug.jks
-          ls -la uh-debug.jks
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
 
-      - name: Set Build Variables
-        id: vars
-        run: |
-          if [ "${{ github.ref }}" == "refs/heads/dev" ]; then
-            echo "FLAVOR=dev" >> $GITHUB_OUTPUT
-            echo "TARGET_BRANCH=builds-dev" >> $GITHUB_OUTPUT
-            echo "VERSION_FILE=version-dev.json" >> $GITHUB_OUTPUT
-            echo "RELEASE_PREFIX=[DEV ONLY] " >> $GITHUB_OUTPUT
-            echo "RELEASE_NOTES=⚠️ WARNING: This is a DEV TESTING build. Do not download unless you are testing. It will install as 'UH Dev' next to your main app." >> $GITHUB_OUTPUT
-          else
-            echo "FLAVOR=stable" >> $GITHUB_OUTPUT
-            echo "TARGET_BRANCH=builds" >> $GITHUB_OUTPUT
-            echo "VERSION_FILE=version.json" >> $GITHUB_OUTPUT
-            echo "RELEASE_PREFIX=" >> $GITHUB_OUTPUT
-            echo "RELEASE_NOTES=Automated Stable Build" >> $GITHUB_OUTPUT
-          fi
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = false
+        }
+    }
 
-      - name: Build debug APK
-        working-directory: src
-        run: gradle assemble${{ steps.vars.outputs.FLAVOR }}Debug --no-daemon --no-configuration-cache
+    packaging {
+        resources {
+            excludes += setOf(
+                "META-INF/*.kotlin_module",
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE*",
+                "META-INF/NOTICE*",
+                "META-INF/*.version"
+            )
+        }
+    }
 
-      - name: Read version
-        id: ver
-        working-directory: src
-        run: |
-          VC=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts | head -1)
-          VN=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts | head -1)
-          echo "code=$VC" >> $GITHUB_OUTPUT
-          echo "name=$VN" >> $GITHUB_OUTPUT
-
-      - name: Locate APKs
-        id: apks
-        working-directory: src
-        run: |
-          FLAVOR_DIR="${{ steps.vars.outputs.FLAVOR }}"
-          ARM64=$(find app/build/outputs/apk/$FLAVOR_DIR/debug -name "*-arm64-v8a-debug.apk" | head -1)
-          ARM32=$(find app/build/outputs/apk/$FLAVOR_DIR/debug -name "*-armeabi-v7a-debug.apk" | head -1)
-          echo "arm64=$ARM64" >> $GITHUB_OUTPUT
-          echo "arm32=$ARM32" >> $GITHUB_OUTPUT
-
-      - name: Print APK Size Breakdown
-        working-directory: src
-        run: |
-          APK="${{ steps.apks.outputs.arm64 }}"
-          if [ -f "$APK" ]; then
-            echo "=========================================================="
-            echo "TOP 50 LARGEST FILES IN APK (Uncompressed Size)"
-            echo "=========================================================="
-            unzip -v "$APK" | awk 'NR>3 && $1 ~ /^[0-9]+$/ {print $1, $8}' | sort -gr | head -n 50 | awk '
-            function human(x) {
-                s=" B"; if (x>=1024) { x/=1024; s=" KB" } if (x>=1024) { x/=1024; s=" MB" } if (x>=1024) { x/=1024; s=" GB" }
-                return sprintf("%.2f%s", x, s)
+    signingConfigs {
+        create("shared") {
+            val ks = file("../uh-debug.jks")
+            if (ks.exists()) {
+                storeFile = ks
+                storePassword = "uhdebug123"
+                keyAlias = "uhdebug"
+                keyPassword = "uhdebug123"
             }
-            { size=$1; $1=""; printf "%-12s %s\n", human(size), substr($0,2) }
-            '
-            echo "=========================================================="
-            echo "TOTAL APK SIZE:"
-            ls -lh "$APK" | awk '{print $5, $9}'
-            echo "=========================================================="
-          else
-            echo "APK not found to analyze."
-          fi
+        }
+    }
 
-      - name: Stage artifacts
-        run: |
-          mkdir -p out
-          cp "src/${{ steps.apks.outputs.arm64 }}" "out/uh-companion-${{ steps.ver.outputs.name }}-arm64-v8a.apk"
-          if [ -n "${{ steps.apks.outputs.arm32 }}" ]; then
-            cp "src/${{ steps.apks.outputs.arm32 }}" "out/uh-companion-${{ steps.ver.outputs.name }}-armeabi-v7a.apk"
-          fi
+    buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("shared")
+        }
+        release {
+            signingConfig = signingConfigs.getByName("shared")
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
+}
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: uh-companion-${{ steps.vars.outputs.FLAVOR }}
-          path: out/*.apk
-          if-no-files-found: error
+kotlin {
+    jvmToolchain(17)
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
 
-      - name: Check if release exists
-        id: check_release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="v${{ steps.ver.outputs.name }}-${{ steps.ver.outputs.code }}-${{ steps.vars.outputs.FLAVOR }}"
-          if gh release view "$TAG" --repo "${{ github.repository }}" > /dev/null 2>&1; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-            echo "Release $TAG already exists. Skipping publish."
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-            echo "Release $TAG does not exist. Will publish."
-          fi
+dependencies {
+    debugImplementation("com.squareup.leakcanary:leakcanary-android:2.14")
 
-      - name: Publish APKs to GitHub Release
-        if: steps.check_release.outputs.exists == 'false'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          REPO="${{ github.repository }}"
-          VN="${{ steps.ver.outputs.name }}"
-          VC="${{ steps.ver.outputs.code }}"
-          TAG="v$VN-$VC-${{ steps.vars.outputs.FLAVOR }}"
-          
-          if [ "${{ steps.vars.outputs.FLAVOR }}" == "dev" ]; then
-            RELEASE_FLAGS="--prerelease --latest=false"
-          else
-            RELEASE_FLAGS="--latest=true"
-          fi
+    val acVersion = "154.0.1"
+    implementation("org.mozilla.components:browser-engine-gecko:$acVersion")
+    implementation("org.mozilla.components:browser-state:$acVersion")
+    implementation("org.mozilla.components:browser-session-storage:$acVersion")
+    implementation("org.mozilla.components:browser-icons:$acVersion")
+    implementation("org.mozilla.components:browser-toolbar:$acVersion")
+    implementation("org.mozilla.components:compose-browser-toolbar:$acVersion")
+    implementation("org.mozilla.components:concept-engine:$acVersion")
+    implementation("org.mozilla.components:concept-storage:$acVersion")
+    implementation("org.mozilla.components:feature-session:$acVersion")
+    implementation("org.mozilla.components:feature-toolbar:$acVersion")
+    implementation("org.mozilla.components:feature-tabs:$acVersion")
+    implementation("org.mozilla.components:feature-prompts:$acVersion")
+    implementation("org.mozilla.components:feature-downloads:$acVersion")
+    implementation("org.mozilla.components:feature-findinpage:$acVersion")
+    implementation("org.mozilla.components:feature-sitepermissions:$acVersion")
+    
+    implementation("org.mozilla.components:feature-search:$acVersion") {
+        exclude(group = "org.mozilla.telemetry", module = "glean-native")
+    }
+    
+    implementation("org.mozilla.components:lib-state:$acVersion")
+    implementation("org.mozilla.components:support-base:$acVersion")
+    implementation("org.mozilla.components:support-ktx:$acVersion")
+    implementation("org.mozilla.components:support-utils:$acVersion")
+    implementation("org.mozilla.components:ui-icons:$acVersion")
+    implementation("org.mozilla.components:ui-widgets:$acVersion")
 
-          gh release create "$TAG" \
-            --repo "$REPO" \
-            --target "${{ github.sha }}" \
-            --title "${{ steps.vars.outputs.RELEASE_PREFIX }}Build $VN ($VC)" \
-            --notes "${{ steps.vars.outputs.RELEASE_NOTES }}" \
-            $RELEASE_FLAGS \
-            out/*.apk
+    implementation("androidx.navigation:navigation-fragment-ktx:2.7.7")
+    implementation("androidx.navigation:navigation-ui-ktx:2.7.7")
+    implementation("androidx.navigation:navigation-compose:2.7.7")
+    
+    implementation("androidx.activity:activity-compose:1.9.2")
+    implementation("androidx.compose.material3:material3:1.3.0")
+    implementation("androidx.compose.ui:ui-tooling-preview:1.7.0")
+    implementation("io.coil-kt:coil-compose:2.6.0")
+    debugImplementation("androidx.compose.ui:ui-tooling:1.7.0")
 
-      - name: Publish version JSON
-        if: steps.check_release.outputs.exists == 'false'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          REPO="${{ github.repository }}"
-          VN="${{ steps.ver.outputs.name }}"
-          VC="${{ steps.ver.outputs.code }}"
-          TAG="v$VN-$VC-${{ steps.vars.outputs.FLAVOR }}"
-          TARGET_BRANCH="${{ steps.vars.outputs.TARGET_BRANCH }}"
-          VERSION_FILE="${{ steps.vars.outputs.VERSION_FILE }}"
-          
-          ARM64="uh-companion-$VN-arm64-v8a.apk"
-          ARM32="uh-companion-$VN-armeabi-v7a.apk"
-          mkdir -p /tmp/publish
+    implementation("androidx.webkit:webkit:1.12.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("com.google.android.material:material:1.12.0")
+    implementation("androidx.constraintlayout:constraintlayout:2.2.0")
+    implementation("androidx.activity:activity-ktx:1.9.2")
+    implementation("androidx.recyclerview:recyclerview:1.3.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("androidx.palette:palette-ktx:1.0.0")
+    implementation("androidx.viewpager2:viewpager2:1.1.0")
+    implementation("io.coil-kt:coil:2.6.0")
+    implementation("io.coil-kt:coil-gif:2.6.0")
+    implementation("androidx.media3:media3-exoplayer:1.2.1")
+    implementation("androidx.media3:media3-ui:1.2.1")
+    implementation("io.coil-kt:coil-video:2.6.0")
+    implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.9")
+}
 
-          ARM32_LINE=""
-          if [ -f "out/$ARM32" ]; then
-            ARM32_LINE="\"apkUrlArm32\": \"https://gh-proxy.com/https://github.com/$REPO/releases/download/$TAG/$ARM32\","
-          fi
-
-          cat > /tmp/publish/$VERSION_FILE <<EOF
-          {
-            "versionCode": $VC,
-            "versionName": "$VN",
-            "apkUrlArm64": "https://gh-proxy.com/https://github.com/$REPO/releases/download/$TAG/$ARM64",
-            $ARM32_LINE
-            "apkUrl": "https://gh-proxy.com/https://github.com/$REPO/releases/download/$TAG/$ARM64",
-            "changelog": "",
-            "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          }
-          EOF
-          
-          cd /tmp/publish
-          git init -q -b $TARGET_BRANCH
-          git remote add origin "https://x-access-token:$GH_TOKEN@github.com/$REPO.git"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "Build $VN ($VC)"
-          git push origin $TARGET_BRANCH --force
+tasks.configureEach {
+    if (name.startsWith("check") && name.endsWith("AarMetadata")) {
+        enabled = false
+    }
+}
+tasks.matching { it.name.startsWith("check") && it.name.endsWith("AarMetadata") }.configureEach {
+    enabled = false
+}
