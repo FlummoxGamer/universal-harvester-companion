@@ -1924,29 +1924,6 @@ if (wpPath == null || wpPath == "default") {
             binding.wallpaperBackground.setImageBitmap(bitmap)
             binding.wallpaperBackground.visibility = View.VISIBLE
             binding.homeScreen.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-
-            val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-            val (zoom, panX, panY) = WallpaperStore.getWallpaperTransform(this, isLandscape)
-            val dw = bitmap.width.toFloat()
-            val dh = bitmap.height.toFloat()
-            val vw = binding.wallpaperBackground.width.toFloat()
-            val vh = binding.wallpaperBackground.height.toFloat()
-    
-            if (vw > 0 && vh > 0) {
-                val baseScale = maxOf(vw / dw, vh / dh)
-                val finalScale = baseScale * zoom
-
-                val transX = (vw / 2f) - (panX * dw * finalScale)
-                val transY = (vh / 2f) - (panY * dh * finalScale)
-
-                val clampedTransX = transX.coerceIn(vw - dw * finalScale, 0f)
-                val clampedTransY = transY.coerceIn(vh - dh * finalScale, 0f)
-
-                val matrix = android.graphics.Matrix()
-                matrix.setScale(finalScale, finalScale)
-                matrix.postTranslate(clampedTransX, clampedTransY)
-                binding.wallpaperBackground.imageMatrix = matrix
-            }
     
             val safeColor = if (textColor == 0) ContextCompat.getColor(this, R.color.text) else textColor
             val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(safeColor)
