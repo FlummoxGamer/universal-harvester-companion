@@ -141,8 +141,17 @@
             android:exported="false"
             android:theme="@style/Theme.UHCompanion" />
         <activity
+            android:name=".TrimVideoActivity"
+            android:exported="false"
+            android:theme="@style/Theme.UHCompanion" />
+        <activity
+            android:name=".RecentlyActivity"
+            android:exported="false"
+            android:theme="@style/Theme.UHCompanion" />
+        <activity
             android:name=".WallpaperPreviewActivity"
             android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden"
             android:theme="@style/Theme.UHCompanion" />
 
         <service

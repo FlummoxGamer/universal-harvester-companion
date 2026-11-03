@@ -11,12 +11,25 @@
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:scaleType="centerCrop"
+        android:clickable="false"
+        android:focusable="false"
         android:visibility="gone"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
-
+    
+    <androidx.media3.ui.PlayerView
+        android:id="@+id/wallpaperVideo"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:use_controller="false"
+        app:resize_mode="zoom"
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
     <FrameLayout
         android:id="@+id/contentContainer"
         android:layout_width="0dp"
@@ -30,10 +43,10 @@
             android:id="@+id/swipeRefresh"
             android:layout_width="match_parent"
             android:layout_height="match_parent">
-            <app.harvester.companion.GeckoEngineView
-                android:id="@+id/webContainer"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent" />
+            <FrameLayout
+                 android:id="@+id/webContainer"
+                 android:layout_width="match_parent"
+                 android:layout_height="match_parent" />
         </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
         <LinearLayout

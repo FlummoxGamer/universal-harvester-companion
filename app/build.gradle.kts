@@ -11,8 +11,8 @@ android {
         applicationId = "app.harvester.companion"
         minSdk = 29
         targetSdk = 36
-        versionCode = 110
-        versionName = "2.4.40"
+        versionCode = 127
+        versionName = "2.4.57"
    }
 
    flavorDimensions += "version"
@@ -34,6 +34,10 @@ android {
     buildFeatures {
         viewBinding = true
         buildConfig = true
+    }
+
+    androidResources {
+        noCompress += "ja"
     }
 
     compileOptions {
@@ -111,6 +115,12 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.palette:palette-ktx:1.0.0")
     implementation("androidx.viewpager2:viewpager2:1.1.0")
+    implementation("io.coil-kt:coil:2.6.0")
+    implementation("io.coil-kt:coil-gif:2.6.0")
+    implementation("androidx.media3:media3-exoplayer:1.2.1")
+    implementation("androidx.media3:media3-ui:1.2.1")
+    implementation("io.coil-kt:coil-video:2.6.0")
+    implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.9")
 }
 
 

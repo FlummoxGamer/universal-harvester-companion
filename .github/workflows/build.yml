@@ -89,7 +89,23 @@ jobs:
           path: out/*.apk
           if-no-files-found: error
 
+      # NEW STEP: Check if this version is already released
+      - name: Check if release exists
+        id: check_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.ver.outputs.name }}-${{ steps.ver.outputs.code }}-${{ steps.vars.outputs.FLAVOR }}"
+          if gh release view "$TAG" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Release $TAG already exists. Skipping publish."
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Release $TAG does not exist. Will publish."
+          fi
+
       - name: Publish APKs to GitHub Release
+        if: steps.check_release.outputs.exists == 'false' # Only run if release doesn't exist
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -97,8 +113,6 @@ jobs:
           VN="${{ steps.ver.outputs.name }}"
           VC="${{ steps.ver.outputs.code }}"
           TAG="v$VN-$VC-${{ steps.vars.outputs.FLAVOR }}"
-          
-          gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag 2>/dev/null || true
           
           # publishRelease
           if [ "${{ steps.vars.outputs.FLAVOR }}" == "dev" ]; then
@@ -116,6 +130,7 @@ jobs:
             out/*.apk
 
       - name: Publish version JSON
+        if: steps.check_release.outputs.exists == 'false' # Only run if release doesn't exist
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

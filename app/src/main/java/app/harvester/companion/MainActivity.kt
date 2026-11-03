@@ -54,12 +54,14 @@ class MainActivity : AppCompatActivity() {
     private val page3p = mutableMapOf<Long, MutableSet<String>>()
     private val recentUrls = LinkedHashMap<String, Long>()
     private var lastBackPress = 0L
+    private var homeVideoPlayer: androidx.media3.exoplayer.ExoPlayer? = null
     private var engineIconCache: Bitmap? = null
     private var currentEngineId: String = ""
     private var suggestJob: Job? = null
     private var urlTextWatcher: android.text.TextWatcher? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val start = System.currentTimeMillis()
         setTheme(R.style.Theme_UHCompanion)
         super.onCreate(savedInstanceState)
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -73,21 +75,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-UHLog.init(this)
-SessionRecorder.init(this)
 UHLog.section("MAIN")
-
-try {
-    GeckoEngine.getRuntime(this)
-} catch (e: Throwable) {
-    UHLog.e("gecko", "GeckoRuntime init failed: ${e.message}")
-    UHLog.throwable("gecko", "GeckoRuntime init failed", e)
-    try { UHLog.mirrorToPublic(this) } catch (_: Exception) {}
-    getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().putBoolean("force_safe_mode", true).apply()
-    startActivity(Intent(this, SafeModeActivity::class.java))
-    finish()
-    return
-}
 
 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
     if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
@@ -95,9 +83,21 @@ if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU)
     }
 }
 
+val t0 = System.currentTimeMillis()
 binding = ActivityMainBinding.inflate(layoutInflater)
+val t1 = System.currentTimeMillis()
 setContentView(binding.root)
+val t2 = System.currentTimeMillis()
+UHLog.d("perf", "inflate: ${t1 - t0}ms, setContentView: ${t2 - t1}ms")
 
+val engineView = GeckoEngineView(this)
+engineView.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+binding.webContainer.addView(engineView)
+mainGeckoView = engineView.geckoView
+
+if (savedInstanceState != null) {
+    binding.splashScreen.visibility = View.GONE
+}
 androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, insets ->
     val systemBars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
     val ime = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())
@@ -119,8 +119,8 @@ androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, 
     binding.suggestionsPanel.setPadding(0, systemBars.top, 0, 0)
     try {
         val barH = binding.bottomBar.height
-        if (barH > 0) {
-            binding.webContainer.geckoView.updateVerticalClipping(barH, if (imeVisible) ime.bottom else 0)
+        if (barH > 0 && ::mainGeckoView.isInitialized) {
+            mainGeckoView.updateVerticalClipping(barH, if (imeVisible) ime.bottom else 0)
         }
     } catch (e: Throwable) {
         UHLog.e("insets", "clip update failed: ${e.message}")
@@ -128,18 +128,21 @@ androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, 
 
     insets
 }
+
 tabs = TabManager.get(this)
-       setupWebExtensionBridge()
+MenuCommandStore.listener = { runOnUiThread { updateUi() } }
+setupHomeGrid()
+setupBottomBar()
+setupSuggestions()
+setupSwipeRefresh()
+setupBackDispatcher()
 
-        mainGeckoView = binding.webContainer.geckoView
-
-        MenuCommandStore.listener = { runOnUiThread { updateUi() } }
-
-        setupHomeGrid()
-        setupBottomBar()
-        setupSuggestions()
-        setupSwipeRefresh()
-        setupBackDispatcher()
+android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+    try {
+        GeckoEngine.getRuntime(this)
+        setupWebExtensionBridge()
+        val searchHost = SearchEnginePrefs.currentEntry(this).host
+        GeckoEngine.speculativeConnect("https://$searchHost")
 
         val existing = tabs.list()
         if (existing.isEmpty()) {
@@ -154,10 +157,14 @@ tabs = TabManager.get(this)
         }
         attachCurrent()
         applyAddressBarPosition()
-
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ hideSplash() }, 1200)
-
-    UHLog.d("main", "onCreate complete")
+        UHLog.d("main", "onCreate complete")
+    } catch (e: Throwable) {
+        UHLog.e("gecko", "GeckoRuntime init failed: ${e.message}")
+        getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().putBoolean("force_safe_mode", true).apply()
+        startActivity(Intent(this, SafeModeActivity::class.java))
+        finish()
+    }
+}, 100)
     }
     private fun setupWebExtensionBridge() {
         val runtime = GeckoEngine.getRuntime(this) ?: return
@@ -479,20 +486,35 @@ binding.shortcutsGrid.addOnItemTouchListener(object : androidx.recyclerview.widg
 }
 
 private fun showWidgetMenu(s: Shortcut, anchor: android.view.View) {
-    val popup = android.widget.PopupMenu(this, anchor)
-    popup.menu.add(0, 1, 0, "Edit")
-    popup.menu.add(0, 2, 1, "Remove")
-    popup.setOnMenuItemClickListener { item ->
-        when (item.itemId) {
-            1 -> showShortcutEditor(s)
-            2 -> {
-                ShortcutStore.remove(this, s.url)
-                shortcutAdapter.submit(ShortcutStore.list(this))
-            }
-        }
+    val popupView = layoutInflater.inflate(R.layout.dialog_widget_menu, null)
+    popupView.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+    
+    val popup = android.widget.PopupWindow(
+        popupView,
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT,
         true
+    )
+    popup.elevation = 16f
+    popup.width = (240 * resources.displayMetrics.density).toInt()
+
+    popupView.findViewById<View>(R.id.rowEdit).setOnClickListener {
+        popup.dismiss()
+        showShortcutEditor(s)
     }
-    popup.show()
+
+    popupView.findViewById<View>(R.id.rowRemove).setOnClickListener {
+        popup.dismiss()
+        ShortcutStore.remove(this, s.url)
+        shortcutAdapter.submit(ShortcutStore.list(this))
+    }
+
+    val location = IntArray(2)
+    anchor.getLocationOnScreen(location)
+    val x = location[0] + (anchor.width / 2) - (popupView.measuredWidth / 2)
+    val y = location[1] + anchor.height - 16
+
+    popup.showAtLocation(anchor, android.view.Gravity.NO_GRAVITY, Math.max(0, x), y)
 }
     private fun setupSwipeRefresh() {
         binding.swipeRefresh.setOnRefreshListener {
@@ -895,7 +917,7 @@ if (position == 0) {
 private fun updateSearchEngineIcon() {
     val entry = SearchEnginePrefs.currentEntry(this)
     val url = currentUrl
-    val isBlank = url.isBlank() || url == "about:blank"
+    val isBlank = url.isBlank() || url == "about:blank" || tabs.list().isEmpty()
 
     if (isBlank || binding.urlEdit.visibility == View.VISIBLE) {
         binding.searchEngineIcon.visibility = View.VISIBLE
@@ -1124,6 +1146,13 @@ override fun onSessionStateChange(session: GeckoSession, sessionState: GeckoSess
 }
 
         session.contentDelegate = object : GeckoSession.ContentDelegate {
+            override fun onFirstComposite(session: GeckoSession) {
+                runOnUiThread { 
+                    UHLog.d("perf", "Gecko onFirstComposite fired")
+                    hideSplash() 
+                }
+            }
+
             override fun onTitleChange(session: GeckoSession, title: String?) {
                 if (title.isNullOrBlank()) return
                 val id = tabs.idForSession(session)
@@ -1847,12 +1876,38 @@ override fun onResume() {
     applyWallpaper()
     shortcutAdapter.submit(ShortcutStore.list(this))
     updateUi()
+    homeVideoPlayer?.play()
 }
 
 private fun applyWallpaper() {
     val wpPath = WallpaperStore.getCurrentWallpaper(this)
     val textColor = WallpaperStore.getTextColor(this)
-    
+    val isVideo = WallpaperStore.isCurrentVideo(this)
+    val videoView = findViewById<androidx.media3.ui.PlayerView>(R.id.wallpaperVideo)
+    val player = homeVideoPlayer
+
+    if (isVideo && wpPath != null && wpPath != "default" && videoView != null) {
+        binding.wallpaperBackground.visibility = View.GONE
+        videoView.visibility = View.VISIBLE
+        if (player == null) {
+            homeVideoPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(this).build().also {
+                videoView.player = it
+                it.volume = 0f
+                it.repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
+            }
+        }
+        homeVideoPlayer?.let {
+            it.setMediaItem(androidx.media3.common.MediaItem.fromUri(android.net.Uri.fromFile(java.io.File(wpPath))))
+            it.prepare()
+            it.play()
+        }
+        binding.homeScreen.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        return
+    } else if (videoView != null) {
+        videoView.visibility = View.GONE
+        homeVideoPlayer?.pause()
+    }
+
 if (wpPath == null || wpPath == "default") {
     binding.wallpaperBackground.visibility = View.GONE
     binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
@@ -1869,7 +1924,7 @@ if (wpPath == null || wpPath == "default") {
             binding.wallpaperBackground.setImageBitmap(bitmap)
             binding.wallpaperBackground.visibility = View.VISIBLE
             binding.homeScreen.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-            
+    
             val safeColor = if (textColor == 0) ContextCompat.getColor(this, R.color.text) else textColor
             val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(safeColor)
             val strictBW = if (luminance > 0.5) android.graphics.Color.BLACK else android.graphics.Color.WHITE
@@ -1925,6 +1980,7 @@ override fun onPause() {
     super.onPause()
     currentSession?.setActive(false)
     currentSession?.setFocused(false)
+    homeVideoPlayer?.pause()
     if (::tabs.isInitialized) {
         tabs.saveAll()
     }
@@ -1932,6 +1988,11 @@ override fun onPause() {
 }
 
 override fun onDestroy() {
+    val videoView = findViewById<androidx.media3.ui.PlayerView>(R.id.wallpaperVideo)
+    videoView?.player = null
+    homeVideoPlayer?.stop()
+    homeVideoPlayer?.release()
+    homeVideoPlayer = null
     if (::tabs.isInitialized) {
         tabs.saveAll()
         if (isFinishing) {
