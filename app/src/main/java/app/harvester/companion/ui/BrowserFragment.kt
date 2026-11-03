@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -21,7 +20,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.lifecycleScope
 import app.harvester.companion.UHApp
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.feature.session.SessionFeature
@@ -66,19 +64,22 @@ class BrowserFragment : Fragment() {
 
                     AndroidView(
                         factory = { ctx ->
-                            components.engine.createView(ctx).asView().also { view ->
-                                sessionFeature.set(
-                                    feature = SessionFeature(
-                                        store = components.store,
-                                        goBackUseCase = components.useCases.sessionUseCases.goBack,
-                                        goForwardUseCase = components.useCases.sessionUseCases.goForward,
-                                        engineView = view,
-                                        sessionId = null
-                                    ),
-                                    owner = this@BrowserFragment,
-                                    view = view
-                                )
-                            }
+                            val engineView = components.engine.createView(ctx)
+                            val view = engineView.asView()
+                            
+                            sessionFeature.set(
+                                feature = SessionFeature(
+                                    store = components.store,
+                                    goBack = components.useCases.sessionUseCases.goBack,
+                                    goForward = components.useCases.sessionUseCases.goForward,
+                                    engineView = engineView,
+                                    tabId = null
+                                ),
+                                owner = this@BrowserFragment,
+                                view = view
+                            )
+                            
+                            view
                         },
                         modifier = Modifier.fillMaxSize()
                     )
