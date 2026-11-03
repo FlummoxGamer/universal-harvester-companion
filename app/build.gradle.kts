@@ -104,7 +104,6 @@ kotlin {
 
 dependencies {
     debugImplementation("com.squareup.leakcanary:leakcanary-android:2.14")
-    implementation("org.mozilla.geckoview:geckoview:154.0.20260824154132")
 
     val acVersion = "154.0.1"
     implementation("org.mozilla.components:browser-engine-gecko:$acVersion")
