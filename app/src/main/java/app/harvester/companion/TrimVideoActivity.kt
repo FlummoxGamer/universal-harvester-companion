@@ -78,7 +78,8 @@ class TrimVideoActivity : AppCompatActivity() {
             }
         }
 
-        exoPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(this).build()
+        val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(this).setEnableDecoderFallback(true)
+        exoPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(this, renderersFactory).build()
         exoPlayer.addListener(object : androidx.media3.common.Player.Listener {
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 UHLog.e("video", "Trim preview error: ${error.message}")
@@ -142,7 +143,7 @@ class TrimVideoActivity : AppCompatActivity() {
                 }
 
                 val duration = endSec - startSec
-                val cmd = "-y -ss $startSec -t $duration -i ${inputFile.absolutePath} -c:v libx264 -crf 23 -preset ultrafast ${outputFile.absolutePath}"
+                val cmd = "-y -ss $startSec -t $duration -i ${inputFile.absolutePath} -c:v mpeg4 -q:v 3 ${outputFile.absolutePath}"
                 
                 com.arthenica.ffmpegkit.FFmpegKit.executeAsync(cmd) { session ->
                     val returnCode = session.returnCode
@@ -185,6 +186,7 @@ class TrimVideoActivity : AppCompatActivity() {
 override fun onDestroy() {
     super.onDestroy()
     playerView.player = null
+    exoPlayer.stop()
     exoPlayer.release()
     com.arthenica.ffmpegkit.FFmpegKitConfig.clearSessions()
 }
