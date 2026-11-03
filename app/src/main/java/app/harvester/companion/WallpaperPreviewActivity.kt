@@ -75,13 +75,14 @@ findViewById<android.view.View>(R.id.btnSet).setOnClickListener {
             if (touchImage != null) {
                 WallpaperStore.setWallpaperTransform(this, isLandscape, touchImage.currentZoom, touchImage.scrollPosition.x, touchImage.scrollPosition.y)
             }
-            extractColorAndSave(selectedUri)
+                val isVideo = selectedUri.endsWith(".mp4") || intent.getBooleanExtra("isVideo", false)
+                extractColorAndSave(selectedUri, isVideo)
+            }
         }
     }
 }
-    }
 
-    private fun extractColorAndSave(uriString: String) {
+private fun extractColorAndSave(uriString: String, isVideo: Boolean) {
         Toast.makeText(this, "Applying wallpaper...", Toast.LENGTH_SHORT).show()
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -105,21 +106,21 @@ findViewById<android.view.View>(R.id.btnSet).setOnClickListener {
                         android.graphics.Color.WHITE
                     }
 
+                        withContext(Dispatchers.Main) {
+                            WallpaperStore.setCurrentWallpaper(this@WallpaperPreviewActivity, finalUriString, textColor, isVideo)
+                            finish()
+                        }
+                    } else {
+                        withContext(Dispatchers.Main) { finish() }
+                    }
+                } catch (e: Exception) {
                     withContext(Dispatchers.Main) {
-                        WallpaperStore.setCurrentWallpaper(this@WallpaperPreviewActivity, finalUriString, textColor)
+                        WallpaperStore.setCurrentWallpaper(this@WallpaperPreviewActivity, "default", 0, false)
                         finish()
                     }
-                } else {
-                    withContext(Dispatchers.Main) { finish() }
                 }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    WallpaperStore.setCurrentWallpaper(this@WallpaperPreviewActivity, "default", 0)
-                    finish()
-                }
-            }
-        }
-    }
+           }
+     }
 
 override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
     super.onConfigurationChanged(newConfig)
@@ -222,7 +223,9 @@ inner class PreviewAdapter(private val items: List<String>) : RecyclerView.Adapt
             if (isVideo) {
                 h.image.visibility = View.GONE
                 playerView.visibility = View.VISIBLE
-                val exoPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(this@WallpaperPreviewActivity).build()
+                val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(this@WallpaperPreviewActivity)
+                    .setEnableDecoderFallback(true)
+                val exoPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(this@WallpaperPreviewActivity, renderersFactory).build()
                 playerView.player = exoPlayer
                 val mediaUri: android.net.Uri = if (item.startsWith("http")) android.net.Uri.parse(item) else android.net.Uri.fromFile(java.io.File(item))
                 val mediaItem = androidx.media3.common.MediaItem.Builder()
