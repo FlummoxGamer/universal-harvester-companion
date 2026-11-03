@@ -70,8 +70,8 @@ class BrowserFragment : Fragment() {
                             sessionFeature.set(
                                 feature = SessionFeature(
                                     store = components.store,
-                                    goBack = components.useCases.sessionUseCases.goBack,
-                                    goForward = components.useCases.sessionUseCases.goForward,
+                                    goBackUseCase = components.useCases.sessionUseCases.goBack,
+                                    goForwardUseCase = components.useCases.sessionUseCases.goForward,
                                     engineView = engineView,
                                     tabId = null
                                 ),
