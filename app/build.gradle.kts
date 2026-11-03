@@ -121,7 +121,11 @@ dependencies {
     implementation("org.mozilla.components:feature-downloads:$acVersion")
     implementation("org.mozilla.components:feature-findinpage:$acVersion")
     implementation("org.mozilla.components:feature-sitepermissions:$acVersion")
-    implementation("org.mozilla.components:feature-search:$acVersion")
+    
+    implementation("org.mozilla.components:feature-search:$acVersion") {
+        exclude(group = "org.mozilla.telemetry", module = "glean-native")
+    }
+    
     implementation("org.mozilla.components:lib-state:$acVersion")
     implementation("org.mozilla.components:support-base:$acVersion")
     implementation("org.mozilla.components:support-ktx:$acVersion")
