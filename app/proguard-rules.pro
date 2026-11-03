@@ -26,3 +26,9 @@
 -keepclassmembers class kotlinx.coroutines.** {
     volatile <fields>;
 }
+
+-keep class leakcanary.** { *; }
+-keep class shark.** { *; }
+-dontwarn leakcanary.**
+-dontwarn shark.**
+-keep class com.squareup.leakcanary.** { *; }
