@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import mozilla.components.browser.engine.gecko.GeckoEngine
+import mozilla.components.browser.state.engine.EngineMiddleware
 import mozilla.components.browser.state.store.BrowserStore
 
 class Components(
@@ -19,7 +20,9 @@ class Components(
     }
 
     val store: BrowserStore by lazy {
-        BrowserStore()
+        BrowserStore(
+            middleware = EngineMiddleware.create(engine)
+        )
     }
 
     val useCases by lazy { UseCases(store, engine) }
