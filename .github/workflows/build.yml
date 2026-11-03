@@ -53,8 +53,14 @@ jobs:
 
       - name: Build debug APK
         working-directory: src
-        run: gradle assemble${{ steps.vars.outputs.FLAVOR }}Debug --info
-
+        run: |
+          gradle assemble${{ steps.vars.outputs.FLAVOR }}Debug | tee build.log
+          echo "=========================================================="
+          echo "CACHE SUMMARY:"
+          echo "Tasks from cache: $(grep -c 'FROM-CACHE' build.log || true)"
+          echo "Tasks up-to-date: $(grep -c 'UP-TO-DATE' build.log || true)"
+          echo "=========================================================="
+   
       - name: Read version
         id: ver
         working-directory: src
