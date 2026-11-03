@@ -53,7 +53,7 @@ jobs:
 
       - name: Build debug APK
         working-directory: src
-        run: gradle assemble${{ steps.vars.outputs.FLAVOR }}Debug --no-daemon --no-configuration-cache
+        run: gradle assemble${{ steps.vars.outputs.FLAVOR }}Debug
 
       - name: Read version
         id: ver
