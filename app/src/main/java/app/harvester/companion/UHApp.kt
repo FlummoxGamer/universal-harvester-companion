@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 class UHApp : Application(), coil.ImageLoaderFactory {
 
     val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val components by lazy { app.harvester.companion.components.Components(this) }
 
 override fun newImageLoader(): coil.ImageLoader {
     return coil.ImageLoader.Builder(this)
