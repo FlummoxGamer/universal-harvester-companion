@@ -51,9 +51,9 @@ jobs:
             echo "RELEASE_NOTES=Automated Stable Build" >> $GITHUB_OUTPUT
           fi
 
-      - name: Build debug APK
+      - name: Build release APK
         working-directory: src
-        run: gradle assemble${{ steps.vars.outputs.FLAVOR }}Debug --no-daemon --no-configuration-cache
+        run: gradle assemble${{ steps.vars.outputs.FLAVOR }}Release --no-daemon --no-configuration-cache
 
       - name: Read version
         id: ver
@@ -69,8 +69,8 @@ jobs:
         working-directory: src
         run: |
           FLAVOR_DIR="${{ steps.vars.outputs.FLAVOR }}"
-          ARM64=$(find app/build/outputs/apk/$FLAVOR_DIR/debug -name "*-arm64-v8a-debug.apk" | head -1)
-          ARM32=$(find app/build/outputs/apk/$FLAVOR_DIR/debug -name "*-armeabi-v7a-debug.apk" | head -1)
+          ARM64=$(find app/build/outputs/apk/$FLAVOR_DIR/release -name "*-arm64-v8a-release.apk" | head -1)
+          ARM32=$(find app/build/outputs/apk/$FLAVOR_DIR/release -name "*-armeabi-v7a-release.apk" | head -1)
           echo "arm64=$ARM64" >> $GITHUB_OUTPUT
           echo "arm32=$ARM32" >> $GITHUB_OUTPUT
 
@@ -89,7 +89,6 @@ jobs:
           path: out/*.apk
           if-no-files-found: error
 
-      # NEW STEP: Check if this version is already released
       - name: Check if release exists
         id: check_release
         env:
@@ -105,7 +104,7 @@ jobs:
           fi
 
       - name: Publish APKs to GitHub Release
-        if: steps.check_release.outputs.exists == 'false' # Only run if release doesn't exist
+        if: steps.check_release.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -114,7 +113,6 @@ jobs:
           VC="${{ steps.ver.outputs.code }}"
           TAG="v$VN-$VC-${{ steps.vars.outputs.FLAVOR }}"
           
-          # publishRelease
           if [ "${{ steps.vars.outputs.FLAVOR }}" == "dev" ]; then
             RELEASE_FLAGS="--prerelease --latest=false"
           else
@@ -130,7 +128,7 @@ jobs:
             out/*.apk
 
       - name: Publish version JSON
-        if: steps.check_release.outputs.exists == 'false' # Only run if release doesn't exist
+        if: steps.check_release.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
