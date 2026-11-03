@@ -8,7 +8,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentContainerView
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -31,14 +30,17 @@ class HomeActivity : AppCompatActivity() {
                             AndroidView(
                                 factory = { ctx ->
                                     FragmentContainerView(ctx).apply {
-                                        id = android.R.id.content
+                                        id = 98765
                                     }
                                 },
                                 update = { view ->
-                                    val fragment = BrowserFragment()
-                                    (view.context as AppCompatActivity).supportFragmentManager.beginTransaction()
-                                        .replace(android.R.id.content, fragment)
-                                        .commit()
+                                    val fm = supportFragmentManager
+                                    val existing = fm.findFragmentById(view.id)
+                                    if (existing == null) {
+                                        fm.beginTransaction()
+                                            .replace(view.id, BrowserFragment())
+                                            .commitAllowingStateLoss()
+                                    }
                                 }
                             )
                         }
