@@ -86,8 +86,8 @@ android {
         }
         release {
             signingConfig = signingConfigs.getByName("shared")
-            isMinifyEnabled = true
-            isShrinkResources = true
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -107,7 +107,7 @@ kotlin {
 }
 
 dependencies {
-    implementation("com.squareup.leakcanary:leakcanary-android:2.14")
+    debugImplementation("com.squareup.leakcanary:leakcanary-android:2.14")
 
     val acVersion = "154.0.1"
     implementation("org.mozilla.components:browser-engine-gecko:$acVersion")
