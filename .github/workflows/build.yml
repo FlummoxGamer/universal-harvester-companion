@@ -60,7 +60,7 @@ jobs:
           echo "Tasks from cache: $(grep -c 'FROM-CACHE' build.log || true)"
           echo "Tasks up-to-date: $(grep -c 'UP-TO-DATE' build.log || true)"
           echo "=========================================================="
-   
+
       - name: Read version
         id: ver
         working-directory: src
@@ -70,28 +70,12 @@ jobs:
           echo "code=$VC" >> $GITHUB_OUTPUT
           echo "name=$VN" >> $GITHUB_OUTPUT
 
-      - name: Check if release exists
-        id: check_release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="v${{ steps.ver.outputs.name }}-${{ steps.ver.outputs.code }}-${{ steps.vars.outputs.FLAVOR }}"
-          if gh release view "$TAG" --repo "${{ github.repository }}" > /dev/null 2>&1; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-            echo "Release $TAG already exists. Skipping publish."
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-            echo "Release $TAG does not exist. Will publish."
-          fi
-
       - name: Locate APKs
         id: apks
         working-directory: src
         run: |
-          ARM64=$(find app/build/outputs/apk/ -name "*-arm64-v8a-debug.apk" | head -1)
-          ARM32=$(find app/build/outputs/apk/ -name "*-armeabi-v7a-debug.apk" | head -1)
+          ARM64=$(find app/build/outputs/apk -name "*-arm64-v8a-debug.apk" | head -1)
           echo "arm64=$ARM64" >> $GITHUB_OUTPUT
-          echo "arm32=$ARM32" >> $GITHUB_OUTPUT
 
       - name: Print APK Size Breakdown
         working-directory: src
@@ -117,23 +101,34 @@ jobs:
           fi
 
       - name: Stage artifacts
-        if: steps.check_release.outputs.exists == 'false'
         run: |
           mkdir -p out
-          if [ -n "${{ steps.apks.outputs.arm64 }}" ] && [ "${{ steps.apks.outputs.arm64 }}" != "src/" ]; then
-            cp "src/${{ steps.apks.outputs.arm64 }}" "out/uh-companion-${{ steps.ver.outputs.name }}-arm64-v8a.apk"
-          fi
-          if [ -n "${{ steps.apks.outputs.arm32 }}" ]; then
-            cp "src/${{ steps.apks.outputs.arm32 }}" "out/uh-companion-${{ steps.ver.outputs.name }}-armeabi-v7a.apk"
-          fi
+          find src/app/build/outputs/apk -name "*.apk" -exec cp {} out/ \;
+          for f in out/*.apk; do
+            if [[ "$f" == *"arm64-v8a"* ]]; then mv "$f" "out/uh-companion-${{ steps.ver.outputs.name }}-arm64-v8a.apk"; fi
+            if [[ "$f" == *"armeabi-v7a"* ]]; then mv "$f" "out/uh-companion-${{ steps.ver.outputs.name }}-armeabi-v7a.apk"; fi
+          done
 
       - name: Upload artifacts
-        if: steps.check_release.outputs.exists == 'false'
         uses: actions/upload-artifact@v4
         with:
           name: uh-companion-${{ steps.vars.outputs.FLAVOR }}
           path: out/*.apk
           if-no-files-found: error
+
+      - name: Check if release exists
+        id: check_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.ver.outputs.name }}-${{ steps.ver.outputs.code }}-${{ steps.vars.outputs.FLAVOR }}"
+          if gh release view "$TAG" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Release $TAG already exists. Skipping publish."
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Release $TAG does not exist. Will publish."
+          fi
 
       - name: Publish APKs to GitHub Release
         if: steps.check_release.outputs.exists == 'false'
