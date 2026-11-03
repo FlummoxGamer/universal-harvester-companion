@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
@@ -13,27 +14,28 @@ android {
         targetSdk = 36
         versionCode = 127
         versionName = "2.4.57"
-   }
+    }
 
-   flavorDimensions += "version"
-   productFlavors {
-       create("stable") {
-           dimension = "version"
-           applicationIdSuffix = ""
-           versionNameSuffix = ""
-           resValue("string", "app_name", "Universal Harvester")
-       }
-       create("dev") {
-           dimension = "version"
-           applicationIdSuffix = ".dev"
-           versionNameSuffix = "-dev"
-           resValue("string", "app_name", "UH Dev")
-       }
+    flavorDimensions += "version"
+    productFlavors {
+        create("stable") {
+            dimension = "version"
+            applicationIdSuffix = ""
+            versionNameSuffix = ""
+            resValue("string", "app_name", "Universal Harvester")
+        }
+        create("dev") {
+            dimension = "version"
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            resValue("string", "app_name", "UH Dev")
+        }
     }
 
     buildFeatures {
         viewBinding = true
         buildConfig = true
+        compose = true
     }
 
     androidResources {
@@ -67,16 +69,16 @@ android {
     }
 
     signingConfigs {
-    create("shared") {
-        val ks = file("../uh-debug.jks")
-        if (ks.exists()) {
-            storeFile = ks
-            storePassword = "uhdebug123"
-            keyAlias = "uhdebug"
-            keyPassword = "uhdebug123"
+        create("shared") {
+            val ks = file("../uh-debug.jks")
+            if (ks.exists()) {
+                storeFile = ks
+                storePassword = "uhdebug123"
+                keyAlias = "uhdebug"
+                keyPassword = "uhdebug123"
+            }
         }
     }
-}
 
     buildTypes {
         debug {
@@ -103,8 +105,8 @@ kotlin {
 dependencies {
     debugImplementation("com.squareup.leakcanary:leakcanary-android:2.14")
     implementation("org.mozilla.geckoview:geckoview:154.0.20260824154132")
-    
-    val acVersion = "154.0.20260824154132"
+
+    val acVersion = "154.0.1"
     implementation("org.mozilla.components:browser-engine-gecko:$acVersion")
     implementation("org.mozilla.components:browser-state:$acVersion")
     implementation("org.mozilla.components:browser-session-storage:$acVersion")
@@ -127,19 +129,20 @@ dependencies {
     implementation("org.mozilla.components:support-utils:$acVersion")
     implementation("org.mozilla.components:ui-icons:$acVersion")
     implementation("org.mozilla.components:ui-widgets:$acVersion")
-    
+
     implementation("androidx.navigation:navigation-fragment-ktx:2.7.7")
     implementation("androidx.navigation:navigation-ui-ktx:2.7.7")
-    
+    implementation("androidx.activity:activity-compose:1.9.2")
+    implementation("androidx.compose.material3:material3:1.3.0")
+    implementation("androidx.compose.ui:ui-tooling-preview:1.7.0")
+    implementation("io.coil-kt:coil-compose:2.6.0")
+    debugImplementation("androidx.compose.ui:ui-tooling:1.7.0")
+
     implementation("androidx.webkit:webkit:1.12.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.constraintlayout:constraintlayout:2.2.0")
     implementation("androidx.activity:activity-ktx:1.9.2")
-    implementation("androidx.activity:activity-compose:1.9.2")
-    implementation("androidx.compose.ui:ui:1.7.0")
-    implementation("androidx.compose.material3:material3:1.3.0")
-    implementation("androidx.compose.ui:ui-tooling-preview:1.7.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
@@ -149,13 +152,11 @@ dependencies {
     implementation("androidx.viewpager2:viewpager2:1.1.0")
     implementation("io.coil-kt:coil:2.6.0")
     implementation("io.coil-kt:coil-gif:2.6.0")
-    implementation("io.coil-kt:coil-compose:2.6.0")
     implementation("androidx.media3:media3-exoplayer:1.2.1")
     implementation("androidx.media3:media3-ui:1.2.1")
     implementation("io.coil-kt:coil-video:2.6.0")
     implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.9")
 }
-
 
 tasks.configureEach {
     if (name.startsWith("check") && name.endsWith("AarMetadata")) {
