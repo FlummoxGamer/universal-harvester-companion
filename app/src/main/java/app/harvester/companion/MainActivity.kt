@@ -167,6 +167,7 @@ android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
     }, 100)
     
     val testButton = android.widget.Button(this).apply {
+        id = android.view.View.generateViewId()
         text = "New UI"
         setBackgroundColor(android.graphics.Color.RED)
         setTextColor(android.graphics.Color.WHITE)
