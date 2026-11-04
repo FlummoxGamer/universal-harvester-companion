@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("org.mozilla.nimbus-gradle-plugin")
 }
 
 android {
@@ -102,10 +103,27 @@ kotlin {
     }
 }
 
+nimbus {
+    manifestFile = "nimbus.fml.yaml"
+    channels = mapOf(
+        "debug" to "developer",
+        "dev" to "developer",
+        "release" to "release",
+        "stable" to "release"
+    )
+}
+
 dependencies {
     debugImplementation("com.squareup.leakcanary:leakcanary-android:2.14")
     implementation("org.mozilla.geckoview:geckoview:154.0.20260824154132")
     
+    val acVersion = "154.0.1"
+    implementation("org.mozilla.components:service-nimbus:$acVersion")
+    implementation("org.mozilla.components:service-glean:$acVersion")
+    implementation("org.mozilla.components:support-appservices:$acVersion")
+    implementation("org.mozilla.components:support-remotesettings:$acVersion")
+    
+    implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation(platform("androidx.compose:compose-bom:2024.09.03"))
     implementation("androidx.compose.ui:ui")
