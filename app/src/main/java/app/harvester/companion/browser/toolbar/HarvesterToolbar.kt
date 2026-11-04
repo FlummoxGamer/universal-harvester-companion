@@ -44,7 +44,8 @@ fun HarvesterToolbar(
 ) {
     var text by remember { mutableStateOf(url) }
     val bottomBarColor = if (isWallpaperActive) Color.Transparent else colorResource(id = R.color.bg)
-    val searchEngineEntry = remember { SearchEnginePrefs.currentEntry(ctx = LocalContext.current) }
+    val context = LocalContext.current
+    val searchEngineEntry = remember(context) { SearchEnginePrefs.currentEntry(ctx = context) }
 
     LaunchedEffect(url) {
         if (text.isEmpty() || url != "about:blank") {
