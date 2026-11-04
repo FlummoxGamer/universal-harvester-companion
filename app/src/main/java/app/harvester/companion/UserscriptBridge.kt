@@ -254,7 +254,7 @@ class UserscriptBridge(private val ctx: Context) {
     @JavascriptInterface
     fun GM_openInTab(script: String, url: String, active: Boolean) {
         try {
-            val intent = android.content.Intent(ctx, MainActivity::class.java).apply {
+            val intent = android.content.Intent(ctx, HomeActivity::class.java).apply {
                 data = android.net.Uri.parse(url)
                 addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             }
