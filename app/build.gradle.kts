@@ -107,7 +107,6 @@ kotlin {
 
 dependencies {
     debugImplementation("com.squareup.leakcanary:leakcanary-android:2.14")
-    implementation("org.mozilla.geckoview:geckoview:154.0.20260824154132")
     
     implementation("com.iqiyi.xcrash:xcrash-android-lib:3.1.0")
     implementation(platform("io.sentry:sentry-bom:8.20.0"))
