@@ -27,6 +27,16 @@
             android:theme="@style/Theme.UHCompanion" />
 
         <activity
+            android:name="app.harvester.companion.utils.phoenix.PhoenixActivity"
+            android:exported="false"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <service
+            android:name="app.harvester.companion.utils.phoenix.PhoenixService"
+            android:exported="false" />
+
+        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:theme="@style/Theme.UHCompanion.Launch"
