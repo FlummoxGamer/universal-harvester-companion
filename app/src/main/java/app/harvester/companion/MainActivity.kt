@@ -113,6 +113,7 @@ val t2 = System.currentTimeMillis()
 UHLog.d("perf", "inflate: ${t1 - t0}ms, setContentView: ${t2 - t1}ms")
 
 val testSafeModeButton = android.widget.Button(this).apply {
+    id = android.view.View.generateViewId()
     text = "Test Safe Mode"
     setBackgroundColor(android.graphics.Color.parseColor("#457B9D"))
     setTextColor(android.graphics.Color.WHITE)
