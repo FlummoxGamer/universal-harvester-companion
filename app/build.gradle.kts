@@ -115,6 +115,12 @@ dependencies {
     implementation("io.sentry:sentry-android-ndk")
 
     implementation("androidx.core:core-splashscreen:1.0.1")
+    implementation("org.mozilla.components:browser-engine-gecko:154.0.1")
+    implementation("org.mozilla.components:browser-state:154.0.1")
+    implementation("org.mozilla.components:concept-engine:154.0.1")
+    implementation("org.mozilla.components:feature-session:154.0.1")
+    implementation("org.mozilla.components:feature-tabs:154.0.1")
+
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation(platform("androidx.compose:compose-bom:2024.09.03"))
     implementation("androidx.compose.ui:ui")
