@@ -69,12 +69,15 @@ class UHApp : Application(), coil.ImageLoaderFactory {
             options.isAttachThreads = true
             options.isAttachAnrThreadDump = true
             
-            options.beforeSend = io.sentry.SentryOptions.BeforeSendCallback { event, _ ->
-                if (isSafeModeTriggered.compareAndSet(false, true)) {
-                    val throwable = event.throwable ?: Throwable(event.message ?: "Unknown Sentry Crash")
-                    handleCaughtCrash(throwable)
+            options.beforeSend = object : io.sentry.SentryOptions.BeforeSendCallback {
+                override fun execute(event: io.sentry.SentryEvent, hint: io.sentry.Hint): io.sentry.SentryEvent? {
+                    if (isSafeModeTriggered.compareAndSet(false, true)) {
+                        val msgString = event.message?.formatted ?: "Unknown Sentry Crash"
+                        val throwable = event.throwable ?: Exception(msgString)
+                        handleCaughtCrash(throwable)
+                    }
+                    return null
                 }
-                null
             }
         }
     }
