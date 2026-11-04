@@ -19,6 +19,10 @@ import androidx.activity.addCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import app.harvester.companion.splash.CompositeSplashScreenOperation
+import app.harvester.companion.splash.GeckoInitOperation
+import app.harvester.companion.splash.SplashScreenManager
 import androidx.constraintlayout.widget.ConstraintSet
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -61,10 +65,23 @@ class MainActivity : AppCompatActivity() {
     private var urlTextWatcher: android.text.TextWatcher? = null
 
 override fun onCreate(savedInstanceState: Bundle?) {
+    val splashScreen = installSplashScreen()
     try {
         val start = System.currentTimeMillis()
         setTheme(R.style.Theme_UHCompanion)
         super.onCreate(savedInstanceState)
+        
+        val geckoOperation = GeckoInitOperation(this)
+        val compositeOperation = CompositeSplashScreenOperation(listOf(geckoOperation))
+        val splashManager = SplashScreenManager(
+            splashScreenOperation = compositeOperation,
+            splashScreenTimeout = 2000L,
+            showSplashScreen = { condition -> splashScreen.setKeepOnScreenCondition(condition) },
+            onSplashScreenFinished = { result ->
+                UHLog.d("splash", "Finished: ${result::class.java.simpleName}")
+            }
+        )
+        splashManager.showSplashScreen()
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = android.graphics.Color.TRANSPARENT
         window.navigationBarColor = android.graphics.Color.TRANSPARENT
@@ -108,7 +125,7 @@ mainGeckoView = engineView.geckoView
 
 binding.splashScreenCompose.setContent {
     androidx.compose.material3.MaterialTheme {
-        app.harvester.companion.splash.SplashScreen {
+        app.harvester.companion.splash.ComposeSplashScreen {
             binding.splashScreenCompose.visibility = View.GONE
         }
     }
