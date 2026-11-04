@@ -112,26 +112,6 @@ setContentView(binding.root)
 val t2 = System.currentTimeMillis()
 UHLog.d("perf", "inflate: ${t1 - t0}ms, setContentView: ${t2 - t1}ms")
 
-val testSafeModeButton = android.widget.Button(this).apply {
-    id = android.view.View.generateViewId()
-    text = "Test Safe Mode"
-    setBackgroundColor(android.graphics.Color.parseColor("#457B9D"))
-    setTextColor(android.graphics.Color.WHITE)
-    setOnClickListener {
-        java.io.File(filesDir, "safe_mode.flag").createNewFile()
-        app.harvester.companion.utils.phoenix.ProcessPhoenix.triggerRebirth(this@MainActivity)
-    }
-}
-val params = ConstraintLayout.LayoutParams(
-    ConstraintLayout.LayoutParams.WRAP_CONTENT,
-    ConstraintLayout.LayoutParams.WRAP_CONTENT
-).apply {
-    topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-    endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-    setMargins(16, 100, 16, 16)
-}
-binding.root.addView(testSafeModeButton, params)
-
 val engineView = GeckoEngineView(this)
 engineView.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
 binding.webContainer.addView(engineView)
@@ -289,7 +269,7 @@ android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                                 } catch (_: Exception) {}
                                 return GeckoResult.fromValue("ok")
                             }
-            "OVERLAY_STATE" -> {
+    "OVERLAY_STATE" -> {
         val active = json.optBoolean("active")
         val bridge = mainGeckoView.tag as? UserscriptBridge
         bridge?.overlayActive = active
@@ -1042,14 +1022,20 @@ private fun showShortcutEditor(existing: Shortcut?) {
             .show()
     }
 
-    private fun loadUrlFromHome(url: String) {
-        var session = currentSession
-        if (session == null || currentUrl == "about:blank" || tabs.currentId() < 0L) {
-            tabs.openNew(url); attachCurrent(); session = currentSession
-        }
-        session?.loadUri(url)
-        updateHomeVisibility()
+private fun loadUrlFromHome(url: String) {
+    binding.homeScreen.visibility = View.GONE
+    binding.swipeRefresh.visibility = View.VISIBLE
+    
+    val existing = supportFragmentManager.findFragmentById(R.id.webContainer) as? app.harvester.companion.browser.BrowserFragment
+    if (existing == null) {
+        val fragment = app.harvester.companion.browser.BrowserFragment.newInstance(url)
+        supportFragmentManager.beginTransaction()
+            .replace(R.id.webContainer, fragment)
+            .commit()
+    } else {
+        existing.loadUrl(url)
     }
+}
 
     private fun attachCurrent() {
         val session = tabs.currentSession() ?: return
