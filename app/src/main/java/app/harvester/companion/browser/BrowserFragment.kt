@@ -147,6 +147,7 @@ private fun setupWebExtensionBridge() {
 
                 val isEditing by viewModel.isEditing.collectAsState()
                 val editText by viewModel.editText.collectAsState()
+                val suggestions by viewModel.suggestions.collectAsState()
 
                 app.harvester.companion.browser.BrowserScreen(
                     browserState = browserState,
@@ -155,6 +156,7 @@ private fun setupWebExtensionBridge() {
                     viewModel = viewModel,
                     isEditing = isEditing,
                     editText = editText,
+                    suggestions = suggestions,
                     onNavigate = { url -> loadUrl(url) }
                 )
             }
