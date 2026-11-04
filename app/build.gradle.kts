@@ -57,6 +57,9 @@ android {
     }
 
     packaging {
+        jniLibs {
+            pickFirsts += "**/libxul.so"
+        }
         resources {
             excludes += setOf(
                 "META-INF/*.kotlin_module",
@@ -105,12 +108,6 @@ kotlin {
 dependencies {
     debugImplementation("com.squareup.leakcanary:leakcanary-android:2.14")
     implementation("org.mozilla.geckoview:geckoview:154.0.20260824154132")
-    
-    val acVersion = "154.0.1"
-    implementation("org.mozilla.components:service-nimbus:$acVersion")
-    implementation("org.mozilla.components:service-glean:$acVersion")
-    implementation("org.mozilla.components:support-appservices:$acVersion")
-    implementation("org.mozilla.components:support-remotesettings:$acVersion")
     
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("androidx.activity:activity-compose:1.9.2")
