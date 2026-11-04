@@ -118,6 +118,24 @@ setContentView(binding.root)
 val t2 = System.currentTimeMillis()
 UHLog.d("perf", "inflate: ${t1 - t0}ms, setContentView: ${t2 - t1}ms")
 
+val testSafeModeButton = android.widget.Button(this).apply {
+    text = "Test Safe Mode"
+    setBackgroundColor(android.graphics.Color.parseColor("#457B9D"))
+    setTextColor(android.graphics.Color.WHITE)
+    setOnClickListener {
+        getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().putBoolean("force_safe_mode", true).apply()
+        app.harvester.companion.utils.phoenix.ProcessPhoenix.triggerRebirth(this@MainActivity)
+    }
+}
+val params = ConstraintLayout.LayoutParams(
+    ConstraintLayout.LayoutParams.WRAP_CONTENT,
+    ConstraintLayout.LayoutParams.WRAP_CONTENT
+).apply {
+    topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+    endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+    setMargins(16, 100, 16, 16)
+}
+binding.root.addView(testSafeModeButton, params)
 val engineView = GeckoEngineView(this)
 engineView.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
 binding.webContainer.addView(engineView)
