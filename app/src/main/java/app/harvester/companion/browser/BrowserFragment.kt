@@ -89,8 +89,14 @@ class BrowserFragment : Fragment() {
                                     modifier = Modifier.weight(1f)
                                 )
 
+                                val isWallpaperActive = try {
+                                    val wpPath = app.harvester.companion.WallpaperStore.getCurrentWallpaper(context)
+                                    wpPath != null && wpPath != "default"
+                                } catch (_: Exception) { false }
+
                                 HarvesterToolbar(
                                     url = selectedTab?.content?.url ?: "",
+                                    isWallpaperActive = isWallpaperActive,
                                     onNavigate = { url ->
                                         components.useCases.sessionUseCases.loadUrl(url)
                                     }
