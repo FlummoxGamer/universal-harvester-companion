@@ -2,6 +2,7 @@ package app.harvester.companion
 
 import android.app.Application
 import android.content.ComponentCallbacks2
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -22,7 +23,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 class UHApp : Application(), coil.ImageLoaderFactory {
 
     val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    val components by lazy { app.harvester.companion.components.Components(this) }
     private val isSafeModeTriggered = AtomicBoolean(false)
 
     override fun newImageLoader(): coil.ImageLoader {
@@ -35,15 +35,22 @@ class UHApp : Application(), coil.ImageLoaderFactory {
             .build()
     }
 
-    override fun attachBaseContext(base: android.content.Context) {
+    override fun attachBaseContext(base: Context) {
         super.attachBaseContext(base)
+        if (Build.VERSION.SDK_INT <= 30) {
+            initXCrash(base)
+        }
     }
 
     override fun onCreate() {
-        val start = System.currentTimeMillis()
         super.onCreate()
         
-        initSentry()
+        if (Build.VERSION.SDK_INT >= 31) {
+            initSentry(fullNdk = true)
+        } else {
+            initSentry(fullNdk = false)
+        }
+        
         checkNativeCrashes()
         ThemePrefs.applyCurrent(this)
         
@@ -62,15 +69,13 @@ class UHApp : Application(), coil.ImageLoaderFactory {
         try {
             startService(Intent(this, SessionService::class.java))
         } catch (_: Exception) {}
-    
-        UHLog.d("perf", "UHApp.onCreate took ${System.currentTimeMillis() - start}ms")
     }
 
-    private fun initSentry() {
+    private fun initSentry(fullNdk: Boolean) {
         try {
             SentryAndroid.init(this) { options ->
                 options.dsn = ""
-                options.isEnableNdk = true
+                options.isEnableNdk = fullNdk
                 options.setDiagnosticLevel(SentryLevel.FATAL)
                 options.isAttachThreads = true
                 options.isAttachAnrThreadDump = true
@@ -97,7 +102,7 @@ class UHApp : Application(), coil.ImageLoaderFactory {
         } catch (_: Exception) {}
     }
 
-    private fun initXCrash(context: android.content.Context) {
+    private fun initXCrash(context: Context) {
         try {
             val params = XCrash.InitParameters()
             params.setAppVersion(BuildConfig.VERSION_NAME)
@@ -115,7 +120,7 @@ class UHApp : Application(), coil.ImageLoaderFactory {
         } catch (_: Throwable) {}
     }
 
-    private fun handleXCrash(context: android.content.Context, logPath: String?, emergency: String?) {
+    private fun handleXCrash(context: Context, logPath: String?, emergency: String?) {
         try {
             if (isSafeModeTriggered.compareAndSet(false, true)) {
                 val crashFile = File(context.filesDir, "last_crash.txt")
