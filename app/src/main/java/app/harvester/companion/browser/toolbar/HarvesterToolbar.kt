@@ -1,6 +1,7 @@
 package app.harvester.companion.browser.toolbar
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,9 +24,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.harvester.companion.R
@@ -33,9 +37,11 @@ import app.harvester.companion.R
 @Composable
 fun HarvesterToolbar(
     url: String,
+    isWallpaperActive: Boolean,
     onNavigate: (String) -> Unit
 ) {
     var text by remember { mutableStateOf(url) }
+    val bottomBarColor = if (isWallpaperActive) Color.Transparent else colorResource(id = R.color.bg)
 
     LaunchedEffect(url) {
         if (text.isEmpty() || url != "about:blank") {
@@ -47,15 +53,16 @@ fun HarvesterToolbar(
         modifier = Modifier
             .fillMaxWidth()
             .height(68.dp)
-            .background(Color(0xFF0A0F1A))
-            .padding(horizontal = 4.dp),
+            .background(bottomBarColor)
+            .padding(start = 4.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(
             modifier = Modifier
                 .weight(1f)
                 .height(52.dp)
-                .background(color = Color(0xFF1E2329), shape = RoundedCornerShape(16.dp))
+                .background(color = colorResource(id = R.color.surface_2), shape = RoundedCornerShape(16.dp))
+                .border(1.dp, colorResource(id = R.color.border), RoundedCornerShape(16.dp))
                 .padding(start = 6.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -63,7 +70,7 @@ fun HarvesterToolbar(
                 Icon(
                     painter = painterResource(id = R.drawable.ic_code),
                     contentDescription = "Scripts",
-                    tint = Color(0xFFE6E9EE),
+                    tint = colorResource(id = R.color.text),
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -77,7 +84,7 @@ fun HarvesterToolbar(
                 Icon(
                     painter = painterResource(id = R.drawable.ic_search),
                     contentDescription = "Search",
-                    tint = Color(0xFFE6E9EE),
+                    tint = colorResource(id = R.color.text),
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -90,7 +97,7 @@ fun HarvesterToolbar(
                     value = text,
                     onValueChange = { text = it },
                     modifier = Modifier.fillMaxWidth(),
-                    textStyle = TextStyle(color = Color(0xFFE6E9EE), fontSize = 14.sp),
+                    textStyle = TextStyle(color = colorResource(id = R.color.text), fontSize = 14.sp),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                     keyboardActions = KeyboardActions(onGo = {
@@ -98,7 +105,7 @@ fun HarvesterToolbar(
                     }),
                     decorationBox = { innerTextField ->
                         if (text.isEmpty()) {
-                            Text("Search or type URL", color = Color(0xFF8A96A8), fontSize = 14.sp)
+                            Text("Search or type URL", color = colorResource(id = R.color.subtext), fontSize = 14.sp)
                         }
                         innerTextField()
                     }
@@ -110,7 +117,7 @@ fun HarvesterToolbar(
                     Icon(
                         painter = painterResource(id = R.drawable.ic_close),
                         contentDescription = "Clear",
-                        tint = Color(0xFF8A96A8)
+                        tint = colorResource(id = R.color.subtext)
                     )
                 }
             }
@@ -120,17 +127,22 @@ fun HarvesterToolbar(
             modifier = Modifier
                 .padding(horizontal = 4.dp)
                 .size(24.dp)
-                .background(Color.Transparent, shape = RoundedCornerShape(8.dp)),
+                .border(2.dp, colorResource(id = R.color.text), RoundedCornerShape(8.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Text("1", color = Color(0xFFE6E9EE), fontSize = 12.sp)
+            Text(
+                "1", 
+                color = colorResource(id = R.color.text), 
+                fontSize = 12.sp, 
+                fontWeight = FontWeight.Bold
+            )
         }
 
         IconButton(onClick = {}, modifier = Modifier.size(36.dp)) {
             Icon(
                 painter = painterResource(id = R.drawable.ic_menu),
                 contentDescription = "Menu",
-                tint = Color(0xFFE6E9EE)
+                tint = colorResource(id = R.color.text)
             )
         }
     }
