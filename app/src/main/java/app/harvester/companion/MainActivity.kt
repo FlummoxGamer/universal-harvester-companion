@@ -1,41 +1,25 @@
 package app.harvester.companion
 
-import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.net.Uri
 import android.os.Bundle
 import android.view.View
-import android.view.ViewGroup
-import android.widget.EditText
-import android.widget.ImageView
 import android.widget.Toast
 import androidx.activity.addCallback
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
-import androidx.recyclerview.widget.LinearLayoutManager
 import app.harvester.companion.browser.BrowserFragment
 import app.harvester.companion.databinding.ActivityMainBinding
-import com.google.android.material.bottomsheet.BottomSheetDialog
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.net.URL
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var shortcutAdapter: ShortcutAdapter
-    private lateinit var suggestionsAdapter: SuggestionAdapter
     private var browserFragment: BrowserFragment? = null
     private var homeVideoPlayer: androidx.media3.exoplayer.ExoPlayer? = null
-    private var suggestJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         try {
@@ -85,7 +69,6 @@ class MainActivity : AppCompatActivity() {
         binding.root.addView(testSafeModeButton, params)
 
         setupHomeGrid()
-        setupSwipeRefresh()
         setupBackDispatcher()
 
         if (savedInstanceState != null) {
@@ -108,9 +91,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun setupSwipeRefresh() {
-    }
-
     private fun setupBackDispatcher() {
         onBackPressedDispatcher.addCallback(this) {
             if (binding.browserFragmentContainer.visibility == View.VISIBLE) {
@@ -121,13 +101,11 @@ class MainActivity : AppCompatActivity() {
                         binding.browserFragmentContainer.visibility = View.GONE
                         binding.homeScreen.visibility = View.VISIBLE
                         binding.btnEditHome.visibility = View.VISIBLE
-                        binding.swipeRefresh.visibility = View.GONE
                     }
                 } else {
                     binding.browserFragmentContainer.visibility = View.GONE
                     binding.homeScreen.visibility = View.VISIBLE
                     binding.btnEditHome.visibility = View.VISIBLE
-                    binding.swipeRefresh.visibility = View.GONE
                 }
             } else {
                 finish()
@@ -135,27 +113,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showAddShortcutDialog() { showShortcutEditor(null) }
-
-    private fun showShortcutEditor(existing: Shortcut?) {
+    private fun showAddShortcutDialog() {
         val view = layoutInflater.inflate(R.layout.dialog_add_shortcut_custom, null)
-        val dialog = AlertDialog.Builder(this)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
             .setView(view)
             .setCancelable(true)
             .create()
 
-        view.findViewById<android.widget.TextView>(R.id.dialogTitle).text = if (existing == null) "Add Shortcut" else "Edit Shortcut"
-        
+        view.findViewById<android.widget.TextView>(R.id.dialogTitle).text = "Add Shortcut"
         val urlInput = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.inputUrl)
         val nameInput = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.inputName)
-        
-        if (existing != null) {
-            urlInput.setText(existing.url)
-            nameInput.setText(existing.name)
-        }
 
         view.findViewById<View>(R.id.btnCancel).setOnClickListener { dialog.dismiss() }
-        
         view.findViewById<View>(R.id.btnSave).setOnClickListener {
             val raw = urlInput.text.toString().trim()
             if (raw.isBlank()) {
@@ -166,7 +135,6 @@ class MainActivity : AppCompatActivity() {
             val manual = nameInput.text.toString().trim()
             val name = if (manual.isNotBlank()) manual else ShortcutStore.shortNameFor(fixed)
             
-            if (existing != null) ShortcutStore.remove(this, existing.url)
             ShortcutStore.add(this, Shortcut(name, fixed, ShortcutStore.iconUrlFor(fixed)))
             shortcutAdapter.submit(ShortcutStore.list(this))
             dialog.dismiss()
@@ -175,16 +143,11 @@ class MainActivity : AppCompatActivity() {
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
         dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
         dialog.show()
-        
-        val width = (resources.displayMetrics.widthPixels * 0.90).toInt()
-        dialog.window?.setLayout(width, android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
-        dialog.window?.setGravity(android.view.Gravity.CENTER)
     }
 
     private fun loadUrlFromHome(url: String) {
         binding.homeScreen.visibility = View.GONE
         binding.btnEditHome.visibility = View.GONE
-        binding.swipeRefresh.visibility = View.GONE
         binding.browserFragmentContainer.visibility = View.VISIBLE
         
         val existing = supportFragmentManager.findFragmentById(R.id.browserFragmentContainer) as? BrowserFragment
@@ -201,7 +164,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        UpdateChecker.resumePendingInstallIfPossible(this)
         applyWallpaper()
         shortcutAdapter.submit(ShortcutStore.list(this))
         homeVideoPlayer?.play()
@@ -243,7 +205,6 @@ class MainActivity : AppCompatActivity() {
             binding.btnEditHome.setImageResource(R.drawable.ic_pencil)
             binding.btnEditHome.setColorFilter(ContextCompat.getColor(this, R.color.text))
             binding.btnEditHome.background = null
-            binding.btnEditHome.setLayerType(android.view.View.LAYER_TYPE_NONE, null)
             shortcutAdapter.setTextColor(ContextCompat.getColor(this, R.color.text), 0)
         } else {
             try {
@@ -317,7 +278,6 @@ class MainActivity : AppCompatActivity() {
         homeVideoPlayer?.stop()
         homeVideoPlayer?.release()
         homeVideoPlayer = null
-        suggestJob?.cancel()
         super.onDestroy()
     }
 }
