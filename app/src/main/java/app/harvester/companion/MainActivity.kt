@@ -62,7 +62,11 @@ class MainActivity : AppCompatActivity() {
     private var engineIconCache: Bitmap? = null
     private var currentEngineId: String = ""
     private var suggestJob: Job? = null
-    private var urlTextWatcher: android.text.TextWatcher? = null
+
+    private var composeUrl by androidx.compose.runtime.mutableStateOf("")
+    private var composeIsEditing by androidx.compose.runtime.mutableStateOf(false)
+    private var composeTabCount by androidx.compose.runtime.mutableStateOf(1)
+    private var composeIconState by androidx.compose.runtime.mutableStateOf(0)
 
 override fun onCreate(savedInstanceState: Bundle?) {
     val splashScreen = installSplashScreen()
@@ -607,7 +611,7 @@ private fun showWidgetMenu(s: Shortcut, anchor: android.view.View) {
     }
 
     private fun refreshSuggestions(hasText: Boolean) {
-        val typed = binding.urlEdit.text.toString().trim()
+        val typed = if (composeIsEditing) composeUrl.trim() else ""
         val isUrl = typed.contains(".") && !typed.contains(" ")
         val loadedUrl = currentUrl
 
@@ -653,32 +657,27 @@ suggestJob = lifecycleScope.launch {
 }
     }
 
-    private fun setupBottomBar() {
-        binding.urlText.setOnClickListener { enterEditMode() }
-        binding.urlClear.setOnClickListener {
-            binding.urlEdit.setText("")
-            refreshSuggestions(false)
+private fun setupBottomBar() {
+    binding.bottomBar.setContent {
+        androidx.compose.material3.MaterialTheme {
+            app.harvester.companion.browser.toolbar.HarvesterAddressBar(
+                url = composeUrl,
+                isEditing = composeIsEditing,
+                tabCount = composeTabCount,
+                iconState = composeIconState,
+                isWallpaperActive = false,
+                onEditTextChanged = { refreshSuggestions(it.isNotEmpty()) },
+                onSubmit = { navigateInput(it) },
+                onEditStart = { enterEditMode() },
+                onClear = { refreshSuggestions(false) },
+                onSearchEngineClick = { showSearchEnginePicker() },
+                onScriptMenuClick = { showScriptMenuSheet() },
+                onMenuClick = { showMenu() },
+                onTabCountClick = { openTabGrid() }
+            )
         }
-        binding.urlEdit.setOnEditorActionListener { _, actionId, event ->
-            if (actionId == EditorInfo.IME_ACTION_GO ||
-                (event != null && event.keyCode == KeyEvent.KEYCODE_ENTER)) {
-                val typed = binding.urlEdit.text.toString().trim()
-                if (typed.isNotBlank()) {
-                    navigateInput(typed)
-                }
-                true
-            } else false
-        }
-        binding.searchEngineIcon.setOnClickListener {
-            val isBlank = currentUrl.isBlank() || currentUrl == "about:blank"
-            if (isBlank || binding.urlEdit.visibility == View.VISIBLE) {
-                showSearchEnginePicker()
-            }
-        }
-        binding.btnMenu.setOnClickListener { showMenu() }
-        binding.tabCount.setOnClickListener { openTabGrid() }
-        binding.btnScriptMenu.setOnClickListener { showScriptMenuSheet() }
     }
+}
 
 private fun navigateInput(typed: String): Boolean {
     val target = normalize(typed)
@@ -808,70 +807,39 @@ if (position == 0) {
     cs.applyTo(root)
     androidx.core.view.ViewCompat.requestApplyInsets(root)
 }
-    private fun enterEditMode() {
-        val url = currentUrl
-        val isBlank = url.isBlank() || url == "about:blank"
+private fun enterEditMode() {
+    val url = currentUrl
+    val isBlank = url.isBlank() || url == "about:blank"
 
-        updateStatusBarAppearance(false)
+    updateStatusBarAppearance(false)
 
-        binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
-        binding.suggestionsPanel.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+    binding.suggestionsPanel.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+    binding.urlChipStrip.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+    binding.urlChipBar.setCardBackgroundColor(ContextCompat.getColor(this, R.color.surface_2))
+
+    binding.urlChipText.text = if (isBlank) "" else url
+    binding.urlChipStrip.visibility = if (isBlank) View.GONE else View.VISIBLE
+    if (isBlank) {
+        binding.urlChipStrip.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+    } else {
         binding.urlChipStrip.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
-        binding.urlChipBar.setCardBackgroundColor(ContextCompat.getColor(this, R.color.surface_2))
-
-        binding.urlChipText.text = if (isBlank) "" else url
-        binding.urlChipStrip.visibility = if (isBlank) View.GONE else View.VISIBLE
-        if (isBlank) {
-            binding.urlChipStrip.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-        } else {
-            binding.urlChipStrip.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
-        }
-
-        binding.urlText.visibility = View.GONE
-        binding.urlEdit.visibility = View.VISIBLE
-        binding.urlEdit.setText("")
-        binding.urlEdit.requestFocus()
-
-        if (urlTextWatcher != null) {
-            binding.urlEdit.removeTextChangedListener(urlTextWatcher)
-        }
-        urlTextWatcher = object : android.text.TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {
-                val hasText = !s.isNullOrEmpty()
-                binding.urlClear.visibility = if (hasText) View.VISIBLE else View.GONE
-                binding.urlChipStrip.visibility = if (hasText) View.GONE else View.VISIBLE
-                refreshSuggestions(hasText)
-            }
-            override fun afterTextChanged(s: android.text.Editable?) {}
-        }
-        binding.urlEdit.addTextChangedListener(urlTextWatcher)
-
-        showSuggestionsPanel()
-        refreshSuggestions(false)
-        binding.urlEdit.post {
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.showSoftInput(binding.urlEdit, InputMethodManager.SHOW_IMPLICIT)
-        }
     }
 
-    private fun exitEditMode() {
-        binding.urlEdit.setText("")
-        binding.urlEdit.visibility = View.GONE
-        binding.urlText.visibility = View.VISIBLE
-        binding.urlClear.visibility = View.GONE
-        binding.urlChipStrip.visibility = View.GONE
-        updateHomeVisibility()
-        urlTextWatcher?.let { binding.urlEdit.removeTextChangedListener(it) }
-        urlTextWatcher = null
-        suggestJob?.cancel()
-        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-        imm.hideSoftInputFromWindow(binding.urlEdit.windowToken, 0)
-        binding.urlEdit.clearFocus()
-        hideSuggestionsPanel()
-        updateUi()
-    }
+    composeUrl = ""
+    composeIsEditing = true
+    
+    showSuggestionsPanel()
+    refreshSuggestions(false)
+}
 
+private fun exitEditMode() {
+    composeIsEditing = false
+    binding.urlChipStrip.visibility = View.GONE
+    updateHomeVisibility()
+    suggestJob?.cancel()
+    hideSuggestionsPanel()
+    updateUi()
+}
     private fun showSuggestionsPanel() {
         binding.suggestionsPanel.visibility = View.VISIBLE
         refreshSuggestions(binding.urlEdit.text?.isNotEmpty() == true)
@@ -931,33 +899,15 @@ if (position == 0) {
     }
 
 private fun updateSearchEngineIcon() {
-    val entry = SearchEnginePrefs.currentEntry(this)
     val url = currentUrl
     val isBlank = url.isBlank() || url == "about:blank" || tabs.list().isEmpty()
 
-    if (isBlank || binding.urlEdit.visibility == View.VISIBLE) {
-        binding.searchEngineIcon.visibility = View.VISIBLE
-        binding.searchEngineArrow.visibility = View.VISIBLE
-        binding.searchEngineIcon.isClickable = true
-        binding.searchEngineIcon.clearColorFilter()
-        if (currentEngineId != entry.id || engineIconCache == null) {
-            currentEngineId = entry.id
-            binding.searchEngineIcon.setImageResource(R.drawable.ic_search)
-            loadIconInto(binding.searchEngineIcon, entry.iconUrl, R.drawable.ic_search)
-        } else {
-            binding.searchEngineIcon.setImageBitmap(engineIconCache)
-        }
-        binding.searchEngineIcon.setPadding(4, 4, 4, 4)
+    if (isBlank || composeIsEditing) {
+        composeIconState = 0
     } else if (url.startsWith("https")) {
-        binding.searchEngineIcon.setImageResource(R.drawable.ic_lock)
-        binding.searchEngineArrow.visibility = View.GONE
-        binding.searchEngineIcon.setColorFilter(ContextCompat.getColor(this, R.color.accent))
-        binding.searchEngineIcon.isClickable = false
+        composeIconState = 1
     } else {
-        binding.searchEngineIcon.setImageResource(R.drawable.ic_lock_open)
-        binding.searchEngineArrow.visibility = View.GONE
-        binding.searchEngineIcon.setColorFilter(ContextCompat.getColor(this, R.color.red))
-        binding.searchEngineIcon.isClickable = false
+        composeIconState = 2
     }
 }
 
@@ -1548,21 +1498,19 @@ if (contentLength > 0) {
         updateUi()
     }
 
-    private fun updateUi() {
-        prunePopupTabs()
-        val id = tabs.currentId()
-        val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
-        val isEmpty = url.isBlank() || url == "about:blank"
-        if (binding.urlEdit.visibility != View.VISIBLE) {
-            binding.urlText.text = if (isEmpty) "Search or type URL" else url
-            binding.urlText.setTextColor(ContextCompat.getColor(
-                this, if (isEmpty) R.color.subtext else R.color.text))
-        }
-        binding.tabCount.text = tabs.list().size.toString()
-        binding.btnScriptMenu.visibility = View.VISIBLE
-        updateSearchEngineIcon()
-        updateHomeVisibility()
+private fun updateUi() {
+    prunePopupTabs()
+    val id = tabs.currentId()
+    val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
+    val isEmpty = url.isBlank() || url == "about:blank"
+    
+    if (!composeIsEditing) {
+        composeUrl = if (isEmpty) "" else url
     }
+    composeTabCount = tabs.list().size
+    updateSearchEngineIcon()
+    updateHomeVisibility()
+}
 
     private fun matchingScriptsForPage(url: String): List<UserscriptManager.Script> {
         if (url.isBlank() || url == "about:blank") return emptyList()
