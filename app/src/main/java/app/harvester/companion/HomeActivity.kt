@@ -12,7 +12,7 @@ import androidx.fragment.app.FragmentContainerView
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import app.harvester.companion.ui.BrowserFragment
+import app.harvester.companion.browser.BrowserFragment
 import app.harvester.companion.ui.HomeFragment
 import app.harvester.companion.ui.StartupFragment
 
