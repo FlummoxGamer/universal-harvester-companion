@@ -28,6 +28,9 @@ fun BrowserScreen(
     browserState: BrowserState,
     sessionFeature: ViewBoundFeatureWrapper<SessionFeature>,
     fragment: Fragment,
+    viewModel: BrowserViewModel,
+    isEditing: Boolean,
+    editText: String,
     onNavigate: (String) -> Unit
 ) {
     val context = LocalContext.current
@@ -73,14 +76,21 @@ fun BrowserScreen(
 
                     HarvesterAddressBar(
                         url = selectedTab?.content?.url ?: "",
-                        isEditing = false,
+                        isEditing = isEditing,
                         tabCount = browserState.tabs.size,
                         iconState = if (selectedTab?.content?.url?.startsWith("https") == true) 1 else 0,
                         isWallpaperActive = false,
-                        onEditTextChanged = {},
-                        onSubmit = { url -> onNavigate(url) },
-                        onEditStart = {},
-                        onClear = {},
+                        editText = editText,
+                        onEditTextChanged = { viewModel.onTextChanged(it) },
+                        onSubmit = { 
+                            val target = viewModel.normalize(it)
+                            if (target.isNotBlank()) {
+                                viewModel.exitEditMode()
+                                onNavigate(target)
+                            }
+                        },
+                        onEditStart = { viewModel.enterEditMode(selectedTab?.content?.url ?: "") },
+                        onClear = { viewModel.onTextChanged("") },
                         onSearchEngineClick = {},
                         onScriptMenuClick = {},
                         onMenuClick = {},
