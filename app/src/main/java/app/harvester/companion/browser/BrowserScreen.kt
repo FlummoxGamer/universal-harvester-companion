@@ -1,19 +1,32 @@
 package app.harvester.companion.browser
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.fragment.app.Fragment
 import app.harvester.companion.UHApp
@@ -23,6 +36,7 @@ import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.feature.session.SessionFeature
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BrowserScreen(
     browserState: BrowserState,
@@ -31,11 +45,14 @@ fun BrowserScreen(
     viewModel: BrowserViewModel,
     isEditing: Boolean,
     editText: String,
+    suggestions: List<String>,
     onNavigate: (String) -> Unit
 ) {
     val context = LocalContext.current
     val components = (context.applicationContext as UHApp).components
     val selectedTab = browserState.selectedTab
+
+    var showMenuSheet by remember { mutableStateOf(false) }
 
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0A0F1A)) {
@@ -74,6 +91,30 @@ fun BrowserScreen(
                         modifier = Modifier.weight(1f)
                     )
 
+                    if (isEditing && suggestions.isNotEmpty()) {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF0A0F1A))
+                        ) {
+                            items(suggestions) { suggestion ->
+                                Text(
+                                    text = suggestion,
+                                    color = Color(0xFFE6E9EE),
+                                    fontSize = 16.sp,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            val target = viewModel.normalize(suggestion)
+                                            viewModel.exitEditMode()
+                                            onNavigate(target)
+                                        }
+                                        .padding(16.dp)
+                                )
+                            }
+                        }
+                    }
+
                     HarvesterAddressBar(
                         url = selectedTab?.content?.url ?: "",
                         isEditing = isEditing,
@@ -93,9 +134,22 @@ fun BrowserScreen(
                         onClear = { viewModel.onTextChanged("") },
                         onSearchEngineClick = {},
                         onScriptMenuClick = {},
-                        onMenuClick = {},
+                        onMenuClick = { showMenuSheet = true },
                         onTabCountClick = {}
                     )
+                }
+            }
+
+            if (showMenuSheet) {
+                ModalBottomSheet(
+                    onDismissRequest = { showMenuSheet = false },
+                    sheetState = rememberModalBottomSheetState(),
+                    containerColor = Color(0xFF171B21)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Menu", color = Color.White, fontSize = 20.sp)
+                        // Menu items will go here in the next batch
+                    }
                 }
             }
         }
