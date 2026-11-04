@@ -5,13 +5,6 @@ pluginManagement {
         gradlePluginPortal()
         maven { url = uri("https://maven.mozilla.org/maven2/") }
     }
-    resolutionStrategy {
-        eachPlugin {
-            if (requested.id.id == "org.mozilla.nimbus-gradle-plugin") {
-                useModule("org.mozilla.appservices:tooling-nimbus-gradle:154.0.1")
-            }
-        }
-    }
 }
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
