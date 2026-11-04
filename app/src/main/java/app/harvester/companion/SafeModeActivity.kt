@@ -87,17 +87,18 @@ class SafeModeActivity : AppCompatActivity() {
         }
     }
 
-    private fun clearCrashState() {
-        try {
-            val crashFile = File(filesDir, "last_crash.txt")
-            if (crashFile.exists()) crashFile.delete()
-            val crashDir = File(filesDir, "crashes")
-            crashDir.deleteRecursively()
-            val geckoDir = File(filesDir, "mozilla")
-            if (geckoDir.exists()) geckoDir.deleteRecursively()
-        } catch (_: Exception) {}
-        getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().putBoolean("force_safe_mode", false).apply()
-    }
+private fun clearCrashState() {
+    try {
+        val crashFile = File(filesDir, "last_crash.txt")
+        if (crashFile.exists()) crashFile.delete()
+        val safeFlag = File(filesDir, "safe_mode.flag")
+        if (safeFlag.exists()) safeFlag.delete()
+        val crashDir = File(filesDir, "crashes")
+        crashDir.deleteRecursively()
+        val geckoDir = File(filesDir, "mozilla")
+        if (geckoDir.exists()) geckoDir.deleteRecursively()
+    } catch (_: Exception) {}
+}
 
     private fun stopAllProcesses() {
         try {
