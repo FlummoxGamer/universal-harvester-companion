@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -43,7 +44,7 @@ fun HarvesterToolbar(
 ) {
     var text by remember { mutableStateOf(url) }
     val bottomBarColor = if (isWallpaperActive) Color.Transparent else colorResource(id = R.color.bg)
-    val searchEngineEntry = remember { SearchEnginePrefs.currentEntry(appContext = LocalContext.current) }
+    val searchEngineEntry = remember { SearchEnginePrefs.currentEntry(ctx = LocalContext.current) }
 
     LaunchedEffect(url) {
         if (text.isEmpty() || url != "about:blank") {
