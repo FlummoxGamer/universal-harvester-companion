@@ -7,6 +7,8 @@ import android.os.Build
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import io.sentry.SentryLevel
+import io.sentry.android.core.SentryAndroid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -15,10 +17,12 @@ import xcrash.ICrashCallback
 import xcrash.XCrash
 import java.io.File
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 class UHApp : Application(), coil.ImageLoaderFactory {
 
     val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val isSafeModeTriggered = AtomicBoolean(false)
 
     override fun newImageLoader(): coil.ImageLoader {
         return coil.ImageLoader.Builder(this)
@@ -32,13 +36,13 @@ class UHApp : Application(), coil.ImageLoaderFactory {
 
     override fun attachBaseContext(base: android.content.Context) {
         super.attachBaseContext(base)
-        initXCrash(base)
     }
 
     override fun onCreate() {
         val start = System.currentTimeMillis()
         super.onCreate()
         
+        initSentry()
         checkNativeCrashes()
         ThemePrefs.applyCurrent(this)
         
@@ -61,6 +65,37 @@ class UHApp : Application(), coil.ImageLoaderFactory {
         UHLog.d("perf", "UHApp.onCreate took ${System.currentTimeMillis() - start}ms")
     }
 
+    private fun initSentry() {
+        try {
+            SentryAndroid.init(this) { options ->
+                options.dsn = ""
+                options.isEnableNdk = true
+                options.setDiagnosticLevel(SentryLevel.FATAL)
+                options.isAttachThreads = true
+                options.isAttachAnrThreadDump = true
+                
+                options.beforeSend = object : io.sentry.SentryOptions.BeforeSendCallback {
+                    override fun execute(event: io.sentry.SentryEvent, hint: io.sentry.Hint): io.sentry.SentryEvent? {
+                        if (isSafeModeTriggered.compareAndSet(false, true)) {
+                            val msgString = event.message?.formatted ?: "Unknown Sentry Crash"
+                            val throwable = event.throwable ?: Exception(msgString)
+                            handleSentryCrash(throwable)
+                        }
+                        return null
+                    }
+                }
+            }
+        } catch (_: Throwable) {}
+    }
+
+    private fun handleSentryCrash(e: Throwable) {
+        try {
+            val crashFile = File(filesDir, "last_crash.txt")
+            crashFile.writeText("Sentry Caught Crash: ${e.javaClass.name}: ${e.message}\n${e.stackTraceToString()}")
+            File(filesDir, "safe_mode.flag").createNewFile()
+        } catch (_: Exception) {}
+    }
+
     private fun initXCrash(context: android.content.Context) {
         try {
             val params = XCrash.InitParameters()
@@ -81,14 +116,16 @@ class UHApp : Application(), coil.ImageLoaderFactory {
 
     private fun handleXCrash(context: android.content.Context, logPath: String?, emergency: String?) {
         try {
-            val crashFile = File(context.filesDir, "last_crash.txt")
-            val content = if (!logPath.isNullOrBlank() && File(logPath).exists()) {
-                File(logPath).readText()
-            } else {
-                emergency ?: "Unknown Crash"
+            if (isSafeModeTriggered.compareAndSet(false, true)) {
+                val crashFile = File(context.filesDir, "last_crash.txt")
+                val content = if (!logPath.isNullOrBlank() && File(logPath).exists()) {
+                    File(logPath).readText()
+                } else {
+                    emergency ?: "Unknown Crash"
+                }
+                crashFile.writeText(content)
+                File(context.filesDir, "safe_mode.flag").createNewFile()
             }
-            crashFile.writeText(content)
-            File(context.filesDir, "safe_mode.flag").createNewFile()
         } catch (_: Exception) {}
     }
 
