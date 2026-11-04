@@ -60,7 +60,8 @@ class MainActivity : AppCompatActivity() {
     private var suggestJob: Job? = null
     private var urlTextWatcher: android.text.TextWatcher? = null
 
-    override fun onCreate(savedInstanceState: Bundle?) {
+override fun onCreate(savedInstanceState: Bundle?) {
+    try {
         val start = System.currentTimeMillis()
         setTheme(R.style.Theme_UHCompanion)
         super.onCreate(savedInstanceState)
@@ -74,6 +75,16 @@ class MainActivity : AppCompatActivity() {
             finish()
             return
         }
+        initMain(start, savedInstanceState)
+    } catch (e: Throwable) {
+        getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().putBoolean("force_safe_mode", true).apply()
+        UHLog.throwable("main", "MainActivity onCreate crashed. Launching Safe Mode.", e)
+        startActivity(Intent(this, SafeModeActivity::class.java))
+        finish()
+    }
+}
+
+private fun initMain(start: Long, savedInstanceState: Bundle?) {
 
 UHLog.section("MAIN")
 
@@ -95,9 +106,17 @@ engineView.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PA
 binding.webContainer.addView(engineView)
 mainGeckoView = engineView.geckoView
 
-if (savedInstanceState != null) {
-    binding.splashScreen.visibility = View.GONE
+binding.splashScreenCompose.setContent {
+    androidx.compose.material3.MaterialTheme {
+        app.harvester.companion.splash.SplashScreen {
+            binding.splashScreenCompose.visibility = View.GONE
+        }
+    }
 }
+if (savedInstanceState != null) {
+    binding.splashScreenCompose.visibility = View.GONE
+}
+
 androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, insets ->
     val systemBars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
     val ime = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())
@@ -319,25 +338,11 @@ private var isSplashHidden = false
 private fun hideSplash() {
     if (isSplashHidden) return
     isSplashHidden = true
-    
-    binding.splashLogo.alpha = 0f
-    binding.splashLogo.scaleX = 0.9f
-    binding.splashLogo.scaleY = 0.9f
-    binding.splashLogo.animate()
-        .alpha(1f)
-        .scaleX(1f)
-        .scaleY(1f)
-        .setDuration(600)
-        .setInterpolator(android.view.animation.DecelerateInterpolator())
+    binding.splashScreenCompose.animate()
+        .alpha(0f)
+        .setDuration(300)
+        .withEndAction { binding.splashScreenCompose.visibility = View.GONE }
         .start()
-
-    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-        binding.splashScreen.animate()
-            .alpha(0f)
-            .setDuration(400)
-            .withEndAction { binding.splashScreen.visibility = View.GONE }
-            .start()
-    }, 1200)
 }
 
 private fun updateGridColumns() {
