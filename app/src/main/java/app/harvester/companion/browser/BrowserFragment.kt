@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -25,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.fragment.app.Fragment
 import app.harvester.companion.UHApp
+import app.harvester.companion.WallpaperStore
 import app.harvester.companion.browser.toolbar.HarvesterToolbar
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.feature.session.SessionFeature
@@ -90,7 +90,7 @@ class BrowserFragment : Fragment() {
                                 )
 
                                 val isWallpaperActive = try {
-                                    val wpPath = app.harvester.companion.WallpaperStore.getCurrentWallpaper(context)
+                                    val wpPath = WallpaperStore.getCurrentWallpaper(context)
                                     wpPath != null && wpPath != "default"
                                 } catch (_: Exception) { false }
 
