@@ -13,7 +13,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import app.harvester.companion.browser.BrowserFragment
-import app.harvester.companion.ui.HomeFragment
+import app.harvester.companion.home.HomeFragment
 import app.harvester.companion.ui.StartupFragment
 
 class HomeActivity : AppCompatActivity() {
@@ -25,7 +25,7 @@ class HomeActivity : AppCompatActivity() {
                     val navController = rememberNavController()
                     NavHost(navController = navController, startDestination = "startup") {
                         composable("startup") { StartupFragment(navController) }
-                        composable("home") { HomeFragment(navController) }
+                        composable("home") { HomeFragment() }
                         composable("browser") {
                             AndroidView(
                                 factory = { ctx ->
