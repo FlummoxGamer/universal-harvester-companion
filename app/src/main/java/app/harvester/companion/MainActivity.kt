@@ -86,18 +86,12 @@ override fun onCreate(savedInstanceState: Bundle?) {
         window.statusBarColor = android.graphics.Color.TRANSPARENT
         window.navigationBarColor = android.graphics.Color.TRANSPARENT
 
-        val safePrefs = getSharedPreferences("uh_safe_mode", MODE_PRIVATE)
-        if (safePrefs.getBoolean("force_safe_mode", false)) {
-            startActivity(Intent(this, SafeModeActivity::class.java))
-            finish()
-            return
-        }
-        initMain(start, savedInstanceState)
-    } catch (e: Throwable) {
-        getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().putBoolean("force_safe_mode", true).apply()
-        UHLog.throwable("main", "MainActivity onCreate crashed. Launching Safe Mode.", e)
-        startActivity(Intent(this, SafeModeActivity::class.java))
-        finish()
+    initMain(start, savedInstanceState)
+} catch (e: Throwable) {
+    UHLog.throwable("main", "MainActivity onCreate crashed. Launching Safe Mode.", e)
+    java.io.File(filesDir, "safe_mode.flag").createNewFile()
+    startActivity(Intent(this, SafeModeActivity::class.java))
+    finish()
     }
 }
 
@@ -123,7 +117,7 @@ val testSafeModeButton = android.widget.Button(this).apply {
     setBackgroundColor(android.graphics.Color.parseColor("#457B9D"))
     setTextColor(android.graphics.Color.WHITE)
     setOnClickListener {
-        getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().putBoolean("force_safe_mode", true).apply()
+        java.io.File(filesDir, "safe_mode.flag").createNewFile()
         app.harvester.companion.utils.phoenix.ProcessPhoenix.triggerRebirth(this@MainActivity)
     }
 }
