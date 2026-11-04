@@ -4,7 +4,6 @@ import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.Intent
 import android.os.Build
-import android.os.Process
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
@@ -35,11 +34,17 @@ class UHApp : Application(), coil.ImageLoaderFactory {
     }
 
     override fun onCreate() {
-        val start = System.currentTimeMillis()
         super.onCreate()
+        
         checkNativeCrashes()
-        setupSentry()
         checkSafeMode()
+
+        try {
+            setupSentry()
+        } catch (e: Throwable) {
+            android.util.Log.e("UHApp", "Sentry init failed safely: ${e.message}")
+        }
+        
         ThemePrefs.applyCurrent(this)
         
         applicationScope.launch {
@@ -57,8 +62,6 @@ class UHApp : Application(), coil.ImageLoaderFactory {
         try {
             startService(Intent(this, SessionService::class.java))
         } catch (_: Exception) {}
-    
-        UHLog.d("perf", "UHApp.onCreate took ${System.currentTimeMillis() - start}ms")
     }
 
     private fun setupSentry() {
