@@ -19,10 +19,6 @@ import androidx.activity.addCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.constraintlayout.widget.ConstraintLayout
-import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import app.harvester.companion.splash.CompositeSplashScreenOperation
-import app.harvester.companion.splash.GeckoInitOperation
-import app.harvester.companion.splash.SplashScreenManager
 import androidx.constraintlayout.widget.ConstraintSet
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -62,144 +58,164 @@ class MainActivity : AppCompatActivity() {
     private var engineIconCache: Bitmap? = null
     private var currentEngineId: String = ""
     private var suggestJob: Job? = null
+    private var urlTextWatcher: android.text.TextWatcher? = null
 
-    private var composeUrl by androidx.compose.runtime.mutableStateOf("")
-    private var composeIsEditing by androidx.compose.runtime.mutableStateOf(false)
-    private var composeTabCount by androidx.compose.runtime.mutableStateOf(1)
-    private var composeIconState by androidx.compose.runtime.mutableStateOf(0)
+    override fun onCreate(savedInstanceState: Bundle?) {
+        try {
+            val start = System.currentTimeMillis()
+            setTheme(R.style.Theme_UHCompanion)
+            super.onCreate(savedInstanceState)
+            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            window.navigationBarColor = android.graphics.Color.TRANSPARENT
 
-override fun onCreate(savedInstanceState: Bundle?) {
-    val splashScreen = installSplashScreen()
-    try {
-        val start = System.currentTimeMillis()
-        setTheme(R.style.Theme_UHCompanion)
-        super.onCreate(savedInstanceState)
-        
-        val geckoOperation = GeckoInitOperation(this)
-        val compositeOperation = CompositeSplashScreenOperation(listOf(geckoOperation))
-        val splashManager = SplashScreenManager(
-            splashScreenOperation = compositeOperation,
-            splashScreenTimeout = 2000L,
-            showSplashScreen = { condition -> splashScreen.setKeepOnScreenCondition(condition) },
-            onSplashScreenFinished = { result ->
-                UHLog.d("splash", "Finished: ${result::class.java.simpleName}")
+            val safeFlag = java.io.File(filesDir, "safe_mode.flag")
+            if (safeFlag.exists()) {
+                startActivity(Intent(this, SafeModeActivity::class.java))
+                finish()
+                return
             }
-        )
-        splashManager.showSplashScreen()
-        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.statusBarColor = android.graphics.Color.TRANSPARENT
-        window.navigationBarColor = android.graphics.Color.TRANSPARENT
-
-    initMain(start, savedInstanceState)
-} catch (e: Throwable) {
-    UHLog.throwable("main", "MainActivity onCreate crashed. Launching Safe Mode.", e)
-    java.io.File(filesDir, "safe_mode.flag").createNewFile()
-    startActivity(Intent(this, SafeModeActivity::class.java))
-    finish()
-    }
-}
-
-private fun initMain(start: Long, savedInstanceState: Bundle?) {
-
-UHLog.section("MAIN")
-
-if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-    if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-        requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
-    }
-}
-
-val t0 = System.currentTimeMillis()
-binding = ActivityMainBinding.inflate(layoutInflater)
-val t1 = System.currentTimeMillis()
-setContentView(binding.root)
-val t2 = System.currentTimeMillis()
-UHLog.d("perf", "inflate: ${t1 - t0}ms, setContentView: ${t2 - t1}ms")
-
-val engineView = GeckoEngineView(this)
-engineView.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-binding.webContainer.addView(engineView)
-mainGeckoView = engineView.geckoView
-
-binding.splashScreenCompose.setContent {
-    androidx.compose.material3.MaterialTheme {
-        app.harvester.companion.splash.ComposeSplashScreen {
-            binding.splashScreenCompose.visibility = View.GONE
+            initMain(start, savedInstanceState)
+        } catch (e: Throwable) {
+            UHLog.throwable("main", "MainActivity onCreate crashed. Launching Safe Mode.", e)
+            java.io.File(filesDir, "safe_mode.flag").createNewFile()
+            startActivity(Intent(this, SafeModeActivity::class.java))
+            finish()
         }
     }
-}
-if (savedInstanceState != null) {
-    binding.splashScreenCompose.visibility = View.GONE
-}
 
-androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, insets ->
-    val systemBars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-    val ime = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())
-    val imeVisible = ime.bottom > 0
-    val position = SettingsPrefs.getInt(this, SettingsPrefs.K_ADDRESS_BAR_POSITION, 1)
+    private fun initMain(start: Long, savedInstanceState: Bundle?) {
+        UHLog.section("MAIN")
 
-    val params = binding.bottomBar.layoutParams as androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
-    if (position == 0) {
-        params.topMargin = systemBars.top
-        binding.contentContainer.setPadding(0, 0, 0, 0)
-        params.bottomMargin = 0
-    } else {
-        params.topMargin = 0
-        binding.contentContainer.setPadding(0, systemBars.top, 0, 0)
-        params.bottomMargin = if (imeVisible) ime.bottom else systemBars.bottom
-    }
-    binding.bottomBar.layoutParams = params
-    binding.bottomBar.setPadding(0, 0, 0, 0)
-    binding.suggestionsPanel.setPadding(0, systemBars.top, 0, 0)
-    try {
-        val barH = binding.bottomBar.height
-        if (barH > 0 && ::mainGeckoView.isInitialized) {
-            mainGeckoView.updateVerticalClipping(barH, if (imeVisible) ime.bottom else 0)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
+            }
         }
-    } catch (e: Throwable) {
-        UHLog.e("insets", "clip update failed: ${e.message}")
-    }
 
-    insets
-}
+        val t0 = System.currentTimeMillis()
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        val t1 = System.currentTimeMillis()
+        setContentView(binding.root)
+        val t2 = System.currentTimeMillis()
+        UHLog.d("perf", "inflate: ${t1 - t0}ms, setContentView: ${t2 - t1}ms")
 
-tabs = TabManager.get(this)
-MenuCommandStore.listener = { runOnUiThread { updateUi() } }
-setupHomeGrid()
-setupBottomBar()
-setupSuggestions()
-setupSwipeRefresh()
-setupBackDispatcher()
+        val testSafeModeButton = android.widget.Button(this).apply {
+            id = android.view.View.generateViewId()
+            text = "Test Safe Mode"
+            setBackgroundColor(android.graphics.Color.parseColor("#457B9D"))
+            setTextColor(android.graphics.Color.WHITE)
+            setOnClickListener {
+                java.io.File(filesDir, "safe_mode.flag").createNewFile()
+                app.harvester.companion.utils.phoenix.ProcessPhoenix.triggerRebirth(this@MainActivity)
+            }
+        }
+        val params = ConstraintLayout.LayoutParams(
+            ConstraintLayout.LayoutParams.WRAP_CONTENT,
+            ConstraintLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+            endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+            setMargins(16, 100, 16, 16)
+        }
+        binding.root.addView(testSafeModeButton, params)
 
-android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-    try {
-        GeckoEngine.getRuntime(this)
-        setupWebExtensionBridge()
-        val searchHost = SearchEnginePrefs.currentEntry(this).host
-        GeckoEngine.speculativeConnect("https://$searchHost")
+        val testNewUiButton = android.widget.Button(this).apply {
+            id = android.view.View.generateViewId()
+            text = "New UI"
+            setBackgroundColor(android.graphics.Color.RED)
+            setTextColor(android.graphics.Color.WHITE)
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, HomeActivity::class.java))
+            }
+        }
+        val params2 = ConstraintLayout.LayoutParams(
+            ConstraintLayout.LayoutParams.WRAP_CONTENT,
+            ConstraintLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+            endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+            setMargins(16, 170, 16, 16)
+        }
+        binding.root.addView(testNewUiButton, params2)
 
-        val existing = tabs.list()
-        if (existing.isEmpty()) {
-            tabs.openNew("about:blank")
-        } else {
-            val lastId = tabs.currentId()
-            if (lastId != -1L && existing.any { it.id == lastId }) {
-                tabs.acquireSession(lastId)
+        val engineView = GeckoEngineView(this)
+        engineView.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        binding.webContainer.addView(engineView)
+        mainGeckoView = engineView.geckoView
+
+        if (savedInstanceState != null) {
+            binding.splashScreen.visibility = View.GONE
+        }
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, insets ->
+            val systemBars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            val ime = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())
+            val imeVisible = ime.bottom > 0
+            val position = SettingsPrefs.getInt(this, SettingsPrefs.K_ADDRESS_BAR_POSITION, 1)
+
+            val params = binding.bottomBar.layoutParams as androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
+            if (position == 0) {
+                params.topMargin = systemBars.top
+                binding.contentContainer.setPadding(0, 0, 0, 0)
+                params.bottomMargin = 0
             } else {
-                tabs.acquireSession(existing.first().id)
+                params.topMargin = 0
+                binding.contentContainer.setPadding(0, systemBars.top, 0, 0)
+                params.bottomMargin = if (imeVisible) ime.bottom else systemBars.bottom
             }
+            binding.bottomBar.layoutParams = params
+            binding.bottomBar.setPadding(0, 0, 0, 0)
+            binding.suggestionsPanel.setPadding(0, systemBars.top, 0, 0)
+            try {
+                val barH = binding.bottomBar.height
+                if (barH > 0 && ::mainGeckoView.isInitialized) {
+                    mainGeckoView.updateVerticalClipping(barH, if (imeVisible) ime.bottom else 0)
+                }
+            } catch (e: Throwable) {
+                UHLog.e("insets", "clip update failed: ${e.message}")
+            }
+
+            insets
         }
-        attachCurrent()
-        applyAddressBarPosition()
-        UHLog.d("main", "onCreate complete")
-    } catch (e: Throwable) {
-        UHLog.e("gecko", "GeckoRuntime init failed: ${e.message}")
-        getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().putBoolean("force_safe_mode", true).apply()
-        startActivity(Intent(this, SafeModeActivity::class.java))
-        finish()
+
+        tabs = TabManager.get(this)
+        MenuCommandStore.listener = { runOnUiThread { updateUi() } }
+        setupHomeGrid()
+        setupBottomBar()
+        setupSuggestions()
+        setupSwipeRefresh()
+        setupBackDispatcher()
+
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            try {
+                GeckoEngine.getRuntime(this)
+                setupWebExtensionBridge()
+                val searchHost = SearchEnginePrefs.currentEntry(this).host
+                GeckoEngine.speculativeConnect("https://$searchHost")
+
+                val existing = tabs.list()
+                if (existing.isEmpty()) {
+                    tabs.openNew("about:blank")
+                } else {
+                    val lastId = tabs.currentId()
+                    if (lastId != -1L && existing.any { it.id == lastId }) {
+                        tabs.acquireSession(lastId)
+                    } else {
+                        tabs.acquireSession(existing.first().id)
+                    }
+                }
+                attachCurrent()
+                applyAddressBarPosition()
+                UHLog.d("main", "onCreate complete")
+            } catch (e: Throwable) {
+                UHLog.e("gecko", "GeckoRuntime init failed: ${e.message}")
+                java.io.File(filesDir, "safe_mode.flag").createNewFile()
+                startActivity(Intent(this, SafeModeActivity::class.java))
+                finish()
+            }
+        }, 100)
     }
-}, 100)
-    }
+
     private fun setupWebExtensionBridge() {
         val runtime = GeckoEngine.getRuntime(this) ?: return
         runtime.webExtensionController.list().accept({ extList ->
@@ -273,269 +289,267 @@ android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                                 } catch (_: Exception) {}
                                 return GeckoResult.fromValue("ok")
                             }
-    "OVERLAY_STATE" -> {
-        val active = json.optBoolean("active")
-        val bridge = mainGeckoView.tag as? UserscriptBridge
-        bridge?.overlayActive = active
-        return GeckoResult.fromValue("ok")
-    }
-"GM_xmlhttpRequest" -> {
-    val geckoResult = GeckoResult<Any>()
-    val method = json.optString("method")
-    val url = json.optString("url")
-    val headersStr = json.optString("headers")
-    val data = json.optString("data")
-    lifecycleScope.launch(Dispatchers.IO) {
-        try {
-            val body = if (method in listOf("POST", "PUT", "PATCH")) data.toRequestBody(null) else null
-            val builder = okhttp3.Request.Builder().url(url).method(method, body)
-            if (headersStr.isNotBlank()) {
-                val hObj = JSONObject(headersStr)
-                for (key in hObj.keys()) builder.addHeader(key, hObj.getString(key))
-            }
-            val client = okhttp3.OkHttpClient.Builder().addInterceptor(SecurityInterceptor()).build()
-            val resp = client.newCall(builder.build()).execute()
-            val text = resp.body?.string() ?: ""
-            val respHeaders = resp.headers.toMultimap().entries.joinToString("") { "${it.key}: ${it.value.joinToString(", ")}\r\n" }
-            
-            val resObj = JSONObject()
-            resObj.put("status", resp.code)
-            resObj.put("responseText", text)
-            resObj.put("responseHeaders", respHeaders)
-            
-            geckoResult.complete(resObj.toString())
-        } catch (e: Exception) {
-            val errObj = JSONObject()
-            errObj.put("status", 0)
-            errObj.put("responseText", e.message ?: "Error")
-            errObj.put("responseHeaders", "")
-            geckoResult.complete(errObj.toString())
-        }
-    }
-    return geckoResult
-}
-    "GM_download" -> {
-        val url = json.optString("url")
-        val name = json.optString("name")
-        DownloadEngine.startDownload(this@MainActivity, url, name, "application/octet-stream", null, null, currentUrl)
-        return GeckoResult.fromValue("ok")
-    }
-    "GM_openInTab" -> {
-        val url = json.optString("url")
-        tabs.openNew(url)
-        attachCurrent()
-        updateUi()
-        return GeckoResult.fromValue("ok")
-    }
-    "GM_registerMenuCommand" -> {
-        val script = json.optString("script")
-        val id = json.optString("id")
-        val name = json.optString("name")
-        MenuCommandStore.register(script, id, name, "")
-        return GeckoResult.fromValue("ok")
-    }
-    "GM_unregisterMenuCommand" -> {
-        val script = json.optString("script")
-        val id = json.optString("id")
-        MenuCommandStore.unregister(script, id)
-        return GeckoResult.fromValue("ok")
-    }
+                            "OVERLAY_STATE" -> {
+                                val active = json.optBoolean("active")
+                                val bridge = mainGeckoView.tag as? UserscriptBridge
+                                bridge?.overlayActive = active
+                                return GeckoResult.fromValue("ok")
+                            }
+                            "GM_xmlhttpRequest" -> {
+                                val geckoResult = GeckoResult<Any>()
+                                val method = json.optString("method")
+                                val url = json.optString("url")
+                                val headersStr = json.optString("headers")
+                                val data = json.optString("data")
+                                lifecycleScope.launch(Dispatchers.IO) {
+                                    try {
+                                        val body = if (method in listOf("POST", "PUT", "PATCH")) data.toRequestBody(null) else null
+                                        val builder = okhttp3.Request.Builder().url(url).method(method, body)
+                                        if (headersStr.isNotBlank()) {
+                                            val hObj = JSONObject(headersStr)
+                                            for (key in hObj.keys()) builder.addHeader(key, hObj.getString(key))
+                                        }
+                                        val client = okhttp3.OkHttpClient.Builder().addInterceptor(SecurityInterceptor()).build()
+                                        val resp = client.newCall(builder.build()).execute()
+                                        val text = resp.body?.string() ?: ""
+                                        val respHeaders = resp.headers.toMultimap().entries.joinToString("") { "${it.key}: ${it.value.joinToString(", ")}\r\n" }
+                                        
+                                        val resObj = JSONObject()
+                                        resObj.put("status", resp.code)
+                                        resObj.put("responseText", text)
+                                        resObj.put("responseHeaders", respHeaders)
+                                        
+                                        geckoResult.complete(resObj.toString())
+                                    } catch (e: Exception) {
+                                        val errObj = JSONObject()
+                                        errObj.put("status", 0)
+                                        errObj.put("responseText", e.message ?: "Error")
+                                        errObj.put("responseHeaders", "")
+                                        geckoResult.complete(errObj.toString())
+                                    }
+                                }
+                                return geckoResult
+                            }
+                            "GM_download" -> {
+                                val url = json.optString("url")
+                                val name = json.optString("name")
+                                DownloadEngine.startDownload(this@MainActivity, url, name, "application/octet-stream", null, null, currentUrl)
+                                return GeckoResult.fromValue("ok")
+                            }
+                            "GM_openInTab" -> {
+                                val url = json.optString("url")
+                                tabs.openNew(url)
+                                attachCurrent()
+                                updateUi()
+                                return GeckoResult.fromValue("ok")
+                            }
+                            "GM_registerMenuCommand" -> {
+                                val script = json.optString("script")
+                                val id = json.optString("id")
+                                val name = json.optString("name")
+                                MenuCommandStore.register(script, id, name, "")
+                                return GeckoResult.fromValue("ok")
+                            }
+                            "GM_unregisterMenuCommand" -> {
+                                val script = json.optString("script")
+                                val id = json.optString("id")
+                                MenuCommandStore.unregister(script, id)
+                                return GeckoResult.fromValue("ok")
+                            }
                         }
                         return GeckoResult.fromValue("ok")
                     }
                 }, "uhApp")
             }
-            }, { error ->
+        }, { error ->
             UHLog.e("main", "Failed to attach MessageDelegate: ${error?.message}")
         })
     }
-private var isSplashHidden = false
-private fun hideSplash() {
-    if (isSplashHidden) return
-    isSplashHidden = true
-    binding.splashScreenCompose.animate()
-        .alpha(0f)
-        .setDuration(300)
-        .withEndAction { binding.splashScreenCompose.visibility = View.GONE }
-        .start()
-}
 
-private fun updateGridColumns() {
-    val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-    val cols = if (isLandscape) 5 else 4
-    (binding.shortcutsGrid.layoutManager as? GridLayoutManager)?.spanCount = cols
-
-    val content = binding.homeScreen
-    if (content.childCount >= 3 && content.getChildAt(0) is android.widget.Space) {
-        val topSpace = content.getChildAt(0)
-        val bottomSpace = content.getChildAt(content.childCount - 1)
-        val lpTop = topSpace.layoutParams as android.widget.LinearLayout.LayoutParams
-        val lpBot = bottomSpace.layoutParams as android.widget.LinearLayout.LayoutParams
-
-        if (isLandscape) {
-            binding.homeTitle.visibility = android.view.View.GONE
-            lpTop.weight = 0.05f
-            lpBot.weight = 0.05f
-        } else {
-            binding.homeTitle.visibility = android.view.View.VISIBLE
-            lpTop.weight = 0.4f
-            lpBot.weight = 0.4f
-        }
-        topSpace.layoutParams = lpTop
-        bottomSpace.layoutParams = lpBot
+    private var isSplashHidden = false
+    private fun hideSplash() {
+        if (isSplashHidden) return
+        isSplashHidden = true
+        binding.splashScreen.visibility = View.GONE
     }
 
-    val nsv = binding.shortcutsGrid.parent as? androidx.core.widget.NestedScrollView
-    if (nsv != null) {
-        val lp = nsv.layoutParams as android.widget.LinearLayout.LayoutParams
-        lp.height = 0
-        lp.weight = 1f
-        nsv.layoutParams = lp
-        nsv.requestLayout()
-    }
-}
+    private fun updateGridColumns() {
+        val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        val cols = if (isLandscape) 5 else 4
+        (binding.shortcutsGrid.layoutManager as? GridLayoutManager)?.spanCount = cols
 
-override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
-    super.onConfigurationChanged(newConfig)
-    updateGridColumns()
-    applyAddressBarPosition()
-}
+        val content = binding.homeScreen
+        if (content.childCount >= 3 && content.getChildAt(0) is android.widget.Space) {
+            val topSpace = content.getChildAt(0)
+            val bottomSpace = content.getChildAt(content.childCount - 1)
+            val lpTop = topSpace.layoutParams as android.widget.LinearLayout.LayoutParams
+            val lpBot = bottomSpace.layoutParams as android.widget.LinearLayout.LayoutParams
 
-private fun setupHomeGrid() {
-    shortcutAdapter = ShortcutAdapter(
-        onOpen = { s -> loadUrlFromHome(s.url) },
-        onAdd = { showAddShortcutDialog() },
-        onLongPress = { }
-    )
-    binding.shortcutsGrid.layoutManager = GridLayoutManager(this, 4)
-    binding.shortcutsGrid.adapter = shortcutAdapter
-    updateGridColumns()
-    shortcutAdapter.submit(ShortcutStore.list(this))
-
-    val callback = object : androidx.recyclerview.widget.ItemTouchHelper.SimpleCallback(
-        androidx.recyclerview.widget.ItemTouchHelper.UP or androidx.recyclerview.widget.ItemTouchHelper.DOWN or androidx.recyclerview.widget.ItemTouchHelper.START or androidx.recyclerview.widget.ItemTouchHelper.END, 0
-    ) {
-        override fun onMove(recyclerView: androidx.recyclerview.widget.RecyclerView, viewHolder: androidx.recyclerview.widget.RecyclerView.ViewHolder, target: androidx.recyclerview.widget.RecyclerView.ViewHolder): Boolean {
-            val fromPos = viewHolder.adapterPosition
-            val toPos = target.adapterPosition
-            if (fromPos < 0 || toPos < 0) return false
-            if (fromPos == shortcutAdapter.itemCount - 1 || toPos == shortcutAdapter.itemCount - 1) return false
-            shortcutAdapter.moveItem(fromPos, toPos)
-            return true
-        }
-        override fun onSwiped(viewHolder: androidx.recyclerview.widget.RecyclerView.ViewHolder, direction: Int) {}
-        override fun isLongPressDragEnabled(): Boolean = false
-        
-        override fun clearView(recyclerView: androidx.recyclerview.widget.RecyclerView, viewHolder: androidx.recyclerview.widget.RecyclerView.ViewHolder) {
-            super.clearView(recyclerView, viewHolder)
-            ShortcutStore.save(this@MainActivity, shortcutAdapter.getItems())
-        }
-    }
-val touchHelper = androidx.recyclerview.widget.ItemTouchHelper(callback)
-touchHelper.attachToRecyclerView(binding.shortcutsGrid)
-
-binding.shortcutsGrid.addOnItemTouchListener(object : androidx.recyclerview.widget.RecyclerView.SimpleOnItemTouchListener() {
-    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
-    private var dragRunnable: Runnable? = null
-    private var editRunnable: Runnable? = null
-    private var downX = 0f
-    private var downY = 0f
-    private var isDragReady = false
-    private var isDragging = false
-    private var isPopupShowing = false
-
-    override fun onInterceptTouchEvent(rv: androidx.recyclerview.widget.RecyclerView, e: android.view.MotionEvent): Boolean {
-        when (e.action) {
-            android.view.MotionEvent.ACTION_DOWN -> {
-                downX = e.x
-                downY = e.y
-                isDragReady = false
-                isDragging = false
-                isPopupShowing = false
-                val child = rv.findChildViewUnder(e.x, e.y)
-                if (child != null) {
-                    val pos = rv.getChildAdapterPosition(child)
-                    if (pos in 0 until shortcutAdapter.itemCount - 1) {
-                        dragRunnable = Runnable { isDragReady = true }
-                        handler.postDelayed(dragRunnable!!, 150)
-
-                        editRunnable = Runnable {
-                            if (!isDragging && !isPopupShowing) {
-                                isPopupShowing = true
-                                val item = shortcutAdapter.getItemAt(pos)
-                                showWidgetMenu(item, child)
-                            }
-                        }
-                        handler.postDelayed(editRunnable!!, 500)
-                    }
-                }
+            if (isLandscape) {
+                binding.homeTitle.visibility = android.view.View.GONE
+                lpTop.weight = 0.05f
+                lpBot.weight = 0.05f
+            } else {
+                binding.homeTitle.visibility = android.view.View.VISIBLE
+                lpTop.weight = 0.4f
+                lpBot.weight = 0.4f
             }
-            android.view.MotionEvent.ACTION_MOVE -> {
-                if (isPopupShowing) return false
-                val dx = Math.abs(e.x - downX)
-                val dy = Math.abs(e.y - downY)
-                if (dx > 20 || dy > 20) {
-                    editRunnable?.let { handler.removeCallbacks(it) }
-                    editRunnable = null
-                    
-                    if (isDragReady && !isDragging) {
-                        isDragging = true
-                        val child = rv.findChildViewUnder(downX, downY)
+            topSpace.layoutParams = lpTop
+            bottomSpace.layoutParams = lpBot
+        }
+
+        val nsv = binding.shortcutsGrid.parent as? androidx.core.widget.NestedScrollView
+        if (nsv != null) {
+            val lp = nsv.layoutParams as android.widget.LinearLayout.LayoutParams
+            lp.height = 0
+            lp.weight = 1f
+            nsv.layoutParams = lp
+            nsv.requestLayout()
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        updateGridColumns()
+        applyAddressBarPosition()
+    }
+
+    private fun setupHomeGrid() {
+        shortcutAdapter = ShortcutAdapter(
+            onOpen = { s -> loadUrlFromHome(s.url) },
+            onAdd = { showAddShortcutDialog() },
+            onLongPress = { }
+        )
+        binding.shortcutsGrid.layoutManager = GridLayoutManager(this, 4)
+        binding.shortcutsGrid.adapter = shortcutAdapter
+        updateGridColumns()
+        shortcutAdapter.submit(ShortcutStore.list(this))
+
+        val callback = object : androidx.recyclerview.widget.ItemTouchHelper.SimpleCallback(
+            androidx.recyclerview.widget.ItemTouchHelper.UP or androidx.recyclerview.widget.ItemTouchHelper.DOWN or androidx.recyclerview.widget.ItemTouchHelper.START or androidx.recyclerview.widget.ItemTouchHelper.END, 0
+        ) {
+            override fun onMove(recyclerView: androidx.recyclerview.widget.RecyclerView, viewHolder: androidx.recyclerview.widget.RecyclerView.ViewHolder, target: androidx.recyclerview.widget.RecyclerView.ViewHolder): Boolean {
+                val fromPos = viewHolder.adapterPosition
+                val toPos = target.adapterPosition
+                if (fromPos < 0 || toPos < 0) return false
+                if (fromPos == shortcutAdapter.itemCount - 1 || toPos == shortcutAdapter.itemCount - 1) return false
+                shortcutAdapter.moveItem(fromPos, toPos)
+                return true
+            }
+            override fun onSwiped(viewHolder: androidx.recyclerview.widget.RecyclerView.ViewHolder, direction: Int) {}
+            override fun isLongPressDragEnabled(): Boolean = false
+            
+            override fun clearView(recyclerView: androidx.recyclerview.widget.RecyclerView, viewHolder: androidx.recyclerview.widget.RecyclerView.ViewHolder) {
+                super.clearView(recyclerView, viewHolder)
+                ShortcutStore.save(this@MainActivity, shortcutAdapter.getItems())
+            }
+        }
+        val touchHelper = androidx.recyclerview.widget.ItemTouchHelper(callback)
+        touchHelper.attachToRecyclerView(binding.shortcutsGrid)
+
+        binding.shortcutsGrid.addOnItemTouchListener(object : androidx.recyclerview.widget.RecyclerView.SimpleOnItemTouchListener() {
+            private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+            private var dragRunnable: Runnable? = null
+            private var editRunnable: Runnable? = null
+            private var downX = 0f
+            private var downY = 0f
+            private var isDragReady = false
+            private var isDragging = false
+            private var isPopupShowing = false
+
+            override fun onInterceptTouchEvent(rv: androidx.recyclerview.widget.RecyclerView, e: android.view.MotionEvent): Boolean {
+                when (e.action) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        downX = e.x
+                        downY = e.y
+                        isDragReady = false
+                        isDragging = false
+                        isPopupShowing = false
+                        val child = rv.findChildViewUnder(e.x, e.y)
                         if (child != null) {
                             val pos = rv.getChildAdapterPosition(child)
                             if (pos in 0 until shortcutAdapter.itemCount - 1) {
-                                touchHelper.startDrag(rv.findViewHolderForAdapterPosition(pos)!!)
+                                dragRunnable = Runnable { isDragReady = true }
+                                handler.postDelayed(dragRunnable!!, 150)
+
+                                editRunnable = Runnable {
+                                    if (!isDragging && !isPopupShowing) {
+                                        isPopupShowing = true
+                                        val item = shortcutAdapter.getItemAt(pos)
+                                        showWidgetMenu(item, child)
+                                    }
+                                }
+                                handler.postDelayed(editRunnable!!, 500)
                             }
                         }
-                    } else if (!isDragReady) {
+                    }
+                    android.view.MotionEvent.ACTION_MOVE -> {
+                        if (isPopupShowing) return false
+                        val dx = Math.abs(e.x - downX)
+                        val dy = Math.abs(e.y - downY)
+                        if (dx > 20 || dy > 20) {
+                            editRunnable?.let { handler.removeCallbacks(it) }
+                            editRunnable = null
+                            
+                            if (isDragReady && !isDragging) {
+                                isDragging = true
+                                val child = rv.findChildViewUnder(downX, downY)
+                                if (child != null) {
+                                    val pos = rv.getChildAdapterPosition(child)
+                                    if (pos in 0 until shortcutAdapter.itemCount - 1) {
+                                        touchHelper.startDrag(rv.findViewHolderForAdapterPosition(pos)!!)
+                                    }
+                                }
+                            } else if (!isDragReady) {
+                                dragRunnable?.let { handler.removeCallbacks(it) }
+                                dragRunnable = null
+                            }
+                        }
+                    }
+                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
                         dragRunnable?.let { handler.removeCallbacks(it) }
                         dragRunnable = null
+                        editRunnable?.let { handler.removeCallbacks(it) }
+                        editRunnable = null
                     }
                 }
+                return false
             }
-            android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
-                dragRunnable?.let { handler.removeCallbacks(it) }
-                dragRunnable = null
-                editRunnable?.let { handler.removeCallbacks(it) }
-                editRunnable = null
-            }
+        })
+    }
+
+    private fun showWidgetMenu(s: Shortcut, anchor: android.view.View) {
+        val popupView = layoutInflater.inflate(R.layout.dialog_widget_menu, null)
+        popupView.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+        
+        val popup = android.widget.PopupWindow(
+            popupView,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            true
+        )
+        popup.elevation = 16f
+        popup.width = (240 * resources.displayMetrics.density).toInt()
+
+        popupView.findViewById<View>(R.id.rowEdit).setOnClickListener {
+            popup.dismiss()
+            showShortcutEditor(s)
         }
-        return false
-    }
-})
-}
 
-private fun showWidgetMenu(s: Shortcut, anchor: android.view.View) {
-    val popupView = layoutInflater.inflate(R.layout.dialog_widget_menu, null)
-    popupView.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
-    
-    val popup = android.widget.PopupWindow(
-        popupView,
-        ViewGroup.LayoutParams.WRAP_CONTENT,
-        ViewGroup.LayoutParams.WRAP_CONTENT,
-        true
-    )
-    popup.elevation = 16f
-    popup.width = (240 * resources.displayMetrics.density).toInt()
+        popupView.findViewById<View>(R.id.rowRemove).setOnClickListener {
+            popup.dismiss()
+            ShortcutStore.remove(this, s.url)
+            shortcutAdapter.submit(ShortcutStore.list(this))
+        }
 
-    popupView.findViewById<View>(R.id.rowEdit).setOnClickListener {
-        popup.dismiss()
-        showShortcutEditor(s)
+        val location = IntArray(2)
+        anchor.getLocationOnScreen(location)
+        val x = location[0] + (anchor.width / 2) - (popupView.measuredWidth / 2)
+        val y = location[1] + anchor.height - 16
+
+        popup.showAtLocation(anchor, android.view.Gravity.NO_GRAVITY, Math.max(0, x), y)
     }
 
-    popupView.findViewById<View>(R.id.rowRemove).setOnClickListener {
-        popup.dismiss()
-        ShortcutStore.remove(this, s.url)
-        shortcutAdapter.submit(ShortcutStore.list(this))
-    }
-
-    val location = IntArray(2)
-    anchor.getLocationOnScreen(location)
-    val x = location[0] + (anchor.width / 2) - (popupView.measuredWidth / 2)
-    val y = location[1] + anchor.height - 16
-
-    popup.showAtLocation(anchor, android.view.Gravity.NO_GRAVITY, Math.max(0, x), y)
-}
     private fun setupSwipeRefresh() {
         binding.swipeRefresh.setOnRefreshListener {
             currentSession?.reload()
@@ -611,7 +625,7 @@ private fun showWidgetMenu(s: Shortcut, anchor: android.view.View) {
     }
 
     private fun refreshSuggestions(hasText: Boolean) {
-        val typed = if (composeIsEditing) composeUrl.trim() else ""
+        val typed = binding.urlEdit.text.toString().trim()
         val isUrl = typed.contains(".") && !typed.contains(" ")
         val loadedUrl = currentUrl
 
@@ -624,72 +638,77 @@ private fun showWidgetMenu(s: Shortcut, anchor: android.view.View) {
             binding.urlChipStrip.visibility = View.GONE
         }
 
-suggestJob?.cancel()
-suggestJob = lifecycleScope.launch {
-    if (!hasText) {
-        val queries = withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchSearchQueries("", 10) }
-        val pages = withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchHistory("", 5) }
-        suggestionsAdapter.submitAll(queries, pages)
-        binding.suggestionsClearAll.visibility = if (queries.isNotEmpty()) View.VISIBLE else View.GONE
-        return@launch
-    }
+        suggestJob?.cancel()
+        suggestJob = lifecycleScope.launch {
+            if (!hasText) {
+                val queries = withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchSearchQueries("", 10) }
+                val pages = withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchHistory("", 5) }
+                suggestionsAdapter.submitAll(queries, pages)
+                binding.suggestionsClearAll.visibility = if (queries.isNotEmpty()) View.VISIBLE else View.GONE
+                return@launch
+            }
 
-    val queries = if (isUrl) emptyList() else withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchSearchQueries(typed) }
-    val pages = withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchHistory(typed, 10) }
+            val queries = if (isUrl) emptyList() else withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchSearchQueries(typed) }
+            val pages = withContext(Dispatchers.IO) { HistoryStore.get(this@MainActivity).searchHistory(typed, 10) }
 
-    suggestionsAdapter.submitAll(queries, pages)
-    binding.suggestionsClearAll.visibility = View.GONE
+            suggestionsAdapter.submitAll(queries, pages)
+            binding.suggestionsClearAll.visibility = View.GONE
 
-    val topUrl = pages.firstOrNull()?.url ?: if (queries.isNotEmpty() && !isUrl) SearchEnginePrefs.getSearchUrl(this@MainActivity, queries.first().query) else null
-    if (topUrl != null) {
-        GeckoEngine.speculativeConnect(topUrl)
-    }
-    
-    if (!isUrl && typed.length >= 2) {
-        val engine = SearchEnginePrefs.getEngine(this@MainActivity)
-        val preds = SearchPredictions.fetch(engine, typed)
-        if (preds.isNotEmpty() && binding.urlEdit.text.toString().trim() == typed) {
-            val fake = preds.mapIndexed { i, p -> HistoryStore.SearchQuery(-1L - i, p, System.currentTimeMillis()) }
-            val merged = (fake + queries).distinctBy { it.query.lowercase() }.take(8)
-            suggestionsAdapter.submitAll(merged, pages)
+            val topUrl = pages.firstOrNull()?.url ?: if (queries.isNotEmpty() && !isUrl) SearchEnginePrefs.getSearchUrl(this@MainActivity, queries.first().query) else null
+            if (topUrl != null) {
+                GeckoEngine.speculativeConnect(topUrl)
+            }
+            
+            if (!isUrl && typed.length >= 2) {
+                val engine = SearchEnginePrefs.getEngine(this@MainActivity)
+                val preds = SearchPredictions.fetch(engine, typed)
+                if (preds.isNotEmpty() && binding.urlEdit.text.toString().trim() == typed) {
+                    val fake = preds.mapIndexed { i, p -> HistoryStore.SearchQuery(-1L - i, p, System.currentTimeMillis()) }
+                    val merged = (fake + queries).distinctBy { it.query.lowercase() }.take(8)
+                    suggestionsAdapter.submitAll(merged, pages)
+                }
+            }
         }
     }
-}
-    }
 
-private fun setupBottomBar() {
-    binding.bottomBar.setContent {
-        androidx.compose.material3.MaterialTheme {
-            app.harvester.companion.browser.toolbar.HarvesterAddressBar(
-                url = composeUrl,
-                isEditing = composeIsEditing,
-                tabCount = composeTabCount,
-                iconState = composeIconState,
-                isWallpaperActive = false,
-                onEditTextChanged = { refreshSuggestions(it.isNotEmpty()) },
-                onSubmit = { navigateInput(it) },
-                onEditStart = { enterEditMode() },
-                onClear = { refreshSuggestions(false) },
-                onSearchEngineClick = { showSearchEnginePicker() },
-                onScriptMenuClick = { showScriptMenuSheet() },
-                onMenuClick = { showMenu() },
-                onTabCountClick = { openTabGrid() }
-            )
+    private fun setupBottomBar() {
+        binding.urlText.setOnClickListener { enterEditMode() }
+        binding.urlClear.setOnClickListener {
+            binding.urlEdit.setText("")
+            refreshSuggestions(false)
         }
+        binding.urlEdit.setOnEditorActionListener { _, actionId, event ->
+            if (actionId == EditorInfo.IME_ACTION_GO ||
+                (event != null && event.keyCode == KeyEvent.KEYCODE_ENTER)) {
+                val typed = binding.urlEdit.text.toString().trim()
+                if (typed.isNotBlank()) {
+                    navigateInput(typed)
+                }
+                true
+            } else false
+        }
+        binding.searchEngineIcon.setOnClickListener {
+            val isBlank = currentUrl.isBlank() || currentUrl == "about:blank"
+            if (isBlank || binding.urlEdit.visibility == View.VISIBLE) {
+                showSearchEnginePicker()
+            }
+        }
+        binding.btnMenu.setOnClickListener { showMenu() }
+        binding.tabCount.setOnClickListener { openTabGrid() }
+        binding.btnScriptMenu.setOnClickListener { showScriptMenuSheet() }
     }
-}
 
-private fun navigateInput(typed: String): Boolean {
-    val target = normalize(typed)
-    if (target.isBlank()) return false
-    val isSearch = !target.startsWith("http")
-    if (isSearch) HistoryStore.get(this).recordSearch(typed)
-    
-    binding.loadingBar.visibility = View.VISIBLE
-    binding.loadingBar.progress = 0
-    binding.homeScreen.visibility = View.GONE
-    
-    var session = currentSession
+    private fun navigateInput(typed: String): Boolean {
+        val target = normalize(typed)
+        if (target.isBlank()) return false
+        val isSearch = !target.startsWith("http")
+        if (isSearch) HistoryStore.get(this).recordSearch(typed)
+        
+        binding.loadingBar.visibility = View.VISIBLE
+        binding.loadingBar.progress = 0
+        binding.homeScreen.visibility = View.GONE
+        
+        var session = currentSession
         if (session == null || tabs.list().isEmpty() || tabs.currentId() < 0L) {
             tabs.openNew(target)
             attachCurrent()
@@ -704,71 +723,73 @@ private fun navigateInput(typed: String): Boolean {
         return true
     }
 
-private fun setupBackDispatcher() {
-    onBackPressedDispatcher.addCallback(this) {
-        if (binding.urlEdit.visibility == View.VISIBLE) {
-            exitEditMode()
-            return@addCallback
+    private fun setupBackDispatcher() {
+        onBackPressedDispatcher.addCallback(this) {
+            if (binding.urlEdit.visibility == View.VISIBLE) {
+                exitEditMode()
+                return@addCallback
+            }
+
+            val v = currentSession
+            val id = if (v != null) tabs.idForSession(v) else -1L
+            val url = currentUrl
+
+            if (url == "about:blank" || url.isNullOrBlank()) {
+                val now = System.currentTimeMillis()
+                if (now - lastBackPress < 2000L) finish()
+                else {
+                    lastBackPress = now
+                    Toast.makeText(this@MainActivity, "Press back again to exit", Toast.LENGTH_SHORT).show()
+                }
+                return@addCallback
+            }
+
+            if (v != null) {
+                if (tabs.canGoBack(v)) {
+                    v.goBack()
+                    return@addCallback
+                }
+            }
+            val currentEntity = tabs.list().firstOrNull { it.id == id }
+            if (currentEntity != null && currentEntity.parentId != 0L) {
+                val parentId = currentEntity.parentId
+                popupTabs.remove(id)
+                tabs.close(id)
+                tabs.acquireSession(parentId)
+                attachCurrent()
+                updateUi()
+                return@addCallback
+            }
+
+            if (v != null) {
+                v.loadUri("about:blank")
+                return@addCallback
+            }
+
+            finish()
         }
-
-val v = currentSession
-val id = if (v != null) tabs.idForSession(v) else -1L
-val url = currentUrl
-
-if (url == "about:blank" || url.isNullOrBlank()) {
-    val now = System.currentTimeMillis()
-    if (now - lastBackPress < 2000L) finish()
-    else {
-        lastBackPress = now
-        Toast.makeText(this@MainActivity, "Press back again to exit", Toast.LENGTH_SHORT).show()
     }
-    return@addCallback
-}
 
-if (v != null) {
-    if (tabs.canGoBack(v)) {
-        v.goBack()
-        return@addCallback
-    }
-}
-        val currentEntity = tabs.list().firstOrNull { it.id == id }
-        if (currentEntity != null && currentEntity.parentId != 0L) {
-            val parentId = currentEntity.parentId
-            popupTabs.remove(id)
-            tabs.close(id)
-            tabs.acquireSession(parentId)
-            attachCurrent()
-            updateUi()
-            return@addCallback
-        }
+    private fun updateStatusBarAppearance(isHome: Boolean) {
+        val controller = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+        val isDarkTheme = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+        val hasWallpaper = WallpaperStore.getCurrentWallpaper(this) != null && WallpaperStore.getCurrentWallpaper(this) != "default"
 
-        if (v != null) {
-            v.loadUri("about:blank")
-            return@addCallback
-        }
-
-        finish()
-    }
-}
-private fun updateStatusBarAppearance(isHome: Boolean) {
-    val controller = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
-    val isDarkTheme = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
-    val hasWallpaper = WallpaperStore.getCurrentWallpaper(this) != null && WallpaperStore.getCurrentWallpaper(this) != "default"
-
-    if (isHome && hasWallpaper) {
-        window.statusBarColor = android.graphics.Color.TRANSPARENT
-        val textColor = WallpaperStore.getTextColor(this)
-        if (textColor == 0) {
-            controller.isAppearanceLightStatusBars = !isDarkTheme
+        if (isHome && hasWallpaper) {
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            val textColor = WallpaperStore.getTextColor(this)
+            if (textColor == 0) {
+                controller.isAppearanceLightStatusBars = !isDarkTheme
+            } else {
+                val isDarkText = androidx.core.graphics.ColorUtils.calculateLuminance(textColor) < 0.5
+                controller.isAppearanceLightStatusBars = isDarkText
+            }
         } else {
-            val isDarkText = androidx.core.graphics.ColorUtils.calculateLuminance(textColor) < 0.5
-            controller.isAppearanceLightStatusBars = isDarkText
+            window.statusBarColor = ContextCompat.getColor(this, R.color.bg)
+            controller.isAppearanceLightStatusBars = !isDarkTheme
         }
-    } else {
-        window.statusBarColor = ContextCompat.getColor(this, R.color.bg)
-        controller.isAppearanceLightStatusBars = !isDarkTheme
     }
-}
+
     private fun applyAddressBarPosition() {
         val position = SettingsPrefs.getInt(this, SettingsPrefs.K_ADDRESS_BAR_POSITION, 1)
         val root = binding.root as ConstraintLayout
@@ -787,59 +808,91 @@ private fun updateStatusBarAppearance(isHome: Boolean) {
             cs.clear(id, ConstraintSet.BOTTOM)
         }
 
-if (position == 0) {
-    cs.connect(barId, ConstraintSet.TOP, parent, ConstraintSet.TOP)
-    cs.connect(lbId, ConstraintSet.TOP, barId, ConstraintSet.BOTTOM)
-    cs.connect(chipId, ConstraintSet.TOP, lbId, ConstraintSet.BOTTOM)
-    cs.connect(spId, ConstraintSet.TOP, chipId, ConstraintSet.BOTTOM)
-    cs.connect(spId, ConstraintSet.BOTTOM, parent, ConstraintSet.BOTTOM)
-    cs.connect(wcId, ConstraintSet.TOP, chipId, ConstraintSet.BOTTOM)
-    cs.connect(wcId, ConstraintSet.BOTTOM, parent, ConstraintSet.BOTTOM)
-} else {
-    cs.connect(barId, ConstraintSet.BOTTOM, parent, ConstraintSet.BOTTOM)
-    cs.connect(lbId, ConstraintSet.BOTTOM, barId, ConstraintSet.TOP)
-    cs.connect(chipId, ConstraintSet.BOTTOM, lbId, ConstraintSet.TOP)
-    cs.connect(spId, ConstraintSet.BOTTOM, chipId, ConstraintSet.TOP)
-    cs.connect(spId, ConstraintSet.TOP, parent, ConstraintSet.TOP)
-    cs.connect(wcId, ConstraintSet.TOP, parent, ConstraintSet.TOP)
-    cs.connect(wcId, ConstraintSet.BOTTOM, chipId, ConstraintSet.TOP)
-}
-    cs.applyTo(root)
-    androidx.core.view.ViewCompat.requestApplyInsets(root)
-}
-private fun enterEditMode() {
-    val url = currentUrl
-    val isBlank = url.isBlank() || url == "about:blank"
-
-    updateStatusBarAppearance(false)
-
-    binding.suggestionsPanel.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
-    binding.urlChipStrip.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
-    binding.urlChipBar.setCardBackgroundColor(ContextCompat.getColor(this, R.color.surface_2))
-
-    binding.urlChipText.text = if (isBlank) "" else url
-    binding.urlChipStrip.visibility = if (isBlank) View.GONE else View.VISIBLE
-    if (isBlank) {
-        binding.urlChipStrip.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-    } else {
-        binding.urlChipStrip.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+        if (position == 0) {
+            cs.connect(barId, ConstraintSet.TOP, parent, ConstraintSet.TOP)
+            cs.connect(lbId, ConstraintSet.TOP, barId, ConstraintSet.BOTTOM)
+            cs.connect(chipId, ConstraintSet.TOP, lbId, ConstraintSet.BOTTOM)
+            cs.connect(spId, ConstraintSet.TOP, chipId, ConstraintSet.BOTTOM)
+            cs.connect(spId, ConstraintSet.BOTTOM, parent, ConstraintSet.BOTTOM)
+            cs.connect(wcId, ConstraintSet.TOP, chipId, ConstraintSet.BOTTOM)
+            cs.connect(wcId, ConstraintSet.BOTTOM, parent, ConstraintSet.BOTTOM)
+        } else {
+            cs.connect(barId, ConstraintSet.BOTTOM, parent, ConstraintSet.BOTTOM)
+            cs.connect(lbId, ConstraintSet.BOTTOM, barId, ConstraintSet.TOP)
+            cs.connect(chipId, ConstraintSet.BOTTOM, lbId, ConstraintSet.TOP)
+            cs.connect(spId, ConstraintSet.BOTTOM, chipId, ConstraintSet.TOP)
+            cs.connect(spId, ConstraintSet.TOP, parent, ConstraintSet.TOP)
+            cs.connect(wcId, ConstraintSet.TOP, parent, ConstraintSet.TOP)
+            cs.connect(wcId, ConstraintSet.BOTTOM, chipId, ConstraintSet.TOP)
+        }
+        cs.applyTo(root)
+        androidx.core.view.ViewCompat.requestApplyInsets(root)
     }
 
-    composeUrl = ""
-    composeIsEditing = true
-    
-    showSuggestionsPanel()
-    refreshSuggestions(false)
-}
+    private fun enterEditMode() {
+        val url = currentUrl
+        val isBlank = url.isBlank() || url == "about:blank"
 
-private fun exitEditMode() {
-    composeIsEditing = false
-    binding.urlChipStrip.visibility = View.GONE
-    updateHomeVisibility()
-    suggestJob?.cancel()
-    hideSuggestionsPanel()
-    updateUi()
-}
+        updateStatusBarAppearance(false)
+
+        binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+        binding.suggestionsPanel.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+        binding.urlChipStrip.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+        binding.urlChipBar.setCardBackgroundColor(ContextCompat.getColor(this, R.color.surface_2))
+
+        binding.urlChipText.text = if (isBlank) "" else url
+        binding.urlChipStrip.visibility = if (isBlank) View.GONE else View.VISIBLE
+        if (isBlank) {
+            binding.urlChipStrip.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        } else {
+            binding.urlChipStrip.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+        }
+
+        binding.urlText.visibility = View.GONE
+        binding.urlEdit.visibility = View.VISIBLE
+        binding.urlEdit.setText("")
+        binding.urlEdit.requestFocus()
+
+        if (urlTextWatcher != null) {
+            binding.urlEdit.removeTextChangedListener(urlTextWatcher)
+        }
+        urlTextWatcher = object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {
+                val hasText = !s.isNullOrEmpty()
+                binding.urlClear.visibility = if (hasText) View.VISIBLE else View.GONE
+                binding.urlChipStrip.visibility = if (hasText) View.GONE else View.VISIBLE
+                refreshSuggestions(hasText)
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        }
+        binding.urlEdit.addTextChangedListener(urlTextWatcher)
+
+        showSuggestionsPanel()
+        refreshSuggestions(false)
+        binding.urlEdit.post {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(binding.urlEdit, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    private fun exitEditMode() {
+        binding.urlEdit.setText("")
+        binding.urlEdit.visibility = View.GONE
+        binding.urlText.visibility = View.VISIBLE
+        binding.urlClear.visibility = View.GONE
+        binding.urlChipStrip.visibility = View.GONE
+        updateHomeVisibility()
+        urlTextWatcher?.let { binding.urlEdit.removeTextChangedListener(it) }
+        urlTextWatcher = null
+        suggestJob?.cancel()
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.hideSoftInputFromWindow(binding.urlEdit.windowToken, 0)
+        binding.urlEdit.clearFocus()
+        hideSuggestionsPanel()
+        updateUi()
+    }
+
     private fun showSuggestionsPanel() {
         binding.suggestionsPanel.visibility = View.VISIBLE
         refreshSuggestions(binding.urlEdit.text?.isNotEmpty() == true)
@@ -898,64 +951,82 @@ private fun exitEditMode() {
         }.start()
     }
 
-private fun updateSearchEngineIcon() {
-    val url = currentUrl
-    val isBlank = url.isBlank() || url == "about:blank" || tabs.list().isEmpty()
+    private fun updateSearchEngineIcon() {
+        val entry = SearchEnginePrefs.currentEntry(this)
+        val url = currentUrl
+        val isBlank = url.isBlank() || url == "about:blank" || tabs.list().isEmpty()
 
-    if (isBlank || composeIsEditing) {
-        composeIconState = 0
-    } else if (url.startsWith("https")) {
-        composeIconState = 1
-    } else {
-        composeIconState = 2
+        if (isBlank || binding.urlEdit.visibility == View.VISIBLE) {
+            binding.searchEngineIcon.visibility = View.VISIBLE
+            binding.searchEngineArrow.visibility = View.VISIBLE
+            binding.searchEngineIcon.isClickable = true
+            binding.searchEngineIcon.clearColorFilter()
+            if (currentEngineId != entry.id || engineIconCache == null) {
+                currentEngineId = entry.id
+                binding.searchEngineIcon.setImageResource(R.drawable.ic_search)
+                loadIconInto(binding.searchEngineIcon, entry.iconUrl, R.drawable.ic_search)
+            } else {
+                binding.searchEngineIcon.setImageBitmap(engineIconCache)
+            }
+            binding.searchEngineIcon.setPadding(4, 4, 4, 4)
+        } else if (url.startsWith("https")) {
+            binding.searchEngineIcon.setImageResource(R.drawable.ic_lock)
+            binding.searchEngineArrow.visibility = View.GONE
+            binding.searchEngineIcon.setColorFilter(ContextCompat.getColor(this, R.color.accent))
+            binding.searchEngineIcon.isClickable = false
+        } else {
+            binding.searchEngineIcon.setImageResource(R.drawable.ic_lock_open)
+            binding.searchEngineArrow.visibility = View.GONE
+            binding.searchEngineIcon.setColorFilter(ContextCompat.getColor(this, R.color.red))
+            binding.searchEngineIcon.isClickable = false
+        }
     }
-}
 
     private fun showAddShortcutDialog() { showShortcutEditor(null) }
 
-private fun showShortcutEditor(existing: Shortcut?) {
-    val view = layoutInflater.inflate(R.layout.dialog_add_shortcut_custom, null)
-    val dialog = AlertDialog.Builder(this)
-        .setView(view)
-        .setCancelable(true)
-        .create()
+    private fun showShortcutEditor(existing: Shortcut?) {
+        val view = layoutInflater.inflate(R.layout.dialog_add_shortcut_custom, null)
+        val dialog = AlertDialog.Builder(this)
+            .setView(view)
+            .setCancelable(true)
+            .create()
 
-    view.findViewById<android.widget.TextView>(R.id.dialogTitle).text = if (existing == null) "Add Shortcut" else "Edit Shortcut"
-    
-    val urlInput = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.inputUrl)
-    val nameInput = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.inputName)
-    
-    if (existing != null) {
-        urlInput.setText(existing.url)
-        nameInput.setText(existing.name)
-    }
-
-    view.findViewById<View>(R.id.btnCancel).setOnClickListener { dialog.dismiss() }
-    
-    view.findViewById<View>(R.id.btnSave).setOnClickListener {
-        val raw = urlInput.text.toString().trim()
-        if (raw.isBlank()) {
-            urlInput.error = "URL is required"
-            return@setOnClickListener
-        }
-        val fixed = if (raw.startsWith("http://") || raw.startsWith("https://")) raw else "https://$raw"
-        val manual = nameInput.text.toString().trim()
-        val name = if (manual.isNotBlank()) manual else ShortcutStore.shortNameFor(fixed)
+        view.findViewById<android.widget.TextView>(R.id.dialogTitle).text = if (existing == null) "Add Shortcut" else "Edit Shortcut"
         
-        if (existing != null) ShortcutStore.remove(this, existing.url)
-        ShortcutStore.add(this, Shortcut(name, fixed, ShortcutStore.iconUrlFor(fixed)))
-        shortcutAdapter.submit(ShortcutStore.list(this))
-        dialog.dismiss()
-    }
+        val urlInput = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.inputUrl)
+        val nameInput = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.inputName)
+        
+        if (existing != null) {
+            urlInput.setText(existing.url)
+            nameInput.setText(existing.name)
+        }
 
-    dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
-    dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
-    dialog.show()
-    
-    val width = (resources.displayMetrics.widthPixels * 0.90).toInt()
-    dialog.window?.setLayout(width, android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
-    dialog.window?.setGravity(android.view.Gravity.CENTER)
-}
+        view.findViewById<View>(R.id.btnCancel).setOnClickListener { dialog.dismiss() }
+        
+        view.findViewById<View>(R.id.btnSave).setOnClickListener {
+            val raw = urlInput.text.toString().trim()
+            if (raw.isBlank()) {
+                urlInput.error = "URL is required"
+                return@setOnClickListener
+            }
+            val fixed = if (raw.startsWith("http://") || raw.startsWith("https://")) raw else "https://$raw"
+            val manual = nameInput.text.toString().trim()
+            val name = if (manual.isNotBlank()) manual else ShortcutStore.shortNameFor(fixed)
+            
+            if (existing != null) ShortcutStore.remove(this, existing.url)
+            ShortcutStore.add(this, Shortcut(name, fixed, ShortcutStore.iconUrlFor(fixed)))
+            shortcutAdapter.submit(ShortcutStore.list(this))
+            dialog.dismiss()
+        }
+
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+        dialog.show()
+        
+        val width = (resources.displayMetrics.widthPixels * 0.90).toInt()
+        dialog.window?.setLayout(width, android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
+        dialog.window?.setGravity(android.view.Gravity.CENTER)
+    }
 
     private fun confirmRemoveShortcut(s: Shortcut) {
         AlertDialog.Builder(this)
@@ -972,20 +1043,14 @@ private fun showShortcutEditor(existing: Shortcut?) {
             .show()
     }
 
-private fun loadUrlFromHome(url: String) {
-    binding.homeScreen.visibility = View.GONE
-    binding.swipeRefresh.visibility = View.VISIBLE
-    
-    val existing = supportFragmentManager.findFragmentById(R.id.webContainer) as? app.harvester.companion.browser.BrowserFragment
-    if (existing == null) {
-        val fragment = app.harvester.companion.browser.BrowserFragment.newInstance(url)
-        supportFragmentManager.beginTransaction()
-            .replace(R.id.webContainer, fragment)
-            .commit()
-    } else {
-        existing.loadUrl(url)
+    private fun loadUrlFromHome(url: String) {
+        var session = currentSession
+        if (session == null || currentUrl == "about:blank" || tabs.currentId() < 0L) {
+            tabs.openNew(url); attachCurrent(); session = currentSession
+        }
+        session?.loadUri(url)
+        updateHomeVisibility()
     }
-}
 
     private fun attachCurrent() {
         val session = tabs.currentSession() ?: return
@@ -1009,54 +1074,54 @@ private fun loadUrlFromHome(url: String) {
         updateUi()
     }
 
-private fun updateHomeVisibility() {
-    val id = tabs.currentId()
-    if (id in popupTabs) {
-        binding.homeScreen.visibility = View.GONE
-        binding.swipeRefresh.visibility = View.VISIBLE
-        binding.btnEditHome.visibility = View.GONE
-        binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
-        return
-    }
-    val entity = tabs.list().firstOrNull { it.id == id }
-    val url = entity?.url
-    val isBlank = url.isNullOrBlank() || url == "about:blank"
-    
-    val hasSavedState = try {
-        id > 0L && tabs.loadState(id) != null
-    } catch (_: Exception) { false }
-    
-if (hasSavedState && binding.loadingBar.visibility == View.VISIBLE) {
-    binding.homeScreen.visibility = View.GONE
-    binding.swipeRefresh.visibility = View.VISIBLE
-    binding.btnEditHome.visibility = View.GONE
-    binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
-    updateStatusBarAppearance(false)
-} else {
-    val hasWallpaper = WallpaperStore.getCurrentWallpaper(this) != null && WallpaperStore.getCurrentWallpaper(this) != "default"
-    
-    val isEditing = binding.urlEdit.visibility == View.VISIBLE
-    if (isBlank) {
-        binding.homeScreen.visibility = View.VISIBLE
-        binding.swipeRefresh.visibility = View.GONE
-        binding.btnEditHome.visibility = View.VISIBLE
-   
-        if (isEditing) {
+    private fun updateHomeVisibility() {
+        val id = tabs.currentId()
+        if (id in popupTabs) {
+            binding.homeScreen.visibility = View.GONE
+            binding.swipeRefresh.visibility = View.VISIBLE
+            binding.btnEditHome.visibility = View.GONE
+            binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+            return
+        }
+        val entity = tabs.list().firstOrNull { it.id == id }
+        val url = entity?.url
+        val isBlank = url.isNullOrBlank() || url == "about:blank"
+        
+        val hasSavedState = try {
+            id > 0L && tabs.loadState(id) != null
+        } catch (_: Exception) { false }
+        
+        if (hasSavedState && binding.loadingBar.visibility == View.VISIBLE) {
+            binding.homeScreen.visibility = View.GONE
+            binding.swipeRefresh.visibility = View.VISIBLE
+            binding.btnEditHome.visibility = View.GONE
             binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
             updateStatusBarAppearance(false)
         } else {
-            binding.bottomBar.setBackgroundColor(if (hasWallpaper) android.graphics.Color.TRANSPARENT else ContextCompat.getColor(this, R.color.bg))
-            updateStatusBarAppearance(true)
+            val hasWallpaper = WallpaperStore.getCurrentWallpaper(this) != null && WallpaperStore.getCurrentWallpaper(this) != "default"
+            
+            val isEditing = binding.urlEdit.visibility == View.VISIBLE
+            if (isBlank) {
+                binding.homeScreen.visibility = View.VISIBLE
+                binding.swipeRefresh.visibility = View.GONE
+                binding.btnEditHome.visibility = View.VISIBLE
+           
+                if (isEditing) {
+                    binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+                    updateStatusBarAppearance(false)
+                } else {
+                    binding.bottomBar.setBackgroundColor(if (hasWallpaper) android.graphics.Color.TRANSPARENT else ContextCompat.getColor(this, R.color.bg))
+                    updateStatusBarAppearance(true)
+                }
+            } else {
+                binding.homeScreen.visibility = View.GONE
+                binding.swipeRefresh.visibility = View.VISIBLE
+                binding.btnEditHome.visibility = View.GONE
+                binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+                updateStatusBarAppearance(false)
+            }
         }
-    } else {
-        binding.homeScreen.visibility = View.GONE
-        binding.swipeRefresh.visibility = View.VISIBLE
-        binding.btnEditHome.visibility = View.GONE
-        binding.bottomBar.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
-        updateStatusBarAppearance(false)
     }
-}
-}
 
     private fun prunePopupTabs() {
         val live = tabs.list().map { it.id }.toSet()
@@ -1106,16 +1171,16 @@ if (hasSavedState && binding.loadingBar.visibility == View.VISIBLE) {
                 binding.loadingBar.progress = progress
             }
 
-override fun onSecurityChange(session: GeckoSession, securityInfo: GeckoSession.ProgressDelegate.SecurityInformation) {
-}
+            override fun onSecurityChange(session: GeckoSession, securityInfo: GeckoSession.ProgressDelegate.SecurityInformation) {
+            }
 
-override fun onSessionStateChange(session: GeckoSession, sessionState: GeckoSession.SessionState) {
-    val id = tabs.idForSession(session)
-    if (id > 0L) {
-        tabs.saveState(id, sessionState.toString())
-    }
-}
-}
+            override fun onSessionStateChange(session: GeckoSession, sessionState: GeckoSession.SessionState) {
+                val id = tabs.idForSession(session)
+                if (id > 0L) {
+                    tabs.saveState(id, sessionState.toString())
+                }
+            }
+        }
 
         session.contentDelegate = object : GeckoSession.ContentDelegate {
             override fun onFirstComposite(session: GeckoSession) {
@@ -1158,7 +1223,7 @@ override fun onSessionStateChange(session: GeckoSession, sessionState: GeckoSess
                     } else {
                         DownloadEngine.startStreamDownload(this@MainActivity, filename, contentType ?: "application/octet-stream", body, contentLength, userAgent, currentUrl, response.uri)
                     }
-                    } else {
+                } else {
                     if (SettingsPrefs.getBool(this@MainActivity, SettingsPrefs.K_ASK_DL, true)) {
                         showDownloadConfirmationSheet(response.uri, filename, contentType, userAgent)
                     } else {
@@ -1303,65 +1368,65 @@ override fun onSessionStateChange(session: GeckoSession, sessionState: GeckoSess
         }
     }
 
-private fun showStreamDownloadConfirmationSheet(url: String, filename: String, mimetype: String?, userAgent: String?, stream: java.io.InputStream, contentLength: Long) {
-    val sheet = BottomSheetDialog(this)
-    val v = layoutInflater.inflate(R.layout.dialog_download_confirmation, null)
-    v.setBackgroundResource(R.drawable.bg_bottom_sheet)
-    sheet.setContentView(v)
+    private fun showStreamDownloadConfirmationSheet(url: String, filename: String, mimetype: String?, userAgent: String?, stream: java.io.InputStream, contentLength: Long) {
+        val sheet = BottomSheetDialog(this)
+        val v = layoutInflater.inflate(R.layout.dialog_download_confirmation, null)
+        v.setBackgroundResource(R.drawable.bg_bottom_sheet)
+        sheet.setContentView(v)
 
-    v.findViewById<android.widget.TextView>(R.id.dlFileName).text = filename
-    
-val sizeText = v.findViewById<android.widget.TextView>(R.id.dlFileSize)
-if (contentLength > 0) {
-    sizeText.text = android.text.format.Formatter.formatShortFileSize(this, contentLength)
-} else {
-    sizeText.visibility = View.GONE
-    if (url.isNotBlank() && url != "stream") {
-        Thread {
-            try {
-                val client = okhttp3.OkHttpClient.Builder().connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS).build()
-                val reqBuilder = okhttp3.Request.Builder().url(url)
-                    .header("User-Agent", userAgent ?: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
-                    .header("Range", "bytes=0-0")
-                    .header("Accept-Encoding", "identity")
-                val referer = currentUrl
-                if (!referer.isNullOrBlank()) reqBuilder.addHeader("Referer", referer)
-                val cookie = android.webkit.CookieManager.getInstance().getCookie(url)
-                if (!cookie.isNullOrBlank()) reqBuilder.addHeader("Cookie", cookie)
-                
-                client.newCall(reqBuilder.build()).execute().use { resp ->
-                    var size = -1L
-                    val contentRange = resp.header("Content-Range")
-                    if (contentRange != null && contentRange.contains("/")) {
-                        size = contentRange.substringAfterLast("/").toLongOrNull() ?: -1L
-                    } else {
-                        size = resp.header("Content-Length")?.toLongOrNull() ?: -1L
-                    }
-                    runOnUiThread {
-                        if (size > 0) {
-                            sizeText.text = android.text.format.Formatter.formatShortFileSize(this@MainActivity, size)
-                        } else {
-                            sizeText.visibility = View.GONE
+        v.findViewById<android.widget.TextView>(R.id.dlFileName).text = filename
+        
+        val sizeText = v.findViewById<android.widget.TextView>(R.id.dlFileSize)
+        if (contentLength > 0) {
+            sizeText.text = android.text.format.Formatter.formatShortFileSize(this, contentLength)
+        } else {
+            sizeText.visibility = View.GONE
+            if (url.isNotBlank() && url != "stream") {
+                Thread {
+                    try {
+                        val client = okhttp3.OkHttpClient.Builder().connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS).build()
+                        val reqBuilder = okhttp3.Request.Builder().url(url)
+                            .header("User-Agent", userAgent ?: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
+                            .header("Range", "bytes=0-0")
+                            .header("Accept-Encoding", "identity")
+                        val referer = currentUrl
+                        if (!referer.isNullOrBlank()) reqBuilder.addHeader("Referer", referer)
+                        val cookie = android.webkit.CookieManager.getInstance().getCookie(url)
+                        if (!cookie.isNullOrBlank()) reqBuilder.addHeader("Cookie", cookie)
+                        
+                        client.newCall(reqBuilder.build()).execute().use { resp ->
+                            var size = -1L
+                            val contentRange = resp.header("Content-Range")
+                            if (contentRange != null && contentRange.contains("/")) {
+                                size = contentRange.substringAfterLast("/").toLongOrNull() ?: -1L
+                            } else {
+                                size = resp.header("Content-Length")?.toLongOrNull() ?: -1L
+                            }
+                            runOnUiThread {
+                                if (size > 0) {
+                                    sizeText.text = android.text.format.Formatter.formatShortFileSize(this@MainActivity, size)
+                                } else {
+                                    sizeText.visibility = View.GONE
+                                }
+                            }
                         }
+                    } catch (_: Exception) {
+                        runOnUiThread { sizeText.visibility = View.GONE }
                     }
-                }
-            } catch (_: Exception) {
-                runOnUiThread { sizeText.visibility = View.GONE }
+                }.start()
+            } else {
+                sizeText.visibility = View.GONE
             }
-        }.start()
-    } else {
-        sizeText.visibility = View.GONE
-    }
-}
-    
-    v.findViewById<android.widget.TextView>(R.id.dlFileUrl).text = if (url == "stream") "Stream Download" else url
-    
-    val customUri = SettingsPrefs.getString(this, "custom_download_uri", "")
-    val pathStr = if (customUri.isNotBlank()) {
-         customUri.replace("content://com.android.externalstorage.documents/tree/primary%3A", "/storage/emulated/0/").replace("%2F", "/")
-    } else {
-        "/storage/emulated/0/Download"
-    }
+        }
+            
+        v.findViewById<android.widget.TextView>(R.id.dlFileUrl).text = if (url == "stream") "Stream Download" else url
+        
+        val customUri = SettingsPrefs.getString(this, "custom_download_uri", "")
+        val pathStr = if (customUri.isNotBlank()) {
+             customUri.replace("content://com.android.externalstorage.documents/tree/primary%3A", "/storage/emulated/0/").replace("%2F", "/")
+        } else {
+            "/storage/emulated/0/Download"
+        }
         v.findViewById<android.widget.TextView>(R.id.dlLocationPath).text = pathStr
 
         v.findViewById<android.view.View>(R.id.dlLocationRow).setOnClickListener {
@@ -1498,19 +1563,21 @@ if (contentLength > 0) {
         updateUi()
     }
 
-private fun updateUi() {
-    prunePopupTabs()
-    val id = tabs.currentId()
-    val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
-    val isEmpty = url.isBlank() || url == "about:blank"
-    
-    if (!composeIsEditing) {
-        composeUrl = if (isEmpty) "" else url
+    private fun updateUi() {
+        prunePopupTabs()
+        val id = tabs.currentId()
+        val url = tabs.list().firstOrNull { it.id == id }?.url ?: ""
+        val isEmpty = url.isBlank() || url == "about:blank"
+        if (binding.urlEdit.visibility != View.VISIBLE) {
+            binding.urlText.text = if (isEmpty) "Search or type URL" else url
+            binding.urlText.setTextColor(ContextCompat.getColor(
+                this, if (isEmpty) R.color.subtext else R.color.text))
+        }
+        binding.tabCount.text = tabs.list().size.toString()
+        binding.btnScriptMenu.visibility = View.VISIBLE
+        updateSearchEngineIcon()
+        updateHomeVisibility()
     }
-    composeTabCount = tabs.list().size
-    updateSearchEngineIcon()
-    updateHomeVisibility()
-}
 
     private fun matchingScriptsForPage(url: String): List<UserscriptManager.Script> {
         if (url.isBlank() || url == "about:blank") return emptyList()
@@ -1580,26 +1647,26 @@ private fun updateUi() {
 
         for (script in ordered) {
             val isActive = script in matching
-val row = layoutInflater.inflate(R.layout.item_script_menu_script, list, false)
+            val row = layoutInflater.inflate(R.layout.item_script_menu_script, list, false)
 
-row.findViewById<android.widget.TextView>(R.id.smsName).text =
-    script.displayName.ifBlank { script.name }
+            row.findViewById<android.widget.TextView>(R.id.smsName).text =
+                script.displayName.ifBlank { script.name }
 
-val iconView = row.findViewById<android.widget.ImageView>(R.id.smsIcon)
-iconView.setColorFilter(ContextCompat.getColor(this@MainActivity, R.color.accent))
-if (script.iconUrl.isNotBlank()) {
-    Thread {
-        try {
-            val bmp = java.net.URL(script.iconUrl).openStream().use { android.graphics.BitmapFactory.decodeStream(it) }
-            if (bmp != null) {
-                runOnUiThread {
-                    iconView.setImageBitmap(bmp)
-                    iconView.clearColorFilter()
-                }
+            val iconView = row.findViewById<android.widget.ImageView>(R.id.smsIcon)
+            iconView.setColorFilter(ContextCompat.getColor(this@MainActivity, R.color.accent))
+            if (script.iconUrl.isNotBlank()) {
+                Thread {
+                    try {
+                        val bmp = java.net.URL(script.iconUrl).openStream().use { android.graphics.BitmapFactory.decodeStream(it) }
+                        if (bmp != null) {
+                            runOnUiThread {
+                                iconView.setImageBitmap(bmp)
+                                iconView.clearColorFilter()
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }.start()
             }
-        } catch (_: Exception) {}
-    }.start()
-}
 
             val badge = row.findViewById<android.widget.TextView>(R.id.smsActiveBadge)
             badge.visibility = if (isActive) View.VISIBLE else View.GONE
@@ -1649,17 +1716,17 @@ if (script.iconUrl.isNotBlank()) {
         }
     }
 
-private fun openTabGrid() {
-    TabGridDialog().apply {
-        onSwitch = { id -> switchTab(id) }
-        onNew = { exitEditMode(); attachCurrent(); updateUi() }
-        onDismissCallback = {
-            val live = tabs.currentSession()
-            if (live != null && live !== currentSession) { attachCurrent(); updateUi() }
-            else updateUi()
-        }
-    }.show(supportFragmentManager, "TabGridDialog")
-}
+    private fun openTabGrid() {
+        TabGridDialog().apply {
+            onSwitch = { id -> switchTab(id) }
+            onNew = { exitEditMode(); attachCurrent(); updateUi() }
+            onDismissCallback = {
+                val live = tabs.currentSession()
+                if (live != null && live !== currentSession) { attachCurrent(); updateUi() }
+                else updateUi()
+            }
+        }.show(supportFragmentManager, "TabGridDialog")
+    }
 
     private fun normalize(input: String): String {
         val t = input.trim()
@@ -1670,14 +1737,14 @@ private fun openTabGrid() {
         return SearchEnginePrefs.getSearchUrl(this, t)
     }
 
-private fun showMenu() {
-    val sheet = BottomSheetDialog(this, R.style.Theme_UHCompanion_BottomSheet)
-    val v = layoutInflater.inflate(R.layout.dialog_main_menu, null)
-    v.setBackgroundResource(R.drawable.bg_bottom_sheet)
-    sheet.setContentView(v)
-    sheet.behavior.skipCollapsed = true
-    sheet.behavior.state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
-    
+    private fun showMenu() {
+        val sheet = BottomSheetDialog(this, R.style.Theme_UHCompanion_BottomSheet)
+        val v = layoutInflater.inflate(R.layout.dialog_main_menu, null)
+        v.setBackgroundResource(R.drawable.bg_bottom_sheet)
+        sheet.setContentView(v)
+        sheet.behavior.skipCollapsed = true
+        sheet.behavior.state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
+        
         v.findViewById<View>(R.id.menuFavorites)?.setOnClickListener { sheet.dismiss(); toast("Favorites coming soon") }
         v.findViewById<View>(R.id.menuHistory)?.setOnClickListener {
             sheet.dismiss()
@@ -1837,145 +1904,146 @@ private fun showMenu() {
         attachCurrent(); updateUi()
     }
 
-override fun onResume() {
-    super.onResume()
-    UpdateChecker.resumePendingInstallIfPossible(this)
-    applyAddressBarPosition()
-    currentSession?.setActive(true)
-    currentSession?.setFocused(true)
-    applyWallpaper()
-    shortcutAdapter.submit(ShortcutStore.list(this))
-    updateUi()
-    homeVideoPlayer?.play()
-}
-
-private fun applyWallpaper() {
-    val wpPath = WallpaperStore.getCurrentWallpaper(this)
-    val textColor = WallpaperStore.getTextColor(this)
-    val isVideo = WallpaperStore.isCurrentVideo(this)
-    val videoView = findViewById<androidx.media3.ui.PlayerView>(R.id.wallpaperVideo)
-    val player = homeVideoPlayer
-
-    if (isVideo && wpPath != null && wpPath != "default" && videoView != null) {
-        binding.wallpaperBackground.visibility = View.GONE
-        videoView.visibility = View.VISIBLE
-        if (player == null) {
-            homeVideoPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(this).build().also {
-                videoView.player = it
-                it.volume = 0f
-                it.repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
-            }
-        }
-        homeVideoPlayer?.let {
-            it.setMediaItem(androidx.media3.common.MediaItem.fromUri(android.net.Uri.fromFile(java.io.File(wpPath))))
-            it.prepare()
-            it.play()
-        }
-        binding.homeScreen.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-        return
-    } else if (videoView != null) {
-        videoView.visibility = View.GONE
-        homeVideoPlayer?.pause()
+    override fun onResume() {
+        super.onResume()
+        UpdateChecker.resumePendingInstallIfPossible(this)
+        applyAddressBarPosition()
+        currentSession?.setActive(true)
+        currentSession?.setFocused(true)
+        applyWallpaper()
+        shortcutAdapter.submit(ShortcutStore.list(this))
+        updateUi()
+        homeVideoPlayer?.play()
     }
 
-if (wpPath == null || wpPath == "default") {
-    binding.wallpaperBackground.visibility = View.GONE
-    binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
-    binding.homeTitle.setTextColor(ContextCompat.getColor(this, R.color.accent))
-    binding.btnEditHome.setImageResource(R.drawable.ic_pencil)
-    binding.btnEditHome.setColorFilter(ContextCompat.getColor(this, R.color.text))
-    binding.btnEditHome.background = null
-    binding.btnEditHome.setLayerType(android.view.View.LAYER_TYPE_NONE, null)
-    shortcutAdapter.setTextColor(ContextCompat.getColor(this, R.color.text), 0)
-} else {
-    try {
-        val bitmap = android.graphics.BitmapFactory.decodeFile(wpPath)
-        if (bitmap != null) {
-            binding.wallpaperBackground.setImageBitmap(bitmap)
-            binding.wallpaperBackground.visibility = View.VISIBLE
+    private fun applyWallpaper() {
+        val wpPath = WallpaperStore.getCurrentWallpaper(this)
+        val textColor = WallpaperStore.getTextColor(this)
+        val isVideo = WallpaperStore.isCurrentVideo(this)
+        val videoView = findViewById<androidx.media3.ui.PlayerView>(R.id.wallpaperVideo)
+        val player = homeVideoPlayer
+
+        if (isVideo && wpPath != null && wpPath != "default" && videoView != null) {
+            binding.wallpaperBackground.visibility = View.GONE
+            videoView.visibility = View.VISIBLE
+            if (player == null) {
+                homeVideoPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(this).build().also {
+                    videoView.player = it
+                    it.volume = 0f
+                    it.repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
+                }
+            }
+            homeVideoPlayer?.let {
+                it.setMediaItem(androidx.media3.common.MediaItem.fromUri(android.net.Uri.fromFile(java.io.File(wpPath))))
+                it.prepare()
+                it.play()
+            }
             binding.homeScreen.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-    
-            val safeColor = if (textColor == 0) ContextCompat.getColor(this, R.color.text) else textColor
-            val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(safeColor)
-            val strictBW = if (luminance > 0.5) android.graphics.Color.BLACK else android.graphics.Color.WHITE
-            val shadowColor = if (strictBW == android.graphics.Color.BLACK) android.graphics.Color.WHITE else android.graphics.Color.BLACK
+            return
+        } else if (videoView != null) {
+            videoView.visibility = View.GONE
+            homeVideoPlayer?.pause()
+        }
 
-            binding.homeTitle.setTextColor(strictBW)
-            binding.homeTitle.setShadowLayer(8f, 0f, 2f, shadowColor)
-
-val pencilDrawable = androidx.core.content.ContextCompat.getDrawable(this, R.drawable.ic_pencil)?.mutate()
-pencilDrawable?.setTint(strictBW)
-pencilDrawable?.setBounds(0, 0, pencilDrawable.intrinsicWidth, pencilDrawable.intrinsicHeight)
-
-val padding = 16
-val bmp = android.graphics.Bitmap.createBitmap(
-    (pencilDrawable?.intrinsicWidth ?: 48) + padding * 2, 
-    (pencilDrawable?.intrinsicHeight ?: 48) + padding * 2, 
-    android.graphics.Bitmap.Config.ARGB_8888
-)
-val canvas = android.graphics.Canvas(bmp)
-
-val mask = android.graphics.Bitmap.createBitmap(
-    pencilDrawable?.intrinsicWidth ?: 48, 
-    pencilDrawable?.intrinsicHeight ?: 48, 
-    android.graphics.Bitmap.Config.ALPHA_8
-)
-val maskCanvas = android.graphics.Canvas(mask)
-pencilDrawable?.draw(maskCanvas)
-
-val shadowPaint = android.graphics.Paint()
-shadowPaint.setShadowLayer(8f, 0f, 2f, shadowColor)
-canvas.drawBitmap(mask, padding.toFloat(), padding.toFloat(), shadowPaint)
-
-pencilDrawable?.setBounds(padding, padding, padding + (pencilDrawable.intrinsicWidth), padding + (pencilDrawable.intrinsicHeight))
-pencilDrawable?.draw(canvas)
-
-binding.btnEditHome.setImageBitmap(bmp)
-binding.btnEditHome.background = null
-binding.btnEditHome.setPadding(0, 0, 0, 0)
-binding.btnEditHome.scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
-
-shortcutAdapter.setTextColor(strictBW, shadowColor)
+        if (wpPath == null || wpPath == "default") {
+            binding.wallpaperBackground.visibility = View.GONE
+            binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+            binding.homeTitle.setTextColor(ContextCompat.getColor(this, R.color.accent))
+            binding.btnEditHome.setImageResource(R.drawable.ic_pencil)
+            binding.btnEditHome.setColorFilter(ContextCompat.getColor(this, R.color.text))
+            binding.btnEditHome.background = null
+            binding.btnEditHome.setLayerType(android.view.View.LAYER_TYPE_NONE, null)
+            shortcutAdapter.setTextColor(ContextCompat.getColor(this, R.color.text), 0)
         } else {
+            try {
+                val bitmap = android.graphics.BitmapFactory.decodeFile(wpPath)
+                if (bitmap != null) {
+                    binding.wallpaperBackground.setImageBitmap(bitmap)
+                    binding.wallpaperBackground.visibility = View.VISIBLE
+                    binding.homeScreen.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            
+                    val safeColor = if (textColor == 0) ContextCompat.getColor(this, R.color.text) else textColor
+                    val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(safeColor)
+                    val strictBW = if (luminance > 0.5) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+                    val shadowColor = if (strictBW == android.graphics.Color.BLACK) android.graphics.Color.WHITE else android.graphics.Color.BLACK
+
+                    binding.homeTitle.setTextColor(strictBW)
+                    binding.homeTitle.setShadowLayer(8f, 0f, 2f, shadowColor)
+
+                    val pencilDrawable = androidx.core.content.ContextCompat.getDrawable(this, R.drawable.ic_pencil)?.mutate()
+                    pencilDrawable?.setTint(strictBW)
+                    pencilDrawable?.setBounds(0, 0, pencilDrawable.intrinsicWidth, pencilDrawable.intrinsicHeight)
+
+                    val padding = 16
+                    val bmp = android.graphics.Bitmap.createBitmap(
+                        (pencilDrawable?.intrinsicWidth ?: 48) + padding * 2, 
+                        (pencilDrawable?.intrinsicHeight ?: 48) + padding * 2, 
+                        android.graphics.Bitmap.Config.ARGB_8888
+                    )
+                    val canvas = android.graphics.Canvas(bmp)
+
+                    val mask = android.graphics.Bitmap.createBitmap(
+                        pencilDrawable?.intrinsicWidth ?: 48, 
+                        pencilDrawable?.intrinsicHeight ?: 48, 
+                        android.graphics.Bitmap.Config.ALPHA_8
+                    )
+                    val maskCanvas = android.graphics.Canvas(mask)
+                    pencilDrawable?.draw(maskCanvas)
+
+                    val shadowPaint = android.graphics.Paint()
+                    shadowPaint.setShadowLayer(8f, 0f, 2f, shadowColor)
+                    canvas.drawBitmap(mask, padding.toFloat(), padding.toFloat(), shadowPaint)
+
+                    pencilDrawable?.setBounds(padding, padding, padding + (pencilDrawable.intrinsicWidth), padding + (pencilDrawable.intrinsicHeight))
+                    pencilDrawable?.draw(canvas)
+
+                    binding.btnEditHome.setImageBitmap(bmp)
+                    binding.btnEditHome.background = null
+                    binding.btnEditHome.setPadding(0, 0, 0, 0)
+                    binding.btnEditHome.scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
+
+                    shortcutAdapter.setTextColor(strictBW, shadowColor)
+                } else {
+                    binding.wallpaperBackground.visibility = View.GONE
+                    binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
+                }
+            } catch (_: Exception) {
                 binding.wallpaperBackground.visibility = View.GONE
                 binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
             }
-        } catch (_: Exception) {
-            binding.wallpaperBackground.visibility = View.GONE
-            binding.homeScreen.setBackgroundColor(ContextCompat.getColor(this, R.color.bg))
         }
     }
-}
-override fun onPause() {
-    super.onPause()
-    currentSession?.setActive(false)
-    currentSession?.setFocused(false)
-    homeVideoPlayer?.pause()
-    if (::tabs.isInitialized) {
-        tabs.saveAll()
-    }
-    UHLog.onActivityPause(this)
-}
 
-override fun onDestroy() {
-    val videoView = findViewById<androidx.media3.ui.PlayerView>(R.id.wallpaperVideo)
-    videoView?.player = null
-    homeVideoPlayer?.stop()
-    homeVideoPlayer?.release()
-    homeVideoPlayer = null
-    if (::tabs.isInitialized) {
-        tabs.saveAll()
-        if (isFinishing) {
-            tabs.destroyAllSessions()
-        } else {
-            tabs.detachDelegates()
+    override fun onPause() {
+        super.onPause()
+        currentSession?.setActive(false)
+        currentSession?.setFocused(false)
+        homeVideoPlayer?.pause()
+        if (::tabs.isInitialized) {
+            tabs.saveAll()
         }
+        UHLog.onActivityPause(this)
     }
-    if (::mainGeckoView.isInitialized) {
-        mainGeckoView.releaseSession()
+
+    override fun onDestroy() {
+        val videoView = findViewById<androidx.media3.ui.PlayerView>(R.id.wallpaperVideo)
+        videoView?.player = null
+        homeVideoPlayer?.stop()
+        homeVideoPlayer?.release()
+        homeVideoPlayer = null
+        if (::tabs.isInitialized) {
+            tabs.saveAll()
+            if (isFinishing) {
+                tabs.destroyAllSessions()
+            } else {
+                tabs.detachDelegates()
+            }
+        }
+        if (::mainGeckoView.isInitialized) {
+            mainGeckoView.releaseSession()
+        }
+        MenuCommandStore.listener = null
+        suggestJob?.cancel()
+        super.onDestroy()
     }
-    MenuCommandStore.listener = null
-    suggestJob?.cancel()
-    super.onDestroy()
-}
 }
