@@ -1,0 +1,27 @@
+about:
+  description: Nimbus Feature Manifest for Universal Harvester
+  kotlin:
+    package: app.harvester.companion
+    class: .nimbus.FxNimbus
+channels:
+  - release
+  - developer
+features:
+  splash-screen:
+    description: "Extends splash screen duration."
+    variables:
+      enabled:
+        type: Boolean
+        default: false
+      maximum_duration_ms:
+        type: Int
+        default: 2000
+      off-train-onboarding:
+        type: Boolean
+        default: false
+  nimbus-is-ready:
+    description: "Number of is_ready events."
+    variables:
+      event-count:
+        type: Int
+        default: 1
