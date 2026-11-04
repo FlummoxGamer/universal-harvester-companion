@@ -29,10 +29,11 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import app.harvester.companion.R
+import app.harvester.companion.SearchEnginePrefs
 
 @Composable
 fun HarvesterToolbar(
@@ -42,6 +43,7 @@ fun HarvesterToolbar(
 ) {
     var text by remember { mutableStateOf(url) }
     val bottomBarColor = if (isWallpaperActive) Color.Transparent else colorResource(id = R.color.bg)
+    val searchEngineEntry = remember { SearchEnginePrefs.currentEntry(appContext = LocalContext.current) }
 
     LaunchedEffect(url) {
         if (text.isEmpty() || url != "about:blank") {
@@ -54,7 +56,7 @@ fun HarvesterToolbar(
             .fillMaxWidth()
             .height(68.dp)
             .background(bottomBarColor)
-            .padding(start = 4.dp, end = 4.dp),
+            .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(
@@ -66,25 +68,23 @@ fun HarvesterToolbar(
                 .padding(start = 6.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = {}) {
+            IconButton(onClick = {}, modifier = Modifier.size(24.dp).padding(start = 4.dp, end = 8.dp)) {
                 Icon(
                     painter = painterResource(id = R.drawable.ic_code),
                     contentDescription = "Scripts",
-                    tint = colorResource(id = R.color.text),
-                    modifier = Modifier.size(24.dp)
+                    tint = colorResource(id = R.color.text)
                 )
             }
 
             Box(
                 modifier = Modifier
                     .size(36.dp)
-                    .padding(horizontal = 8.dp),
+                    .padding(horizontal = 6.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_search),
-                    contentDescription = "Search",
-                    tint = colorResource(id = R.color.text),
+                AsyncImage(
+                    model = searchEngineEntry.iconUrl,
+                    contentDescription = "Search Engine",
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -110,40 +110,37 @@ fun HarvesterToolbar(
                         innerTextField()
                     }
                 )
-            }
-
-            if (text.isNotEmpty()) {
-                IconButton(onClick = { text = "" }, modifier = Modifier.size(28.dp)) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_close),
-                        contentDescription = "Clear",
-                        tint = colorResource(id = R.color.subtext)
-                    )
+                if (text.isNotEmpty()) {
+                    IconButton(
+                        onClick = { text = "" },
+                        modifier = Modifier.align(Alignment.CenterEnd).size(28.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_close),
+                            contentDescription = "Clear",
+                            tint = colorResource(id = R.color.subtext)
+                        )
+                    }
                 }
             }
-        }
 
-        Box(
-            modifier = Modifier
-                .padding(horizontal = 4.dp)
-                .size(24.dp)
-                .border(2.dp, colorResource(id = R.color.text), RoundedCornerShape(8.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                "1", 
-                color = colorResource(id = R.color.text), 
-                fontSize = 12.sp, 
-                fontWeight = FontWeight.Bold
-            )
-        }
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = 4.dp)
+                    .size(24.dp)
+                    .border(2.dp, colorResource(id = R.color.text), RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("1", color = colorResource(id = R.color.text), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
 
-        IconButton(onClick = {}, modifier = Modifier.size(36.dp)) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_menu),
-                contentDescription = "Menu",
-                tint = colorResource(id = R.color.text)
-            )
+            IconButton(onClick = {}, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_menu),
+                    contentDescription = "Menu",
+                    tint = colorResource(id = R.color.text)
+                )
+            }
         }
     }
 }
