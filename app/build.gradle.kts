@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
@@ -13,27 +14,28 @@ android {
         targetSdk = 36
         versionCode = 127
         versionName = "2.4.57"
-   }
+    }
 
-   flavorDimensions += "version"
-   productFlavors {
-       create("stable") {
-           dimension = "version"
-           applicationIdSuffix = ""
-           versionNameSuffix = ""
-           resValue("string", "app_name", "Universal Harvester")
-       }
-       create("dev") {
-           dimension = "version"
-           applicationIdSuffix = ".dev"
-           versionNameSuffix = "-dev"
-           resValue("string", "app_name", "UH Dev")
-       }
+    flavorDimensions += "version"
+    productFlavors {
+        create("stable") {
+            dimension = "version"
+            applicationIdSuffix = ""
+            versionNameSuffix = ""
+            resValue("string", "app_name", "Universal Harvester")
+        }
+        create("dev") {
+            dimension = "version"
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            resValue("string", "app_name", "UH Dev")
+        }
     }
 
     buildFeatures {
         viewBinding = true
         buildConfig = true
+        compose = true
     }
 
     androidResources {
@@ -67,16 +69,16 @@ android {
     }
 
     signingConfigs {
-    create("shared") {
-        val ks = file("../uh-debug.jks")
-        if (ks.exists()) {
-            storeFile = ks
-            storePassword = "uhdebug123"
-            keyAlias = "uhdebug"
-            keyPassword = "uhdebug123"
+        create("shared") {
+            val ks = file("../uh-debug.jks")
+            if (ks.exists()) {
+                storeFile = ks
+                storePassword = "uhdebug123"
+                keyAlias = "uhdebug"
+                keyPassword = "uhdebug123"
+            }
         }
     }
-}
 
     buildTypes {
         debug {
@@ -103,6 +105,15 @@ kotlin {
 dependencies {
     debugImplementation("com.squareup.leakcanary:leakcanary-android:2.14")
     implementation("org.mozilla.geckoview:geckoview:154.0.20260824154132")
+    
+    implementation("androidx.activity:activity-compose:1.9.2")
+    implementation(platform("androidx.compose:compose-bom:2024.09.03"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.material3:material3")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+
     implementation("androidx.webkit:webkit:1.12.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
@@ -122,7 +133,6 @@ dependencies {
     implementation("io.coil-kt:coil-video:2.6.0")
     implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.9")
 }
-
 
 tasks.configureEach {
     if (name.startsWith("check") && name.endsWith("AarMetadata")) {
