@@ -2,7 +2,6 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
-    id("org.mozilla.nimbus-gradle-plugin")
 }
 
 android {
@@ -101,16 +100,6 @@ kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
-}
-
-nimbus {
-    manifestFile = "nimbus.fml.yaml"
-    channels = mapOf(
-        "debug" to "developer",
-        "dev" to "developer",
-        "release" to "release",
-        "stable" to "release"
-    )
 }
 
 dependencies {
