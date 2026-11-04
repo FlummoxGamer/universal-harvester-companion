@@ -1,173 +1,192 @@
-plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose")
-}
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-android {
-    namespace = "app.harvester.companion"
-    compileSdk = 36
-
-    defaultConfig {
-        applicationId = "app.harvester.companion"
-        minSdk = 29
-        targetSdk = 36
-        versionCode = 137
-        versionName = "2.4.67"
-    }
-
-    flavorDimensions += "version"
-    productFlavors {
-        create("stable") {
-            dimension = "version"
-            applicationIdSuffix = ""
-            versionNameSuffix = ""
-            resValue("string", "app_name", "Universal Harvester")
-        }
-        create("dev") {
-            dimension = "version"
-            applicationIdSuffix = ".dev"
-            versionNameSuffix = "-dev"
-            resValue("string", "app_name", "UH Dev")
-        }
-    }
-
-    buildFeatures {
-        viewBinding = true
-        buildConfig = true
-        compose = true
-    }
-
-    androidResources {
-        noCompress += "ja"
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("arm64-v8a", "armeabi-v7a")
-            isUniversalApk = false
-        }
-    }
-
-    packaging {
-        resources {
-            excludes += setOf(
-                "META-INF/*.kotlin_module",
-                "META-INF/DEPENDENCIES",
-                "META-INF/LICENSE*",
-                "META-INF/NOTICE*",
-                "META-INF/*.version"
-            )
-        }
-    }
-
-    signingConfigs {
-        create("shared") {
-            val ks = file("../uh-debug.jks")
-            if (ks.exists()) {
-                storeFile = ks
-                storePassword = "uhdebug123"
-                keyAlias = "uhdebug"
-                keyPassword = "uhdebug123"
-            }
-        }
-    }
-
-    buildTypes {
-        debug {
-            signingConfig = signingConfigs.getByName("shared")
-        }
-        release {
-            signingConfig = signingConfigs.getByName("shared")
-            isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-        }
-    }
-}
-
-kotlin {
-    jvmToolchain(17)
-    compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-    }
-}
-
-dependencies {
-    debugImplementation("com.squareup.leakcanary:leakcanary-android:2.14")
-
-    val acVersion = "154.0.1"
-    implementation("org.mozilla.components:browser-engine-gecko:$acVersion")
-    implementation("org.mozilla.components:browser-state:$acVersion")
-    implementation("org.mozilla.components:browser-session-storage:$acVersion")
-    implementation("org.mozilla.components:browser-icons:$acVersion")
-    implementation("org.mozilla.components:browser-toolbar:$acVersion")
-    implementation("org.mozilla.components:compose-browser-toolbar:$acVersion")
-    implementation("org.mozilla.components:concept-engine:$acVersion")
-    implementation("org.mozilla.components:concept-storage:$acVersion")
-    implementation("org.mozilla.components:feature-session:$acVersion")
-    implementation("org.mozilla.components:feature-toolbar:$acVersion")
-    implementation("org.mozilla.components:feature-tabs:$acVersion")
-    implementation("org.mozilla.components:feature-prompts:$acVersion")
-    implementation("org.mozilla.components:feature-downloads:$acVersion")
-    implementation("org.mozilla.components:feature-findinpage:$acVersion")
-    implementation("org.mozilla.components:feature-sitepermissions:$acVersion")
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.DOWNLOAD_WITHOUT_NOTIFICATION" />
     
-    implementation("org.mozilla.components:feature-search:$acVersion") {
-        exclude(group = "org.mozilla.telemetry", module = "glean-native")
-    }
+    <application
+        android:name=".UHApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.UHCompanion"
+        android:usesCleartextTraffic="true"
+        android:hardwareAccelerated="true"
+        android:largeHeap="true">
+
+        <activity
+            android:name=".HomeActivity"
+            android:exported="true"
+            android:theme="@style/Theme.UHCompanion.Launch"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:windowSoftInputMode="adjustResize"
+            android:launchMode="singleTop">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".SafeModeActivity"
+            android:exported="false"
+            android:theme="@style/Theme.UHCompanion" />
+
+        <activity
+            android:name=".ToolsActivity"
+            android:exported="false"
+            android:label="Capture Tools" />
+
+        <activity
+            android:name=".ExtensionsActivity"
+            android:exported="false"
+            android:label="Extensions" />
+
+        <activity
+            android:name=".ScriptsActivity"
+            android:exported="false"
+            android:label="Scripts" />
+
+        <activity
+            android:name=".ScriptEditorActivity"
+            android:exported="false"
+            android:label="Edit script"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="Settings" />
+
+        <activity
+            android:name=".SearchEngineActivity"
+            android:exported="false"
+            android:label="Search Engine" />
+
+        <activity
+            android:name=".AppearanceActivity"
+            android:exported="false"
+            android:label="Appearance" />
+
+        <activity
+            android:name=".VideoOptionsActivity"
+            android:exported="false"
+            android:label="Video Options" />
+
+        <activity
+            android:name=".DownloadSettingsActivity"
+            android:exported="false"
+            android:label="Download Settings" />
+
+        <activity
+            android:name=".AccessibilityActivity"
+            android:exported="false"
+            android:label="Accessibility" />
+
+        <activity
+            android:name=".CustomizeAddressBarActivity"
+            android:exported="false"
+            android:label="Customize Address Bar" />
+
+        <activity
+            android:name=".PrivacyGuardActivity"
+            android:exported="false"
+            android:label="Privacy Guard" />
+
+        <activity
+            android:name=".AdvancedActivity"
+            android:exported="false"
+            android:label="Advanced" />
+        
+        <activity
+            android:name=".ManageDataActivity"
+            android:exported="false"
+            android:label="Manage Data" />
+
+        <activity
+            android:name=".DownloadsActivity"
+            android:exported="false"
+            android:label="Downloads" />
+
+        <activity
+            android:name=".HistoryActivity"
+            android:exported="false"
+            android:label="History" />
+
+        <activity
+            android:name=".LogsActivity"
+            android:exported="false"
+            android:label="Logs" />
+        
+        <activity
+            android:name=".ImagePreviewActivity"
+            android:exported="false"
+            android:theme="@style/Theme.UHCompanion" />
+        <activity
+            android:name=".CustomizeHomeActivity"
+            android:exported="false"
+            android:theme="@style/Theme.UHCompanion" />
+        <activity
+            android:name=".TrimVideoActivity"
+            android:exported="false"
+            android:theme="@style/Theme.UHCompanion" />
+        <activity
+            android:name=".RecentlyActivity"
+            android:exported="false"
+            android:theme="@style/Theme.UHCompanion" />
+        <activity
+            android:name=".WallpaperPreviewActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:theme="@style/Theme.UHCompanion" />
+
+        <service
+            android:name=".SessionService"
+            android:exported="false" />
     
-    implementation("org.mozilla.components:lib-state:$acVersion")
-    implementation("org.mozilla.components:support-base:$acVersion")
-    implementation("org.mozilla.components:support-ktx:$acVersion")
-    implementation("org.mozilla.components:support-utils:$acVersion")
-    implementation("org.mozilla.components:ui-icons:$acVersion")
-    implementation("org.mozilla.components:ui-widgets:$acVersion")
+        <service
+            android:name=".DownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
-    implementation("androidx.navigation:navigation-fragment-ktx:2.7.7")
-    implementation("androidx.navigation:navigation-ui-ktx:2.7.7")
-    implementation("androidx.navigation:navigation-compose:2.7.7")
-    
-    implementation("androidx.activity:activity-compose:1.9.2")
-    implementation("androidx.compose.material3:material3:1.3.0")
-    implementation("androidx.compose.ui:ui-tooling-preview:1.7.0")
-    implementation("io.coil-kt:coil-compose:2.6.0")
-    debugImplementation("androidx.compose.ui:ui-tooling:1.7.0")
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
-    implementation("androidx.webkit:webkit:1.12.1")
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("com.google.android.material:material:1.12.0")
-    implementation("androidx.constraintlayout:constraintlayout:2.2.0")
-    implementation("androidx.activity:activity-ktx:1.9.2")
-    implementation("androidx.recyclerview:recyclerview:1.3.2")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
-    implementation("androidx.work:work-runtime-ktx:2.9.1")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("androidx.palette:palette-ktx:1.0.0")
-    implementation("androidx.viewpager2:viewpager2:1.1.0")
-    implementation("io.coil-kt:coil:2.6.0")
-    implementation("io.coil-kt:coil-gif:2.6.0")
-    implementation("androidx.media3:media3-exoplayer:1.2.1")
-    implementation("androidx.media3:media3-ui:1.2.1")
-    implementation("io.coil-kt:coil-video:2.6.0")
-    implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.9")
-}
+        <receiver
+            android:name=".UpdateReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.DOWNLOAD_COMPLETE" />
+            </intent-filter>
+        </receiver>
 
-tasks.configureEach {
-    if (name.startsWith("check") && name.endsWith("AarMetadata")) {
-        enabled = false
-    }
-}
-tasks.matching { it.name.startsWith("check") && it.name.endsWith("AarMetadata") }.configureEach {
-    enabled = false
-}
+        <receiver
+            android:name=".InstallReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
