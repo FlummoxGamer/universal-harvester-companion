@@ -3,6 +3,8 @@ package app.harvester.companion.browser.toolbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -47,6 +49,7 @@ fun HarvesterAddressBar(
     tabCount: Int,
     iconState: Int,
     isWallpaperActive: Boolean,
+    editText: String,
     onEditTextChanged: (String) -> Unit,
     onSubmit: (String) -> Unit,
     onEditStart: () -> Unit,
@@ -60,12 +63,14 @@ fun HarvesterAddressBar(
     val bottomBarColor = if (isWallpaperActive) Color.Transparent else colorResource(id = R.color.bg)
     val searchEngineEntry = remember(context) { SearchEnginePrefs.currentEntry(ctx = context) }
     
-    var text by remember { mutableStateOf(if (isEditing) "" else url) }
+    var text by remember { mutableStateOf(if (isEditing) editText else url) }
     val focusRequester = remember { FocusRequester() }
 
-    LaunchedEffect(url, isEditing) {
+    LaunchedEffect(url, isEditing, editText) {
         if (!isEditing) {
             text = url
+        } else {
+            text = editText
         }
     }
 
