@@ -5,7 +5,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.harvester.companion.HistoryStore
 import app.harvester.companion.SearchEnginePrefs
-import app.harvester.companion.SearchPredictions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,8 +20,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private val _editText = MutableStateFlow("")
     val editText: StateFlow<String> = _editText
 
-    private val _suggestions = MutableStateFlow<List<Any>>(emptyList())
-    val suggestions: StateFlow<List<Any>> = _suggestions
+    private val _suggestions = MutableStateFlow<List<String>>(emptyList())
+    val suggestions: StateFlow<List<String>> = _suggestions
 
     fun enterEditMode(currentUrl: String) {
         _isEditing.value = true
@@ -44,9 +43,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private fun refreshSuggestions(typed: String) {
         viewModelScope.launch {
             val isUrl = typed.contains(".") && !typed.contains(" ")
-            val queries = if (isUrl || typed.isBlank()) emptyList() else withContext(Dispatchers.IO) { HistoryStore.get(context).searchSearchQueries(typed) }
-            val pages = withContext(Dispatchers.IO) { HistoryStore.get(context).searchHistory(typed, 10) }
-            _suggestions.value = (queries + pages).take(10)
+            val queries = if (isUrl || typed.isBlank()) emptyList() else withContext(Dispatchers.IO) { HistoryStore.get(context).searchSearchQueries(typed).map { it.query } }
+            val pages = withContext(Dispatchers.IO) { HistoryStore.get(context).searchHistory(typed, 10).map { it.url } }
+            _suggestions.value = (queries + pages).distinct().take(10)
         }
     }
 
