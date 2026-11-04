@@ -130,6 +130,7 @@ val params = ConstraintLayout.LayoutParams(
     setMargins(16, 100, 16, 16)
 }
 binding.root.addView(testSafeModeButton, params)
+
 val engineView = GeckoEngineView(this)
 engineView.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
 binding.webContainer.addView(engineView)
