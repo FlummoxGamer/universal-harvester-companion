@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.fragment.app.Fragment
 import app.harvester.companion.UHApp
+import app.harvester.companion.browser.toolbar.HarvesterAddressBar
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.feature.session.SessionFeature
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
@@ -100,11 +101,20 @@ class BrowserFragment : Fragment() {
                                     modifier = Modifier.weight(1f)
                                 )
 
-                                HarvesterToolbar(
+                                HarvesterAddressBar(
                                     url = selectedTab?.content?.url ?: "",
-                                    isWallpaperActive = false,
+                                    isEditing = false,
                                     tabCount = browserState.tabs.size,
-                                    onNavigate = { url -> loadUrl(url) }
+                                    iconState = if (selectedTab?.content?.url?.startsWith("https") == true) 1 else 0,
+                                    isWallpaperActive = false,
+                                    onEditTextChanged = {},
+                                    onSubmit = { url -> loadUrl(url) },
+                                    onEditStart = {},
+                                    onClear = {},
+                                    onSearchEngineClick = {},
+                                    onScriptMenuClick = {},
+                                    onMenuClick = {},
+                                    onTabCountClick = {}
                                 )
                             }
                         }
