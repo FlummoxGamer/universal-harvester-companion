@@ -7,21 +7,18 @@ import android.os.Build
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
-import io.sentry.SentryLevel
-import io.sentry.android.core.SentryAndroid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import xcrash.ICrashCallback
+import xcrash.XCrash
 import java.io.File
-import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 
 class UHApp : Application(), coil.ImageLoaderFactory {
 
     val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val isSafeModeTriggered = AtomicBoolean(false)
 
     override fun newImageLoader(): coil.ImageLoader {
         return coil.ImageLoader.Builder(this)
@@ -33,18 +30,16 @@ class UHApp : Application(), coil.ImageLoaderFactory {
             .build()
     }
 
+    override fun attachBaseContext(base: android.content.Context) {
+        super.attachBaseContext(base)
+        initXCrash(base)
+    }
+
     override fun onCreate() {
+        val start = System.currentTimeMillis()
         super.onCreate()
         
         checkNativeCrashes()
-        checkSafeMode()
-
-        try {
-            setupSentry()
-        } catch (e: Throwable) {
-            android.util.Log.e("UHApp", "Sentry init failed safely: ${e.message}")
-        }
-        
         ThemePrefs.applyCurrent(this)
         
         applicationScope.launch {
@@ -62,41 +57,38 @@ class UHApp : Application(), coil.ImageLoaderFactory {
         try {
             startService(Intent(this, SessionService::class.java))
         } catch (_: Exception) {}
+    
+        UHLog.d("perf", "UHApp.onCreate took ${System.currentTimeMillis() - start}ms")
     }
 
-    private fun setupSentry() {
-        SentryAndroid.init(this) { options ->
-            options.dsn = ""
-            options.isEnableNdk = true
-            options.setDiagnosticLevel(SentryLevel.FATAL)
-            options.isAttachThreads = true
-            options.isAttachAnrThreadDump = true
-            
-            options.beforeSend = object : io.sentry.SentryOptions.BeforeSendCallback {
-                override fun execute(event: io.sentry.SentryEvent, hint: io.sentry.Hint): io.sentry.SentryEvent? {
-                    if (isSafeModeTriggered.compareAndSet(false, true)) {
-                        val msgString = event.message?.formatted ?: "Unknown Sentry Crash"
-                        val throwable = event.throwable ?: Exception(msgString)
-                        handleCaughtCrash(throwable)
-                    }
-                    return null
-                }
-            }
-        }
-    }
-
-    private fun handleCaughtCrash(e: Throwable) {
+    private fun initXCrash(context: android.content.Context) {
         try {
-            val crashFile = File(filesDir, "last_crash.txt")
-            FileOutputStream(crashFile).use { out ->
-                out.write("Sentry Caught Crash: ${e.javaClass.name}: ${e.message}\n".toByteArray())
-                e.stackTrace.forEach { 
-                    out.write("  at $it\n".toByteArray()) 
-                }
-                out.flush()
-                out.fd.sync()
+            val params = XCrash.InitParameters()
+            params.setAppVersion(BuildConfig.VERSION_NAME)
+            params.setLogDir("${context.filesDir.absolutePath}/crashes")
+            
+            val callback = ICrashCallback { logPath, emergency ->
+                handleXCrash(context, logPath, emergency)
             }
-            getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().putBoolean("force_safe_mode", true).apply()
+            
+            params.setJavaCallback(callback)
+            params.setNativeCallback(callback)
+            params.setAnrCallback(callback)
+            
+            XCrash.init(context, params)
+        } catch (_: Throwable) {}
+    }
+
+    private fun handleXCrash(context: android.content.Context, logPath: String?, emergency: String?) {
+        try {
+            val crashFile = File(context.filesDir, "last_crash.txt")
+            val content = if (!logPath.isNullOrBlank() && File(logPath).exists()) {
+                File(logPath).readText()
+            } else {
+                emergency ?: "Unknown Crash"
+            }
+            crashFile.writeText(content)
+            File(context.filesDir, "safe_mode.flag").createNewFile()
         } catch (_: Exception) {}
     }
 
@@ -111,15 +103,8 @@ class UHApp : Application(), coil.ImageLoaderFactory {
                         exitInfo.reason == android.app.ApplicationExitInfo.REASON_CRASH_NATIVE) {
                         
                         val crashFile = File(filesDir, "last_crash.txt")
-                        FileOutputStream(crashFile).use { out ->
-                            out.write("ApplicationExitInfo Detected:\n".toByteArray())
-                            out.write("Reason: ${exitInfo.reason}\n".toByteArray())
-                            out.write("Description: ${exitInfo.description}\n".toByteArray())
-                            out.write("Timestamp: ${exitInfo.timestamp}\n".toByteArray())
-                            out.flush()
-                            out.fd.sync()
-                        }
-                        getSharedPreferences("uh_safe_mode", MODE_PRIVATE).edit().putBoolean("force_safe_mode", true).apply()
+                        crashFile.writeText("ApplicationExitInfo Detected:\nReason: ${exitInfo.reason}\nDescription: ${exitInfo.description}\nTimestamp: ${exitInfo.timestamp}\n")
+                        File(filesDir, "safe_mode.flag").createNewFile()
                     }
                 }
             } catch (_: Exception) {}
@@ -143,18 +128,6 @@ class UHApp : Application(), coil.ImageLoaderFactory {
             try {
                 TabManager.get(this).evictForMemory(1)
             } catch (_: Exception) {}
-        }
-    }
-
-    private fun checkSafeMode() {
-        val crashFile = File(filesDir, "last_crash.txt")
-        if (crashFile.exists()) {
-            val prefs = getSharedPreferences("uh_safe_mode", MODE_PRIVATE)
-            prefs.edit().putBoolean("force_safe_mode", true).apply()
-            
-            val crashDir = File(filesDir, "crashes").apply { mkdirs() }
-            val dest = File(crashDir, "crash_${System.currentTimeMillis()}.txt")
-            crashFile.renameTo(dest)
         }
     }
 }
