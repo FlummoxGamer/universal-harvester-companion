@@ -13,12 +13,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import app.harvester.companion.UHApp
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
 import mozilla.components.browser.state.selector.selectedTab
+import mozilla.components.feature.downloads.DownloadsFeature
+import mozilla.components.feature.prompts.PromptFeature
 import mozilla.components.feature.session.SessionFeature
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.WebExtension
@@ -26,82 +25,14 @@ import org.mozilla.geckoview.WebExtension
 class BrowserFragment : Fragment() {
 
     private val sessionFeature = ViewBoundFeatureWrapper<SessionFeature>()
+    private val downloadsFeature = ViewBoundFeatureWrapper<DownloadsFeature>()
+    private val promptsFeature = ViewBoundFeatureWrapper<PromptFeature>()
     private val viewModel: BrowserViewModel by viewModels()
     private var initialUrl: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         initialUrl = arguments?.getString("url")
-        setupWebExtensionBridge()
-    }
-
-    private fun setupWebExtensionBridge() {
-        val context = context ?: return
-        val components = (context.applicationContext as UHApp).components
-        val runtime = components.runtime
-        runtime.webExtensionController.list().accept({ extList ->
-            val ext = extList?.find { it.id == "uh-bridge@harvester.app" }
-            if (ext != null) {
-                ext.setMessageDelegate(object : WebExtension.MessageDelegate {
-                    override fun onMessage(nativeApp: String, message: Any, sender: WebExtension.MessageSender): GeckoResult<Any>? {
-                        val json = message as? JSONObject ?: return null
-                        val type = json.optString("type")
-                        when (type) {
-                            "GET_SCRIPTS" -> {
-                                val url = json.optString("url")
-                                val code = app.harvester.companion.UserscriptManager.buildInjectionScript(context, url)
-                                val res = JSONObject()
-                                res.put("scripts", code)
-                                return GeckoResult.fromValue(res)
-                            }
-                            "SAVE_BLOB" -> {
-                                val filename = json.optString("filename")
-                                val mime = json.optString("mime")
-                                val base64 = json.optString("base64")
-                                app.harvester.companion.DownloadEngine.startDownload(context, "", filename, mime, base64, null, "")
-                                return GeckoResult.fromValue("ok")
-                            }
-                            "GM_setValue" -> {
-                                context.getSharedPreferences("uh_gm", Context.MODE_PRIVATE).edit().putString("${json.optString("script")}::${json.optString("key")}", json.optString("value")).apply()
-                                return GeckoResult.fromValue("ok")
-                            }
-                            "GM_deleteValue" -> {
-                                context.getSharedPreferences("uh_gm", Context.MODE_PRIVATE).edit().remove("${json.optString("script")}::${json.optString("key")}").apply()
-                                return GeckoResult.fromValue("ok")
-                            }
-                            "GM_xmlhttpRequest" -> {
-                                val geckoResult = GeckoResult<Any>()
-                                GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                                    try {
-                                        val method = json.optString("method")
-                                        val url = json.optString("url")
-                                        val body = if (method in listOf("POST", "PUT", "PATCH")) json.optString("data").toRequestBody(null) else null
-                                        val builder = okhttp3.Request.Builder().url(url).method(method, body)
-                                        val resp = okhttp3.OkHttpClient().newCall(builder.build()).execute()
-                                        val resObj = JSONObject()
-                                        resObj.put("status", resp.code)
-                                        resObj.put("responseText", resp.body?.string() ?: "")
-                                        geckoResult.complete(resObj.toString())
-                                    } catch (e: Exception) {
-                                        geckoResult.complete(JSONObject().put("status", 0).toString())
-                                    }
-                                }
-                                return geckoResult
-                            }
-                            "GM_download" -> {
-                                app.harvester.companion.DownloadEngine.startDownload(context, json.optString("url"), json.optString("name"), "application/octet-stream", null, null, "")
-                                return GeckoResult.fromValue("ok")
-                            }
-                            "GM_openInTab" -> {
-                                components.useCases.tabsUseCases.addTab(json.optString("url"))
-                                return GeckoResult.fromValue("ok")
-                            }
-                        }
-                        return GeckoResult.fromValue("ok")
-                    }
-                }, "uhApp")
-            }
-        }, { })
     }
 
     fun loadUrl(url: String) {
@@ -115,11 +46,9 @@ class BrowserFragment : Fragment() {
         val context = context ?: return false
         val components = (context.applicationContext as UHApp).components
         val state = components.store.state.selectedTab
-        if (state != null) {
-            if (state.content.canGoBack) {
-                components.useCases.sessionUseCases.goBack.invoke()
-                return true
-            }
+        if (state != null && state.content.canGoBack) {
+            components.useCases.sessionUseCases.goBack.invoke()
+            return true
         }
         return false
     }
@@ -143,7 +72,14 @@ class BrowserFragment : Fragment() {
                         components.useCases.tabsUseCases.addTab(initialUrl!!)
                     }
                 }
-                
+
+                LaunchedEffect(browserState.selectedTabId) {
+                    val tab = browserState.selectedTab
+                    if (tab != null) {
+                        setupFeatures(tab.id)
+                    }
+                }
+
                 BrowserScreen(
                     browserState = browserState,
                     sessionFeature = sessionFeature,
@@ -155,6 +91,38 @@ class BrowserFragment : Fragment() {
                     onNavigate = { url -> loadUrl(url) }
                 )
             }
+        }
+    }
+
+    private fun setupFeatures(tabId: String) {
+        val context = context ?: return
+        val components = (context.applicationContext as UHApp).components
+        
+        if (downloadsFeature.get() == null) {
+            downloadsFeature.set(
+                feature = DownloadsFeature(
+                    context = context.applicationContext,
+                    store = components.store,
+                    useCases = mozilla.components.feature.downloads.DownloadsUseCases(components.store),
+                    fragmentManager = childFragmentManager,
+                    tabId = tabId
+                ),
+                owner = this,
+                view = requireView()
+            )
+        }
+
+        if (promptsFeature.get() == null) {
+            promptsFeature.set(
+                feature = PromptFeature(
+                    fragment = this,
+                    store = components.store,
+                    customTabId = tabId,
+                    fragmentManager = childFragmentManager
+                ),
+                owner = this,
+                view = requireView()
+            )
         }
     }
 
