@@ -91,30 +91,30 @@ class BrowserFragment : Fragment() {
         }
     }
 
-    private fun setupFeatures(tabId: String) {
-        val context = context ?: return
-        val components = (context.applicationContext as UHApp).components
-        
-        if (downloadsFeature.get() == null) {
-            downloadsFeature.set(
-                feature = DownloadsFeature(
-                    applicationContext = context.applicationContext,
-                    store = components.store,
-                    useCases = DownloadsUseCases(components.store),
-                    fragmentManager = childFragmentManager,
-                    tabId = tabId,
-                    downloadFileUtils = DefaultDownloadFileUtils(
-                        context = context.applicationContext,
-                        downloadLocation = {
-                            android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).absolutePath
-                        }
-                    )
+private fun setupFeatures(tabId: String) {
+    val context = context ?: return
+    val components = (context.applicationContext as UHApp).components
+    
+    if (downloadsFeature.get() == null) {
+        downloadsFeature.set(
+            feature = DownloadsFeature(
+                context.applicationContext,
+                components.store,
+                DownloadsUseCases(components.store),
+                childFragmentManager,
+                DefaultDownloadFileUtils(
+                    context.applicationContext,
+                    {
+                        android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).absolutePath
+                    }
                 ),
-                owner = this,
-                view = requireView()
-            )
-        }
+                tabId
+            ),
+            owner = this,
+            view = requireView()
+        )
     }
+}
 
     companion object {
         fun newInstance(url: String) = BrowserFragment().apply {
