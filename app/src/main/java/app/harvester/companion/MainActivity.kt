@@ -41,7 +41,9 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        val testSafeModeButton = android.widget.Button(this).apply {
+throw RuntimeException("Diagnostic Crash: MainActivity inflated successfully, but we are forcing a crash to test the handler.")
+
+val testSafeModeButton = android.widget.Button(this).apply {
             id = android.view.View.generateViewId()
             text = "Test Safe Mode"
             setBackgroundColor(android.graphics.Color.parseColor("#457B9D"))
