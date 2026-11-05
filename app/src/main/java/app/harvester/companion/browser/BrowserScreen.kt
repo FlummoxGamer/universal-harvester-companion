@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.fragment.app.Fragment
 import app.harvester.companion.UHApp
+import app.harvester.companion.browser.search.SearchEnginePicker
 import app.harvester.companion.browser.toolbar.HarvesterAddressBar
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.state.BrowserState
@@ -54,6 +55,7 @@ fun BrowserScreen(
 
     var showMainMenu by remember { mutableStateOf(false) }
     var showTabsMenu by remember { mutableStateOf(false) }
+    var showSearchEnginePicker by remember { mutableStateOf(false) }
 
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0A0F1A)) {
@@ -133,12 +135,19 @@ fun BrowserScreen(
                         },
                         onEditStart = { viewModel.enterEditMode(selectedTab?.content?.url ?: "") },
                         onClear = { viewModel.onTextChanged("") },
-                        onSearchEngineClick = {},
+                        onSearchEngineClick = { showSearchEnginePicker = true },
                         onScriptMenuClick = {},
                         onMenuClick = { showMainMenu = true },
                         onTabCountClick = { showTabsMenu = true }
                     )
                 }
+            }
+
+            if (showSearchEnginePicker) {
+                SearchEnginePicker(
+                    onDismiss = { showSearchEnginePicker = false },
+                    onSelect = { viewModel.enterEditMode(selectedTab?.content?.url ?: "") }
+                )
             }
 
             if (showMainMenu) {
