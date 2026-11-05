@@ -1,8 +1,6 @@
 package app.harvester.companion.browser
 
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -15,9 +13,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import app.harvester.companion.UHApp
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.feature.session.SessionFeature
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.WebExtension
@@ -37,7 +38,7 @@ class BrowserFragment : Fragment() {
     private fun setupWebExtensionBridge() {
         val context = context ?: return
         val components = (context.applicationContext as UHApp).components
-        val runtime = (components.engine as? mozilla.components.browser.engine.gecko.GeckoEngine)?.runtime ?: return
+        val runtime = components.runtime
         runtime.webExtensionController.list().accept({ extList ->
             val ext = extList?.find { it.id == "uh-bridge@harvester.app" }
             if (ext != null) {
@@ -70,7 +71,7 @@ class BrowserFragment : Fragment() {
                             }
                             "GM_xmlhttpRequest" -> {
                                 val geckoResult = GeckoResult<Any>()
-                                kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                                     try {
                                         val method = json.optString("method")
                                         val url = json.optString("url")
