@@ -46,11 +46,14 @@ class UHApp : Application(), coil.ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         
-        if (Build.VERSION.SDK_INT >= 31) {
-            initSentry(fullNdk = true)
-        } else {
-            initSentry(fullNdk = false)
-        }
+val isSentryEnabled = false
+if (isSentryEnabled) {
+    if (Build.VERSION.SDK_INT >= 31) {
+        initSentry(fullNdk = true)
+    } else {
+        initSentry(fullNdk = false)
+    }
+}
         
         checkNativeCrashes()
         ThemePrefs.applyCurrent(this)
