@@ -141,7 +141,9 @@ jobs:
           VN="${{ steps.ver.outputs.name }}"
           VC="${{ steps.ver.outputs.code }}"
           TAG="v$VN-$VC-${{ steps.vars.outputs.FLAVOR }}"
-          
+
+          git push origin --delete "$TAG" || true
+
           if [ "${{ steps.vars.outputs.FLAVOR }}" == "dev" ]; then
             RELEASE_FLAGS="--prerelease --latest=false"
           else
