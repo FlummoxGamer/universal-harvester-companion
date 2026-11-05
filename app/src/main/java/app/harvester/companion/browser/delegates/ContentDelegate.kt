@@ -8,17 +8,16 @@ import app.harvester.companion.DownloadEngine
 import app.harvester.companion.ImagePreviewActivity
 import app.harvester.companion.SearchEnginePrefs
 import app.harvester.companion.SettingsPrefs
-import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
-import mozilla.components.browser.engine.gecko.GeckoEngineSession
+import app.harvester.companion.components.Components
+import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.store.BrowserStore
-import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.WebResponse
 
 class ContentDelegate(
     private val context: Context,
-    private val components: UHApp.Components,
+    private val components: Components,
     private val store: BrowserStore
 ) : GeckoSession.ContentDelegate {
 
@@ -94,21 +93,6 @@ class ContentDelegate(
                     .show()
             }
         }
-    }
-
-    override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
-        val lower = uri.lowercase()
-        if (lower.contains(".jpg") || lower.contains(".png") || lower.contains(".jpeg") || lower.contains(".webp")) {
-            val filename = "image_${System.currentTimeMillis()}.jpg"
-            val currentUrl = store.state.selectedTab?.content?.url ?: ""
-            DownloadEngine.startDownload(context, uri, filename, "image/jpeg", null, null, currentUrl)
-            return GeckoResult.fromValue(null)
-        }
-
-        val newTabId = components.useCases.tabsUseCases.addTab(uri)
-        val newTab = store.state.tabs.find { it.id == newTabId }
-        val newGeckoSession = (newTab?.engineState?.engineSession as? GeckoEngineSession)?.geckoSession
-        return GeckoResult.fromValue(newGeckoSession)
     }
 
     private fun extractFilename(contentDisposition: String?): String? {
