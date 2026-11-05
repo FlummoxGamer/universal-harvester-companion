@@ -8,7 +8,7 @@ import mozilla.components.browser.state.store.BrowserStore
 import org.mozilla.geckoview.GeckoSession
 
 class ProgressDelegate(
-    private val components: UHApp.Components,
+    private val components: Components,
     private val store: BrowserStore
 ) : GeckoSession.ProgressDelegate {
 
