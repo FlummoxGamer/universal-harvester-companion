@@ -27,12 +27,7 @@ class ProgressDelegate(
         }
     }
 
-    override fun onProgressChange(session: GeckoSession, progress: Int) {
-    }
-
-    override fun onSecurityChange(session: GeckoSession, securityInfo: GeckoSession.ProgressDelegate.SecurityInformation) {
-    }
-
-    override fun onSessionStateChange(session: GeckoSession, sessionState: GeckoSession.SessionState) {
-    }
+    override fun onProgressChange(session: GeckoSession, progress: Int) {}
+    override fun onSecurityChange(session: GeckoSession, securityInfo: GeckoSession.ProgressDelegate.SecurityInformation) {}
+    override fun onSessionStateChange(session: GeckoSession, sessionState: GeckoSession.SessionState) {}
 }
