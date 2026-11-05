@@ -13,7 +13,7 @@
 
         <style name="Theme.UHCompanion.Launch" parent="Theme.UHCompanion">
             <item name="android:windowBackground">@color/bg</item>
-       </style>
+        </style>
 
     <style name="Theme.UHCompanion.BottomSheet" parent="Theme.Material3.DayNight.BottomSheetDialog">
         <item name="android:statusBarColor">@android:color/transparent</item>
