@@ -147,17 +147,7 @@ class BrowserFragment : Fragment() {
                         components.useCases.tabsUseCases.addTab(initialUrl!!)
                     }
                 }
-
-                LaunchedEffect(browserState.selectedTabId) {
-                    val tab = browserState.selectedTab
-                    val geckoSession = (tab?.engineState?.engineSession as? GeckoEngineSession)?.geckoSession
-                    if (geckoSession != null) {
-                        geckoSession.progressDelegate = ProgressDelegate(components, components.store)
-                        geckoSession.contentDelegate = ContentDelegate(context, components, components.store)
-                        geckoSession.promptDelegate = PromptDelegate(context)
-                    }
-                }
-
+                
                 BrowserScreen(
                     browserState = browserState,
                     sessionFeature = sessionFeature,
