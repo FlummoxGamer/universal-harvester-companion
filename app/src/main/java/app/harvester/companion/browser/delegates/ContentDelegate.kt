@@ -5,9 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import app.harvester.companion.DownloadEngine
-import app.harvester.companion.ImagePreviewActivity
-import app.harvester.companion.SearchEnginePrefs
-import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.UHLog
 import app.harvester.companion.components.Components
 import mozilla.components.browser.state.selector.selectedTab
@@ -21,11 +18,8 @@ class ContentDelegate(
     private val store: BrowserStore
 ) : GeckoSession.ContentDelegate {
 
-    override fun onFirstComposite(session: GeckoSession) {
-    }
-
-    override fun onTitleChange(session: GeckoSession, title: String?) {
-    }
+    override fun onFirstComposite(session: GeckoSession) {}
+    override fun onTitleChange(session: GeckoSession, title: String?) {}
 
     override fun onExternalResponse(session: GeckoSession, response: WebResponse) {
         val headers = response.headers
@@ -94,6 +88,8 @@ class ContentDelegate(
             }
         }
     }
+
+    override fun onNewSession(session: GeckoSession, uri: String) = null
 
     private fun extractFilename(contentDisposition: String?): String? {
         if (contentDisposition.isNullOrBlank()) return null
