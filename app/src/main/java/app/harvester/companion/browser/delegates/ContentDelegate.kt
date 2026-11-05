@@ -89,8 +89,6 @@ class ContentDelegate(
         }
     }
 
-    override fun onNewSession(session: GeckoSession, uri: String) = null
-
     private fun extractFilename(contentDisposition: String?): String? {
         if (contentDisposition.isNullOrBlank()) return null
         val rx = Regex("""filename[^;=\n]*=((['"]).*?\2|[^;\n]*)""", RegexOption.IGNORE_CASE)
