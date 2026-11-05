@@ -52,7 +52,8 @@ fun BrowserScreen(
     val components = (context.applicationContext as UHApp).components
     val selectedTab = browserState.selectedTab
 
-    var showMenuSheet by remember { mutableStateOf(false) }
+    var showMainMenu by remember { mutableStateOf(false) }
+    var showTabsMenu by remember { mutableStateOf(false) }
 
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0A0F1A)) {
@@ -134,21 +135,34 @@ fun BrowserScreen(
                         onClear = { viewModel.onTextChanged("") },
                         onSearchEngineClick = {},
                         onScriptMenuClick = {},
-                        onMenuClick = { showMenuSheet = true },
-                        onTabCountClick = {}
+                        onMenuClick = { showMainMenu = true },
+                        onTabCountClick = { showTabsMenu = true }
                     )
                 }
             }
 
-            if (showMenuSheet) {
+            if (showMainMenu) {
                 ModalBottomSheet(
-                    onDismissRequest = { showMenuSheet = false },
+                    onDismissRequest = { showMainMenu = false },
                     sheetState = rememberModalBottomSheetState(),
                     containerColor = Color(0xFF171B21)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Menu", color = Color.White, fontSize = 20.sp)
-                        // Menu items will go here in the next batch
+                        Text("Main Menu", color = Color.White, fontSize = 20.sp)
+                        Text("History / Downloads / Settings (Wiring Next)", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
+                    }
+                }
+            }
+
+            if (showTabsMenu) {
+                ModalBottomSheet(
+                    onDismissRequest = { showTabsMenu = false },
+                    sheetState = rememberModalBottomSheetState(),
+                    containerColor = Color(0xFF171B21)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Tabs", color = Color.White, fontSize = 20.sp)
+                        Text("${browserState.tabs.size} open tabs (Tab Grid Next)", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
                     }
                 }
             }
