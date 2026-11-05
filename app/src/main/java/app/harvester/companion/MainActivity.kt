@@ -28,20 +28,14 @@ class MainActivity : AppCompatActivity() {
             window.statusBarColor = android.graphics.Color.TRANSPARENT
             window.navigationBarColor = android.graphics.Color.TRANSPARENT
 
-            val safeFlag = java.io.File(filesDir, "safe_mode.flag")
-            if (safeFlag.exists()) {
-                startActivity(Intent(this, SafeModeActivity::class.java))
-                finish()
-                return
-            }
-            initMain(savedInstanceState)
-        } catch (e: Throwable) {
-            UHLog.throwable("main", "MainActivity onCreate crashed.", e)
-            java.io.File(filesDir, "safe_mode.flag").createNewFile()
-            startActivity(Intent(this, SafeModeActivity::class.java))
-            finish()
-        }
-    }
+    initMain(savedInstanceState)
+} catch (e: Throwable) {
+    UHLog.throwable("main", "MainActivity onCreate crashed.", e)
+    java.io.File(filesDir, "safe_mode.flag").createNewFile()
+    startActivity(Intent(this, app.harvester.companion.safemode.SafeModeActivity::class.java))
+    finish()
+}
+}
 
     private fun initMain(savedInstanceState: Bundle?) {
         binding = ActivityMainBinding.inflate(layoutInflater)
