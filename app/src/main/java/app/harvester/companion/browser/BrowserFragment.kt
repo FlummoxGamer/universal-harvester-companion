@@ -15,8 +15,8 @@ import androidx.fragment.app.viewModels
 import app.harvester.companion.UHApp
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.feature.downloads.DownloadsFeature
-import mozilla.components.feature.prompts.PromptFeature
 import mozilla.components.feature.session.SessionFeature
+import mozilla.components.support.utils.DefaultDownloadFileUtils
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 import org.json.JSONObject
 import org.mozilla.geckoview.GeckoResult
@@ -26,7 +26,6 @@ class BrowserFragment : Fragment() {
 
     private val sessionFeature = ViewBoundFeatureWrapper<SessionFeature>()
     private val downloadsFeature = ViewBoundFeatureWrapper<DownloadsFeature>()
-    private val promptsFeature = ViewBoundFeatureWrapper<PromptFeature>()
     private val viewModel: BrowserViewModel by viewModels()
     private var initialUrl: String? = null
 
@@ -98,32 +97,20 @@ class BrowserFragment : Fragment() {
         val context = context ?: return
         val components = (context.applicationContext as UHApp).components
         
-        if (downloadsFeature.get() == null) {
-            downloadsFeature.set(
-                feature = DownloadsFeature(
-                    context = context.applicationContext,
-                    store = components.store,
-                    useCases = mozilla.components.feature.downloads.DownloadsUseCases(components.store),
-                    fragmentManager = childFragmentManager,
-                    tabId = tabId
-                ),
-                owner = this,
-                view = requireView()
-            )
-        }
-
-        if (promptsFeature.get() == null) {
-            promptsFeature.set(
-                feature = PromptFeature(
-                    fragment = this,
-                    store = components.store,
-                    customTabId = tabId,
-                    fragmentManager = childFragmentManager
-                ),
-                owner = this,
-                view = requireView()
-            )
-        }
+if (downloadsFeature.get() == null) {
+    downloadsFeature.set(
+        feature = DownloadsFeature(
+            applicationContext = context.applicationContext,
+            store = components.store,
+            useCases = mozilla.components.feature.downloads.DownloadsUseCases(components.store),
+            fragmentManager = childFragmentManager,
+            tabId = tabId,
+            downloadFileUtils = DefaultDownloadFileUtils(context.applicationContext)
+        ),
+        owner = this,
+        view = requireView()
+    )
+}
     }
 
     companion object {
