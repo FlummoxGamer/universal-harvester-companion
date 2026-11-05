@@ -1,4 +1,4 @@
-package app.harvester.companion
+package app.harvester.companion.safemode
 
 import android.os.Bundle
 import android.widget.Toast
@@ -17,7 +17,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -25,6 +24,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.work.WorkManager
+import app.harvester.companion.DownloadEngine
+import app.harvester.companion.DownloadHelper
+import app.harvester.companion.DownloadService
+import app.harvester.companion.DownloadStore
+import app.harvester.companion.R
+import app.harvester.companion.SessionService
 import app.harvester.companion.utils.phoenix.ProcessPhoenix
 import java.io.File
 import java.text.SimpleDateFormat
@@ -42,7 +47,7 @@ class SafeModeActivity : AppCompatActivity() {
             val fullText = latestCrash.readText()
             if (fullText.length > 10000) fullText.take(10000) + "\n\n... [Log Truncated for performance]" else fullText
         } else "No crash log found."
-        
+
         setContent {
             MaterialTheme {
                 Surface(
@@ -90,18 +95,18 @@ class SafeModeActivity : AppCompatActivity() {
         }
     }
 
-private fun clearCrashState() {
-    try {
-        val crashFile = File(filesDir, "last_crash.txt")
-        if (crashFile.exists()) crashFile.delete()
-        val safeFlag = File(filesDir, "safe_mode.flag")
-        if (safeFlag.exists()) safeFlag.delete()
-        val crashDir = File(filesDir, "crashes")
-        crashDir.deleteRecursively()
-        val geckoDir = File(filesDir, "mozilla")
-        if (geckoDir.exists()) geckoDir.deleteRecursively()
-    } catch (_: Exception) {}
-}
+    private fun clearCrashState() {
+        try {
+            val crashFile = File(filesDir, "last_crash.txt")
+            if (crashFile.exists()) crashFile.delete()
+            val safeFlag = File(filesDir, "safe_mode.flag")
+            if (safeFlag.exists()) safeFlag.delete()
+            val crashDir = File(filesDir, "crashes")
+            crashDir.deleteRecursively()
+            val geckoDir = File(filesDir, "mozilla")
+            if (geckoDir.exists()) geckoDir.deleteRecursively()
+        } catch (_: Exception) {}
+    }
 
     private fun stopAllProcesses() {
         try {
@@ -151,7 +156,6 @@ fun SafeModeScreen(
             color = colorResource(id = R.color.surface),
             shape = RoundedCornerShape(16.dp)
         ) {
-            androidx.compose.foundation.ScrollState
             val scrollState = rememberScrollState()
             Text(
                 text = logText,
