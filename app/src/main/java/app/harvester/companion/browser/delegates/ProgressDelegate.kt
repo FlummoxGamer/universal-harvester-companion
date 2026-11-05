@@ -2,8 +2,8 @@ package app.harvester.companion.browser.delegates
 
 import app.harvester.companion.HistoryStore
 import app.harvester.companion.UHLog
-import app.harvester.companion.UHApp
-import mozilla.components.browser.engine.gecko.GeckoEngineSession
+import app.harvester.companion.components.Components
+import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.store.BrowserStore
 import org.mozilla.geckoview.GeckoSession
 
