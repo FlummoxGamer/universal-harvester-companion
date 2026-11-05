@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class UHApp : Application(), coil.ImageLoaderFactory {
 
     val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val components by lazy { app.harvester.companion.components.Components(this) }
     private val isSafeModeTriggered = AtomicBoolean(false)
 
     override fun newImageLoader(): coil.ImageLoader {
