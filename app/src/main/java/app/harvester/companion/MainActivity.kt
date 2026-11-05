@@ -68,6 +68,7 @@ class MainActivity : AppCompatActivity() {
 
         setupHomeGrid()
         setupBackDispatcher()
+        handleIntent(intent)
 
         if (savedInstanceState != null) {
             binding.splashScreen.visibility = View.GONE
@@ -158,6 +159,19 @@ class MainActivity : AppCompatActivity() {
         } else {
             existing.loadUrl(url)
         }
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        val url = intent?.data?.toString() ?: return
+        if (url.startsWith("http")) {
+            loadUrlFromHome(url)
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
     }
 
     override fun onResume() {
