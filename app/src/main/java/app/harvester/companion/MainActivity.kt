@@ -41,26 +41,6 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        val testSafeModeButton = android.widget.Button(this).apply {
-            id = android.view.View.generateViewId()
-            text = "Test Safe Mode"
-            setBackgroundColor(android.graphics.Color.parseColor("#457B9D"))
-            setTextColor(android.graphics.Color.WHITE)
-            setOnClickListener {
-                java.io.File(filesDir, "safe_mode.flag").createNewFile()
-                app.harvester.companion.utils.phoenix.ProcessPhoenix.triggerRebirth(this@MainActivity)
-            }
-        }
-        val params = ConstraintLayout.LayoutParams(
-            ConstraintLayout.LayoutParams.WRAP_CONTENT,
-            ConstraintLayout.LayoutParams.WRAP_CONTENT
-        ).apply {
-            topToTop = ConstraintLayout.LayoutParams.PARENT_ID
-            endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-            setMargins(16, 100, 16, 16)
-        }
-        binding.root.addView(testSafeModeButton, params)
-
         setupHomeGrid()
         setupBackDispatcher()
         handleIntent(intent)
