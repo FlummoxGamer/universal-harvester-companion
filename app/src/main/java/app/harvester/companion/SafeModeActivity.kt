@@ -38,8 +38,11 @@ class SafeModeActivity : AppCompatActivity() {
         val crashDir = File(filesDir, "crashes")
         val crashFiles = crashDir.listFiles()?.sortedByDescending { it.lastModified() }
         val latestCrash = crashFiles?.firstOrNull()
-        val logText = if (latestCrash != null && latestCrash.exists()) latestCrash.readText() else "No crash log found."
-
+        val logText = if (latestCrash != null && latestCrash.exists()) {
+            val fullText = latestCrash.readText()
+            if (fullText.length > 10000) fullText.take(10000) + "\n\n... [Log Truncated for performance]" else fullText
+        } else "No crash log found."
+        
         setContent {
             MaterialTheme {
                 Surface(
