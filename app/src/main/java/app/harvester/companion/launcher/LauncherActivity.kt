@@ -1,19 +1,16 @@
 package app.harvester.companion.launcher
 
-import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
+import androidx.appcompat.app.AppCompatActivity
 import app.harvester.companion.MainActivity
 import app.harvester.companion.safemode.SafeModeActivity
-import app.harvester.companion.utils.CrashChecker
 import java.io.File
 
-class LauncherActivity : Activity() {
+class LauncherActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
-            CrashChecker.checkNativeCrashes(this)
-            
             val safeFlag = File(filesDir, "safe_mode.flag")
             if (safeFlag.exists()) {
                 startActivity(Intent(this, SafeModeActivity::class.java))
