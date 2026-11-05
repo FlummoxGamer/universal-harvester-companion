@@ -150,19 +150,6 @@ fun BrowserScreen(
                 )
             }
 
-            if (showMainMenu) {
-                ModalBottomSheet(
-                    onDismissRequest = { showMainMenu = false },
-                    sheetState = rememberModalBottomSheetState(),
-                    containerColor = Color(0xFF171B21)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Main Menu", color = Color.White, fontSize = 20.sp)
-                        Text("History / Downloads / Settings (Wiring Next)", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
-                    }
-                }
-            }
-
             if (showTabsMenu) {
                 ModalBottomSheet(
                     onDismissRequest = { showTabsMenu = false },
@@ -170,8 +157,63 @@ fun BrowserScreen(
                     containerColor = Color(0xFF171B21)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Tabs", color = Color.White, fontSize = 20.sp)
-                        Text("${browserState.tabs.size} open tabs (Tab Grid Next)", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
+                        Text("Tabs (${browserState.tabs.size})", color = Color.White, fontSize = 20.sp, modifier = Modifier.padding(bottom = 16.dp))
+                        browserState.tabs.forEach { tab ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        components.useCases.tabsUseCases.selectTab(tab.id)
+                                        showTabsMenu = false
+                                    }
+                                    .padding(vertical = 12.dp, horizontal = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = tab.content.title.ifBlank { tab.content.url },
+                                    color = if (tab.id == selectedTab?.id) Color(0xFF457B9D) else Color.White,
+                                    fontSize = 16.sp,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    text = "X",
+                                    color = Color.Red,
+                                    modifier = Modifier
+                                        .clickable { 
+                                            components.useCases.tabsUseCases.removeTab(tab.id)
+                                            if (browserState.tabs.size <= 1) showTabsMenu = false
+                                        }
+                                        .padding(8.dp)
+                                )
+                            }
+                        }
+                        Text(
+                            text = "+ New Tab",
+                            color = Color(0xFF457B9D),
+                            fontSize = 16.sp,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { 
+                                    components.useCases.tabsUseCases.addTab("about:blank")
+                                    showTabsMenu = false
+                                }
+                                .padding(vertical = 16.dp)
+                        )
+                    }
+                }
+            }
+
+            if (showMainMenu) {
+                ModalBottomSheet(
+                    onDismissRequest = { showMainMenu = false },
+                    sheetState = rememberModalBottomSheetState(),
+                    containerColor = Color(0xFF171B21)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Main Menu", color = Color.White, fontSize = 20.sp, modifier = Modifier.padding(bottom = 16.dp))
+                        Text("History", color = Color.White, fontSize = 16.sp, modifier = Modifier.padding(vertical = 12.dp).clickable { context.startActivity(android.content.Intent(context, app.harvester.companion.HistoryActivity::class.java)); showMainMenu = false })
+                        Text("Downloads", color = Color.White, fontSize = 16.sp, modifier = Modifier.padding(vertical = 12.dp).clickable { context.startActivity(android.content.Intent(context, app.harvester.companion.DownloadsActivity::class.java)); showMainMenu = false })
+                        Text("Settings", color = Color.White, fontSize = 16.sp, modifier = Modifier.padding(vertical = 12.dp).clickable { context.startActivity(android.content.Intent(context, app.harvester.companion.SettingsActivity::class.java)); showMainMenu = false })
                     }
                 }
             }
