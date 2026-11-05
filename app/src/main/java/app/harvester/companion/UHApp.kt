@@ -43,20 +43,19 @@ class UHApp : Application(), coil.ImageLoaderFactory {
         }
     }
 
-    override fun onCreate() {
-        super.onCreate()
-        
-val isSentryEnabled = false
-if (isSentryEnabled) {
-    if (Build.VERSION.SDK_INT >= 31) {
-        initSentry(fullNdk = true)
-    } else {
-        initSentry(fullNdk = false)
+override fun onCreate() {
+    super.onCreate()
+    
+    val isSentryEnabled = false
+    if (isSentryEnabled) {
+        if (Build.VERSION.SDK_INT >= 31) {
+            initSentry(fullNdk = true)
+        } else {
+            initSentry(fullNdk = false)
+        }
     }
-}
-        
-        checkNativeCrashes()
-        ThemePrefs.applyCurrent(this)
+    
+    ThemePrefs.applyCurrent(this)
         
         applicationScope.launch {
             UHLog.init(this@UHApp)
@@ -139,24 +138,6 @@ if (isSentryEnabled) {
         } catch (_: Exception) {}
     }
 
-    private fun checkNativeCrashes() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            try {
-                val activityManager = getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
-                val exitInfoList = activityManager.getHistoricalProcessExitReasons(packageName, 0, 1)
-                if (exitInfoList.isNotEmpty()) {
-                    val exitInfo = exitInfoList[0]
-                    if (exitInfo.reason == android.app.ApplicationExitInfo.REASON_LOW_MEMORY || 
-                        exitInfo.reason == android.app.ApplicationExitInfo.REASON_CRASH_NATIVE) {
-                        
-                        val crashFile = File(filesDir, "last_crash.txt")
-                        crashFile.writeText("ApplicationExitInfo Detected:\nReason: ${exitInfo.reason}\nDescription: ${exitInfo.description}\nTimestamp: ${exitInfo.timestamp}\n")
-                        File(filesDir, "safe_mode.flag").createNewFile()
-                    }
-                }
-            } catch (_: Exception) {}
-        }
-    }
 
     private fun scheduleCleanup() {
         try {
