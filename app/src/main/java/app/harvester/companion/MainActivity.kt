@@ -9,6 +9,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.ItemTouchHelper
 import app.harvester.companion.browser.BrowserFragment
 import app.harvester.companion.databinding.ActivityMainBinding
 
@@ -81,14 +82,174 @@ class MainActivity : AppCompatActivity() {
             onAdd = { showAddShortcutDialog() },
             onLongPress = { }
         )
-        binding.shortcutsGrid.layoutManager = GridLayoutManager(this, 4)
-        binding.shortcutsGrid.adapter = shortcutAdapter
-        shortcutAdapter.submit(ShortcutStore.list(this))
+    binding.shortcutsGrid.layoutManager = GridLayoutManager(this, 4)
+    binding.shortcutsGrid.adapter = shortcutAdapter
+    shortcutAdapter.submit(ShortcutStore.list(this))
+    
+    binding.btnEditHome.setOnClickListener {
+        startActivity(Intent(this, CustomizeHomeActivity::class.java))
+    }
+
+    val callback = object : ItemTouchHelper.SimpleCallback(
+        ItemTouchHelper.UP or ItemTouchHelper.DOWN or ItemTouchHelper.START or ItemTouchHelper.END, 0
+    ) {
+        override fun onMove(recyclerView: androidx.recyclerview.widget.RecyclerView, viewHolder: androidx.recyclerview.widget.RecyclerView.ViewHolder, target: androidx.recyclerview.widget.RecyclerView.ViewHolder): Boolean {
+            val fromPos = viewHolder.adapterPosition
+            val toPos = target.adapterPosition
+            if (fromPos < 0 || toPos < 0) return false
+            if (fromPos == shortcutAdapter.itemCount - 1 || toPos == shortcutAdapter.itemCount - 1) return false
+            shortcutAdapter.moveItem(fromPos, toPos)
+            return true
+        }
+        override fun onSwiped(viewHolder: androidx.recyclerview.widget.RecyclerView.ViewHolder, direction: Int) {}
+        override fun isLongPressDragEnabled(): Boolean = false
         
-        binding.btnEditHome.setOnClickListener {
-            startActivity(Intent(this, CustomizeHomeActivity::class.java))
+        override fun clearView(recyclerView: androidx.recyclerview.widget.RecyclerView, viewHolder: androidx.recyclerview.widget.RecyclerView.ViewHolder) {
+            super.clearView(recyclerView, viewHolder)
+            ShortcutStore.save(this@MainActivity, shortcutAdapter.getItems())
         }
     }
+    val touchHelper = ItemTouchHelper(callback)
+    touchHelper.attachToRecyclerView(binding.shortcutsGrid)
+
+    binding.shortcutsGrid.addOnItemTouchListener(object : androidx.recyclerview.widget.RecyclerView.SimpleOnItemTouchListener() {
+        private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        private var dragRunnable: Runnable? = null
+        private var editRunnable: Runnable? = null
+        private var downX = 0f
+        private var downY = 0f
+        private var isDragReady = false
+        private var isDragging = false
+        private var isPopupShowing = false
+
+        override fun onInterceptTouchEvent(rv: androidx.recyclerview.widget.RecyclerView, e: android.view.MotionEvent): Boolean {
+            when (e.action) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    downX = e.x
+                    downY = e.y
+                    isDragReady = false
+                    isDragging = false
+                    isPopupShowing = false
+                    val child = rv.findChildViewUnder(e.x, e.y)
+                    if (child != null) {
+                        val pos = rv.getChildAdapterPosition(child)
+                        if (pos in 0 until shortcutAdapter.itemCount - 1) {
+                            dragRunnable = Runnable { isDragReady = true }
+                            handler.postDelayed(dragRunnable!!, 150)
+
+                            editRunnable = Runnable {
+                                if (!isDragging && !isPopupShowing) {
+                                    isPopupShowing = true
+                                    val item = shortcutAdapter.getItemAt(pos)
+                                    showWidgetMenu(item, child)
+                                }
+                            }
+                            handler.postDelayed(editRunnable!!, 500)
+                        }
+                    }
+                }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    if (isPopupShowing) return false
+                    val dx = Math.abs(e.x - downX)
+                    val dy = Math.abs(e.y - downY)
+                    if (dx > 20 || dy > 20) {
+                        editRunnable?.let { handler.removeCallbacks(it) }
+                        editRunnable = null
+                        
+                        if (isDragReady && !isDragging) {
+                            isDragging = true
+                            val child = rv.findChildViewUnder(downX, downY)
+                            if (child != null) {
+                                val pos = rv.getChildAdapterPosition(child)
+                                if (pos in 0 until shortcutAdapter.itemCount - 1) {
+                                    touchHelper.startDrag(rv.findViewHolderForAdapterPosition(pos)!!)
+                                }
+                            }
+                        } else if (!isDragReady) {
+                            dragRunnable?.let { handler.removeCallbacks(it) }
+                            dragRunnable = null
+                        }
+                    }
+                }
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                    dragRunnable?.let { handler.removeCallbacks(it) }
+                    dragRunnable = null
+                    editRunnable?.let { handler.removeCallbacks(it) }
+                    editRunnable = null
+                }
+            }
+            return false
+        }
+    })
+}
+
+private fun showWidgetMenu(s: Shortcut, anchor: android.view.View) {
+    val popupView = layoutInflater.inflate(R.layout.dialog_widget_menu, null)
+    popupView.measure(android.view.View.MeasureSpec.UNSPECIFIED, android.view.View.MeasureSpec.UNSPECIFIED)
+    
+    val popup = android.widget.PopupWindow(
+        popupView,
+        android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+        android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+        true
+    )
+    popup.elevation = 16f
+    popup.width = (240 * resources.displayMetrics.density).toInt()
+
+    popupView.findViewById<android.view.View>(R.id.rowEdit).setOnClickListener {
+        popup.dismiss()
+        val view = layoutInflater.inflate(R.layout.dialog_add_shortcut_custom, null)
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setView(view)
+            .setCancelable(true)
+            .create()
+
+        view.findViewById<android.widget.TextView>(R.id.dialogTitle).text = "Edit Shortcut"
+        val urlInput = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.inputUrl)
+        val nameInput = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.inputName)
+        
+        urlInput.setText(s.url)
+        nameInput.setText(s.name)
+
+        view.findViewById<android.view.View>(R.id.btnCancel).setOnClickListener { dialog.dismiss() }
+        view.findViewById<android.view.View>(R.id.btnSave).setOnClickListener {
+            val raw = urlInput.text.toString().trim()
+            if (raw.isBlank()) {
+                urlInput.error = "URL is required"
+                return@setOnClickListener
+            }
+            val fixed = if (raw.startsWith("http://") || raw.startsWith("https://")) raw else "https://$raw"
+            val manual = nameInput.text.toString().trim()
+            val name = if (manual.isNotBlank()) manual else ShortcutStore.shortNameFor(fixed)
+            
+            ShortcutStore.remove(this, s.url)
+            ShortcutStore.add(this, Shortcut(name, fixed, ShortcutStore.iconUrlFor(fixed)))
+            shortcutAdapter.submit(ShortcutStore.list(this))
+            dialog.dismiss()
+        }
+
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+        dialog.show()
+        
+        val width = (resources.displayMetrics.widthPixels * 0.90).toInt()
+        dialog.window?.setLayout(width, android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
+        dialog.window?.setGravity(android.view.Gravity.CENTER)
+    }
+
+    popupView.findViewById<android.view.View>(R.id.rowRemove).setOnClickListener {
+        popup.dismiss()
+        ShortcutStore.remove(this, s.url)
+        shortcutAdapter.submit(ShortcutStore.list(this))
+    }
+
+    val location = IntArray(2)
+    anchor.getLocationOnScreen(location)
+    val x = location[0] + (anchor.width / 2) - (popupView.measuredWidth / 2)
+    val y = location[1] + anchor.height - 16
+
+    popup.showAtLocation(anchor, android.view.Gravity.NO_GRAVITY, Math.max(0, x), y)
+}
 
     private fun setupBackDispatcher() {
         onBackPressedDispatcher.addCallback(this) {
