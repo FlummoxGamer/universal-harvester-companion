@@ -1,161 +1,46 @@
 package app.harvester.companion
 
 import android.app.Application
-import android.content.ComponentCallbacks2
+import android.content.ContentValues
 import android.content.Context
-import android.content.Intent
-import android.os.Build
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
-import io.sentry.SentryLevel
-import io.sentry.android.core.SentryAndroid
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
-import xcrash.ICrashCallback
-import xcrash.XCrash
-import java.io.File
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
+import android.os.Environment
+import android.os.Process
+import android.provider.MediaStore
+import java.io.PrintWriter
+import java.io.StringWriter
 
-class UHApp : Application(), coil.ImageLoaderFactory {
-
-    val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    val components by lazy { app.harvester.companion.components.Components(this) }
-    private val isSafeModeTriggered = AtomicBoolean(false)
-
-    override fun newImageLoader(): coil.ImageLoader {
-        return coil.ImageLoader.Builder(this)
-            .components {
-                add(coil.decode.VideoFrameDecoder.Factory())
-                add(coil.decode.GifDecoder.Factory())
-            }
-            .crossfade(true)
-            .build()
-    }
+class UHApp : Application() {
 
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(base)
-        if (Build.VERSION.SDK_INT <= 30) {
-            initXCrash(base)
-        }
     }
 
-override fun onCreate() {
-    super.onCreate()
-    
-    val isSentryEnabled = false
-    if (isSentryEnabled) {
-        if (Build.VERSION.SDK_INT >= 31) {
-            initSentry(fullNdk = true)
-        } else {
-            initSentry(fullNdk = false)
-        }
-    }
-    
-    ThemePrefs.applyCurrent(this)
+    override fun onCreate() {
+        super.onCreate()
         
-        applicationScope.launch {
-            UHLog.init(this@UHApp)
-            SessionRecorder.init(this@UHApp)
-            DownloadEngine.initNetworkListener(this@UHApp)
-            scheduleCleanup()
-        }
-        
-        if (BuildConfig.DEBUG) {
-            StrictModeManager.enableStrictMode(true)
-            LeakCanarySetup.setup(this)
-        }
-    
-        try {
-            startService(Intent(this, SessionService::class.java))
-        } catch (_: Exception) {}
-    }
-
-    private fun initSentry(fullNdk: Boolean) {
-        try {
-            SentryAndroid.init(this) { options ->
-                options.dsn = ""
-                options.isEnableNdk = fullNdk
-                options.setDiagnosticLevel(SentryLevel.FATAL)
-                options.isAttachThreads = true
-                options.isAttachAnrThreadDump = true
+        Thread.setDefaultUncaughtExceptionHandler { _, e ->
+            try {
+                val sw = StringWriter()
+                val pw = PrintWriter(sw)
+                e.printStackTrace(pw)
                 
-                options.beforeSend = object : io.sentry.SentryOptions.BeforeSendCallback {
-                    override fun execute(event: io.sentry.SentryEvent, hint: io.sentry.Hint): io.sentry.SentryEvent? {
-                        if (isSafeModeTriggered.compareAndSet(false, true)) {
-                            val msgString = event.message?.formatted ?: "Unknown Sentry Crash"
-                            val throwable = event.throwable ?: Exception(msgString)
-                            handleSentryCrash(throwable)
-                        }
-                        return null
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, "uh_crash_log.txt")
+                    put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                }
+                val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                if (uri != null) {
+                    contentResolver.openOutputStream(uri)?.use { output ->
+                        output.write("Crash Time: ${System.currentTimeMillis()}\n\n${sw.toString()}".toByteArray())
                     }
                 }
-            }
-        } catch (_: Throwable) {}
-    }
-
-    private fun handleSentryCrash(e: Throwable) {
-        try {
-            val crashFile = File(filesDir, "last_crash.txt")
-            crashFile.writeText("Sentry Caught Crash: ${e.javaClass.name}: ${e.message}\n${e.stackTraceToString()}")
-            File(filesDir, "safe_mode.flag").createNewFile()
-        } catch (_: Exception) {}
-    }
-
-    private fun initXCrash(context: Context) {
-        try {
-            val params = XCrash.InitParameters()
-            params.setAppVersion(BuildConfig.VERSION_NAME)
-            params.setLogDir("${context.filesDir.absolutePath}/crashes")
-            
-            val callback = ICrashCallback { logPath, emergency ->
-                handleXCrash(context, logPath, emergency)
-            }
-            
-            params.setJavaCallback(callback)
-            params.setNativeCallback(callback)
-            params.setAnrCallback(callback)
-            
-            XCrash.init(context, params)
-        } catch (_: Throwable) {}
-    }
-
-    private fun handleXCrash(context: Context, logPath: String?, emergency: String?) {
-        try {
-            if (isSafeModeTriggered.compareAndSet(false, true)) {
-                val crashFile = File(context.filesDir, "last_crash.txt")
-                val content = if (!logPath.isNullOrBlank() && File(logPath).exists()) {
-                    File(logPath).readText()
-                } else {
-                    emergency ?: "Unknown Crash"
-                }
-                crashFile.writeText(content)
-                File(context.filesDir, "safe_mode.flag").createNewFile()
-            }
-        } catch (_: Exception) {}
-    }
-
-
-    private fun scheduleCleanup() {
-        try {
-            val req = PeriodicWorkRequestBuilder<CleanupWorker>(6, TimeUnit.HOURS).build()
-            WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-                "uh_cleanup",
-                ExistingPeriodicWorkPolicy.KEEP,
-                req
-            )
-        } catch (_: Exception) {}
-    }
-
-    override fun onTrimMemory(level: Int) {
-        super.onTrimMemory(level)
-        if (level == ComponentCallbacks2.TRIM_MEMORY_COMPLETE) {
-            try {
-                TabManager.get(this).evictForMemory(1)
             } catch (_: Exception) {}
+            
+            Process.killProcess(Process.myPid())
+            System.exit(1)
         }
+        
+        ThemePrefs.applyCurrent(this)
     }
 }
