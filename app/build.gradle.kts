@@ -109,10 +109,7 @@ dependencies {
     debugImplementation("com.squareup.leakcanary:leakcanary-android:2.14")
     
     implementation("com.iqiyi.xcrash:xcrash-android-lib:3.1.0")
-    implementation(platform("io.sentry:sentry-bom:8.20.0"))
-    implementation("io.sentry:sentry-android")
-    implementation("io.sentry:sentry-android-ndk")
-
+    
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("org.mozilla.components:browser-engine-gecko:154.0.1")
     implementation("org.mozilla.components:browser-state:154.0.1")
