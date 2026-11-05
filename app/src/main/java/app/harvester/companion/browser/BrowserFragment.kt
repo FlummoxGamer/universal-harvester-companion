@@ -15,12 +15,10 @@ import androidx.fragment.app.viewModels
 import app.harvester.companion.UHApp
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.feature.downloads.DownloadsFeature
+import mozilla.components.feature.downloads.DownloadsUseCases
 import mozilla.components.feature.session.SessionFeature
-import mozilla.components.support.utils.DefaultDownloadFileUtils
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
-import org.json.JSONObject
-import org.mozilla.geckoview.GeckoResult
-import org.mozilla.geckoview.WebExtension
+import mozilla.components.support.utils.DefaultDownloadFileUtils
 
 class BrowserFragment : Fragment() {
 
@@ -97,20 +95,25 @@ class BrowserFragment : Fragment() {
         val context = context ?: return
         val components = (context.applicationContext as UHApp).components
         
-if (downloadsFeature.get() == null) {
-    downloadsFeature.set(
-        feature = DownloadsFeature(
-            applicationContext = context.applicationContext,
-            store = components.store,
-            useCases = mozilla.components.feature.downloads.DownloadsUseCases(components.store),
-            fragmentManager = childFragmentManager,
-            tabId = tabId,
-            downloadFileUtils = DefaultDownloadFileUtils(context.applicationContext)
-        ),
-        owner = this,
-        view = requireView()
-    )
-}
+        if (downloadsFeature.get() == null) {
+            downloadsFeature.set(
+                feature = DownloadsFeature(
+                    applicationContext = context.applicationContext,
+                    store = components.store,
+                    useCases = DownloadsUseCases(components.store),
+                    fragmentManager = childFragmentManager,
+                    tabId = tabId,
+                    downloadFileUtils = DefaultDownloadFileUtils(
+                        context = context.applicationContext,
+                        downloadLocation = {
+                            android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).absolutePath
+                        }
+                    )
+                ),
+                owner = this,
+                view = requireView()
+            )
+        }
     }
 
     companion object {
