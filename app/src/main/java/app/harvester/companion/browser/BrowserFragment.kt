@@ -13,12 +13,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import app.harvester.companion.UHApp
-import app.harvester.companion.browser.delegates.ContentDelegate
-import app.harvester.companion.browser.delegates.ProgressDelegate
-import app.harvester.companion.browser.delegates.PromptDelegate
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
-import mozilla.components.browser.engine.gecko.GeckoEngineSession
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.feature.session.SessionFeature
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
