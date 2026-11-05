@@ -11,6 +11,8 @@ import java.io.StringWriter
 
 class UHApp : Application() {
 
+    val components by lazy { app.harvester.companion.components.Components(this) }
+
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(base)
     }
