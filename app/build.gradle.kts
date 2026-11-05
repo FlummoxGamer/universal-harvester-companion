@@ -9,12 +9,17 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "app.harvester.companion"
-        minSdk = 29
-        targetSdk = 36
-        versionCode = 140
-        versionName = "2.4.70"
-    }
+    applicationId = "app.harvester.companion"
+    minSdk = 29
+    targetSdk = 36
+    versionCode = 140
+    versionName = "2.4.70"
+
+    buildConfigField("String", "AMO_BASE_URL", "\"https://addons.mozilla.org\"")
+    buildConfigField("String", "AMO_COLLECTION_NAME", "\"Extensions-for-Android\"")
+    buildConfigField("String", "AMO_COLLECTION_USER", "\"mozilla\"")
+    buildConfigField("String", "AMO_SERVER_URL", "\"https://services.addons.mozilla.org\"")
+}
 
     flavorDimensions += "version"
     productFlavors {
@@ -120,6 +125,30 @@ dependencies {
     implementation("org.mozilla.components:feature-tabs:154.0.1")
     implementation("org.mozilla.components:support-base:154.0.1")
     implementation("org.mozilla.components:support-utils:154.0.1")
+    implementation("org.mozilla.components:support-locale:154.0.1")
+    implementation("org.mozilla.components:support-images:154.0.1")
+    implementation("org.mozilla.components:support-webextensions:154.0.1")
+    implementation("org.mozilla.components:support-remotesettings:154.0.1")
+    implementation("org.mozilla.components:concept-toolbar:154.0.1")
+    implementation("org.mozilla.components:concept-awesomebar:154.0.1")
+    implementation("org.mozilla.components:feature-toolbar:154.0.1")
+    implementation("org.mozilla.components:feature-search:154.0.1")
+    implementation("org.mozilla.components:feature-awesomebar:154.0.1")
+    implementation("org.mozilla.components:feature-contextmenu:154.0.1")
+    implementation("org.mozilla.components:feature-app-links:154.0.1")
+    implementation("org.mozilla.components:feature-sitepermissions:154.0.1")
+    implementation("org.mozilla.components:feature-privatemode:154.0.1")
+    implementation("org.mozilla.components:feature-addons:154.0.1")
+    implementation("org.mozilla.components:browser-menu2:154.0.1")
+    implementation("org.mozilla.components:browser-thumbnails:154.0.1")
+    implementation("org.mozilla.components:browser-icons:154.0.1")
+    implementation("org.mozilla.components:browser-session-storage:154.0.1")
+    implementation("org.mozilla.components:compose-base:154.0.1")
+    implementation("org.mozilla.components:compose-menu:154.0.1")
+    implementation("org.mozilla.components:compose-browser-toolbar:154.0.1")
+    implementation("org.mozilla.components:ui-icons:154.0.1")
+    implementation("org.mozilla.components:ui-widgets:154.0.1")
+    implementation("org.mozilla.components:service-digitalassetlinks:154.0.1")
 
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation(platform("androidx.compose:compose-bom:2024.09.03"))
