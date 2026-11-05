@@ -36,7 +36,7 @@
         android:layout_width="0dp"
         android:layout_height="0dp"
         app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toTopOf="@id/urlChipStrip"
+        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
@@ -101,135 +101,6 @@
             android:elevation="4dp"
             android:contentDescription="Edit Home" />
     </FrameLayout>
-
-    <LinearLayout
-        android:id="@+id/suggestionsPanel"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:orientation="vertical"
-        android:background="@color/bg"
-        android:visibility="gone"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toTopOf="@id/urlChipStrip"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/suggestionsList"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:paddingTop="4dp"
-            android:paddingBottom="20dp" />
-        <TextView
-            android:id="@+id/suggestionsClearAll"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:gravity="center"
-            android:text="Clear search history"
-            android:textColor="@color/subtext"
-            android:textSize="13sp"
-            android:background="?attr/selectableItemBackground"
-            android:visibility="gone" />
-    </LinearLayout>
-
-    <FrameLayout
-        android:id="@+id/urlChipStrip"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:background="@color/bg"
-        android:visibility="gone"
-        app:layout_constraintBottom_toTopOf="@id/loadingBar"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
-
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/urlChipBar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="12dp"
-            android:layout_marginEnd="12dp"
-            android:layout_marginBottom="8dp"
-            app:cardBackgroundColor="@color/surface_2"
-            app:cardCornerRadius="20dp"
-            app:cardElevation="0dp"
-            app:strokeColor="@color/border"
-            app:strokeWidth="1dp">
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:padding="12dp">
-
-            <ImageView
-                android:id="@+id/urlChipIcon"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:src="@drawable/ic_globe"
-                app:tint="@color/subtext" />
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="12dp"
-                android:layout_marginEnd="8dp"
-                android:orientation="vertical">
-
-                <TextView
-                    android:id="@+id/urlChipTitle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:maxLines="1"
-                    android:ellipsize="end"
-                    android:textColor="@color/text"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/urlChipText"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:maxLines="1"
-                    android:ellipsize="middle"
-                    android:textColor="@color/text"
-                    android:textSize="12sp" />
-            </LinearLayout>
-
-            <ImageButton
-                android:id="@+id/urlChipCopy"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@drawable/ic_copy"
-                app:tint="@color/subtext"
-                android:scaleType="centerInside" />
-
-            <ImageButton
-                android:id="@+id/urlChipEdit"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@drawable/ic_pencil"
-                app:tint="@color/subtext"
-                android:scaleType="centerInside" />
-        </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-    </FrameLayout>
-
-    <ProgressBar
-        android:id="@+id/loadingBar"
-        style="?android:attr/progressBarStyleHorizontal"
-        android:layout_width="0dp"
-        android:layout_height="2dp"
-        android:background="@color/bg"
-        android:max="100"
-        android:progressTint="@color/accent"
-        android:progressBackgroundTint="@color/surface"
-        android:visibility="gone"
-        app:layout_constraintBottom_toTopOf="@id/bottomBar"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
 
     <FrameLayout
         android:id="@+id/splashScreen"
