@@ -10,8 +10,8 @@ import org.mozilla.geckoview.GeckoRuntime
 
 class Components(val context: Context) {
     val engine: Engine by lazy {
-        val runtime = GeckoRuntime.create(context)
-        GeckoEngine(context, runtime = runtime)
+        val runtime = GeckoRuntime.create(context.applicationContext)
+        GeckoEngine(context.applicationContext, runtime = runtime)
     }
     val store: BrowserStore by lazy { BrowserStore() }
     val useCases by lazy { UseCases(store, engine) }
