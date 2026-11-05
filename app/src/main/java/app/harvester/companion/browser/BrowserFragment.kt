@@ -13,12 +13,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import app.harvester.companion.UHApp
-import app.harvester.companion.browser.delegates.ContentDelegate
-import app.harvester.companion.browser.delegates.ProgressDelegate
-import app.harvester.companion.browser.delegates.PromptDelegate
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
-import mozilla.components.browser.engine.gecko.GeckoEngineSession
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.feature.session.SessionFeature
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
@@ -145,16 +141,6 @@ class BrowserFragment : Fragment() {
                 LaunchedEffect(Unit) {
                     if (browserState.tabs.isEmpty() && initialUrl != null) {
                         components.useCases.tabsUseCases.addTab(initialUrl!!)
-                    }
-                }
-
-                LaunchedEffect(browserState.selectedTabId) {
-                    val tab = browserState.selectedTab
-                    val geckoSession = (tab?.engineState?.engineSession as? GeckoEngineSession)?.geckoSession
-                    if (geckoSession != null) {
-                        geckoSession.progressDelegate = ProgressDelegate(components, components.store)
-                        geckoSession.contentDelegate = ContentDelegate(context, components, components.store)
-                        geckoSession.promptDelegate = PromptDelegate(context)
                     }
                 }
 
