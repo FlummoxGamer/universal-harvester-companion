@@ -1,5 +1,7 @@
 package app.harvester.companion.browser.toolbar
 
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -62,16 +64,25 @@ fun HarvesterAddressBar(
     val bottomBarColor = if (isWallpaperActive) Color.Transparent else colorResource(id = R.color.bg)
     val searchEngineEntry = remember(context) { SearchEnginePrefs.currentEntry(ctx = context) }
     
-    var text by remember { mutableStateOf(if (isEditing) editText else url) }
-    val focusRequester = remember { FocusRequester() }
+var textState by remember { 
+    mutableStateOf(
+        TextFieldValue(
+            text = if (isEditing) editText else url,
+            selection = TextRange(if (isEditing) editText.length else url.length)
+        )
+    ) 
+}
+val focusRequester = remember { FocusRequester() }
 
-    LaunchedEffect(url, isEditing, editText) {
-        if (!isEditing) {
-            text = url
-        } else {
-            text = editText
-        }
+LaunchedEffect(url, isEditing, editText) {
+    val targetText = if (!isEditing) url else editText
+    if (textState.text != targetText) {
+        textState = TextFieldValue(
+            text = targetText,
+            selection = TextRange(targetText.length)
+        )
     }
+}
 
     LaunchedEffect(isEditing) {
         if (isEditing) {
@@ -143,34 +154,37 @@ fun HarvesterAddressBar(
             ) {
                 if (isEditing) {
                     BasicTextField(
-                        value = text,
-                        onValueChange = {
-                            text = it
-                            onEditTextChanged(it)
+                        value = textState,
+                        onValueChange = { newValue ->
+                            val collapsed = newValue.copy(
+                                selection = TextRange(newValue.selection.end)
+                            )
+                            textState = collapsed
+                            onEditTextChanged(collapsed.text)
                         },
                         modifier = Modifier.fillMaxWidth().padding(end = 28.dp).focusRequester(focusRequester),
                         textStyle = TextStyle(color = colorResource(id = R.color.text), fontSize = 14.sp),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                         keyboardActions = KeyboardActions(onGo = {
-                            if (text.isNotBlank()) onSubmit(text)
+                            if (textState.text.isNotBlank()) onSubmit(textState.text)
                         }),
                         decorationBox = { innerTextField ->
                             Box(
                                modifier = Modifier.fillMaxWidth().height(52.dp),
                                contentAlignment = Alignment.CenterStart
 )                           {
-                                if (text.isEmpty()) {
-                                    Text("Search or type URL", color = colorResource(id = R.color.subtext), fontSize = 14.sp)
+                                if (textState.text.isEmpty()) {
+                                Text("Search or type URL", color = colorResource(id = R.color.subtext), fontSize = 14.sp)
                                 }
                                 innerTextField()
                             }
                         }
                     )
-                    if (text.isNotEmpty()) {
+                    if (textState.text.isNotEmpty()) {
                         IconButton(
                             onClick = {
-                                text = ""
+                                textState = TextFieldValue("")
                                 onClear()
                             },
                             modifier = Modifier.align(Alignment.CenterEnd).size(28.dp)
