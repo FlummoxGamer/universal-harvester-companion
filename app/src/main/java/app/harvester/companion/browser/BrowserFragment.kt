@@ -84,8 +84,20 @@ class BrowserFragment : Fragment() {
             }
         }
 
-        setupAddressBar(components)
-        setupInsets()
+    setupAddressBar(components)
+    setupInsets()
+    
+    viewLifecycleOwner.lifecycleScope.launch {
+        viewLifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            components.store.stateFlow.collect { state ->
+                state.selectedTab?.content?.url?.let { url ->
+                    if (url != "about:blank" && url.isNotBlank()) {
+                        UHLog.netNav("GET", url, null, false, false)
+                    }
+                }
+            }
+        }
+    }
     }
 
     private fun setupInsets() {
