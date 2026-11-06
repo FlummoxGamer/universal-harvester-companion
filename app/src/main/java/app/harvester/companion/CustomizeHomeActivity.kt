@@ -127,61 +127,6 @@ private fun showTrimDialog(uri: android.net.Uri) {
     startActivity(intent)
 }
 
-    private fun processAndSaveVideo(uri: android.net.Uri, startSec: Int, endSec: Int) {
-        val progress = android.app.ProgressDialog(this).apply {
-            setMessage("Compressing video...")
-            setCancelable(false)
-            show()
-        }
-
-        val inputFile = java.io.File(cacheDir, "input_${System.currentTimeMillis()}.mp4")
-        val outputFile = java.io.File(cacheDir, "output_${System.currentTimeMillis()}.mp4")
-
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                contentResolver.openInputStream(uri)?.use { input ->
-                    inputFile.outputStream().use { output -> input.copyTo(output) }
-                }
-
-                val cmd = "-y -ss $startSec -to $endSec -i ${inputFile.absolutePath} -c:v libx264 -crf 23 -preset ultrafast ${outputFile.absolutePath}"
-                
-                com.arthenica.ffmpegkit.FFmpegKit.executeAsync(cmd) { session ->
-                    val returnCode = session.returnCode
-                    if (com.arthenica.ffmpegkit.ReturnCode.isSuccess(returnCode)) {
-                        val finalPath = WallpaperStore.saveMotionWallpaperFile(this@CustomizeHomeActivity, outputFile)
-                        runOnUiThread {
-                            progress.dismiss()
-                            if (finalPath != null) {
-                                val intent = Intent(this@CustomizeHomeActivity, WallpaperPreviewActivity::class.java).apply {
-                                    putExtra("imagePath", finalPath)
-                                    putExtra("isCustom", true)
-                                    putExtra("isVideo", true)
-                                }
-                                startActivity(intent)
-                            } else {
-                                Toast.makeText(this@CustomizeHomeActivity, "Failed to save video", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    } else {
-                        runOnUiThread {
-                            progress.dismiss()
-                            UHLog.e("video", "FFmpeg failed: ${session.failStackTrace}")
-                            Toast.makeText(this@CustomizeHomeActivity, "Compression failed", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                    inputFile.delete()
-                    outputFile.delete()
-                }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    progress.dismiss()
-                    UHLog.e("video", "Video processing error: ${e.message}")
-                    Toast.makeText(this@CustomizeHomeActivity, "Error processing video", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_customize_home)
