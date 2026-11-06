@@ -7,7 +7,6 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
@@ -51,7 +50,7 @@ class BrowserFragment : Fragment() {
         val components = (context.applicationContext as UHApp).components
 
         val engineView = components.engine.createView(context, null)
-        binding.engineViewContainer.addView(engineView.asView())
+        binding.swipeRefresh.addView(engineView.asView())
 
         sessionFeature.set(
             feature = SessionFeature(
@@ -76,9 +75,6 @@ class BrowserFragment : Fragment() {
             owner = this,
             view = binding.root
         )
-
-        binding.swipeRefresh.setColorSchemeColors(ContextCompat.getColor(context, R.color.accent))
-        binding.swipeRefresh.setProgressBackgroundColorSchemeColor(ContextCompat.getColor(context, R.color.surface))
 
         if (initialUrl != null) {
             if (components.store.state.tabs.isEmpty()) {
