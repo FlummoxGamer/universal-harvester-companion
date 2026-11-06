@@ -1,5 +1,6 @@
 package app.harvester.companion.browser
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -8,10 +9,15 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
-import androidx.navigation.fragment.findNavController
+import app.harvester.companion.DownloadsActivity
+import app.harvester.companion.HistoryActivity
+import app.harvester.companion.R
+import app.harvester.companion.SettingsActivity
 import app.harvester.companion.UHApp
 import app.harvester.companion.browser.toolbar.HarvesterAddressBar
 import app.harvester.companion.databinding.FragmentBrowserBinding
+import app.harvester.companion.theme.UHTheme
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.feature.session.SessionFeature
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
@@ -54,11 +60,24 @@ class BrowserFragment : Fragment() {
             view = binding.root
         )
 
-        if (initialUrl != null && components.store.state.tabs.isEmpty()) {
-            components.useCases.tabsUseCases.addTab(initialUrl!!)
+        if (initialUrl != null) {
+            if (components.store.state.tabs.isEmpty()) {
+                components.useCases.tabsUseCases.addTab(initialUrl!!)
+            } else {
+                components.useCases.sessionUseCases.loadUrl(initialUrl!!)
+            }
         }
 
         setupAddressBar(components)
+        setupInsets()
+    }
+
+    private fun setupInsets() {
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.addressBarContainer) { v, insets ->
+            val systemBars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            v.setPadding(0, 0, 0, systemBars.bottom)
+            insets
+        }
     }
 
     private fun setupAddressBar(components: app.harvester.companion.components.Components) {
@@ -66,10 +85,9 @@ class BrowserFragment : Fragment() {
             val browserState by components.store.stateFlow.collectAsState()
             val isEditing by viewModel.isEditing.collectAsState()
             val editText by viewModel.editText.collectAsState()
-            val suggestions by viewModel.suggestions.collectAsState()
             val selectedTab = browserState.selectedTab
 
-            app.harvester.companion.theme.UHTheme {
+            UHTheme {
                 HarvesterAddressBar(
                     url = selectedTab?.content?.url ?: "",
                     isEditing = isEditing,
@@ -89,11 +107,32 @@ class BrowserFragment : Fragment() {
                     onClear = { viewModel.onTextChanged("") },
                     onSearchEngineClick = {},
                     onScriptMenuClick = {},
-                    onMenuClick = {},
+                    onMenuClick = { showMenu() },
                     onTabCountClick = {}
                 )
             }
         }
+    }
+
+    private fun showMenu() {
+        val sheet = BottomSheetDialog(requireContext(), R.style.Theme_UHCompanion_BottomSheet)
+        val v = layoutInflater.inflate(R.layout.dialog_main_menu, null)
+        v.setBackgroundResource(R.drawable.bg_bottom_sheet)
+        sheet.setContentView(v)
+
+        v.findViewById<View>(R.id.menuSettings)?.setOnClickListener {
+            sheet.dismiss()
+            startActivity(Intent(requireContext(), SettingsActivity::class.java))
+        }
+        v.findViewById<View>(R.id.menuHistory)?.setOnClickListener {
+            sheet.dismiss()
+            startActivity(Intent(requireContext(), HistoryActivity::class.java))
+        }
+        v.findViewById<View>(R.id.menuDownloads)?.setOnClickListener {
+            sheet.dismiss()
+            startActivity(Intent(requireContext(), DownloadsActivity::class.java))
+        }
+        sheet.show()
     }
 
     fun onBackPressed(): Boolean {
