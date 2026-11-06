@@ -1,424 +1,326 @@
 package app.harvester.companion
 
-import android.content.ContentValues
 import android.content.Context
-import android.os.Environment
-import android.provider.MediaStore
+import android.net.Uri
 import android.util.Log
-import java.io.BufferedWriter
+import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.FileWriter
+import java.io.BufferedWriter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 object UHLog {
 
     private const val TAG = "UHCompanion"
-    private const val MAX_LINES = 3000
-    private const val FLUSH_EVERY = 20
-    private const val KEEP_SESSIONS = 10
-    private const val RESUME_WINDOW_MS = 60L * 1000L
-    private const val DEDUPE_WINDOW_MS = 5000L
-
+    private const val MAX_FILE_SIZE = 64L * 1024L
+    private const val MAX_SESSIONS = 4
     private const val PREFS = "uh_session"
     private const val KEY_SESSION_ID = "session_id"
     private const val KEY_ACTIVE = "session_active"
     private const val KEY_LAST_PAUSE = "last_pause_ts"
+    private const val KEY_CRASHED = "was_crashed"
 
-    private val buffer = ArrayDeque<String>(MAX_LINES)
-    private val lock = Any()
-    private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
-    private val listeners = CopyOnWriteArrayList<(String) -> Unit>()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val fileMutex = Mutex()
 
-    private var writer: BufferedWriter? = null
-    private var netWriter: BufferedWriter? = null
-    private var pending = 0
     private var appContext: Context? = null
-    private var initialised = false
-    @Volatile private var verbose = false
+    private var customTreeUri: Uri? = null
+    
+    private var internalLogFile: File? = null
+    private var internalNetFile: File? = null
+    private var customLogDoc: DocumentFile? = null
+    private var customNetDoc: DocumentFile? = null
 
-    private var lastLogKey: String = ""
-    private var lastLogLine: String = ""
-    private var lastLogTime: Long = 0L
-    private var repeatCount: Int = 0
+    private var logIndex = 0
+    private var netIndex = 0
+    private var internalLogSize = 0L
+    private var internalNetSize = 0L
 
-    @Volatile var externalPath: String = ""
-    @Volatile var netPath: String = ""
     @Volatile var sessionId: String = ""
+        private set
 
-    private val RX_JWT = Regex("""eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+""")
-    private val RX_BEARER = Regex("""(?i)(bearer\s+)\S+""")
-    private val RX_COOKIE = Regex("""(?i)(cookie["']?\s*[:=]\s*["']?)[^"\r\n]+""")
-    private val RX_CF = Regex("""(?i)(cloudfront-(?:policy|signature|key-pair-id)=)[^;&"\s]+""")
-    private val RX_B64_BLOB = Regex("""[A-Za-z0-9+/=]{300,}""")
+    private val buffer = mutableListOf<String>()
+    private val netBuffer = mutableListOf<String>()
+    private val listeners = CopyOnWriteArrayList<(String) -> Unit>()
+    private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
+    private val fileNameFormat = SimpleDateFormat("HH-mm", Locale.US)
 
     fun init(ctx: Context) {
-        synchronized(lock) {
-            if (initialised) {
-                if (writer == null) reopenWriters(ctx)
-                return
-            }
-            initialised = true
-            appContext = ctx.applicationContext
-            verbose = DebugPrefs.verboseLogging(ctx)
-            installCrashHandler()
-
-            val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            val prevId = prefs.getString(KEY_SESSION_ID, null)
-            val prevActive = prefs.getBoolean(KEY_ACTIVE, false)
-            val lastPause = prefs.getLong(KEY_LAST_PAUSE, 0L)
-            val now = System.currentTimeMillis()
-
-            val resume = prevActive && prevId != null && (now - lastPause) < RESUME_WINDOW_MS
-            sessionId = if (resume) prevId!! else newSessionId(now)
-            prefs.edit()
-                .putString(KEY_SESSION_ID, sessionId)
-                .putBoolean(KEY_ACTIVE, true)
-                .putLong(KEY_LAST_PAUSE, now)
-                .apply()
-
-            reopenWriters(ctx)
+        appContext = ctx.applicationContext
+        
+        val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val wasCrashed = prefs.getBoolean(KEY_CRASHED, false)
+        if (wasCrashed) {
+            renameCrashFiles(ctx)
+            prefs.edit().putBoolean(KEY_CRASHED, false).apply()
         }
 
-        section("BOOT")
+        val prevId = prefs.getString(KEY_SESSION_ID, null)
+        val prevActive = prefs.getBoolean(KEY_ACTIVE, false)
+        val lastPause = prefs.getLong(KEY_LAST_PAUSE, 0L)
+        val now = System.currentTimeMillis()
+
+        val resume = prevActive && prevId != null && (now - lastPause) < 60000L
+        sessionId = if (resume) prevId!! else newSessionId(now)
+        
+        prefs.edit()
+            .putString(KEY_SESSION_ID, sessionId)
+            .putBoolean(KEY_ACTIVE, true)
+            .putLong(KEY_LAST_PAUSE, now)
+            .apply()
+
+        setupFiles(ctx)
+        mirrorToPublic(ctx)
+
         d("boot", "Harvester ${BuildConfig.VERSION_NAME} (code ${BuildConfig.VERSION_CODE})")
         d("boot", "Android ${android.os.Build.VERSION.RELEASE} · SDK ${android.os.Build.VERSION.SDK_INT}")
         d("boot", "Device ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
         d("boot", "session=$sessionId")
     }
 
-    private fun reopenWriters(ctx: Context) {
-        try {
-            val ext = ctx.getExternalFilesDir(null)
-            val root = ext ?: ctx.filesDir
-            val folder = File(root, "sess_$sessionId").apply { mkdirs() }
-            val diag = File(folder, "log.txt")
-            val net = File(folder, "net.txt")
+    private fun setupFiles(ctx: Context) {
+        val customUriStr = SettingsPrefs.getString(ctx, "custom_download_uri", "")
+        customTreeUri = if (customUriStr.isNotBlank()) Uri.parse(customUriStr) else null
 
-            writer?.close(); writer = null
-            netWriter?.close(); netWriter = null
-            buffer.clear()
+        val dir = ctx.getExternalFilesDir(null) ?: ctx.filesDir
+        val sessionDir = File(dir, "sess_$sessionId").apply { mkdirs() }
 
-            writer = BufferedWriter(FileWriter(diag, true))
-            netWriter = BufferedWriter(FileWriter(net, true))
-            externalPath = diag.absolutePath
-            netPath = net.absolutePath
-        } catch (_: Exception) {}
+        internalLogFile = File(sessionDir, "log.txt")
+        internalNetFile = File(sessionDir, "net.txt")
+        
+        internalLogSize = if (internalLogFile!!.exists()) internalLogFile!!.length() else 0L
+        internalNetSize = if (internalNetFile!!.exists()) internalNetFile!!.length() else 0L
+        
+        logIndex = 0
+        netIndex = 0
+
+        if (customTreeUri != null) {
+            try {
+                val parent = DocumentFile.fromTreeUri(ctx, customTreeUri!!)
+                var harvesterDir = parent?.findFile("Harvester")
+                if (harvesterDir == null || !harvesterDir.isDirectory) {
+                    harvesterDir = parent?.createDirectory("Harvester")
+                }
+                var sessionDir = harvesterDir?.findFile("sess_$sessionId")
+                if (sessionDir == null || !sessionDir.isDirectory) {
+                    sessionDir = harvesterDir?.createDirectory("sess_$sessionId")
+                }
+                
+                if (sessionDir != null) {
+                    customLogDoc = sessionDir.findFile("log.txt") ?: sessionDir.createFile("text/plain", "log.txt")
+                    customNetDoc = sessionDir.findFile("net.txt") ?: sessionDir.createFile("text/plain", "net.txt")
+                }
+            } catch (e: Exception) {
+                internalLogFile?.appendText("[diag-log] Custom location setup failed: ${e.message}\n")
+                customTreeUri = null
+            }
+        }
     }
 
-    private fun newSessionId(now: Long): String =
-        SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date(now))
+    private fun rotateFile(ctx: Context, isNet: Boolean) {
+        val sessionDir = internalLogFile?.parentFile ?: return
+        if (isNet) {
+            netIndex++
+            internalNetFile = File(sessionDir, "net($netIndex).txt")
+            internalNetSize = 0L
+            if (customTreeUri != null) {
+                val parent = DocumentFile.fromTreeUri(ctx, customTreeUri!!)?.findFile("Harvester")?.findFile("sess_$sessionId")
+                customNetDoc = parent?.createFile("text/plain", "net($netIndex).txt")
+            }
+        } else {
+            logIndex++
+            internalLogFile = File(sessionDir, "log($logIndex).txt")
+            internalLogSize = 0L
+            if (customTreeUri != null) {
+                val parent = DocumentFile.fromTreeUri(ctx, customTreeUri!!)?.findFile("Harvester")?.findFile("sess_$sessionId")
+                customLogDoc = parent?.createFile("text/plain", "log($logIndex).txt")
+            }
+        }
+    }
 
     fun endSession(ctx: Context) {
-        synchronized(lock) {
-            try { writer?.flush() } catch (_: Exception) {}
-            try { netWriter?.flush() } catch (_: Exception) {}
-            try { writer?.close() } catch (_: Exception) {}
-            try { netWriter?.close() } catch (_: Exception) {}
-            writer = null
-            netWriter = null
+        scope.launch {
+            fileMutex.withLock {
+                flushInternal()
+                renameSessionFiles(ctx)
+            }
+            ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_ACTIVE, false)
+                .apply()
+            pruneOldSessions(ctx)
         }
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean(KEY_ACTIVE, false)
-            .apply()
-        pruneOldSessions(ctx)
     }
 
     fun onActivityPause(ctx: Context) {
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putLong(KEY_LAST_PAUSE, System.currentTimeMillis())
+            .putBoolean(KEY_CRASHED, true)
             .apply()
-        mirrorToPublic(ctx)
+        scope.launch { fileMutex.withLock { flushInternal(); mirrorToPublic(ctx) } }
+    }
+
+    fun markCleanExit(ctx: Context) {
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_CRASHED, false)
+            .apply()
+    }
+
+    private fun renameCrashFiles(ctx: Context) {
+        val dir = ctx.getExternalFilesDir(null) ?: ctx.filesDir
+        val sessionDir = File(dir, "sess_$sessionId")
+        if (!sessionDir.exists()) return
+        val time = SimpleDateFormat("HH-mm", Locale.US).format(Date())
+        File(sessionDir, "log.txt").takeIf { it.exists() }?.renameTo(File(sessionDir, "crash_log_$time.txt"))
+        File(sessionDir, "net.txt").takeIf { it.exists() }?.renameTo(File(sessionDir, "crash_net_$time.txt"))
+    }
+
+    private fun renameSessionFiles(ctx: Context) {
+        val time = fileNameFormat.format(Date())
+        val sessionDir = internalLogFile?.parentFile ?: return
+        val version = BuildConfig.VERSION_NAME
+
+        internalLogFile?.takeIf { it.exists() }?.renameTo(File(sessionDir, "log_v${version}_$time.txt"))
+        internalNetFile?.takeIf { it.exists() }?.renameTo(File(sessionDir, "net_v${version}_$time.txt"))
+        
+        if (internalLogSize > 0 && internalLogFile?.length() == 0L) {
+            for (i in 1..logIndex) {
+                File(sessionDir, "log($i).txt").takeIf { it.exists() }?.renameTo(File(sessionDir, "log_v${version}_${time}_($i).txt"))
+            }
+        }
+        if (internalNetSize > 0 && internalNetFile?.length() == 0L) {
+            for (i in 1..netIndex) {
+                File(sessionDir, "net($i).txt").takeIf { it.exists() }?.renameTo(File(sessionDir, "net_v${version}_${time}_($i).txt"))
+            }
+        }
     }
 
     private fun pruneOldSessions(ctx: Context) {
         val ext = ctx.getExternalFilesDir(null) ?: ctx.filesDir
         val all = ext.listFiles { f -> f.isDirectory && f.name.startsWith("sess_") }
             ?.sortedByDescending { it.lastModified() } ?: return
-        all.drop(KEEP_SESSIONS).forEach {
-            try { it.deleteRecursively() } catch (_: Exception) {}
+        all.drop(MAX_SESSIONS).forEach { it.deleteRecursively() }
+    }
+
+    private fun flushInternal() {
+        if (buffer.isEmpty() && netBuffer.isEmpty()) return
+        try {
+            if (buffer.isNotEmpty()) {
+                val text = buffer.joinToString("")
+                buffer.clear()
+                internalLogFile?.appendText(text)
+                internalLogSize += text.length
+                if (internalLogSize >= MAX_FILE_SIZE) {
+                    appContext?.let { rotateFile(it, false) }
+                }
+            }
+            if (netBuffer.isNotEmpty()) {
+                val text = netBuffer.joinToString("")
+                netBuffer.clear()
+                internalNetFile?.appendText(text)
+                internalNetSize += text.length
+                if (internalNetSize >= MAX_FILE_SIZE) {
+                    appContext?.let { rotateFile(it, true) }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Internal flush failed", e)
         }
     }
 
     fun mirrorToPublic(ctx: Context) {
-        copyToPublic(ctx, externalPath, "log.txt")
-        copyToPublic(ctx, netPath, "net.txt")
-    }
-
-    private fun copyToPublic(ctx: Context, srcPath: String, filename: String) {
-        if (srcPath.isBlank()) return
-        val src = File(srcPath)
-        if (!src.exists() || src.length() == 0L) return
-        try {
-            val bytes = src.readBytes()
-            val customUriStr = SettingsPrefs.getString(ctx, "custom_download_uri", "")
-            if (customUriStr.isNotBlank()) {
-                val treeUri = android.net.Uri.parse(customUriStr)
-                val parent = androidx.documentfile.provider.DocumentFile.fromTreeUri(ctx, treeUri)
-                if (parent != null) {
-                    var harvesterDir = parent.findFile("Harvester")
-                    if (harvesterDir == null || !harvesterDir.isDirectory) {
-                        harvesterDir = parent.createDirectory("Harvester")
-                    }
-                    var sessionDir = harvesterDir?.findFile("sess_$sessionId")
-                    if (sessionDir == null || !sessionDir.isDirectory) {
-                        sessionDir = harvesterDir?.createDirectory("sess_$sessionId")
-                    }
-                    var fileDoc = sessionDir?.findFile(filename)
-                    if (fileDoc != null) fileDoc.delete()
-                    fileDoc = sessionDir?.createFile("text/plain", filename)
-                    if (fileDoc != null) {
-                        ctx.contentResolver.openOutputStream(fileDoc.uri)?.use { os -> os.write(bytes) }
-                    }
-                }
-            } else {
-                val resolver = ctx.contentResolver
-                val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
-                val relPath = "${Environment.DIRECTORY_DOWNLOADS}/Harvester/sess_$sessionId/"
+        if (customTreeUri == null) return
+        scope.launch {
+            fileMutex.withLock {
                 try {
-                    resolver.delete(
-                        collection,
-                        "${MediaStore.MediaColumns.DISPLAY_NAME}=? AND ${MediaStore.MediaColumns.RELATIVE_PATH}=?",
-                        arrayOf(filename, relPath)
-                    )
-                } catch (_: Exception) {}
-                val values = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-                    put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, relPath)
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                        put(MediaStore.MediaColumns.IS_PENDING, 1)
+                    if (buffer.isNotEmpty()) {
+                        val text = buffer.joinToString("")
+                        customLogDoc?.uri?.let { uri ->
+                            ctx.contentResolver.openOutputStream(uri, "wa")?.use { 
+                                it.write(text.toByteArray()) 
+                                buffer.clear()
+                            }
+                        }
                     }
-                }
-                val uri = resolver.insert(collection, values) ?: return
-                resolver.openOutputStream(uri)?.use { os -> os.write(bytes) }
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                    val done = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
-                    resolver.update(uri, done, null, null)
+                    if (netBuffer.isNotEmpty()) {
+                        val text = netBuffer.joinToString("")
+                        customNetDoc?.uri?.let { uri ->
+                            ctx.contentResolver.openOutputStream(uri, "wa")?.use { 
+                                it.write(text.toByteArray()) 
+                                netBuffer.clear()
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    internalLogFile?.appendText("[diag-log] Custom location write failed: ${e.message}\n")
                 }
             }
-        } catch (e: Exception) {
-                write("log", 'E', "Mirror failed: ${e.message} | ${e.stackTrace.take(3).joinToString("\n")}", false)
         }
     }
+
+    private fun newSessionId(now: Long): String =
+        SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date(now))
 
     fun addListener(fn: (String) -> Unit) { listeners.add(fn) }
     fun removeListener(fn: (String) -> Unit) { listeners.remove(fn) }
 
-    fun isVerbose(): Boolean = verbose
-
-    fun setVerbose(on: Boolean) {
-        verbose = on
-        appContext?.let { DebugPrefs.setVerboseLogging(it, on) }
-    }
-
     fun netNav(method: String, url: String, referer: String?, hasCookie: Boolean, hasAuth: Boolean) {
-        if (!verbose) return
-        val sb = StringBuilder()
-        sb.append("NAV ").append(method).append(' ').append(url)
-        if (!referer.isNullOrBlank()) sb.append("\n  ref=").append(referer)
-        if (hasCookie) sb.append("\n  cookie=<present>")
-        if (hasAuth) sb.append("\n  auth=<present>")
-        write("net", 'V', sb.toString(), true)
-    }
-
-    fun netPost(url: String, contentType: String?, contentLength: Long) {
-        if (!verbose) return
-        val sb = StringBuilder()
-        sb.append("POST ").append(url)
-        if (!contentType.isNullOrBlank()) sb.append("\n  ct=").append(contentType)
-        if (contentLength >= 0) sb.append("\n  cl=").append(contentLength)
-        write("net", 'V', sb.toString(), true)
-    }
-
-    fun netApi(method: String, url: String) {
-        if (!verbose) return
-        write("net", 'V', "API $method $url", true)
+        write("net", "NAV $method $url")
     }
 
     fun netError(url: String, code: Int) {
-        write("net", 'E', "ERROR $code $url", true)
+        write("net", "ERROR $code $url")
     }
 
-    fun netScheme(raw: String, action: String) {
-        if (!verbose) return
-        write("net", 'V', "SCHEME $raw → $action", true)
-    }
-
-    fun netPopupOpen(parentUrl: String, userGesture: Boolean, isDialog: Boolean) {
-        if (!verbose) return
-        write("net", 'V', "POPUP open parent=$parentUrl user=$userGesture dialog=$isDialog", true)
-    }
-
-    fun netPopupCreated(id: Long) {
-        if (!verbose) return
-        write("net", 'V', "POPUP created id=$id", true)
-    }
-
-    fun netPopupLoad(url: String) {
-        if (!verbose) return
-        write("net", 'V', "POPUP load $url", true)
-    }
-
-    fun netResource(url: String, mime: String) {
-        if (!verbose) return
-        write("net", 'V', "RES $mime $url", true)
-    }
-
-    fun netExtDialog(url: String) {
-        if (!verbose) return
-        write("net", 'V', "EXT dialog $url", true)
-    }
-
-    fun netExtOpen(url: String) {
-        if (!verbose) return
-        write("net", 'V', "EXT open $url", true)
-    }
-
-    fun netExtStay(url: String) {
-        if (!verbose) return
-        write("net", 'V', "EXT stay $url", true)
-    }
-
-    fun net3p(pageUrl: String, hosts: Collection<String>) {
-        if (!verbose) return
-        if (hosts.isEmpty()) return
-        val sorted = hosts.toSortedSet().joinToString(" ")
-        write("net", 'V', "3P $pageUrl: $sorted", true)
-    }
-
-    private fun sanitize(s: String): String {
-        if (s.length < 20) return s
-        var out = s
-        if (out.contains("eyJ")) out = RX_JWT.replace(out) { "<JWT>" }
-        if (out.contains("earer")) out = RX_BEARER.replace(out) { m -> m.groupValues[1] + "<BEARER>" }
-        if (out.contains("ookie")) out = RX_COOKIE.replace(out) { m -> m.groupValues[1] + "<COOKIE>" }
-        if (out.contains("loudfront")) out = RX_CF.replace(out) { m -> m.groupValues[1] + "<CF>" }
-        if (out.length > 300) out = RX_B64_BLOB.replace(out) { "<BLOB(${it.value.length}b)>" }
-        return out
-    }
-
-    private fun write(tag: String, level: Char, msg: String, isNet: Boolean = false) {
-        val clean = sanitize(msg)
-        val now = System.currentTimeMillis()
-        val key = "$level|$tag|$clean"
-        val line = "${timeFormat.format(Date(now))} $level [$tag] $clean"
-        
-        synchronized(lock) {
-            if (key == lastLogKey && (now - lastLogTime) < DEDUPE_WINDOW_MS) {
-                repeatCount++
-                lastLogTime = now
-                return
-            } else {
-                if (repeatCount > 0) {
-                    val repeatedLine = "$lastLogLine (repeated ${repeatCount + 1} times)"
-                    writeToBuffer(repeatedLine, isNet)
-                    repeatCount = 0
-                }
-                lastLogKey = key
-                lastLogLine = line
-                lastLogTime = now
+    private fun write(tag: String, msg: String) {
+        val line = "${timeFormat.format(Date())} [$tag] $msg\n"
+        synchronized(buffer) {
+            buffer.add(line)
+            if (buffer.size > 50) {
+                flushInternal()
+                appContext?.let { mirrorToPublic(it) }
             }
-            writeToBuffer(line, isNet)
         }
-        if (!isNet) {
-            for (l in listeners) try { l(line) } catch (_: Exception) {}
+        for (l in listeners) {
+            try { l(line) } catch (_: Exception) {}
         }
         try { Log.d(TAG, line) } catch (_: Exception) {}
     }
 
-    private fun writeToBuffer(line: String, isNet: Boolean) {
-        buffer.addLast(line)
-        while (buffer.size > MAX_LINES) buffer.removeFirst()
-        try {
-            val target = if (isNet) netWriter else writer
-            target?.appendLine(line)
-            if (isNet || line.contains("[security]") || line.contains("[leak]") || line.contains("[crash]") || line.contains("[strictmode]")) {
-                target?.flush()
-                pending = 0
-            } else {
-                pending++
-                if (pending >= FLUSH_EVERY) { writer?.flush(); pending = 0 }
+    private fun writeNet(tag: String, msg: String) {
+        val line = "${timeFormat.format(Date())} [$tag] $msg\n"
+        synchronized(netBuffer) {
+            netBuffer.add(line)
+            if (netBuffer.size > 50) {
+                flushInternal()
+                appContext?.let { mirrorToPublic(it) }
             }
-        } catch (_: Exception) {}
-    }
-
-    private fun writeAlways(tag: String, level: Char, msg: String) {
-        val clean = sanitize(msg)
-        val line = "${timeFormat.format(Date())} $level [$tag] $clean"
-        synchronized(lock) {
-            writeToBuffer(line, false)
-            try { writer?.flush() } catch (_: Exception) {}
         }
         try { Log.d(TAG, line) } catch (_: Exception) {}
     }
 
-    fun d(tag: String, msg: String) = write(tag, 'D', msg, false)
-    fun v(tag: String, msg: String) { if (verbose) write(tag, 'V', msg, true) }
-    fun w(tag: String, msg: String) = write(tag, 'W', msg, false)
-    fun e(tag: String, msg: String) = write(tag, 'E', msg, false)
-    fun section(title: String) = write("---", 'S', "───── $title ─────", false)
+    fun d(tag: String, msg: String) = write(tag, msg)
+    fun e(tag: String, msg: String) = write(tag, "ERROR: $msg")
+    fun w(tag: String, msg: String) = write(tag, "WARN: $msg")
+    fun section(title: String) = write("---", "───── $title ─────")
 
     fun throwable(tag: String, msg: String, t: Throwable) {
-        write(tag, 'E', "$msg: ${t.javaClass.simpleName}: ${t.message}", false)
-        t.stackTrace.take(25).forEach { write(tag, 'E', "  at $it", false) }
+        write(tag, "ERROR: $msg: ${t.javaClass.simpleName}: ${t.message}")
+        t.stackTrace.take(25).forEach { write(tag, "  at $it") }
     }
 
-    fun snapshot(): String = synchronized(lock) {
-        if (buffer.isEmpty()) "(empty)" else buffer.joinToString("\n")
-    }
-
-    fun size(): Int = synchronized(lock) { buffer.size }
-    fun fileSize(): Long = try { File(externalPath).length() } catch (_: Exception) { 0L }
-
-    fun clear() {
-        synchronized(lock) {
-            buffer.clear()
-            try { writer?.close(); writer = null } catch (_: Exception) {}
-            try { netWriter?.close(); netWriter = null } catch (_: Exception) {}
-            try {
-                val f = File(externalPath)
-                f.delete()
-                writer = BufferedWriter(FileWriter(f, true))
-                val nf = File(netPath)
-                nf.delete()
-                netWriter = BufferedWriter(FileWriter(nf, true))
-            } catch (_: Exception) {}
-        }
-    }
-
-    fun writeLeakLog(msg: String) {
-        val clean = sanitize(msg)
-        val line = "${timeFormat.format(Date())} E [leak] $clean"
-        synchronized(lock) {
-            writeToBuffer(line, false)
-            try { writer?.flush() } catch (_: Exception) {}
-        }
-        try { Log.e(TAG, line) } catch (_: Exception) {}
-    }
-
-    private fun installCrashHandler() {
-        val prev = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { t, e ->
-            try {
-                writeAlways("---", 'S', "───── FATAL ─────")
-                writeAlways("crash", 'E', "Thread ${t.name}")
-                writeAlways("crash", 'E', "${e.javaClass.name}: ${e.message}")
-                e.stackTrace.take(60).forEach { writeAlways("crash", 'E', "  at $it") }
-                var cause = e.cause
-                var depth = 0
-                while (cause != null && depth++ < 5) {
-                    writeAlways("crash", 'E', "caused by ${cause.javaClass.name}: ${cause.message}")
-                    cause.stackTrace.take(20).forEach { writeAlways("crash", 'E', "  at $it") }
-                    cause = cause.cause
-                }
-                appContext?.let { mirrorToPublic(it) }
-            } catch (_: Exception) {}
-            prev?.uncaughtException(t, e)
-        }
-    }
+    fun snapshot(): String = synchronized(buffer) { buffer.joinToString("") }
+    fun size(): Int = synchronized(buffer) { buffer.size }
+    fun fileSize(): Long = internalLogFile?.length() ?: 0L
 }
