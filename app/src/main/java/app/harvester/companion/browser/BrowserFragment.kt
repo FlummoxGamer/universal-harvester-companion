@@ -7,6 +7,8 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import app.harvester.companion.DownloadsActivity
@@ -20,6 +22,7 @@ import app.harvester.companion.theme.UHTheme
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.feature.session.SessionFeature
+import mozilla.components.feature.session.SwipeRefreshFeature
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 
 class BrowserFragment : Fragment() {
@@ -27,6 +30,7 @@ class BrowserFragment : Fragment() {
     private var _binding: FragmentBrowserBinding? = null
     private val binding get() = _binding!!
     private val sessionFeature = ViewBoundFeatureWrapper<SessionFeature>()
+    private val swipeRefreshFeature = ViewBoundFeatureWrapper<SwipeRefreshFeature>()
     private val viewModel: BrowserViewModel by activityViewModels()
     private var initialUrl: String? = null
 
@@ -60,6 +64,16 @@ class BrowserFragment : Fragment() {
             view = binding.root
         )
 
+        swipeRefreshFeature.set(
+            feature = SwipeRefreshFeature(
+                store = components.store,
+                reloadUrlUseCase = components.useCases.sessionUseCases.reload,
+                swipeRefreshLayout = binding.swipeRefresh
+            ),
+            owner = this,
+            view = binding.root
+        )
+
         if (initialUrl != null) {
             if (components.store.state.tabs.isEmpty()) {
                 components.useCases.tabsUseCases.addTab(initialUrl!!)
@@ -73,9 +87,14 @@ class BrowserFragment : Fragment() {
     }
 
     private fun setupInsets() {
-        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.addressBarContainer) { v, insets ->
-            val systemBars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-            v.setPadding(0, 0, 0, systemBars.bottom)
+        ViewCompat.setOnApplyWindowInsetsListener(binding.browserLayout) { v, insets ->
+            val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
+            v.setPadding(0, top, 0, 0)
+            insets
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(binding.addressBarContainer) { v, insets ->
+            val bottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            v.setPadding(0, 0, 0, bottom)
             insets
         }
     }
