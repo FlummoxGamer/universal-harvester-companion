@@ -12,8 +12,8 @@ android {
     applicationId = "app.harvester.companion"
     minSdk = 29
     targetSdk = 36
-    versionCode = 146
-    versionName = "2.4.76"
+    versionCode = 147
+    versionName = "2.4.77"
 
     buildConfigField("String", "AMO_BASE_URL", "\"https://addons.mozilla.org\"")
     buildConfigField("String", "AMO_COLLECTION_NAME", "\"Extensions-for-Android\"")
