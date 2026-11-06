@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -97,15 +98,15 @@ fun HarvesterAddressBar(
                 .padding(start = 6.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-
             IconButton(
                 onClick = onScriptMenuClick,
-                modifier = Modifier.size(24.dp).padding(start = 4.dp, end = 8.dp)
+                modifier = Modifier.size(36.dp)
             ) {
                 Icon(
                     painter = painterResource(id = R.drawable.ic_code),
                     contentDescription = "Scripts",
-                    tint = colorResource(id = R.color.text)
+                    tint = colorResource(id = R.color.text),
+                    modifier = Modifier.size(24.dp)
                 )
             }
 
@@ -115,8 +116,8 @@ fun HarvesterAddressBar(
             ) {
                 IconButton(onClick = onSearchEngineClick, modifier = Modifier.size(24.dp)) {
                     when (iconState) {
-                        1 -> Icon(painterResource(R.drawable.ic_lock), contentDescription = "Lock", tint = colorResource(id = R.color.accent))
-                        2 -> Icon(painterResource(R.drawable.ic_lock_open), contentDescription = "Open Lock", tint = colorResource(id = R.color.red))
+                        1 -> Icon(painterResource(R.drawable.ic_lock), contentDescription = "Lock", tint = colorResource(id = R.color.accent), modifier = Modifier.size(24.dp))
+                        2 -> Icon(painterResource(R.drawable.ic_lock_open), contentDescription = "Open Lock", tint = colorResource(id = R.color.red), modifier = Modifier.size(24.dp))
                         else -> {
                             AsyncImage(
                                 model = searchEngineEntry.iconUrl,
@@ -147,7 +148,7 @@ fun HarvesterAddressBar(
                             text = it
                             onEditTextChanged(it)
                         },
-                        modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+                        modifier = Modifier.fillMaxWidth().padding(end = 28.dp).focusRequester(focusRequester),
                         textStyle = TextStyle(color = colorResource(id = R.color.text), fontSize = 14.sp),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
@@ -155,10 +156,15 @@ fun HarvesterAddressBar(
                             if (text.isNotBlank()) onSubmit(text)
                         }),
                         decorationBox = { innerTextField ->
-                            if (text.isEmpty()) {
-                                Text("Search or type URL", color = colorResource(id = R.color.subtext), fontSize = 14.sp)
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                if (text.isEmpty()) {
+                                    Text("Search or type URL", color = colorResource(id = R.color.subtext), fontSize = 14.sp)
+                                }
+                                innerTextField()
                             }
-                            innerTextField()
                         }
                     )
                     if (text.isNotEmpty()) {
@@ -172,7 +178,8 @@ fun HarvesterAddressBar(
                             Icon(
                                 painter = painterResource(id = R.drawable.ic_close),
                                 contentDescription = "Clear",
-                                tint = colorResource(id = R.color.subtext)
+                                tint = colorResource(id = R.color.subtext),
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
@@ -203,7 +210,8 @@ fun HarvesterAddressBar(
                 Icon(
                     painter = painterResource(id = R.drawable.ic_menu),
                     contentDescription = "Menu",
-                    tint = colorResource(id = R.color.text)
+                    tint = colorResource(id = R.color.text),
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }
