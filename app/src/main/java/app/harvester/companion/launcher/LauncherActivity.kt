@@ -11,6 +11,9 @@ class LauncherActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                app.harvester.companion.utils.CrashChecker.checkNativeCrashes(this)
+            }
             val safeFlag = File(filesDir, "safe_mode.flag")
             if (safeFlag.exists()) {
                 startActivity(Intent(this, SafeModeActivity::class.java))
