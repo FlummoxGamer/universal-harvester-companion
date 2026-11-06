@@ -12,9 +12,6 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.repeatOnLifecycle
 import app.harvester.companion.DownloadsActivity
 import app.harvester.companion.HistoryActivity
 import app.harvester.companion.R
@@ -24,9 +21,9 @@ import app.harvester.companion.browser.toolbar.HarvesterAddressBar
 import app.harvester.companion.databinding.FragmentBrowserBinding
 import app.harvester.companion.theme.UHTheme
 import com.google.android.material.bottomsheet.BottomSheetDialog
-import kotlinx.coroutines.launch
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.feature.session.SessionFeature
+import mozilla.components.feature.session.SwipeRefreshFeature
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 
 class BrowserFragment : Fragment() {
@@ -34,6 +31,7 @@ class BrowserFragment : Fragment() {
     private var _binding: FragmentBrowserBinding? = null
     private val binding get() = _binding!!
     private val sessionFeature = ViewBoundFeatureWrapper<SessionFeature>()
+    private val swipeRefreshFeature = ViewBoundFeatureWrapper<SwipeRefreshFeature>()
     private val viewModel: BrowserViewModel by activityViewModels()
     private var initialUrl: String? = null
 
@@ -67,21 +65,20 @@ class BrowserFragment : Fragment() {
             view = binding.root
         )
 
-        binding.swipeRefresh.setOnRefreshListener {
-            components.useCases.sessionUseCases.reload()
-        }
+        swipeRefreshFeature.set(
+            feature = SwipeRefreshFeature(
+                components.store,
+                components.useCases.sessionUseCases.reload,
+                binding.swipeRefresh,
+                null,
+                null
+            ),
+            owner = this,
+            view = binding.root
+        )
+
         binding.swipeRefresh.setColorSchemeColors(ContextCompat.getColor(context, R.color.accent))
         binding.swipeRefresh.setProgressBackgroundColorSchemeColor(ContextCompat.getColor(context, R.color.surface))
-
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                components.store.stateFlow.collect { state ->
-                    if (state.selectedTab?.content?.loading == false) {
-                        binding.swipeRefresh.isRefreshing = false
-                    }
-                }
-            }
-        }
 
         if (initialUrl != null) {
             if (components.store.state.tabs.isEmpty()) {
