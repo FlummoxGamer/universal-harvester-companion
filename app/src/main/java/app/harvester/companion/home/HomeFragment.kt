@@ -9,9 +9,9 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.platform.ViewCompositionBehavior
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.GridLayoutManager
 import app.harvester.companion.CustomizeHomeActivity
@@ -20,10 +20,10 @@ import app.harvester.companion.Shortcut
 import app.harvester.companion.ShortcutAdapter
 import app.harvester.companion.ShortcutStore
 import app.harvester.companion.WallpaperStore
+import app.harvester.companion.browser.BrowserViewModel
 import app.harvester.companion.browser.toolbar.HarvesterAddressBar
 import app.harvester.companion.databinding.FragmentHomeBinding
-import app.harvester.companion.browser.BrowserViewModel
-import androidx.fragment.app.activityViewModels
+import app.harvester.companion.theme.UHTheme
 
 class HomeFragment : Fragment() {
 
@@ -60,12 +60,11 @@ class HomeFragment : Fragment() {
     }
 
     private fun setupAddressBar() {
-        val isEditing by browserViewModel.isEditing.collectAsState()
-        val editText by browserViewModel.editText.collectAsState()
-        val suggestions by browserViewModel.suggestions.collectAsState()
-
         binding.addressBarContainer.setContent {
-            app.harvester.companion.theme.UHTheme {
+            val isEditing by browserViewModel.isEditing.collectAsState()
+            val editText by browserViewModel.editText.collectAsState()
+            
+            UHTheme {
                 HarvesterAddressBar(
                     url = "",
                     isEditing = isEditing,
@@ -93,8 +92,8 @@ class HomeFragment : Fragment() {
     }
 
     private fun navigateToBrowser(url: String) {
-        val action = app.harvester.companion.home.HomeFragmentDirections.actionHomeFragmentToBrowserFragment(url)
-        findNavController().navigate(action)
+        val bundle = Bundle().apply { putString("url", url) }
+        findNavController().navigate(R.id.action_homeFragment_to_browserFragment, bundle)
     }
 
     override fun onResume() {
