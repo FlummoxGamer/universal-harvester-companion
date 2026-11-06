@@ -24,7 +24,7 @@ object ThemePrefs {
             MODE_LIGHT -> false
             else -> (ctx.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
         }
-        try { TabManager.get(ctx).updateTheme(isDark) } catch (_: Exception) {}
+       
     }
 
     fun apply(mode: Int) {
