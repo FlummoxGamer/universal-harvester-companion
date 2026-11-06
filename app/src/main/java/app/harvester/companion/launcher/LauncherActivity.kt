@@ -3,12 +3,14 @@ package app.harvester.companion.launcher
 import android.content.Intent
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import app.harvester.companion.HomeActivity
 import app.harvester.companion.safemode.SafeModeActivity
 import java.io.File
 
 class LauncherActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         try {
             if (android.os.Build.VERSION.SDK_INT >= 30) {
