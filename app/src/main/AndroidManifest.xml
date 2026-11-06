@@ -24,7 +24,7 @@
         <activity
             android:name=".launcher.LauncherActivity"
             android:exported="true"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:theme="@style/Theme.UHCompanion.Launch"
             android:noHistory="true"
             android:launchMode="singleTask">
             <intent-filter>
