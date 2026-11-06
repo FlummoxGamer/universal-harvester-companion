@@ -12,8 +12,8 @@ android {
     applicationId = "app.harvester.companion"
     minSdk = 29
     targetSdk = 36
-    versionCode = 140
-    versionName = "2.4.70"
+    versionCode = 141
+    versionName = "2.4.71"
 
     buildConfigField("String", "AMO_BASE_URL", "\"https://addons.mozilla.org\"")
     buildConfigField("String", "AMO_COLLECTION_NAME", "\"Extensions-for-Android\"")
@@ -144,7 +144,6 @@ dependencies {
     implementation("org.mozilla.components:browser-icons:154.0.1")
     implementation("org.mozilla.components:browser-session-storage:154.0.1")
     implementation("org.mozilla.components:compose-base:154.0.1")
-    implementation("org.mozilla.components:compose-menu:154.0.1")
     implementation("org.mozilla.components:compose-browser-toolbar:154.0.1")
     implementation("org.mozilla.components:ui-icons:154.0.1")
     implementation("org.mozilla.components:ui-widgets:154.0.1")
