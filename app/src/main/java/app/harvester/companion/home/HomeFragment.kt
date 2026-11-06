@@ -8,6 +8,8 @@ import android.view.ViewGroup
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
@@ -47,9 +49,21 @@ class HomeFragment : Fragment() {
     }
 
     private fun setupInsets() {
-        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.addressBarContainer) { v, insets ->
-            val systemBars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-            v.setPadding(0, 0, 0, systemBars.bottom)
+        ViewCompat.setOnApplyWindowInsetsListener(binding.homeScreen) { v, insets ->
+            val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
+            v.setPadding(0, top, 0, 0)
+            insets
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(binding.addressBarContainer) { v, insets ->
+            val bottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            v.setPadding(0, 0, 0, bottom)
+            insets
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(binding.btnEditHome) { v, insets ->
+            val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
+            val lp = v.layoutParams as ViewGroup.MarginLayoutParams
+            lp.topMargin = top + (16 * resources.displayMetrics.density).toInt()
+            v.layoutParams = lp
             insets
         }
     }
