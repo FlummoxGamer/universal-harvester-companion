@@ -38,17 +38,8 @@ fun ComposeSplashScreen(onSplashFinished: () -> Unit) {
         label = "glow"
     )
 
-    val logoScale by animateFloatAsState(
-        targetValue = if (startAnim) 1f else 0.5f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
-        label = "logoScale"
-    )
-    
-    val logoAlpha by animateFloatAsState(
-        targetValue = if (startAnim) 1f else 0f,
-        animationSpec = tween(800),
-        label = "logoAlpha"
-    )
+    val logoScale = 1f
+    val logoAlpha = 1f
 
     val textAlpha by animateFloatAsState(
         targetValue = if (startAnim) 1f else 0f,
