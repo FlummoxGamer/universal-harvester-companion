@@ -9,7 +9,6 @@ import mozilla.components.browser.state.engine.EngineMiddleware
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.DefaultSettings
 import mozilla.components.concept.engine.Engine
-import mozilla.components.concept.engine.content.blocking.TrackingProtectionPolicy
 import mozilla.components.concept.engine.mediaquery.PreferredColorScheme
 import mozilla.components.feature.session.SessionUseCases
 import mozilla.components.feature.tabs.TabsUseCases
@@ -53,11 +52,6 @@ class Components(val context: Context) {
             enterpriseRootsEnabled = false,
             globalPrivacyControlEnabled = SettingsPrefs.getBool(context, SettingsPrefs.K_ADV_GPC, false),
         )
-    }
-
-    private fun buildTrackingProtectionPolicy(): TrackingProtectionPolicy {
-        val enabled = SettingsPrefs.getBool(context, SettingsPrefs.K_PG_ADS, false)
-        return if (enabled) TrackingProtectionPolicy.strict() else TrackingProtectionPolicy.none()
     }
 
     private fun buildPreferredColorScheme(): PreferredColorScheme {
