@@ -45,8 +45,7 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun open(url: String) {
-        // open in MainActivity — if no tabs, it opens one
-        val intent = android.content.Intent(this, MainActivity::class.java).apply {
+        val intent = android.content.Intent(this, HomeActivity::class.java).apply {
             data = android.net.Uri.parse(url)
             addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
