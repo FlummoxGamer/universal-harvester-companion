@@ -3,7 +3,7 @@ package app.harvester.companion.launcher
 import android.content.Intent
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
-import app.harvester.companion.MainActivity
+import app.harvester.companion.HomeActivity
 import app.harvester.companion.safemode.SafeModeActivity
 import java.io.File
 
@@ -18,10 +18,10 @@ class LauncherActivity : AppCompatActivity() {
             if (safeFlag.exists()) {
                 startActivity(Intent(this, SafeModeActivity::class.java))
             } else {
-                startActivity(Intent(this, MainActivity::class.java))
+                startActivity(Intent(this, HomeActivity::class.java))
             }
         } catch (e: Throwable) {
-            startActivity(Intent(this, MainActivity::class.java))
+            startActivity(Intent(this, HomeActivity::class.java))
         }
         finish()
     }
