@@ -157,9 +157,9 @@ fun HarvesterAddressBar(
                         }),
                         decorationBox = { innerTextField ->
                             Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.CenterStart
-                            ) {
+                               modifier = Modifier.fillMaxWidth().height(52.dp),
+                               contentAlignment = Alignment.CenterStart
+)                           {
                                 if (text.isEmpty()) {
                                     Text("Search or type URL", color = colorResource(id = R.color.subtext), fontSize = 14.sp)
                                 }
