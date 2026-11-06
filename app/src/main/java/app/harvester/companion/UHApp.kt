@@ -29,6 +29,7 @@ class UHApp : Application(), coil.ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         UHLog.init(this)
+        UHLog.markCleanExit(this)
         SessionRecorder.init(this)
         ThemePrefs.applyCurrent(this)
         DownloadEngine.initNetworkListener(this)
