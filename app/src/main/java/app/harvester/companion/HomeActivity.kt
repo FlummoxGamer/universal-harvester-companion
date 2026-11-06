@@ -22,6 +22,11 @@ class HomeActivity : AppCompatActivity() {
         binding = ActivityHomeBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.navHostFragment) { v, insets ->
+            val systemBars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            v.setPadding(0, systemBars.top, 0, 0)
+            insets
+        }
         if (savedInstanceState == null) {
             showComposeSplash()
         } else {
