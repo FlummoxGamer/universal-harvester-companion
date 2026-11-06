@@ -37,18 +37,41 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun initMain(savedInstanceState: Bundle?) {
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+private fun initMain(savedInstanceState: Bundle?) {
+    binding = ActivityMainBinding.inflate(layoutInflater)
+    setContentView(binding.root)
 
-        setupHomeGrid()
-        setupBackDispatcher()
-        handleIntent(intent)
+    setupHomeGrid()
+    setupBackDispatcher()
+    handleIntent(intent)
 
-        if (savedInstanceState != null) {
-            binding.splashScreen.visibility = View.GONE
+    if (savedInstanceState != null) {
+        binding.splashScreen.visibility = View.GONE
+    } else {
+        showComposeSplash()
+    }
+}
+
+private fun showComposeSplash() {
+    val composeView = androidx.compose.ui.platform.ComposeView(this).apply {
+        setContent {
+            app.harvester.companion.splash.ComposeSplashScreen(
+                onSplashFinished = {
+                    binding.splashScreen.visibility = View.GONE
+                }
+            )
         }
     }
+    binding.splashScreen.removeAllViews()
+    binding.splashScreen.addView(
+        composeView,
+        android.view.ViewGroup.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+        ),
+    )
+    binding.splashScreen.visibility = View.VISIBLE
+}
 
     private fun setupHomeGrid() {
         shortcutAdapter = ShortcutAdapter(
