@@ -52,8 +52,8 @@ class HomeActivity : AppCompatActivity() {
             val navHostFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as NavHostFragment
             val navController = navHostFragment.navController
             if (navController.currentDestination?.id == R.id.homeFragment) {
-                val action = app.harvester.companion.home.HomeFragmentDirections.actionHomeFragmentToBrowserFragment(url)
-                navController.navigate(action)
+                val bundle = Bundle().apply { putString("url", url) }
+                navController.navigate(R.id.action_homeFragment_to_browserFragment, bundle)
             }
         }
     }
