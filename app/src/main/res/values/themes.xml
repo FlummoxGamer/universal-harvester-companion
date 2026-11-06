@@ -11,11 +11,11 @@
         <item name="colorOnSurface">@color/text</item>
     </style>
 
-    <style name="Theme.UHCompanion.Launch" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@color/bg</item>
-        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
-        <item name="postSplashScreenTheme">@style/Theme.UHCompanion</item>
+    <style name="Theme.UHCompanion.Launch" parent="Theme.UHCompanion">
         <item name="android:windowBackground">@drawable/splash_bg</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:windowLightStatusBar">true</item>
     </style>
 
     <style name="Theme.UHCompanion.BottomSheet" parent="Theme.Material3.DayNight.BottomSheetDialog">
