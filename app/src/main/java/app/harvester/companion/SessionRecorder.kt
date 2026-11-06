@@ -102,7 +102,7 @@ object SessionRecorder {
             root.put("events", arr)
         } catch (_: Exception) {}
 
-    val subfolder = "${DownloadHelper.HARVESTER_DIR}/sess_$idSnapshot"
+    val subfolder = "sess_$idSnapshot"
     val filename = nextFilename(ctx, subfolder)
     val ok = DownloadHelper.saveTextToDownloads(ctx, filename, root.toString(2), subfolder)
     UHLog.d(TAG, "saved events=${evs.size} filtered=$filtered duped=$duped file=$filename ok=$ok")
