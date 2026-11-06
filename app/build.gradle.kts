@@ -128,7 +128,9 @@ dependencies {
     implementation("org.mozilla.components:support-locale:154.0.1")
     implementation("org.mozilla.components:support-images:154.0.1")
     implementation("org.mozilla.components:support-webextensions:154.0.1")
-    implementation("org.mozilla.components:support-remotesettings:154.0.1")
+    implementation("org.mozilla.components:support-remotesettings:154.0.1") {
+        exclude(group = "org.mozilla.telemetry", module = "glean-native")
+    }
     implementation("org.mozilla.components:concept-toolbar:154.0.1")
     implementation("org.mozilla.components:concept-awesomebar:154.0.1")
     implementation("org.mozilla.components:feature-toolbar:154.0.1")
