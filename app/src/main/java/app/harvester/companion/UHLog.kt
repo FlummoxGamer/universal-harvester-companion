@@ -18,10 +18,12 @@ import kotlinx.coroutines.sync.withLock
 
 object UHLog {
     private const val TAG = "UHCompanion"
+    private const val MAX_FILE_SIZE = 64L * 1024L
     private const val PREFS = "uh_session"
     private const val KEY_SESSION_ID = "session_id"
     private const val KEY_ACTIVE = "session_active"
     private const val KEY_LAST_PAUSE = "last_pause_ts"
+    private const val KEY_CRASHED = "was_crashed"
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val fileMutex = Mutex()
@@ -33,6 +35,11 @@ object UHLog {
     private var internalNetFile: File? = null
     private var customLogDoc: DocumentFile? = null
     private var customNetDoc: DocumentFile? = null
+
+    private var logIndex = 0
+    private var netIndex = 0
+    private var internalLogSize = 0L
+    private var internalNetSize = 0L
 
     @Volatile var sessionId: String = ""
         private set
@@ -47,6 +54,13 @@ object UHLog {
         verbose = DebugPrefs.verboseLogging(ctx)
         
         val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val wasCrashed = prefs.getBoolean(KEY_CRASHED, false)
+        
+        if (wasCrashed) {
+            renameCrashFiles(ctx, prefs.getString(KEY_SESSION_ID, "") ?: "")
+            prefs.edit().putBoolean(KEY_CRASHED, false).apply()
+        }
+
         val prevId = prefs.getString(KEY_SESSION_ID, null)
         val prevActive = prefs.getBoolean(KEY_ACTIVE, false)
         val lastPause = prefs.getLong(KEY_LAST_PAUSE, 0L)
@@ -78,6 +92,12 @@ object UHLog {
 
         internalLogFile = File(sessionDir, "log.txt")
         internalNetFile = File(sessionDir, "net.txt")
+        
+        internalLogSize = if (internalLogFile!!.exists()) internalLogFile!!.length() else 0L
+        internalNetSize = if (internalNetFile!!.exists()) internalNetFile!!.length() else 0L
+        
+        logIndex = 0
+        netIndex = 0
 
         if (customTreeUri != null) {
             try {
@@ -102,6 +122,37 @@ object UHLog {
         }
     }
 
+    private fun renameCrashFiles(ctx: Context, prevSessionId: String) {
+        if (prevSessionId.isBlank()) return
+        val dir = ctx.getExternalFilesDir(null) ?: ctx.filesDir
+        val sessionDir = File(dir, "sess_$prevSessionId")
+        if (!sessionDir.exists()) return
+        val time = fileNameFormat.format(Date())
+        File(sessionDir, "log.txt").takeIf { it.exists() }?.renameTo(File(sessionDir, "crash_log_$time.txt"))
+        File(sessionDir, "net.txt").takeIf { it.exists() }?.renameTo(File(sessionDir, "crash_net_$time.txt"))
+    }
+
+    private fun rotateFile(ctx: Context, isNet: Boolean) {
+        val sessionDir = internalLogFile?.parentFile ?: return
+        if (isNet) {
+            netIndex++
+            internalNetFile = File(sessionDir, "net($netIndex).txt")
+            internalNetSize = 0L
+            if (customTreeUri != null) {
+                val parent = DocumentFile.fromTreeUri(ctx, customTreeUri!!)?.findFile("Harvester")?.findFile("sess_$sessionId")
+                customNetDoc = parent?.createFile("text/plain", "net($netIndex).txt")
+            }
+        } else {
+            logIndex++
+            internalLogFile = File(sessionDir, "log($logIndex).txt")
+            internalLogSize = 0L
+            if (customTreeUri != null) {
+                val parent = DocumentFile.fromTreeUri(ctx, customTreeUri!!)?.findFile("Harvester")?.findFile("sess_$sessionId")
+                customLogDoc = parent?.createFile("text/plain", "log($logIndex).txt")
+            }
+        }
+    }
+
     fun endSession(ctx: Context) {
         scope.launch {
             fileMutex.withLock {
@@ -110,6 +161,7 @@ object UHLog {
             ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit()
                 .putBoolean(KEY_ACTIVE, false)
+                .putBoolean(KEY_CRASHED, false)
                 .apply()
             pruneOldSessions(ctx)
         }
@@ -119,6 +171,14 @@ object UHLog {
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putLong(KEY_LAST_PAUSE, System.currentTimeMillis())
+            .putBoolean(KEY_CRASHED, true)
+            .apply()
+    }
+
+    fun markCleanExit(ctx: Context) {
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_CRASHED, false)
             .apply()
     }
 
@@ -129,6 +189,17 @@ object UHLog {
 
         internalLogFile?.takeIf { it.exists() }?.renameTo(File(sessionDir, "log_v${version}_$time.txt"))
         internalNetFile?.takeIf { it.exists() }?.renameTo(File(sessionDir, "net_v${version}_$time.txt"))
+        
+        if (internalLogSize > 0 && internalLogFile?.length() == 0L) {
+            for (i in 1..logIndex) {
+                File(sessionDir, "log($i).txt").takeIf { it.exists() }?.renameTo(File(sessionDir, "log_v${version}_${time}_($i).txt"))
+            }
+        }
+        if (internalNetSize > 0 && internalNetFile?.length() == 0L) {
+            for (i in 1..netIndex) {
+                File(sessionDir, "net($i).txt").takeIf { it.exists() }?.renameTo(File(sessionDir, "net_v${version}_${time}_($i).txt"))
+            }
+        }
     }
 
     private fun pruneOldSessions(ctx: Context) {
@@ -173,8 +244,16 @@ object UHLog {
                 try {
                     if (tag == "net") {
                         internalNetFile?.appendText(line)
+                        internalNetSize += line.length
+                        if (internalNetSize >= MAX_FILE_SIZE) {
+                            appContext?.let { rotateFile(it, true) }
+                        }
                     } else {
                         internalLogFile?.appendText(line)
+                        internalLogSize += line.length
+                        if (internalLogSize >= MAX_FILE_SIZE) {
+                            appContext?.let { rotateFile(it, false) }
+                        }
                     }
                 } catch (e: Exception) {}
                 mirrorToPublic(line)
