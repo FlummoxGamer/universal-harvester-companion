@@ -44,7 +44,6 @@ class Components(val context: Context) {
         return DefaultSettings(
             remoteDebuggingEnabled = false,
             testingModeEnabled = false,
-            trackingProtectionPolicy = buildTrackingProtectionPolicy(),
             preferredColorScheme = buildPreferredColorScheme(),
             automaticFontSizeAdjustment = textScale != 100,
             fontInflationEnabled = textScale != 100,
