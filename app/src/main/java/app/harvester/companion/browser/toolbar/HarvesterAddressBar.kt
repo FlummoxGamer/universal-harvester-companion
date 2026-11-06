@@ -97,6 +97,7 @@ fun HarvesterAddressBar(
                 .padding(start = 6.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Script icon - 24dp
             IconButton(
                 onClick = onScriptMenuClick,
                 modifier = Modifier.size(24.dp).padding(start = 4.dp, end = 8.dp)
@@ -108,6 +109,7 @@ fun HarvesterAddressBar(
                 )
             }
 
+            // Search Engine Icon - 36dp frame, 24dp icon
             Box(
                 modifier = Modifier.size(36.dp),
                 contentAlignment = Alignment.Center
@@ -135,6 +137,7 @@ fun HarvesterAddressBar(
                 }
             }
 
+            // Text Field / URL
             Box(
                 modifier = Modifier.weight(1f).height(52.dp),
                 contentAlignment = Alignment.CenterStart
@@ -187,6 +190,7 @@ fun HarvesterAddressBar(
                 }
             }
 
+            // Tab Counter - 24dp
             Box(
                 modifier = Modifier
                     .padding(horizontal = 4.dp)
@@ -198,6 +202,7 @@ fun HarvesterAddressBar(
                 Text("$tabCount", color = colorResource(id = R.color.text), fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
 
+            // Menu Icon - 36dp
             IconButton(onClick = onMenuClick, modifier = Modifier.size(36.dp)) {
                 Icon(
                     painter = painterResource(id = R.drawable.ic_menu),
