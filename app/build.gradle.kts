@@ -190,3 +190,6 @@ tasks.configureEach {
 tasks.matching { it.name.startsWith("check") && it.name.endsWith("AarMetadata") }.configureEach {
     enabled = false
 }
+configurations.all {
+    exclude(group = "org.mozilla.telemetry", module = "glean-native")
+}
