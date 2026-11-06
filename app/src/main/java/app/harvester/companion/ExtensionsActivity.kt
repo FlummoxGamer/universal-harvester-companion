@@ -131,7 +131,7 @@ if (cached != null) {
             h.options.setOnClickListener {
                 val url = meta?.optionsPageUrl
                 if (!url.isNullOrBlank()) {
-                    val intent = android.content.Intent(this@ExtensionsActivity, MainActivity::class.java).apply {
+                    val intent = android.content.Intent(this@ExtensionsActivity, HomeActivity::class.java).apply {
                         data = android.net.Uri.parse(url)
                     }
                     startActivity(intent)
