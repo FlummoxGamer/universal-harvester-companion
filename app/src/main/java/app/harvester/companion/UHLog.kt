@@ -46,7 +46,9 @@ object UHLog {
     private var internalNetSize = 0L
 
     @Volatile var sessionId: String = ""
-        private set
+    private set
+
+    @Volatile private var verbose = false
 
     private val buffer = mutableListOf<String>()
     private val netBuffer = mutableListOf<String>()
@@ -55,7 +57,8 @@ object UHLog {
     private val fileNameFormat = SimpleDateFormat("HH-mm", Locale.US)
 
     fun init(ctx: Context) {
-        appContext = ctx.applicationContext
+    appContext = ctx.applicationContext
+    verbose = DebugPrefs.verboseLogging(ctx)
         
         val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val wasCrashed = prefs.getBoolean(KEY_CRASHED, false)
@@ -275,14 +278,21 @@ object UHLog {
     fun addListener(fn: (String) -> Unit) { listeners.add(fn) }
     fun removeListener(fn: (String) -> Unit) { listeners.remove(fn) }
 
+    fun isVerbose(): Boolean = verbose
+
+    fun setVerbose(on: Boolean) {
+        verbose = on
+        appContext?.let { DebugPrefs.setVerboseLogging(it, on) }
+    }
     fun netNav(method: String, url: String, referer: String?, hasCookie: Boolean, hasAuth: Boolean) {
-        write("net", "NAV $method $url")
+        if (!verbose) return
+        writeNet("net", "NAV $method $url")
     }
 
     fun netError(url: String, code: Int) {
-        write("net", "ERROR $code $url")
+        writeNet("net", "ERROR $code $url")
     }
-
+    
     private fun write(tag: String, msg: String) {
         val line = "${timeFormat.format(Date())} [$tag] $msg\n"
         synchronized(buffer) {
@@ -323,4 +333,38 @@ object UHLog {
     fun snapshot(): String = synchronized(buffer) { buffer.joinToString("") }
     fun size(): Int = synchronized(buffer) { buffer.size }
     fun fileSize(): Long = internalLogFile?.length() ?: 0L
+
+    fun clear() {
+        scope.launch {
+            fileMutex.withLock {
+                synchronized(buffer) { buffer.clear() }
+                synchronized(netBuffer) { netBuffer.clear() }
+                try {
+                    internalLogFile?.delete()
+                    internalNetFile?.delete()
+                    internalLogSize = 0L
+                    internalNetSize = 0L
+                    logIndex = 0
+                    netIndex = 0
+                    appContext?.let { setupFiles(it) }
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    fun writeLeakLog(msg: String) {
+        val clean = msg.replace("\n", " ")
+        val line = "${timeFormat.format(Date())} E [leak] $clean\n"
+        
+        synchronized(buffer) {
+            buffer.add(line)
+            flushInternal()
+            appContext?.let { mirrorToPublic(it) }
+        }
+        
+        for (l in listeners) {
+            try { l(line) } catch (_: Exception) {}
+        }
+        try { Log.e(TAG, line) } catch (_: Exception) {}
+    }
 }
