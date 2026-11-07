@@ -1,5 +1,6 @@
 package app.harvester.companion.browser
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -18,6 +19,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.launch
+import app.harvester.companion.DownloadHelper
 import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
 import app.harvester.companion.browser.menu.MainMenuSheet
@@ -120,12 +122,12 @@ contextMenuFeature.set(
         fragmentManager = parentFragmentManager,
         store = components.store,
         candidates = mozilla.components.feature.contextmenu.ContextMenuCandidate.defaultCandidates(
-    context = requireContext(),
-    tabsUseCases = components.useCases.tabsUseCases,
-    contextMenuUseCases = components.useCases.contextMenuUseCases,
-    snackBarParentView = binding.root,
-    downloadsLocation = { DownloadHelper.DEFAULT_DOWNLOAD_PATH }
-),
+            context = requireContext(),
+            tabsUseCases = components.useCases.tabsUseCases,
+            contextMenuUseCases = components.useCases.contextMenuUseCases,
+            snackBarParentView = binding.root,
+            downloadsLocation = { DownloadHelper.getCurrentDownloadLocation(requireContext()) }
+        ),
         engineView = engineView,
         useCases = components.useCases.contextMenuUseCases,
         tabId = null
@@ -175,9 +177,8 @@ promptsFeature.set(
         isSuggestEmailMaskEnabled = { false },
         androidPhotoPicker = AndroidPhotoPicker(
             requireContext(),
-            AndroidPhotoPicker.singleMediaPicker(this) { promptsFeature.get() },
-            AndroidPhotoPicker.multipleMediaPicker(this) { promptsFeature.get() },
-            null
+            AndroidPhotoPicker.singleMediaPicker({ this }) { promptsFeature.get() },
+            AndroidPhotoPicker.multipleMediaPicker({ this }) { promptsFeature.get() }
         ),
         onNeedToRequestPermissions = { requestPermissions(it, 1) }
     ),
