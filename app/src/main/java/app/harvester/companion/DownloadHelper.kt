@@ -15,7 +15,15 @@ import java.util.Locale
 object DownloadHelper {
 
     const val HARVESTER_DIR = "Harvester"
-    const val DEFAULT_DOWNLOAD_PATH = "/storage/emulated/0/Download"
+
+    fun getCurrentDownloadLocation(ctx: android.content.Context): String {
+        val customUri = SettingsPrefs.getString(ctx, "custom_download_uri", "")
+        return if (customUri.isNotBlank()) {
+            customUri.replace("content://com.android.externalstorage.documents/tree/primary%3A", "/storage/emulated/0/").replace("%2F", "/")
+        } else {
+            "/storage/emulated/0/Download"
+        }
+    }
     
     fun saveFromUrl(ctx: Context, url: String, mime: String?) {
         saveFromUrlWithCookies(ctx, url, null, mime, null)
