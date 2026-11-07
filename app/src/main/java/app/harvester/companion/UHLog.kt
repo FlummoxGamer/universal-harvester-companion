@@ -99,27 +99,37 @@ object UHLog {
         logIndex = 0
         netIndex = 0
 
-        if (customTreeUri != null) {
-            try {
-                val parent = DocumentFile.fromTreeUri(ctx, customTreeUri!!)
-                var harvesterDir = parent?.findFile("Harvester")
-                if (harvesterDir == null || !harvesterDir.isDirectory) {
-                    harvesterDir = parent?.createDirectory("Harvester")
-                }
-                var sDir = harvesterDir?.findFile("sess_$sessionId")
+    if (customTreeUri != null) {
+    var customLogCreated = false
+    try {
+        val parent = DocumentFile.fromTreeUri(ctx, customTreeUri!!)
+        if (parent != null) {
+            var harvesterDir = parent.findFile("Harvester")
+            if (harvesterDir == null || !harvesterDir.isDirectory) {
+                harvesterDir = parent.createDirectory("Harvester")
+            }
+            if (harvesterDir != null) {
+                var sDir = harvesterDir.findFile("sess_$sessionId")
                 if (sDir == null || !sDir.isDirectory) {
-                    sDir = harvesterDir?.createDirectory("sess_$sessionId")
+                    sDir = harvesterDir.createDirectory("sess_$sessionId")
                 }
-                
                 if (sDir != null) {
                     customLogDoc = sDir.findFile("log.txt") ?: sDir.createFile("text/plain", "log.txt")
                     customNetDoc = sDir.findFile("net.txt") ?: sDir.createFile("text/plain", "net.txt")
+                    if (customLogDoc != null && customNetDoc != null) {
+                        customLogCreated = true
+                    }
                 }
-            } catch (e: Exception) {
-                internalLogFile?.appendText("[diag-log] Custom location setup failed: ${e.message}\n")
-                customTreeUri = null
             }
         }
+    } catch (e: Exception) {
+        internalLogFile?.appendText("[diag-log] Custom location setup exception: ${e.message}\n")
+    }
+    if (!customLogCreated) {
+        internalLogFile?.appendText("[diag-log] Custom location setup failed: Could not create session or file in selected tree URI.\n")
+        customTreeUri = null
+    }
+    }
     }
 
     private fun renameCrashFiles(ctx: Context, prevSessionId: String) {
