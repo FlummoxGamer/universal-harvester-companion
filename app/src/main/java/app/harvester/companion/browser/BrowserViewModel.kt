@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import mozilla.components.concept.engine.HitResult
+import mozilla.components.concept.engine.EngineSession
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
     private val context = application.applicationContext
@@ -22,6 +24,40 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     private val _suggestions = MutableStateFlow<List<String>>(emptyList())
     val suggestions: StateFlow<List<String>> = _suggestions
+
+    private val _showMainMenu = MutableStateFlow(false)
+    val showMainMenu: StateFlow<Boolean> = _showMainMenu
+
+    private val _contextMenuState = MutableStateFlow<HitResult?>(null)
+    val contextMenuState: StateFlow<HitResult?> = _contextMenuState
+
+    private var sessionObserver: EngineSession.Observer? = null
+
+    fun setShowMainMenu(show: Boolean) {
+        _showMainMenu.value = show
+    }
+
+    fun showContextMenu(hitResult: HitResult) {
+        _contextMenuState.value = hitResult
+    }
+
+    fun dismissContextMenu() {
+        _contextMenuState.value = null
+    }
+
+    fun registerSessionObserver(engineSession: EngineSession) {
+        unregisterSessionObserver()
+        sessionObserver = object : EngineSession.Observer {
+            override fun onContextMenu(session: EngineSession, screenX: Int, screenY: Int, displayContext: HitResult) {
+                showContextMenu(displayContext)
+            }
+        }
+        engineSession.register(sessionObserver!!)
+    }
+
+    fun unregisterSessionObserver() {
+        sessionObserver = null
+    }
 
     fun enterEditMode(currentUrl: String) {
         _isEditing.value = true
