@@ -133,4 +133,16 @@
             android:textColor="@color/red"
             android:textAllCaps="false" />
     </LinearLayout>
+
+    <Button
+        android:id="@+id/btnRunDiagnostics"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="8dp"
+        android:layout_marginBottom="8dp"
+        android:text="Run Diagnostic Test"
+        android:backgroundTint="@color/surface_2"
+        android:textColor="@color/accent"
+        android:textAllCaps="false" />
 </LinearLayout>
