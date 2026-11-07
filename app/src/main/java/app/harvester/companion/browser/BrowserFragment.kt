@@ -30,9 +30,13 @@ import mozilla.components.feature.contextmenu.ContextMenuFeature
 import mozilla.components.feature.prompts.PromptFeature
 import mozilla.components.feature.session.SessionFeature
 import mozilla.components.feature.session.SwipeRefreshFeature
+import mozilla.components.feature.prompts.file.AndroidPhotoPicker
+import mozilla.components.feature.prompts.share.ShareDelegate
 import mozilla.components.feature.sitepermissions.SitePermissionsFeature
 import mozilla.components.feature.sitepermissions.SitePermissionsRules
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
+import mozilla.components.concept.engine.prompt.ShareData
+import android.content.Context
 
 class BrowserFragment : Fragment() {
 
@@ -116,11 +120,12 @@ contextMenuFeature.set(
         fragmentManager = parentFragmentManager,
         store = components.store,
         candidates = mozilla.components.feature.contextmenu.ContextMenuCandidate.defaultCandidates(
-            requireContext(),
-            components.useCases.tabsUseCases,
-            components.useCases.contextMenuUseCases,
-            binding.root
-        ),
+    context = requireContext(),
+    tabsUseCases = components.useCases.tabsUseCases,
+    contextMenuUseCases = components.useCases.contextMenuUseCases,
+    snackBarParentView = binding.root,
+    downloadsLocation = { DownloadHelper.DEFAULT_DOWNLOAD_PATH }
+),
         engineView = engineView,
         useCases = components.useCases.contextMenuUseCases,
         tabId = null
@@ -145,11 +150,35 @@ contextMenuFeature.set(
 
 promptsFeature.set(
     feature = PromptFeature(
-        fragment = this,
+        activity = requireActivity(),
         store = components.store,
         customTabId = null,
         fragmentManager = parentFragmentManager,
         fileUploadsDirCleaner = mozilla.components.feature.prompts.file.FileUploadsDirCleaner { requireContext().cacheDir },
+        tabsUseCases = components.useCases.tabsUseCases,
+        shareDelegate = object : ShareDelegate {
+            override fun showShareSheet(
+                context: Context,
+                shareData: ShareData,
+                onDismiss: () -> Unit,
+                onSuccess: () -> Unit
+            ) {
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, shareData.url)
+                }
+                context.startActivity(Intent.createChooser(intent, "Share"))
+                onSuccess()
+            }
+        },
+        isEmailMaskFeatureEnabled = { false },
+        isSuggestEmailMaskEnabled = { false },
+        androidPhotoPicker = AndroidPhotoPicker(
+            requireContext(),
+            AndroidPhotoPicker.singleMediaPicker(this) { promptsFeature.get() },
+            AndroidPhotoPicker.multipleMediaPicker(this) { promptsFeature.get() },
+            null
+        ),
         onNeedToRequestPermissions = { requestPermissions(it, 1) }
     ),
     owner = this,
