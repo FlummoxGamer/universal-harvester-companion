@@ -6,17 +6,13 @@ import android.content.Context
 import android.graphics.Typeface
 import android.os.Bundle
 import android.text.method.ScrollingMovementMethod
-import android.view.Gravity
 import android.view.View
-import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageButton
-import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
 
 class LogsActivity : AppCompatActivity() {
 
@@ -37,27 +33,38 @@ class LogsActivity : AppCompatActivity() {
         logView.movementMethod = ScrollingMovementMethod()
         logView.setTextIsSelectable(true)
 
-    findViewById<ImageButton>(R.id.logsBack).setOnClickListener { finish() }
-    findViewById<Button>(R.id.logsRefresh).setOnClickListener { refresh() }
-    findViewById<Button>(R.id.logsSave).setOnClickListener { save() }
-    findViewById<Button>(R.id.logsCopy).setOnClickListener { copy() }
-    findViewById<Button>(R.id.logsClear).setOnClickListener {
-        UHLog.clear()
+        findViewById<ImageButton>(R.id.logsBack).setOnClickListener { finish() }
+        findViewById<Button>(R.id.logsRefresh).setOnClickListener { refresh() }
+        findViewById<Button>(R.id.logsSave).setOnClickListener { save() }
+        findViewById<Button>(R.id.logsCopy).setOnClickListener { copy() }
+        findViewById<Button>(R.id.logsClear).setOnClickListener {
+            UHLog.clear()
+            refresh()
+        }
+        
+        findViewById<Button>(R.id.btnRunDiagnostics).setOnClickListener {
+            UHLog.d("diag-test", "Normal log message")
+            UHLog.e("diag-test", "Error test message")
+            UHLog.w("diag-test", "Warning test message")
+            UHLog.writeLeakLog("Simulated Memory Leak Test")
+            UHLog.netNav("GET", "https://test.url/diagnostic", null, false, false)
+            Toast.makeText(this, "Diagnostics logged and mirrored", Toast.LENGTH_SHORT).show()
+            refresh()
+        }
+
+        val verboseToggle = findViewById<android.widget.Switch>(R.id.logsVerbose)
+        verboseToggle.isChecked = DebugPrefs.verboseLogging(this)
+        verboseToggle.setOnCheckedChangeListener { _, checked ->
+            DebugPrefs.setVerboseLogging(this, checked)
+            UHLog.setVerbose(checked)
+            Toast.makeText(this,
+                if (checked) "Verbose on" else "Verbose off",
+                Toast.LENGTH_SHORT).show()
+        }
+
         refresh()
     }
 
-    val verboseToggle = findViewById<android.widget.Switch>(R.id.logsVerbose)
-    verboseToggle.isChecked = DebugPrefs.verboseLogging(this)
-    verboseToggle.setOnCheckedChangeListener { _, checked ->
-        DebugPrefs.setVerboseLogging(this, checked)
-        UHLog.setVerbose(checked)
-        Toast.makeText(this,
-            if (checked) "Verbose on" else "Verbose off",
-            Toast.LENGTH_SHORT).show()
-    }
-
-    refresh()
-    }
     private fun refresh() {
         logView.text = UHLog.snapshot()
         val bytes = UHLog.fileSize()
