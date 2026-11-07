@@ -8,9 +8,6 @@ import android.view.ViewGroup
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
@@ -19,25 +16,24 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.launch
-import app.harvester.companion.DownloadHelper
 import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
+import app.harvester.companion.browser.menu.ContextMenuSheet
 import app.harvester.companion.browser.menu.MainMenuSheet
 import app.harvester.companion.browser.toolbar.HarvesterAddressBar
 import app.harvester.companion.databinding.FragmentBrowserBinding
 import app.harvester.companion.theme.UHTheme
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.feature.app.links.AppLinksFeature
-import mozilla.components.feature.contextmenu.ContextMenuFeature
 import mozilla.components.feature.prompts.PromptFeature
-import mozilla.components.feature.session.SessionFeature
-import mozilla.components.feature.session.SwipeRefreshFeature
 import mozilla.components.feature.prompts.file.AndroidPhotoPicker
 import mozilla.components.feature.prompts.share.ShareDelegate
+import mozilla.components.concept.engine.prompt.ShareData
+import mozilla.components.feature.session.SessionFeature
+import mozilla.components.feature.session.SwipeRefreshFeature
 import mozilla.components.feature.sitepermissions.SitePermissionsFeature
 import mozilla.components.feature.sitepermissions.SitePermissionsRules
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
-import mozilla.components.concept.engine.prompt.ShareData
 import android.content.Context
 
 class BrowserFragment : Fragment() {
@@ -46,7 +42,6 @@ class BrowserFragment : Fragment() {
     private val binding get() = _binding!!
     private val sessionFeature = ViewBoundFeatureWrapper<SessionFeature>()
     private val swipeRefreshFeature = ViewBoundFeatureWrapper<SwipeRefreshFeature>()
-    private val contextMenuFeature = ViewBoundFeatureWrapper<ContextMenuFeature>()
     private val appLinksFeature = ViewBoundFeatureWrapper<AppLinksFeature>()
     private val promptsFeature = ViewBoundFeatureWrapper<PromptFeature>()
     private val sitePermissionsFeature = ViewBoundFeatureWrapper<SitePermissionsFeature>()
@@ -84,6 +79,10 @@ class BrowserFragment : Fragment() {
             }
         }
 
+        components.store.state.selectedTab?.engineState?.engineSession?.let {
+            viewModel.registerSessionObserver(it)
+        }
+
         setupAddressBar(components)
         setupInsets()
         setupLogging(components)
@@ -117,25 +116,6 @@ class BrowserFragment : Fragment() {
             view = binding.root
         )
 
-contextMenuFeature.set(
-    feature = ContextMenuFeature(
-        fragmentManager = parentFragmentManager,
-        store = components.store,
-        candidates = mozilla.components.feature.contextmenu.ContextMenuCandidate.defaultCandidates(
-            context = requireContext(),
-            tabsUseCases = components.useCases.tabsUseCases,
-            contextMenuUseCases = components.useCases.contextMenuUseCases,
-            snackBarParentView = binding.root,
-            downloadsLocation = { DownloadHelper.getCurrentDownloadLocation(requireContext()) }
-        ),
-        engineView = engineView,
-        useCases = components.useCases.contextMenuUseCases,
-        tabId = null
-    ),
-    owner = this,
-    view = binding.root
-)
-
         appLinksFeature.set(
             feature = AppLinksFeature(
                 requireContext(),
@@ -150,69 +130,69 @@ contextMenuFeature.set(
             view = binding.root
         )
 
-promptsFeature.set(
-    feature = PromptFeature(
-        activity = requireActivity(),
-        store = components.store,
-        customTabId = null,
-        fragmentManager = parentFragmentManager,
-        fileUploadsDirCleaner = mozilla.components.feature.prompts.file.FileUploadsDirCleaner { requireContext().cacheDir },
-        tabsUseCases = components.useCases.tabsUseCases,
-        shareDelegate = object : ShareDelegate {
-            override fun showShareSheet(
-                context: Context,
-                shareData: ShareData,
-                onDismiss: () -> Unit,
-                onSuccess: () -> Unit
-            ) {
-                val intent = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, shareData.url)
-                }
-                context.startActivity(Intent.createChooser(intent, "Share"))
-                onSuccess()
-            }
-        },
-        isEmailMaskFeatureEnabled = { false },
-        isSuggestEmailMaskEnabled = { false },
-        androidPhotoPicker = AndroidPhotoPicker(
-            requireContext(),
-            AndroidPhotoPicker.singleMediaPicker({ this }) { promptsFeature.get() },
-            AndroidPhotoPicker.multipleMediaPicker({ this }) { promptsFeature.get() }
-        ),
-        onNeedToRequestPermissions = { requestPermissions(it, 1) }
-    ),
-    owner = this,
-    view = binding.root
-)
-
-val sitePermissionsStorage = mozilla.components.feature.sitepermissions.OnDiskSitePermissionsStorage(requireContext())
-sitePermissionsFeature.set(
-    feature = SitePermissionsFeature(
-        context = requireContext(),
-        storage = sitePermissionsStorage,
-        sessionId = null,
-        fragmentManager = parentFragmentManager,
-        onNeedToRequestPermissions = { requestPermissions(it, 2) },
-        onShouldShowRequestPermissionRationale = { shouldShowRequestPermissionRationale(it) },
-        store = components.store,
-        sitePermissionsRules = SitePermissionsRules(
-            autoplayAudible = SitePermissionsRules.AutoplayAction.BLOCKED,
-            autoplayInaudible = SitePermissionsRules.AutoplayAction.BLOCKED,
-            camera = SitePermissionsRules.Action.ASK_TO_ALLOW,
-            location = SitePermissionsRules.Action.ASK_TO_ALLOW,
-            notification = SitePermissionsRules.Action.ASK_TO_ALLOW,
-            microphone = SitePermissionsRules.Action.ASK_TO_ALLOW,
-            persistentStorage = SitePermissionsRules.Action.ASK_TO_ALLOW,
-            mediaKeySystemAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
-            crossOriginStorageAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
-            localDeviceAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
-            localNetworkAccess = SitePermissionsRules.Action.ASK_TO_ALLOW
+        promptsFeature.set(
+            feature = PromptFeature(
+                activity = requireActivity(),
+                store = components.store,
+                customTabId = null,
+                fragmentManager = parentFragmentManager,
+                fileUploadsDirCleaner = mozilla.components.feature.prompts.file.FileUploadsDirCleaner { requireContext().cacheDir },
+                tabsUseCases = components.useCases.tabsUseCases,
+                shareDelegate = object : ShareDelegate {
+                    override fun showShareSheet(
+                        context: Context,
+                        shareData: ShareData,
+                        onDismiss: () -> Unit,
+                        onSuccess: () -> Unit
+                    ) {
+                        val intent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, shareData.url)
+                        }
+                        context.startActivity(Intent.createChooser(intent, "Share"))
+                        onSuccess()
+                    }
+                },
+                isEmailMaskFeatureEnabled = { false },
+                isSuggestEmailMaskEnabled = { false },
+                androidPhotoPicker = AndroidPhotoPicker(
+                    requireContext(),
+                    AndroidPhotoPicker.singleMediaPicker({ this }) { promptsFeature.get() },
+                    AndroidPhotoPicker.multipleMediaPicker({ this }) { promptsFeature.get() }
+                ),
+                onNeedToRequestPermissions = { requestPermissions(it, 1) }
+            ),
+            owner = this,
+            view = binding.root
         )
-    ),
-    owner = this,
-    view = binding.root
-)
+
+        val sitePermissionsStorage = mozilla.components.feature.sitepermissions.OnDiskSitePermissionsStorage(requireContext())
+        sitePermissionsFeature.set(
+            feature = SitePermissionsFeature(
+                context = requireContext(),
+                storage = sitePermissionsStorage,
+                sessionId = null,
+                fragmentManager = parentFragmentManager,
+                onNeedToRequestPermissions = { requestPermissions(it, 2) },
+                onShouldShowRequestPermissionRationale = { shouldShowRequestPermissionRationale(it) },
+                store = components.store,
+                sitePermissionsRules = SitePermissionsRules(
+                    autoplayAudible = SitePermissionsRules.AutoplayAction.BLOCKED,
+                    autoplayInaudible = SitePermissionsRules.AutoplayAction.BLOCKED,
+                    camera = SitePermissionsRules.Action.ASK_TO_ALLOW,
+                    location = SitePermissionsRules.Action.ASK_TO_ALLOW,
+                    notification = SitePermissionsRules.Action.ASK_TO_ALLOW,
+                    microphone = SitePermissionsRules.Action.ASK_TO_ALLOW,
+                    persistentStorage = SitePermissionsRules.Action.ASK_TO_ALLOW,
+                    mediaKeySystemAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
+                    crossOriginStorageAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
+                    localDeviceAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
+                    localNetworkAccess = SitePermissionsRules.Action.ASK_TO_ALLOW
+                )
+            ),
+            owner = this,
+            view = binding.root
+        )
     }
 
     private fun setupInsets() {
@@ -252,10 +232,19 @@ sitePermissionsFeature.set(
             val isEditing by viewModel.isEditing.collectAsState()
             val editText by viewModel.editText.collectAsState()
             val selectedTab = browserState.selectedTab
-            var showMenu by remember { mutableStateOf(false) }
+            val showMenu by viewModel.showMainMenu.collectAsState()
+            val contextMenuState by viewModel.contextMenuState.collectAsState()
 
             if (showMenu) {
-                MainMenuSheet(onDismiss = { showMenu = false })
+                MainMenuSheet(onDismiss = { viewModel.setShowMainMenu(false) })
+            }
+
+            if (contextMenuState != null) {
+                ContextMenuSheet(
+                    hitResult = contextMenuState!!,
+                    tabsUseCases = components.useCases.tabsUseCases,
+                    onDismiss = { viewModel.dismissContextMenu() }
+                )
             }
 
             UHTheme {
@@ -278,7 +267,7 @@ sitePermissionsFeature.set(
                     onClear = { viewModel.onTextChanged("") },
                     onSearchEngineClick = {},
                     onScriptMenuClick = {},
-                    onMenuClick = { showMenu = true },
+                    onMenuClick = { viewModel.setShowMainMenu(true) },
                     onTabCountClick = {}
                 )
             }
@@ -296,6 +285,7 @@ sitePermissionsFeature.set(
     }
 
     override fun onDestroyView() {
+        viewModel.unregisterSessionObserver()
         _binding = null
         super.onDestroyView()
     }
