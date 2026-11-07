@@ -10,6 +10,7 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.DefaultSettings
 import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.engine.mediaquery.PreferredColorScheme
+import mozilla.components.feature.contextmenu.ContextMenuUseCases
 import mozilla.components.feature.session.SessionUseCases
 import mozilla.components.feature.tabs.TabsUseCases
 import org.mozilla.geckoview.GeckoRuntime
@@ -70,4 +71,5 @@ class Components(val context: Context) {
 class UseCases(store: BrowserStore, engine: Engine) {
     val sessionUseCases by lazy { SessionUseCases(store) }
     val tabsUseCases by lazy { TabsUseCases(store) }
+    val contextMenuUseCases by lazy { ContextMenuUseCases(store) }
 }
