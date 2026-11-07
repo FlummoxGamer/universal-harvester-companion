@@ -27,7 +27,7 @@ android {
             dimension = "version"
             applicationIdSuffix = ""
             versionNameSuffix = ""
-            resValue("string", "app_name", "Universal Harvester")
+            resValue("string", "app_name", "UH")
         }
         create("dev") {
             dimension = "version"
