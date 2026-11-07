@@ -48,8 +48,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun registerSessionObserver(engineSession: EngineSession) {
         unregisterSessionObserver()
         sessionObserver = object : EngineSession.Observer {
-            override fun onContextMenu(session: EngineSession, screenX: Int, screenY: Int, displayContext: HitResult) {
-                showContextMenu(displayContext)
+            override fun onLongPress(session: EngineSession, hitResult: HitResult) {
+                showContextMenu(hitResult)
             }
         }
         engineSession.register(sessionObserver!!)
