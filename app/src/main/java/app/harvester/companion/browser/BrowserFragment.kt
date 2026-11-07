@@ -71,17 +71,20 @@ class BrowserFragment : Fragment() {
             view = binding.root
         )
 
-        swipeRefreshFeature.set(
-            feature = SwipeRefreshFeature(
-                components.store,
-                components.useCases.sessionUseCases.reload,
-                binding.swipeRefresh,
-                null,
-                null
-            ),
-            owner = this,
-            view = binding.root
-        )
+binding.swipeRefresh.setColorSchemeResources(R.color.accent)
+binding.swipeRefresh.setProgressBackgroundColorSchemeResource(R.color.surface_2)
+
+swipeRefreshFeature.set(
+    feature = SwipeRefreshFeature(
+        components.store,
+        components.useCases.sessionUseCases.reload,
+        binding.swipeRefresh,
+        null,
+        null
+    ),
+    owner = this,
+    view = binding.root
+)
 
         if (initialUrl != null) {
             if (components.store.state.tabs.isEmpty()) {
