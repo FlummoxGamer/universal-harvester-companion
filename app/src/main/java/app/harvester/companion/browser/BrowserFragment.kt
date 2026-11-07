@@ -111,23 +111,23 @@ class BrowserFragment : Fragment() {
             view = binding.root
         )
 
-        contextMenuFeature.set(
-            feature = ContextMenuFeature(
-                fragmentManager = parentFragmentManager,
-                store = components.store,
-                candidates = mozilla.components.feature.contextmenu.ContextMenuCandidate.defaultCandidates(
-                    requireContext(),
-                    components.useCases.tabsUseCases,
-                    components.useCases.sessionUseCases,
-                    binding.root
-                ),
-                engineView = engineView,
-                useCases = mozilla.components.feature.contextmenu.ContextMenuUseCases(components.store),
-                tabId = null
-            ),
-            owner = this,
-            view = binding.root
-        )
+contextMenuFeature.set(
+    feature = ContextMenuFeature(
+        fragmentManager = parentFragmentManager,
+        store = components.store,
+        candidates = mozilla.components.feature.contextmenu.ContextMenuCandidate.defaultCandidates(
+            requireContext(),
+            components.useCases.tabsUseCases,
+            components.useCases.contextMenuUseCases,
+            binding.root
+        ),
+        engineView = engineView,
+        useCases = components.useCases.contextMenuUseCases,
+        tabId = null
+    ),
+    owner = this,
+    view = binding.root
+)
 
         appLinksFeature.set(
             feature = AppLinksFeature(
@@ -143,46 +143,46 @@ class BrowserFragment : Fragment() {
             view = binding.root
         )
 
-        promptsFeature.set(
-            feature = PromptFeature(
-                fragment = this,
-                store = components.store,
-                customTabId = null,
-                fragmentManager = parentFragmentManager,
-                fileUploadsDirCleaner = null,
-                onNeedToRequestPermissions = { requestPermissions(it, 1) }
-            ),
-            owner = this,
-            view = binding.root
-        )
+promptsFeature.set(
+    feature = PromptFeature(
+        fragment = this,
+        store = components.store,
+        customTabId = null,
+        fragmentManager = parentFragmentManager,
+        fileUploadsDirCleaner = mozilla.components.feature.prompts.file.FileUploadsDirCleaner { requireContext().cacheDir },
+        onNeedToRequestPermissions = { requestPermissions(it, 1) }
+    ),
+    owner = this,
+    view = binding.root
+)
 
-        sitePermissionsFeature.set(
-            feature = SitePermissionsFeature(
-                requireContext(),
-                storage = null,
-                sessionId = null,
-                fragmentManager = parentFragmentManager,
-                onNeedToRequestPermissions = { requestPermissions(it, 2) },
-                onShouldShowRequestPermissionRationale = { shouldShowRequestPermissionRationale(it) },
-                store = components.store,
-                sitePermissionsRules = SitePermissionsRules(
-                    autoplayAudible = SitePermissionsRules.Action.BLOCKED,
-                    autoplayInaudible = SitePermissionsRules.Action.BLOCKED,
-                    camera = SitePermissionsRules.Action.ASK_TO_ALLOW,
-                    location = SitePermissionsRules.Action.ASK_TO_ALLOW,
-                    notification = SitePermissionsRules.Action.ASK_TO_ALLOW,
-                    microphone = SitePermissionsRules.Action.ASK_TO_ALLOW,
-                    persistentStorage = SitePermissionsRules.Action.ASK_TO_ALLOW,
-                    mediaKeySystemAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
-                    crossOriginStorageAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
-                    localDeviceAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
-                    localNetworkAccess = SitePermissionsRules.Action.ASK_TO_ALLOW
-                ),
-                coroutineScope = lifecycleScope
-            ),
-            owner = this,
-            view = binding.root
+val sitePermissionsStorage = mozilla.components.feature.sitepermissions.OnDiskSitePermissionsStorage(requireContext())
+sitePermissionsFeature.set(
+    feature = SitePermissionsFeature(
+        context = requireContext(),
+        storage = sitePermissionsStorage,
+        sessionId = null,
+        fragmentManager = parentFragmentManager,
+        onNeedToRequestPermissions = { requestPermissions(it, 2) },
+        onShouldShowRequestPermissionRationale = { shouldShowRequestPermissionRationale(it) },
+        store = components.store,
+        sitePermissionsRules = SitePermissionsRules(
+            autoplayAudible = SitePermissionsRules.AutoplayAction.BLOCKED,
+            autoplayInaudible = SitePermissionsRules.AutoplayAction.BLOCKED,
+            camera = SitePermissionsRules.Action.ASK_TO_ALLOW,
+            location = SitePermissionsRules.Action.ASK_TO_ALLOW,
+            notification = SitePermissionsRules.Action.ASK_TO_ALLOW,
+            microphone = SitePermissionsRules.Action.ASK_TO_ALLOW,
+            persistentStorage = SitePermissionsRules.Action.ASK_TO_ALLOW,
+            mediaKeySystemAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
+            crossOriginStorageAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
+            localDeviceAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
+            localNetworkAccess = SitePermissionsRules.Action.ASK_TO_ALLOW
         )
+    ),
+    owner = this,
+    view = binding.root
+)
     }
 
     private fun setupInsets() {
