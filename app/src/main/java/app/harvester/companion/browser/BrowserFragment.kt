@@ -54,8 +54,10 @@ class BrowserFragment : Fragment() {
         val context = requireContext()
         val components = (context.applicationContext as UHApp).components
 
+        val initStart = System.currentTimeMillis()
         val engineView = components.engine.createView(context, null)
         binding.swipeRefresh.addView(engineView.asView())
+        UHLog.d("perf", "Browser engine view created: ${System.currentTimeMillis() - initStart}ms")
 
         sessionFeature.set(
             feature = SessionFeature(
@@ -89,20 +91,23 @@ class BrowserFragment : Fragment() {
             }
         }
 
-    setupAddressBar(components)
-    setupInsets()
-    
-    viewLifecycleOwner.lifecycleScope.launch {
-        viewLifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
-            components.store.stateFlow.collect { state ->
-                state.selectedTab?.content?.url?.let { url ->
-                    if (url != "about:blank" && url.isNotBlank()) {
-                        UHLog.netNav("GET", url, null, false, false)
-                    }
+setupAddressBar(components)
+setupInsets()
+
+viewLifecycleOwner.lifecycleScope.launch {
+    viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+        components.store.stateFlow.collect { state ->
+            state.selectedTab?.content?.let { content ->
+                if (content.url != "about:blank" && content.url.isNotBlank()) {
+                    UHLog.netNav("GET", content.url, null, false, false)
+                }
+                if (content.loading && content.progress == 100) {
+                     UHLog.d("web", "Page loaded: ${content.url}")
                 }
             }
         }
     }
+}
     }
 
     private fun setupInsets() {
