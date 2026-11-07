@@ -15,7 +15,8 @@ import java.util.Locale
 object DownloadHelper {
 
     const val HARVESTER_DIR = "Harvester"
-
+    const val DEFAULT_DOWNLOAD_PATH = "/storage/emulated/0/Download"
+    
     fun saveFromUrl(ctx: Context, url: String, mime: String?) {
         saveFromUrlWithCookies(ctx, url, null, mime, null)
     }
