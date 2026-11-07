@@ -76,7 +76,7 @@ fun ContextMenuSheet(
                     }
                 }
                 is HitResult.LINK -> {
-                    val linkUrl = hitResult.src
+                    val linkUrl = hitResult.href
                     if (linkUrl != null) {
                         MenuItem("Open Link in New Tab") {
                             onDismiss()
