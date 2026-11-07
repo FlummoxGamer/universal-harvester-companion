@@ -27,6 +27,7 @@ class UHApp : Application(), coil.ImageLoaderFactory {
     }
 
     override fun onCreate() {
+        val start = System.currentTimeMillis()
         super.onCreate()
         UHLog.init(this)
         SessionRecorder.init(this)
@@ -53,6 +54,8 @@ class UHApp : Application(), coil.ImageLoaderFactory {
         try {
             startService(Intent(this, SessionService::class.java))
         } catch (_: Exception) {}
+    
+        UHLog.d("perf", "App onCreate: ${System.currentTimeMillis() - start}ms")
     }
 
     override fun newImageLoader(): coil.ImageLoader {
