@@ -11,7 +11,12 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.launch
 import app.harvester.companion.DownloadsActivity
+import app.harvester.companion.UHLog
 import app.harvester.companion.HistoryActivity
 import app.harvester.companion.R
 import app.harvester.companion.SettingsActivity
