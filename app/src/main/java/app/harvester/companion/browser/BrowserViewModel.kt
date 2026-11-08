@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.harvester.companion.HistoryStore
 import app.harvester.companion.SearchEnginePrefs
+import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.UHApp
 import app.harvester.companion.browser.search.SearchSuggestionClient
 import app.harvester.companion.components.appstate.AppAction
@@ -53,17 +54,26 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private fun refreshSuggestions(typed: String) {
         suggestJob?.cancel()
         suggestJob = viewModelScope.launch {
+            val showSuggestions = SettingsPrefs.getBool(context, SettingsPrefs.K_SEARCH_SUGGESTIONS, true)
+            if (!showSuggestions) {
+                _suggestions.value = emptyList()
+                return@launch
+            }
+
             val isUrl = typed.contains(".") && !typed.contains(" ")
-            val queries = if (isUrl || typed.isBlank()) emptyList() else withContext(Dispatchers.IO) { 
+            val showHistory = SettingsPrefs.getBool(context, SettingsPrefs.K_SEARCH_HISTORY, true)
+            val showRemote = SettingsPrefs.getBool(context, SettingsPrefs.K_SEARCH_REMOTE, true)
+
+            val queries = if (isUrl || typed.isBlank() || !showHistory) emptyList() else withContext(Dispatchers.IO) { 
                 HistoryStore.get(context).searchSearchQueries(typed).map { it.query } 
             }
-            val pages = withContext(Dispatchers.IO) { 
+            val pages = if (showHistory) withContext(Dispatchers.IO) { 
                 HistoryStore.get(context).searchHistory(typed, 10).map { it.url } 
-            }
+            } else emptyList()
             
             var combined = queries + pages
 
-            if (!isUrl && typed.length >= 2) {
+            if (!isUrl && typed.length >= 2 && showRemote) {
                 try {
                     val engine = SearchEnginePrefs.currentEntry(context)
                     val remote = suggestionClient.getSuggestions(engine.id, engine.suggestionsUrl, typed)
