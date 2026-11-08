@@ -4,7 +4,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,8 +13,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -25,7 +22,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.font.FontWeight
@@ -35,6 +31,9 @@ import app.harvester.companion.R
 import app.harvester.companion.SearchEnginePrefs
 import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.browser.search.UHSearchEnginePicker
+import app.harvester.companion.settings.components.SettingsCategory
+import app.harvester.companion.settings.components.SettingsRow
+import app.harvester.companion.settings.components.SettingsSwitchRow
 import app.harvester.companion.theme.UHTheme
 
 class UHSearchSettingsActivity : ComponentActivity() {
@@ -42,14 +41,14 @@ class UHSearchSettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             UHTheme {
-                SearchSettingsScreen(onBack = { finish() })
+                SearchSettingsScreen()
             }
         }
     }
 }
 
 @Composable
-fun SearchSettingsScreen(onBack: () -> Unit) {
+fun SearchSettingsScreen() {
     val context = LocalContext.current
     var showEnginePicker by remember { mutableStateOf(false) }
     var showAddDialog by remember { mutableStateOf(false) }
@@ -94,9 +93,7 @@ fun SearchSettingsScreen(onBack: () -> Unit) {
             )
         }
 
-        LazyColumn(
-            modifier = Modifier.padding(horizontal = 16.dp)
-        ) {
+        LazyColumn(modifier = Modifier.padding(horizontal = 16.dp)) {
             item { SettingsCategory("Search Engine") }
             item { SettingsRow("Default Search Engine", engineName, onClick = { showEnginePicker = true }) }
             item { SettingsRow("Add Custom Engine", "Create your own search engine", onClick = { showAddDialog = true }) }
@@ -150,73 +147,7 @@ fun AddCustomEngineDialog(onDismiss: () -> Unit, onAdd: (String, String) -> Unit
                 Text("Cancel", color = colorResource(id = R.color.subtext))
             }
         },
-        containerColor = colorResource(id = R.color.surface_2)
+        containerColor = colorResource(id = R.color.surface_2),
+        shape = RoundedCornerShape(16.dp)
     )
-}
-
-@Composable
-fun SettingsCategory(title: String) {
-    Text(
-        text = title.uppercase(),
-        color = colorResource(id = R.color.subtext),
-        fontSize = 12.sp,
-        modifier = Modifier.padding(top = 24.dp, bottom = 8.dp)
-    )
-}
-
-@Composable
-fun SettingsRow(title: String, subtitle: String, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(colorResource(id = R.color.surface))
-            .clickable { onClick() }
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, color = colorResource(id = R.color.text), fontSize = 16.sp)
-            Text(text = subtitle, color = colorResource(id = R.color.subtext), fontSize = 12.sp)
-        }
-    }
-}
-
-@Composable
-fun SettingsSwitchRow(title: String, key: String, default: Boolean) {
-    val context = LocalContext.current
-    var isChecked by remember { mutableStateOf(SettingsPrefs.getBool(context, key, default)) }
-    
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(colorResource(id = R.color.surface))
-            .clickable { 
-                isChecked = !isChecked
-                SettingsPrefs.setBool(context, key, isChecked)
-            }
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = title,
-            color = colorResource(id = R.color.text),
-            fontSize = 16.sp,
-            modifier = Modifier.weight(1f)
-        )
-        Switch(
-            checked = isChecked,
-            onCheckedChange = { 
-                isChecked = it
-                SettingsPrefs.setBool(context, key, it)
-            },
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = colorResource(id = R.color.bg),
-                checkedTrackColor = colorResource(id = R.color.accent)
-            )
-        )
-    }
 }
