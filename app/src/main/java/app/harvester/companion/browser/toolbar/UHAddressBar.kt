@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import app.harvester.companion.R
 import app.harvester.companion.SearchEnginePrefs
+import app.harvester.companion.SettingsPrefs
 
 @Composable
 fun UHAddressBar(
@@ -57,24 +58,38 @@ fun UHAddressBar(
     onSearchEngineClick: () -> Unit,
     onScriptMenuClick: () -> Unit,
     onMenuClick: () -> Unit,
-    onTabCountClick: () -> Unit
+    onTabCountClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val bottomBarColor = if (isWallpaperActive) Color.Transparent else colorResource(id = R.color.bg)
     val searchEngineEntry = remember(context) { SearchEnginePrefs.currentEntry(ctx = context) }
+    val showFullUrl = SettingsPrefs.getBool(context, SettingsPrefs.K_SHOW_FULL_URL, false)
     
+    fun formatUrl(rawUrl: String): String {
+        var cleanUrl = rawUrl
+        if (cleanUrl.startsWith("https://")) cleanUrl = cleanUrl.removePrefix("https://")
+        if (cleanUrl.startsWith("http://")) cleanUrl = cleanUrl.removePrefix("http://")
+        
+        if (!showFullUrl) {
+            if (cleanUrl.startsWith("www.")) cleanUrl = cleanUrl.removePrefix("www.")
+            cleanUrl = cleanUrl.substringBefore("/")
+        }
+        return cleanUrl
+    }
+
     var textState by remember { 
         mutableStateOf(
             TextFieldValue(
-                text = if (isEditing) editText else url,
-                selection = TextRange(if (isEditing) editText.length else url.length)
+                text = if (isEditing) editText else formatUrl(url),
+                selection = TextRange(if (isEditing) editText.length else formatUrl(url).length)
             )
         ) 
     }
     val focusRequester = remember { FocusRequester() }
 
     LaunchedEffect(url, isEditing, editText) {
-        val targetText = if (!isEditing) url else editText
+        val targetText = if (!isEditing) formatUrl(url) else editText
         if (textState.text != targetText) {
             textState = TextFieldValue(
                 text = targetText,
@@ -90,7 +105,7 @@ fun UHAddressBar(
     }
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(68.dp)
             .background(bottomBarColor)
@@ -161,7 +176,7 @@ fun UHAddressBar(
                             textState = collapsed
                             onEditTextChanged(collapsed.text)
                         },
-                        modifier = Modifier.fillMaxWidth().padding(end = 28.dp).focusRequester(focusRequester),
+                        modifier = Modifier.fillMaxWidth().padding(end = 28.dp).focusRequester(focusRequester).background(Color.Transparent),
                         textStyle = TextStyle(color = colorResource(id = R.color.text), fontSize = 14.sp),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
@@ -198,7 +213,7 @@ fun UHAddressBar(
                     }
                 } else {
                     Text(
-                        text = if (url.isBlank() || url == "about:blank") "Search or type URL" else url,
+                        text = if (url.isBlank() || url == "about:blank") "Search or type URL" else formatUrl(url),
                         color = if (url.isBlank() || url == "about:blank") colorResource(id = R.color.subtext) else colorResource(id = R.color.text),
                         fontSize = 14.sp,
                         maxLines = 1,
