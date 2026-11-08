@@ -69,7 +69,7 @@
         <activity android:name=".ScriptsActivity" android:exported="false" android:label="Scripts" />
         <activity android:name=".ScriptEditorActivity" android:exported="false" android:label="Edit script" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".SettingsActivity" android:exported="false" android:label="Settings" />
-        <activity android:name=".SearchEngineActivity" android:exported="false" android:label="Search Engine" />
+        <activity android:name=".settings.UHSearchSettingsActivity" android:exported="false" android:label="Search Engine" android:theme="@style/Theme.UHCompanion" />
         <activity android:name=".AppearanceActivity" android:exported="false" android:label="Appearance" />
         <activity android:name=".VideoOptionsActivity" android:exported="false" android:label="Video Options" />
         <activity android:name=".DownloadSettingsActivity" android:exported="false" android:label="Download Settings" />
