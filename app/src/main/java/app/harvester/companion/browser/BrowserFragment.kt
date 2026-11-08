@@ -226,27 +226,28 @@ class BrowserFragment : Fragment() {
     }
 
     @OptIn(ExperimentalMaterial3Api::class)
-    private fun setupAddressBar(components: app.harvester.companion.components.Components) {
-        binding.addressBarContainer.setContent {
-            val browserState by components.store.stateFlow.collectAsState()
-            val isEditing by viewModel.isEditing.collectAsState()
-            val editText by viewModel.editText.collectAsState()
-            val selectedTab = browserState.selectedTab
-            val showMenu by viewModel.showMainMenu.collectAsState()
-            val contextMenuState by viewModel.contextMenuState.collectAsState()
+private fun setupAddressBar(components: app.harvester.companion.components.Components) {
+    binding.addressBarContainer.setContent {
+        val browserState by components.store.stateFlow.collectAsState()
+        val isEditing by viewModel.isEditing.collectAsState()
+        val editText by viewModel.editText.collectAsState()
+        val selectedTab = browserState.selectedTab
+        val showMenu by viewModel.showMainMenu.collectAsState()
+        
+        val hitResult = selectedTab?.content?.hitResult
+        if (hitResult != null) {
+            ContextMenuDialog(
+                hitResult = hitResult,
+                tabsUseCases = components.useCases.tabsUseCases,
+                onDismiss = { 
+                    selectedTab.id.let { components.useCases.contextMenuUseCases.consumeHitResult(it) }
+                }
+            )
+        }
 
-            if (showMenu) {
-                MainMenuSheet(onDismiss = { viewModel.setShowMainMenu(false) })
-            }
-
-            if (contextMenuState != null) {
-                ContextMenuDialog(
-                    hitResult = contextMenuState!!,
-                    tabsUseCases = components.useCases.tabsUseCases,
-                    onDismiss = { viewModel.dismissContextMenu() }
-                )
-            }
-
+        if (showMenu) {
+            MainMenuSheet(onDismiss = { viewModel.setShowMainMenu(false) })
+        }
             UHTheme {
                 HarvesterAddressBar(
                     url = selectedTab?.content?.url ?: "",
