@@ -28,35 +28,11 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private val _showMainMenu = MutableStateFlow(false)
     val showMainMenu: StateFlow<Boolean> = _showMainMenu
 
-    private val _contextMenuState = MutableStateFlow<HitResult?>(null)
-    val contextMenuState: StateFlow<HitResult?> = _contextMenuState
-
-    private var sessionObserver: EngineSession.Observer? = null
+    private val _showMainMenu = MutableStateFlow(false)
+    val showMainMenu: StateFlow<Boolean> = _showMainMenu
 
     fun setShowMainMenu(show: Boolean) {
         _showMainMenu.value = show
-    }
-
-    fun showContextMenu(hitResult: HitResult) {
-        _contextMenuState.value = hitResult
-    }
-
-    fun dismissContextMenu() {
-        _contextMenuState.value = null
-    }
-
-    fun registerSessionObserver(engineSession: EngineSession) {
-        unregisterSessionObserver()
-        sessionObserver = object : EngineSession.Observer {
-            override fun onLongPress(hitResult: HitResult) {
-                showContextMenu(hitResult)
-            }
-        }
-        engineSession.register(sessionObserver!!)
-    }
-
-    fun unregisterSessionObserver() {
-        sessionObserver = null
     }
 
     fun enterEditMode(currentUrl: String) {
