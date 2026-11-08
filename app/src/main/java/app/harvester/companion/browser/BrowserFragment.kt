@@ -5,9 +5,14 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -17,6 +22,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -26,12 +35,13 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.launch
+import app.harvester.companion.R
+import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
 import app.harvester.companion.browser.menu.ContextMenuDialog
 import app.harvester.companion.browser.menu.MainMenuDialogFragment
 import app.harvester.companion.browser.search.UHSearchEnginePicker
-import app.harvester.companion.browser.toolbar.UHAddressBar
 import app.harvester.companion.browser.toolbar.UHAddressBar
 import app.harvester.companion.browser.toolbar.UHSuggestionsPanel
 import app.harvester.companion.databinding.FragmentBrowserBinding
@@ -239,14 +249,15 @@ class BrowserFragment : Fragment() {
         binding.addressBarContainer.setContent {
             val browserState by components.store.stateFlow.collectAsState()
             val appState by components.appStore.stateFlow.collectAsState()
-            
             val isEditing = appState.searchState.isSearchActive
+            
             val editText by viewModel.editText.collectAsState()
             val suggestions by viewModel.suggestions.collectAsState()
             val selectedTab = browserState.selectedTab
             
             var showSearchEnginePicker by remember { mutableStateOf(false) }
             val focusManager = LocalFocusManager.current
+            val isBarBottom = SettingsPrefs.getInt(requireContext(), SettingsPrefs.K_ADDRESS_BAR_POSITION, 1) == 1
 
             if (showSearchEnginePicker) {
                 UHSearchEnginePicker(
@@ -267,43 +278,105 @@ class BrowserFragment : Fragment() {
             }
 
             UHTheme {
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    UHAddressBar(
-                        url = selectedTab?.content?.url ?: "",
-                        isEditing = isEditing,
-                        tabCount = browserState.tabs.size,
-                        iconState = if (selectedTab?.content?.url?.startsWith("https") == true) 1 else 0,
-                        isWallpaperActive = false,
-                        editText = editText,
-                        onEditTextChanged = { viewModel.onTextChanged(it) },
-                        onSubmit = { 
-                            val target = viewModel.normalize(it)
-                            if (target.isNotBlank()) {
-                                viewModel.exitEditMode()
-                                focusManager.clearFocus()
-                                components.useCases.sessionUseCases.loadUrl(target)
-                            }
-                        },
-                        onEditStart = { viewModel.enterEditMode(selectedTab?.content?.url ?: "") },
-                        onClear = { viewModel.onTextChanged("") },
-                        onSearchEngineClick = { showSearchEnginePicker = true },
-                        onScriptMenuClick = {},
-                        onMenuClick = { MainMenuDialogFragment().show(parentFragmentManager, "MainMenu") },
-                        onTabCountClick = {}
-                    )
+                if (isEditing) {
+                    Dialog(
+                        onDismissRequest = { viewModel.exitEditMode() },
+                        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+                    ) {
+                        Box(modifier = Modifier.fillMaxSize().background(colorResource(id = R.color.bg))) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .statusBarsPadding()
+                                    .navigationBarsPadding()
+                                    .imePadding()
+                            ) {
+                                if (!isBarBottom) {
+                                    UHAddressBar(
+                                        url = selectedTab?.content?.url ?: "",
+                                        isEditing = isEditing,
+                                        tabCount = browserState.tabs.size,
+                                        iconState = if (selectedTab?.content?.url?.startsWith("https") == true) 1 else 0,
+                                        isWallpaperActive = false,
+                                        editText = editText,
+                                        onEditTextChanged = { viewModel.onTextChanged(it) },
+                                        onSubmit = { 
+                                            val target = viewModel.normalize(it)
+                                            if (target.isNotBlank()) {
+                                                viewModel.exitEditMode()
+                                                focusManager.clearFocus()
+                                                components.useCases.sessionUseCases.loadUrl(target)
+                                            }
+                                        },
+                                        onEditStart = { viewModel.enterEditMode(selectedTab?.content?.url ?: "") },
+                                        onClear = { viewModel.onTextChanged("") },
+                                        onSearchEngineClick = { showSearchEnginePicker = true },
+                                        onScriptMenuClick = {},
+                                        onMenuClick = {},
+                                        onTabCountClick = {}
+                                    )
+                                }
 
-                    if (isEditing && suggestions.isNotEmpty()) {
-                        UHSuggestionsPanel(
-                            suggestions = suggestions,
-                            onSuggestionClick = { suggestion ->
-                                val target = viewModel.normalize(suggestion)
-                                viewModel.exitEditMode()
-                                focusManager.clearFocus()
-                                components.useCases.sessionUseCases.loadUrl(target)
-                            },
-                            modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .padding(top = 68.dp)
+                                if (suggestions.isNotEmpty()) {
+                                    UHSuggestionsPanel(
+                                        suggestions = suggestions,
+                                        onSuggestionClick = { suggestion ->
+                                            val target = viewModel.normalize(suggestion)
+                                            viewModel.exitEditMode()
+                                            focusManager.clearFocus()
+                                            components.useCases.sessionUseCases.loadUrl(target)
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                } else {
+                                    Box(modifier = Modifier.weight(1f))
+                                }
+
+                                if (isBarBottom) {
+                                    UHAddressBar(
+                                        url = selectedTab?.content?.url ?: "",
+                                        isEditing = isEditing,
+                                        tabCount = browserState.tabs.size,
+                                        iconState = if (selectedTab?.content?.url?.startsWith("https") == true) 1 else 0,
+                                        isWallpaperActive = false,
+                                        editText = editText,
+                                        onEditTextChanged = { viewModel.onTextChanged(it) },
+                                        onSubmit = { 
+                                            val target = viewModel.normalize(it)
+                                            if (target.isNotBlank()) {
+                                                viewModel.exitEditMode()
+                                                focusManager.clearFocus()
+                                                components.useCases.sessionUseCases.loadUrl(target)
+                                            }
+                                        },
+                                        onEditStart = { viewModel.enterEditMode(selectedTab?.content?.url ?: "") },
+                                        onClear = { viewModel.onTextChanged("") },
+                                        onSearchEngineClick = { showSearchEnginePicker = true },
+                                        onScriptMenuClick = {},
+                                        onMenuClick = {},
+                                        onTabCountClick = {}
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        UHAddressBar(
+                            url = selectedTab?.content?.url ?: "",
+                            isEditing = isEditing,
+                            tabCount = browserState.tabs.size,
+                            iconState = if (selectedTab?.content?.url?.startsWith("https") == true) 1 else 0,
+                            isWallpaperActive = false,
+                            editText = editText,
+                            onEditTextChanged = { viewModel.onTextChanged(it) },
+                            onSubmit = { },
+                            onEditStart = { viewModel.enterEditMode(selectedTab?.content?.url ?: "") },
+                            onClear = { },
+                            onSearchEngineClick = { showSearchEnginePicker = true },
+                            onScriptMenuClick = {},
+                            onMenuClick = { MainMenuDialogFragment().show(parentFragmentManager, "MainMenu") },
+                            onTabCountClick = {}
                         )
                     }
                 }
