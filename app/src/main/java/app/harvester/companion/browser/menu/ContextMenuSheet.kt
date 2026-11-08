@@ -47,7 +47,7 @@ fun ContextMenuSheet(
                 .verticalScroll(rememberScrollState())
         ) {
             when (hitResult) {
-                is HitResult.IMAGE -> {
+                is HitResult.Image -> {
                     val imageUrl = hitResult.src
                     if (imageUrl != null) {
                         MenuItem("Save Image") {
@@ -74,7 +74,7 @@ fun ContextMenuSheet(
                         }
                     }
                 }
-                is HitResult.LINK -> {
+                is HitResult.Link -> {
                     val linkUrl = hitResult.href
                     if (linkUrl != null) {
                         MenuItem("Open Link in New Tab") {
