@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -51,7 +52,7 @@ fun ContextMenuDialog(
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = colorResource(id = R.color.surface_2),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.width(320.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -67,6 +68,9 @@ fun ContextMenuDialog(
                 if (hitResult is HitResult.UNKNOWN) linkUrl = hitResult.src
 
                 if (imageUrl.isNotEmpty()) {
+                    val rawName = imageUrl.substringAfterLast("/").substringBefore("?")
+                    val displayName = if (rawName.isNotBlank()) rawName else imageUrl
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -77,14 +81,14 @@ fun ContextMenuDialog(
                             model = imageUrl,
                             contentDescription = "Image Preview",
                             modifier = Modifier
-                                .size(56.dp)
+                                .size(48.dp)
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(Color.Black)
                         )
                         Text(
-                            text = imageUrl.substringAfterLast("/"),
+                            text = displayName,
                             color = colorResource(id = R.color.text),
-                            fontSize = 15.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
@@ -102,11 +106,7 @@ fun ContextMenuDialog(
                         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         cm.setPrimaryClip(ClipData.newPlainText("Image URL", imageUrl))
                     }
-                    MenuItem("Copy Text from Image") {
-                        onDismiss()
-                        extractTextFromImage(context, imageUrl)
-                    }
-                    MenuItem("Search Image with Lens") {
+                    MenuItem("Search with Lens") {
                         onDismiss()
                         try {
                             val uri = Uri.parse("https://lens.google.com/uploadbyurl?url=$imageUrl")
@@ -115,11 +115,15 @@ fun ContextMenuDialog(
                             UHLog.e("context", "Lens failed: ${e.message}")
                         }
                     }
-                    MenuItem("Open Image in New Tab") {
+                    MenuItem("Extract Text") {
+                        onDismiss()
+                        extractTextFromImage(context, imageUrl)
+                    }
+                    MenuItem("Open in New Tab") {
                         onDismiss()
                         tabsUseCases.addTab(imageUrl)
                     }
-                    MenuItem("Copy Image Link") {
+                    MenuItem("Copy Link") {
                         onDismiss()
                         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         cm.setPrimaryClip(ClipData.newPlainText("Image URL", imageUrl))
@@ -129,7 +133,7 @@ fun ContextMenuDialog(
                         onDismiss()
                         tabsUseCases.addTab(linkUrl)
                     }
-                    MenuItem("Copy Link Address") {
+                    MenuItem("Copy Link") {
                         onDismiss()
                         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         cm.setPrimaryClip(ClipData.newPlainText("Link URL", linkUrl))
