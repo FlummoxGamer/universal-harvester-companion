@@ -1,14 +1,12 @@
 package app.harvester.companion.components
 
+import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.Store
+import app.harvester.companion.components.appstate.AppAction
+import app.harvester.companion.components.appstate.AppState
+import app.harvester.companion.components.appstate.AppStoreReducer
 
 class AppStore(
     initialState: AppState = AppState(),
-) : Store<AppState, AppAction>(initialState, ::reduce) {
-    companion object {
-        fun reduce(state: AppState, action: AppAction): AppState = when (action) {
-            is AppAction.ForegroundChanged -> state.copy(isForeground = action.isForeground)
-            is AppAction.BrowsingModeChanged -> state.copy(browsingMode = action.mode)
-        }
-    }
-}
+    middlewares: List<Middleware<AppState, AppAction>> = emptyList(),
+) : Store<AppState, AppAction>(initialState, AppStoreReducer::reduce, middlewares)
