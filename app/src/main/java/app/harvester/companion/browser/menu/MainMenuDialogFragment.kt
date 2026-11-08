@@ -114,7 +114,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                                     .height(80.dp)
                                     .padding(top = 16.dp)
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(colorResource(id = R.color.surface)),
+                                    .background(colorResource(id = R.color.surface_3)),
                                 horizontalArrangement = Arrangement.SpaceEvenly
                             ) {
                                 MenuIconItem("Favorites", R.drawable.ic_favorites, Modifier.weight(1f)) {
@@ -143,7 +143,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                                     .height(56.dp)
                                     .padding(top = 8.dp)
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(colorResource(id = R.color.surface))
+                                    .background(colorResource(id = R.color.surface_3)),
                                     .clickable { 
                                         dismiss()
                                         startActivity(Intent(requireContext(), SettingsActivity::class.java))
@@ -179,7 +179,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                                     .height(56.dp)
                                     .padding(top = 8.dp)
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(colorResource(id = R.color.surface)),
+                                    .background(colorResource(id = R.color.surface_3)),
                                 horizontalArrangement = Arrangement.SpaceEvenly
                             ) {
                                 MenuIconItem("Home", R.drawable.ic_home, Modifier.weight(1f)) {
