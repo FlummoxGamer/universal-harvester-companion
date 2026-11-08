@@ -18,7 +18,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.launch
 import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
-import app.harvester.companion.browser.menu.ContextMenuSheet
+import app.harvester.companion.browser.menu.ContextMenuDialog
 import app.harvester.companion.browser.menu.MainMenuSheet
 import app.harvester.companion.browser.toolbar.HarvesterAddressBar
 import app.harvester.companion.databinding.FragmentBrowserBinding
@@ -240,7 +240,7 @@ class BrowserFragment : Fragment() {
             }
 
             if (contextMenuState != null) {
-                ContextMenuSheet(
+                ContextMenuDialog(
                     hitResult = contextMenuState!!,
                     tabsUseCases = components.useCases.tabsUseCases,
                     onDismiss = { viewModel.dismissContextMenu() }
