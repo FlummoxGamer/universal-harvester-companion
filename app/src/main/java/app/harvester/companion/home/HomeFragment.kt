@@ -23,7 +23,7 @@ import app.harvester.companion.ShortcutAdapter
 import app.harvester.companion.ShortcutStore
 import app.harvester.companion.WallpaperStore
 import app.harvester.companion.browser.BrowserViewModel
-import app.harvester.companion.browser.toolbar.HarvesterAddressBar
+import app.harvester.companion.browser.toolbar.UHAddressBar
 import app.harvester.companion.databinding.FragmentHomeBinding
 import app.harvester.companion.theme.UHTheme
 import com.google.android.material.bottomsheet.BottomSheetDialog
@@ -89,7 +89,7 @@ class HomeFragment : Fragment() {
             val editText by browserViewModel.editText.collectAsState()
             
             UHTheme {
-                HarvesterAddressBar(
+                UHAddressBar(
                     url = "",
                     isEditing = isEditing,
                     tabCount = 1,
