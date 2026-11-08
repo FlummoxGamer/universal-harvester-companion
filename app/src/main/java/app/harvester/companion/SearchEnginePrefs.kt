@@ -22,6 +22,7 @@ object SearchEnginePrefs {
         val name: String,
         val host: String,
         val searchUrl: String,
+        val suggestionsUrl: String?,
         val iconUrl: String,
         val isCustom: Boolean
     )
@@ -42,26 +43,32 @@ object SearchEnginePrefs {
 
         out.add(Entry(ENGINE_BRAVE, "Brave", "search.brave.com",
             "https://search.brave.com/search?q=%s",
+            "https://search.brave.com/api/suggest?q=%s",
             ddgIcon("search.brave.com"), false))
 
         out.add(Entry(ENGINE_GOOGLE, "Google", "google.com",
             "https://www.google.com/search?q=%s",
+            "https://suggestqueries.google.com/complete/search?client=firefox&q=%s",
             ddgIcon("google.com"), false))
 
         out.add(Entry(ENGINE_BING, "Bing", "bing.com",
             "https://www.bing.com/search?q=%s",
+            "https://api.bing.com/osjson.aspx?query=%s",
             ddgIcon("bing.com"), false))
 
         out.add(Entry(ENGINE_YAHOO, "Yahoo", "yahoo.com",
             "https://search.yahoo.com/search?p=%s",
+            null,
             ddgIcon("yahoo.com"), false))
 
         out.add(Entry(ENGINE_DUCKDUCKGO, "DuckDuckGo", "duckduckgo.com",
             "https://duckduckgo.com/?q=%s",
+            "https://duckduckgo.com/ac/?type=list&q=%s",
             ddgIcon("duckduckgo.com"), false))
 
         out.add(Entry(ENGINE_YANDEX, "Yandex", "yandex.com",
             "https://yandex.com/search/?text=%s",
+            "https://suggest.yandex.com/suggest-ff.cgi?part=%s",
             ddgIcon("yandex.com"), false))
 
         out.addAll(listCustom(ctx))
@@ -82,6 +89,7 @@ object SearchEnginePrefs {
                         name = o.getString("name"),
                         host = host,
                         searchUrl = o.getString("searchUrl"),
+                        suggestionsUrl = null,
                         iconUrl = ddgIcon(host),
                         isCustom = true
                     )
@@ -115,7 +123,7 @@ object SearchEnginePrefs {
         val id = "custom_" + System.currentTimeMillis()
         val current = listCustom(ctx).toMutableList()
         current.add(
-            Entry(id, finalName, host, searchUrl, ddgIcon(host), true)
+            Entry(id, finalName, host, searchUrl, null, ddgIcon(host), true)
         )
         saveCustom(ctx, current)
         return true
