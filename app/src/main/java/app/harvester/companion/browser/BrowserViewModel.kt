@@ -23,13 +23,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private val _suggestions = MutableStateFlow<List<String>>(emptyList())
     val suggestions: StateFlow<List<String>> = _suggestions
 
-    private val _showMainMenu = MutableStateFlow(false)
-    val showMainMenu: StateFlow<Boolean> = _showMainMenu
-
-    fun setShowMainMenu(show: Boolean) {
-        _showMainMenu.value = show
-    }
-
     fun enterEditMode(currentUrl: String) {
         _isEditing.value = true
         _editText.value = currentUrl
