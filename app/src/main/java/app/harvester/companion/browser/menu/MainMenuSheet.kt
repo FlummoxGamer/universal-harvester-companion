@@ -11,9 +11,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
@@ -37,46 +36,49 @@ import app.harvester.companion.SettingsActivity
 @Composable
 fun MainMenuSheet(onDismiss: () -> Unit) {
     val context = LocalContext.current
-    val sheetState = rememberModalBottomSheetState()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = colorResource(id = R.color.surface_2)
     ) {
-        Column(
+        LazyColumn(
             modifier = Modifier
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState())
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Box(
-                modifier = Modifier
-                    .size(36.dp, 4.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(colorResource(id = R.color.subtext))
-                    .align(Alignment.CenterHorizontally)
-            )
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(80.dp)
-                    .padding(top = 16.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(colorResource(id = R.color.surface)),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                MenuIconItem("History", R.drawable.ic_history, Modifier.weight(1f)) {
-                    onDismiss()
-                    context.startActivity(Intent(context, HistoryActivity::class.java))
-                }
-                MenuIconItem("Downloads", R.drawable.ic_downloads, Modifier.weight(1f)) {
-                    onDismiss()
-                    context.startActivity(Intent(context, DownloadsActivity::class.java))
-                }
-                MenuIconItem("Settings", R.drawable.ic_settings, Modifier.weight(1f)) {
-                    onDismiss()
-                    context.startActivity(Intent(context, SettingsActivity::class.java))
+            item {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp, 4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(colorResource(id = R.color.subtext))
+                )
+            }
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(80.dp)
+                        .padding(top = 16.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(colorResource(id = R.color.surface)),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    MenuIconItem("History", R.drawable.ic_history, Modifier.weight(1f)) {
+                        onDismiss()
+                        context.startActivity(Intent(context, HistoryActivity::class.java))
+                    }
+                    MenuIconItem("Downloads", R.drawable.ic_downloads, Modifier.weight(1f)) {
+                        onDismiss()
+                        context.startActivity(Intent(context, DownloadsActivity::class.java))
+                    }
+                    MenuIconItem("Settings", R.drawable.ic_settings, Modifier.weight(1f)) {
+                        onDismiss()
+                        context.startActivity(Intent(context, SettingsActivity::class.java))
+                    }
                 }
             }
         }
