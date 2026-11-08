@@ -26,14 +26,14 @@ object SettingsPrefs {
     const val K_TEXT_SCALE = "text_scale"
     const val K_FORCE_DARK_SITES = "force_dark_sites"
     const val K_ASK_DL = "ask_before_download"
-    const val K_DL_LOCATION = "download_location"    // 0 vault, 1 public, 2 external
+    const val K_DL_LOCATION = "download_location"    
 
     const val K_PG_ADS = "pg_ads"
     const val K_PG_HTTPS = "pg_https"
     const val K_PG_FINGERPRINT = "pg_fingerprint"
     const val K_PG_SCRIPT = "pg_script"
-    const val K_PG_COOKIES = "pg_cookies"            // 0 none, 1 third party
-    const val K_PG_REDIRECT = "pg_redirect"          // 0 stop, 1 ask, 2 allow
+    const val K_PG_COOKIES = "pg_cookies"            
+    const val K_PG_REDIRECT = "pg_redirect"          
     const val K_ADV_SAFE_BROWSING = "adv_safe_browsing"
     const val K_ADV_DNT = "adv_dnt"
     const val K_ADV_DEAMP = "adv_deamp"
@@ -42,4 +42,13 @@ object SettingsPrefs {
     const val K_ADDRESS_BAR_POSITION = "address_bar_position"
     const val K_AUTO_HIDE_BAR = "auto_hide_bar"
     const val K_SWIPE_FULLSCREEN = "swipe_fullscreen"
+
+    const val K_SEARCH_SUGGESTIONS = "search_suggestions"
+    const val K_SEARCH_SUGGESTIONS_PRIVATE = "search_suggestions_private"
+    const val K_SEARCH_HISTORY = "search_history"
+    const val K_SEARCH_BOOKMARKS = "search_bookmarks"
+    const val K_SEARCH_CLIPBOARD = "search_clipboard"
+    const val K_SEARCH_VOICE = "search_voice"
+    const val K_SEARCH_AUTOCOMPLETE = "search_autocomplete"
+    const val K_SEARCH_REMOTE = "search_remote"
 }
