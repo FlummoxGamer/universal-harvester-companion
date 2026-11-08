@@ -51,7 +51,7 @@ fun ContextMenuDialog(
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(16.dp),
-            color = colorResource(id = R.color.surface_2),
+            color = colorResource(id = R.color.surface_3),
             modifier = Modifier.width(320.dp)
         ) {
             Column(
@@ -68,9 +68,9 @@ fun ContextMenuDialog(
                 if (hitResult is HitResult.UNKNOWN) linkUrl = hitResult.src
 
                 if (imageUrl.isNotEmpty()) {
-                    val rawName = imageUrl.substringAfterLast("/").substringBefore("?")
-                    val displayName = if (rawName.isNotBlank()) rawName else imageUrl
-
+                    var rawName = imageUrl.substringAfterLast("/").substringBefore("?")
+                    if (rawName.isBlank() || rawName.length > 30) rawName = "Image"
+                    
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -86,7 +86,7 @@ fun ContextMenuDialog(
                                 .background(Color.Black)
                         )
                         Text(
-                            text = displayName,
+                            text = rawName,
                             color = colorResource(id = R.color.text),
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
