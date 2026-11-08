@@ -13,14 +13,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,6 +53,7 @@ class UHSearchSettingsActivity : ComponentActivity() {
 fun SearchSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     var showEnginePicker by remember { mutableStateOf(false) }
+    var showAddDialog by remember { mutableStateOf(false) }
     var engineName by remember { mutableStateOf(SearchEnginePrefs.getLabel(context)) }
     
     Column(
@@ -81,8 +85,21 @@ fun SearchSettingsScreen(onBack: () -> Unit) {
             )
         }
 
+        if (showAddDialog) {
+            AddCustomEngineDialog(
+                onDismiss = { showAddDialog = false },
+                onAdd = { name, url ->
+                    if (SearchEnginePrefs.addCustom(context, name, url)) {
+                        engineName = SearchEnginePrefs.getLabel(context)
+                    }
+                    showAddDialog = false
+                }
+            )
+        }
+
         SettingsCategory("Search Engine")
         SettingsRow("Default Search Engine", engineName, onClick = { showEnginePicker = true })
+        SettingsRow("Add Custom Engine", "Create your own search engine", onClick = { showAddDialog = true })
 
         SettingsCategory("Suggestions")
         SettingsSwitchRow("Show Search Suggestions", SettingsPrefs.K_SEARCH_SUGGESTIONS, default = true)
@@ -96,6 +113,44 @@ fun SearchSettingsScreen(onBack: () -> Unit) {
         SettingsSwitchRow("Autocomplete URLs", SettingsPrefs.K_SEARCH_AUTOCOMPLETE, default = true)
         SettingsSwitchRow("Show Voice Search", SettingsPrefs.K_SEARCH_VOICE, default = true)
     }
+}
+
+@Composable
+fun AddCustomEngineDialog(onDismiss: () -> Unit, onAdd: (String, String) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var url by remember { mutableStateOf("") }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add Custom Engine") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Name (optional)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    label = { Text("https://example.com") },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onAdd(name, url) }) {
+                Text("Add", color = colorResource(id = R.color.accent))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = colorResource(id = R.color.subtext))
+            }
+        },
+        containerColor = colorResource(id = R.color.surface_2)
+    )
 }
 
 @Composable
