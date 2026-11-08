@@ -19,7 +19,7 @@ object SettingsPrefs {
     fun setString(ctx: Context, key: String, v: String) =
         p(ctx).edit().putString(key, v).apply()
 
-    // known keys
+ 
     const val K_ENHANCE_DARK = "enhance_dark"
     const val K_AUTOPLAY = "autoplay_videos"
     const val K_QUALITY = "default_quality"
@@ -41,7 +41,6 @@ object SettingsPrefs {
     const val K_ADV_SECURE_DNS = "adv_secure_dns"
     const val K_ADDRESS_BAR_POSITION = "address_bar_position"
     const val K_AUTO_HIDE_BAR = "auto_hide_bar"
-    const val K_SHOW_FULL_URL = "show_full_url"
     const val K_SWIPE_FULLSCREEN = "swipe_fullscreen"
 
     const val K_SEARCH_SUGGESTIONS = "search_suggestions"
@@ -52,4 +51,5 @@ object SettingsPrefs {
     const val K_SEARCH_VOICE = "search_voice"
     const val K_SEARCH_AUTOCOMPLETE = "search_autocomplete"
     const val K_SEARCH_REMOTE = "search_remote"
+    const val K_SHOW_FULL_URL = "show_full_url"
 }
