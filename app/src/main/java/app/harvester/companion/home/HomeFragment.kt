@@ -23,6 +23,7 @@ import app.harvester.companion.ShortcutAdapter
 import app.harvester.companion.ShortcutStore
 import app.harvester.companion.WallpaperStore
 import app.harvester.companion.browser.BrowserViewModel
+import app.harvester.companion.browser.menu.MainMenuDialogFragment
 import app.harvester.companion.browser.toolbar.UHAddressBar
 import app.harvester.companion.databinding.FragmentHomeBinding
 import app.harvester.companion.theme.UHTheme
@@ -108,7 +109,7 @@ class HomeFragment : Fragment() {
                     onClear = { browserViewModel.onTextChanged("") },
                     onSearchEngineClick = {},
                     onScriptMenuClick = {},
-                    onMenuClick = { showMenu() },
+                    onMenuClick = { MainMenuDialogFragment().show(parentFragmentManager, "MainMenu") },
                     onTabCountClick = {}
                 )
             }
