@@ -19,7 +19,7 @@ import kotlinx.coroutines.launch
 import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
 import app.harvester.companion.browser.menu.ContextMenuDialog
-import app.harvester.companion.browser.menu.MainMenuSheet
+import app.harvester.companion.browser.menu.MainMenuDialogFragment
 import app.harvester.companion.browser.toolbar.HarvesterAddressBar
 import app.harvester.companion.databinding.FragmentBrowserBinding
 import app.harvester.companion.theme.UHTheme
@@ -228,8 +228,6 @@ private fun setupAddressBar(components: app.harvester.companion.components.Compo
         val isEditing by viewModel.isEditing.collectAsState()
         val editText by viewModel.editText.collectAsState()
         val selectedTab = browserState.selectedTab
-        val showMenu by viewModel.showMainMenu.collectAsState()
-        
         val hitResult = selectedTab?.content?.hitResult
         if (hitResult != null) {
             ContextMenuDialog(
@@ -239,10 +237,6 @@ private fun setupAddressBar(components: app.harvester.companion.components.Compo
                     selectedTab.id.let { components.useCases.contextMenuUseCases.consumeHitResult(it) }
                 }
             )
-        }
-
-        if (showMenu) {
-            MainMenuSheet(onDismiss = { viewModel.setShowMainMenu(false) })
         }
             UHTheme {
                 HarvesterAddressBar(
@@ -264,7 +258,7 @@ private fun setupAddressBar(components: app.harvester.companion.components.Compo
                     onClear = { viewModel.onTextChanged("") },
                     onSearchEngineClick = {},
                     onScriptMenuClick = {},
-                    onMenuClick = { viewModel.setShowMainMenu(true) },
+                    onMenuClick = { MainMenuDialogFragment().show(parentFragmentManager, "MainMenu") },
                     onTabCountClick = {}
                 )
             }
