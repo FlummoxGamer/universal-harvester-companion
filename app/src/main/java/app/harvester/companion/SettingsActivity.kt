@@ -15,7 +15,7 @@ class SettingsActivity : AppCompatActivity() {
             "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
 
         findViewById<android.view.View>(R.id.settingsSearchEngine).setOnClickListener {
-            startActivity(Intent(this, SearchEngineActivity::class.java))
+            startActivity(Intent(this, app.harvester.companion.settings.UHSearchSettingsActivity::class.java))
         }
         findViewById<android.view.View>(R.id.settingsAppearance).setOnClickListener {
             startActivity(Intent(this, AppearanceActivity::class.java))
