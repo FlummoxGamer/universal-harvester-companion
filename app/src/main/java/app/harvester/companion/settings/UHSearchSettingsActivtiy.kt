@@ -10,9 +10,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -60,15 +59,13 @@ fun SearchSettingsScreen(onBack: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(colorResource(id = R.color.bg))
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Search Settings",
+                text = "Search",
                 color = colorResource(id = R.color.text),
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold
@@ -97,21 +94,25 @@ fun SearchSettingsScreen(onBack: () -> Unit) {
             )
         }
 
-        SettingsCategory("Search Engine")
-        SettingsRow("Default Search Engine", engineName, onClick = { showEnginePicker = true })
-        SettingsRow("Add Custom Engine", "Create your own search engine", onClick = { showAddDialog = true })
+        LazyColumn(
+            modifier = Modifier.padding(horizontal = 16.dp)
+        ) {
+            item { SettingsCategory("Search Engine") }
+            item { SettingsRow("Default Search Engine", engineName, onClick = { showEnginePicker = true }) }
+            item { SettingsRow("Add Custom Engine", "Create your own search engine", onClick = { showAddDialog = true }) }
 
-        SettingsCategory("Suggestions")
-        SettingsSwitchRow("Show Search Suggestions", SettingsPrefs.K_SEARCH_SUGGESTIONS, default = true)
-        SettingsSwitchRow("Allow in Private Mode", SettingsPrefs.K_SEARCH_SUGGESTIONS_PRIVATE, default = false)
-        SettingsSwitchRow("Show History", SettingsPrefs.K_SEARCH_HISTORY, default = true)
-        SettingsSwitchRow("Show Bookmarks", SettingsPrefs.K_SEARCH_BOOKMARKS, default = true)
-        SettingsSwitchRow("Show Remote Suggestions", SettingsPrefs.K_SEARCH_REMOTE, default = true)
-        
-        SettingsCategory("Address Bar")
-        SettingsSwitchRow("Show Clipboard", SettingsPrefs.K_SEARCH_CLIPBOARD, default = true)
-        SettingsSwitchRow("Autocomplete URLs", SettingsPrefs.K_SEARCH_AUTOCOMPLETE, default = true)
-        SettingsSwitchRow("Show Voice Search", SettingsPrefs.K_SEARCH_VOICE, default = true)
+            item { SettingsCategory("Suggestions") }
+            item { SettingsSwitchRow("Show Search Suggestions", SettingsPrefs.K_SEARCH_SUGGESTIONS, default = true) }
+            item { SettingsSwitchRow("Allow in Private Mode", SettingsPrefs.K_SEARCH_SUGGESTIONS_PRIVATE, default = false) }
+            item { SettingsSwitchRow("Show History", SettingsPrefs.K_SEARCH_HISTORY, default = true) }
+            item { SettingsSwitchRow("Show Bookmarks", SettingsPrefs.K_SEARCH_BOOKMARKS, default = true) }
+            item { SettingsSwitchRow("Show Remote Suggestions", SettingsPrefs.K_SEARCH_REMOTE, default = true) }
+            
+            item { SettingsCategory("Address Bar") }
+            item { SettingsSwitchRow("Show Clipboard", SettingsPrefs.K_SEARCH_CLIPBOARD, default = true) }
+            item { SettingsSwitchRow("Autocomplete URLs", SettingsPrefs.K_SEARCH_AUTOCOMPLETE, default = true) }
+            item { SettingsSwitchRow("Show Voice Search", SettingsPrefs.K_SEARCH_VOICE, default = true) }
+        }
     }
 }
 
