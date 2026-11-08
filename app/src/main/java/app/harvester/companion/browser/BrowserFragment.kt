@@ -5,9 +5,19 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.unit.dp
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
@@ -20,7 +30,9 @@ import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
 import app.harvester.companion.browser.menu.ContextMenuDialog
 import app.harvester.companion.browser.menu.MainMenuDialogFragment
-import app.harvester.companion.browser.toolbar.HarvesterAddressBar
+import app.harvester.companion.browser.search.UHSearchEnginePicker
+import app.harvester.companion.browser.toolbar.UHAddressBar
+import app.harvester.companion.browser.toolbar.UHSuggestionsPanel
 import app.harvester.companion.databinding.FragmentBrowserBinding
 import app.harvester.companion.theme.UHTheme
 import mozilla.components.browser.state.selector.selectedTab
@@ -222,46 +234,78 @@ class BrowserFragment : Fragment() {
     }
 
     @OptIn(ExperimentalMaterial3Api::class)
-private fun setupAddressBar(components: app.harvester.companion.components.Components) {
-    binding.addressBarContainer.setContent {
-        val browserState by components.store.stateFlow.collectAsState()
-        val appState by components.appStore.stateFlow.collectAsState()
-        val isEditing = appState.searchState.isSearchActive
-        val editText by viewModel.editText.collectAsState()
-        val selectedTab = browserState.selectedTab
-        val hitResult = selectedTab?.content?.hitResult
-        if (hitResult != null) {
-            ContextMenuDialog(
-                hitResult = hitResult,
-                tabsUseCases = components.useCases.tabsUseCases,
-                onDismiss = { 
-                    selectedTab.id.let { components.useCases.contextMenuUseCases.consumeHitResult(it) }
-                }
-            )
-        }
-            UHTheme {
-                HarvesterAddressBar(
-                    url = selectedTab?.content?.url ?: "",
-                    isEditing = isEditing,
-                    tabCount = browserState.tabs.size,
-                    iconState = if (selectedTab?.content?.url?.startsWith("https") == true) 1 else 0,
-                    isWallpaperActive = false,
-                    editText = editText,
-                    onEditTextChanged = { viewModel.onTextChanged(it) },
-                    onSubmit = { 
-                        val target = viewModel.normalize(it)
-                        if (target.isNotBlank()) {
-                            viewModel.exitEditMode()
-                            components.useCases.sessionUseCases.loadUrl(target)
-                        }
-                    },
-                    onEditStart = { viewModel.enterEditMode(selectedTab?.content?.url ?: "") },
-                    onClear = { viewModel.onTextChanged("") },
-                    onSearchEngineClick = {},
-                    onScriptMenuClick = {},
-                    onMenuClick = { MainMenuDialogFragment().show(parentFragmentManager, "MainMenu") },
-                    onTabCountClick = {}
+    private fun setupAddressBar(components: app.harvester.companion.components.Components) {
+        binding.addressBarContainer.setContent {
+            val browserState by components.store.stateFlow.collectAsState()
+            val appState by components.appStore.stateFlow.collectAsState()
+            
+            val isEditing = appState.searchState.isSearchActive
+            val editText by viewModel.editText.collectAsState()
+            val suggestions by viewModel.suggestions.collectAsState()
+            val selectedTab = browserState.selectedTab
+            
+            var showSearchEnginePicker by remember { mutableStateOf(false) }
+            val focusManager = LocalFocusManager.current
+
+            if (showSearchEnginePicker) {
+                UHSearchEnginePicker(
+                    onDismiss = { showSearchEnginePicker = false },
+                    onSelect = { viewModel.enterEditMode(selectedTab?.content?.url ?: "") }
                 )
+            }
+
+            val hitResult = selectedTab?.content?.hitResult
+            if (hitResult != null) {
+                ContextMenuDialog(
+                    hitResult = hitResult,
+                    tabsUseCases = components.useCases.tabsUseCases,
+                    onDismiss = { 
+                        selectedTab.id.let { components.useCases.contextMenuUseCases.consumeHitResult(it) }
+                    }
+                )
+            }
+
+            UHTheme {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    UHAddressBar(
+                        url = selectedTab?.content?.url ?: "",
+                        isEditing = isEditing,
+                        tabCount = browserState.tabs.size,
+                        iconState = if (selectedTab?.content?.url?.startsWith("https") == true) 1 else 0,
+                        isWallpaperActive = false,
+                        editText = editText,
+                        onEditTextChanged = { viewModel.onTextChanged(it) },
+                        onSubmit = { 
+                            val target = viewModel.normalize(it)
+                            if (target.isNotBlank()) {
+                                viewModel.exitEditMode()
+                                focusManager.clearFocus()
+                                components.useCases.sessionUseCases.loadUrl(target)
+                            }
+                        },
+                        onEditStart = { viewModel.enterEditMode(selectedTab?.content?.url ?: "") },
+                        onClear = { viewModel.onTextChanged("") },
+                        onSearchEngineClick = { showSearchEnginePicker = true },
+                        onScriptMenuClick = {},
+                        onMenuClick = { MainMenuDialogFragment().show(parentFragmentManager, "MainMenu") },
+                        onTabCountClick = {}
+                    )
+
+                    if (isEditing && suggestions.isNotEmpty()) {
+                        UHSuggestionsPanel(
+                            suggestions = suggestions,
+                            onSuggestionClick = { suggestion ->
+                                val target = viewModel.normalize(suggestion)
+                                viewModel.exitEditMode()
+                                focusManager.clearFocus()
+                                components.useCases.sessionUseCases.loadUrl(target)
+                            },
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(top = 68.dp)
+                        )
+                    }
+                }
             }
         }
     }
