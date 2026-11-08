@@ -225,7 +225,8 @@ class BrowserFragment : Fragment() {
 private fun setupAddressBar(components: app.harvester.companion.components.Components) {
     binding.addressBarContainer.setContent {
         val browserState by components.store.stateFlow.collectAsState()
-        val isEditing by viewModel.isEditing.collectAsState()
+        val appState by components.appStore.stateFlow.collectAsState()
+        val isEditing = appState.searchState.isSearchActive
         val editText by viewModel.editText.collectAsState()
         val selectedTab = browserState.selectedTab
         val hitResult = selectedTab?.content?.hitResult
