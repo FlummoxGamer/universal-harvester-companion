@@ -10,8 +10,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import mozilla.components.concept.engine.HitResult
-import mozilla.components.concept.engine.EngineSession
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
     private val context = application.applicationContext
@@ -24,9 +22,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     private val _suggestions = MutableStateFlow<List<String>>(emptyList())
     val suggestions: StateFlow<List<String>> = _suggestions
-
-    private val _showMainMenu = MutableStateFlow(false)
-    val showMainMenu: StateFlow<Boolean> = _showMainMenu
 
     private val _showMainMenu = MutableStateFlow(false)
     val showMainMenu: StateFlow<Boolean> = _showMainMenu
