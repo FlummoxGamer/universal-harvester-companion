@@ -79,10 +79,6 @@ class BrowserFragment : Fragment() {
             }
         }
 
-        components.store.state.selectedTab?.engineState?.engineSession?.let {
-            viewModel.registerSessionObserver(it)
-        }
-
         setupAddressBar(components)
         setupInsets()
         setupLogging(components)
@@ -286,7 +282,6 @@ private fun setupAddressBar(components: app.harvester.companion.components.Compo
     }
 
     override fun onDestroyView() {
-        viewModel.unregisterSessionObserver()
         _binding = null
         super.onDestroyView()
     }
