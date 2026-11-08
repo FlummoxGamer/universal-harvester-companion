@@ -32,6 +32,7 @@ import app.harvester.companion.browser.menu.ContextMenuDialog
 import app.harvester.companion.browser.menu.MainMenuDialogFragment
 import app.harvester.companion.browser.search.UHSearchEnginePicker
 import app.harvester.companion.browser.toolbar.UHAddressBar
+import app.harvester.companion.browser.toolbar.UHAddressBar
 import app.harvester.companion.browser.toolbar.UHSuggestionsPanel
 import app.harvester.companion.databinding.FragmentBrowserBinding
 import app.harvester.companion.theme.UHTheme
