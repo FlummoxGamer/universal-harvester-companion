@@ -41,6 +41,7 @@ object SettingsPrefs {
     const val K_ADV_SECURE_DNS = "adv_secure_dns"
     const val K_ADDRESS_BAR_POSITION = "address_bar_position"
     const val K_AUTO_HIDE_BAR = "auto_hide_bar"
+    const val K_SHOW_FULL_URL = "show_full_url"
     const val K_SWIPE_FULLSCREEN = "swipe_fullscreen"
 
     const val K_SEARCH_SUGGESTIONS = "search_suggestions"
