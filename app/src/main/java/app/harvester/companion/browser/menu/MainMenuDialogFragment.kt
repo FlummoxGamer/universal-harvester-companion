@@ -26,11 +26,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.ViewCompat
@@ -143,7 +141,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                                     .height(56.dp)
                                     .padding(top = 8.dp)
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(colorResource(id = R.color.surface_3)),
+                                    .background(colorResource(id = R.color.surface_3))
                                     .clickable { 
                                         dismiss()
                                         startActivity(Intent(requireContext(), SettingsActivity::class.java))
