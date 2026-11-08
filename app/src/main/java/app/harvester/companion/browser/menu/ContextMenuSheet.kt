@@ -46,60 +46,58 @@ fun ContextMenuSheet(
                 .padding(bottom = 24.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            when (hitResult) {
-                is HitResult.Image -> {
-                    val imageUrl = hitResult.src
-                    if (imageUrl != null) {
-                        MenuItem("Save Image") {
-                            onDismiss()
-                            val filename = "image_${System.currentTimeMillis()}.jpg"
-                            app.harvester.companion.DownloadEngine.startDownload(context, imageUrl, filename, "image/jpeg", null, null, null)
-                        }
-                        MenuItem("Share Image") {
-                            onDismiss()
-                            val intent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, imageUrl)
-                            }
-                            context.startActivity(Intent.createChooser(intent, "Share Image"))
-                        }
-                        MenuItem("Open Image in New Tab") {
-                            onDismiss()
-                            tabsUseCases.addTab(imageUrl)
-                        }
-                        MenuItem("Copy Image Link") {
-                            onDismiss()
-                            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            cm.setPrimaryClip(ClipData.newPlainText("Image URL", imageUrl))
-                        }
-                    }
-                }
-                is HitResult.Link -> {
-                    val linkUrl = hitResult.href
-                    if (linkUrl != null) {
-                        MenuItem("Open Link in New Tab") {
-                            onDismiss()
-                            tabsUseCases.addTab(linkUrl)
-                        }
-                        MenuItem("Copy Link Address") {
-                            onDismiss()
-                            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            cm.setPrimaryClip(ClipData.newPlainText("Link URL", linkUrl))
-                        }
-                        MenuItem("Share Link") {
-                            onDismiss()
-                            val intent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, linkUrl)
-                            }
-                            context.startActivity(Intent.createChooser(intent, "Share Link"))
-                        }
-                    }
-                }
-                else -> {
-                    MenuItem("Close") { onDismiss() }
-                }
+when (hitResult) {
+    is HitResult.IMAGE -> {
+        val imageUrl = hitResult.src
+        MenuItem("Save Image") {
+            onDismiss()
+            val filename = "image_${System.currentTimeMillis()}.jpg"
+            app.harvester.companion.DownloadEngine.startDownload(context, imageUrl, filename, "image/jpeg", null, null, null)
+        }
+        MenuItem("Share Image") {
+            onDismiss()
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, imageUrl)
             }
+            context.startActivity(Intent.createChooser(intent, "Share Image"))
+        }
+        MenuItem("Open Image in New Tab") {
+            onDismiss()
+            tabsUseCases.addTab(imageUrl)
+        }
+        MenuItem("Copy Image Link") {
+            onDismiss()
+            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            cm.setPrimaryClip(ClipData.newPlainText("Image URL", imageUrl))
+        }
+    }
+    is HitResult.UNKNOWN -> {
+        val linkUrl = hitResult.src
+        if (linkUrl.startsWith("http")) {
+            MenuItem("Open Link in New Tab") {
+                onDismiss()
+                tabsUseCases.addTab(linkUrl)
+            }
+            MenuItem("Copy Link Address") {
+                onDismiss()
+                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("Link URL", linkUrl))
+            }
+            MenuItem("Share Link") {
+                onDismiss()
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, linkUrl)
+                }
+                context.startActivity(Intent.createChooser(intent, "Share Link"))
+            }
+        }
+    }
+    else -> {
+        MenuItem("Close") { onDismiss() }
+    }
+}
         }
     }
 }
