@@ -380,7 +380,7 @@ class BrowserFragment : Fragment() {
                             onClear = { },
                             onSearchEngineClick = { showSearchEnginePicker = true },
                             onScriptMenuClick = {},
-                            onMenuClick = { MainMenuDialogFragment().show(parentFragmentManager, "MainMenu") },
+                            onMenuClick = { MainMenuDialogFragment.newInstance(false).show(parentFragmentManager, "MainMenu") },
                             onTabCountClick = {}
                         )
                     }
