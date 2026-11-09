@@ -22,6 +22,7 @@ import app.harvester.companion.WallpaperStore
 import app.harvester.companion.browser.BrowserViewModel
 import app.harvester.companion.browser.menu.MainMenuDialogFragment
 import app.harvester.companion.browser.toolbar.UHAddressBar
+import app.harvester.companion.browser.toolbar.UHSearchOverlay
 import app.harvester.companion.databinding.FragmentHomeBinding
 import app.harvester.companion.theme.UHTheme
 
@@ -80,12 +81,42 @@ class HomeFragment : Fragment() {
         }
     }
 
-    private fun setupAddressBar() {
-        binding.addressBarContainer.setContent {
-            val isEditing by browserViewModel.isEditing.collectAsState()
-            val editText by browserViewModel.editText.collectAsState()
-            
-            UHTheme {
+private fun setupAddressBar() {
+    binding.addressBarContainer.setContent {
+        val isEditing by browserViewModel.isEditing.collectAsState()
+        val editText by browserViewModel.editText.collectAsState()
+        val suggestions by browserViewModel.suggestions.collectAsState()
+        
+        UHTheme {
+            if (isEditing) {
+                UHSearchOverlay(
+                    url = "",
+                    tabCount = 1,
+                    iconState = 0,
+                    editText = editText,
+                    suggestions = suggestions,
+                    onEditTextChanged = { browserViewModel.onTextChanged(it) },
+                    onSubmit = { 
+                        val target = browserViewModel.normalize(it)
+                        if (target.isNotBlank()) {
+                            browserViewModel.exitEditMode()
+                            navigateToBrowser(target)
+                        }
+                    },
+                    onEditStart = { browserViewModel.enterEditMode("") },
+                    onClear = { browserViewModel.onTextChanged("") },
+                    onDismissRequest = { browserViewModel.exitEditMode() },
+                    onSearchEngineClick = {},
+                    onScriptMenuClick = {},
+                    onMenuClick = {},
+                    onTabCountClick = {},
+                    onSuggestionClick = { suggestion ->
+                        val target = browserViewModel.normalize(suggestion)
+                        browserViewModel.exitEditMode()
+                        navigateToBrowser(target)
+                    }
+                )
+            } else {
                 UHAddressBar(
                     url = "",
                     isEditing = isEditing,
@@ -94,15 +125,9 @@ class HomeFragment : Fragment() {
                     isWallpaperActive = true,
                     editText = editText,
                     onEditTextChanged = { browserViewModel.onTextChanged(it) },
-                    onSubmit = { url ->
-                        val target = browserViewModel.normalize(url)
-                        if (target.isNotBlank()) {
-                            browserViewModel.exitEditMode()
-                            navigateToBrowser(target)
-                        }
-                    },
+                    onSubmit = { },
                     onEditStart = { browserViewModel.enterEditMode("") },
-                    onClear = { browserViewModel.onTextChanged("") },
+                    onClear = { },
                     onSearchEngineClick = {},
                     onScriptMenuClick = {},
                     onMenuClick = { MainMenuDialogFragment.newInstance(true).show(parentFragmentManager, "MainMenu") },
@@ -111,6 +136,7 @@ class HomeFragment : Fragment() {
             }
         }
     }
+}
 
     private fun navigateToBrowser(url: String) {
         val bundle = Bundle().apply { putString("url", url) }
