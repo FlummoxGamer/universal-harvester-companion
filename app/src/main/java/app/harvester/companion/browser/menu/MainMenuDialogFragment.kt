@@ -22,6 +22,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,7 +41,9 @@ import app.harvester.companion.HistoryActivity
 import app.harvester.companion.R
 import app.harvester.companion.ScriptsActivity
 import app.harvester.companion.SettingsActivity
+import app.harvester.companion.UHApp
 import app.harvester.companion.theme.UHTheme
+import mozilla.components.browser.state.selector.selectedTab
 import com.google.android.material.R as materialR
 
 class MainMenuDialogFragment : BottomSheetDialogFragment() {
@@ -71,9 +75,14 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         val isHome = arguments?.getBoolean(ARG_IS_HOME) ?: true
+        val components = (requireActivity().application as UHApp).components
         return ComposeView(requireContext()).apply {
             setContent {
                 UHTheme {
+                    val browserState by components.store.stateFlow.collectAsState()
+                    val selectedTab = browserState.selectedTab
+                    val isDesktopMode = selectedTab?.content?.desktopMode == true
+
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -114,19 +123,35 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(24.dp))
                                 .background(colorResource(R.color.surface))
-                                .padding(8.dp)
+                                .padding(vertical = 8.dp)
                         ) {
-                            MenuRowItem(R.drawable.ic_settings, "Settings") {
-                                dismiss()
-                                startActivity(Intent(requireContext(), SettingsActivity::class.java))
-                            }
-                            
                             if (!isHome) {
                                 MenuRowItem(R.drawable.ic_menu_translate, "Translate") { dismiss() }
                                 MenuRowItem(R.drawable.ic_menu_find, "Find in Page") { dismiss() }
-                                MenuRowItem(R.drawable.ic_menu_mobile, "Request Mobile Site") { dismiss() }
+                                MenuRowItem(
+                                    iconRes = if (isDesktopMode) R.drawable.ic_menu_mobile else R.drawable.ic_menu_desktop,
+                                    label = if (isDesktopMode) "Request Mobile Site" else "Request Desktop Site"
+                                ) {
+                                    dismiss()
+                                    selectedTab?.let { tab ->
+                                        components.useCases.sessionUseCases.requestDesktopSite(!isDesktopMode, tab.id)
+                                    }
+                                }
                                 MenuRowItem(R.drawable.ic_menu_add_home, "Add to Home Screen") { dismiss() }
                                 MenuRowItem(R.drawable.ic_menu_dev, "Developer Tools") { dismiss() }
+                                
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                                        .height(1.dp)
+                                        .background(colorResource(R.color.border))
+                                )
+                            }
+
+                            MenuRowItem(R.drawable.ic_settings, "Settings") {
+                                dismiss()
+                                startActivity(Intent(requireContext(), SettingsActivity::class.java))
                             }
                         }
 
