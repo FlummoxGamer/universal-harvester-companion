@@ -68,10 +68,17 @@ fun ContextMenuDialog(
                 if (hitResult is HitResult.UNKNOWN) linkUrl = hitResult.src
 
                 if (imageUrl.isNotEmpty()) {
-                    var rawName = try {
-                        android.net.Uri.decode(imageUrl.substringAfterLast("/").substringBefore("?").substringBefore("#"))
-                    } catch (e: Exception) {
-                        ""
+                    var rawName = ""
+                    if (hitResult is HitResult.IMAGE && !hitResult.title.isNullOrBlank()) {
+                        rawName = hitResult.title
+                    } else if (hitResult is HitResult.IMAGE_SRC && !hitResult.title.isNullOrBlank()) {
+                        rawName = hitResult.title
+                    } else {
+                        rawName = try {
+                            android.net.Uri.decode(imageUrl.substringAfterLast("/").substringBefore("?").substringBefore("#"))
+                        } catch (e: Exception) {
+                            ""
+                        }
                     }
                     if (rawName.isBlank() || rawName.length > 30 || rawName.startsWith("blob:") || rawName.startsWith("data:")) {
                         val ext = when {
