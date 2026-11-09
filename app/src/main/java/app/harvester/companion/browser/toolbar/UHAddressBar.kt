@@ -166,14 +166,8 @@ fun UHAddressBar(
                 modifier = Modifier.weight(1f).height(52.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
-if (isEditing) {
-    androidx.compose.runtime.CompositionLocalProvider(
-        androidx.compose.foundation.text.selection.LocalTextSelectionColors provides androidx.compose.foundation.text.selection.TextSelectionColors(
-            handleColor = Color.Transparent,
-            backgroundColor = Color.Transparent
-        )
-    ) {
-        BasicTextField(
+        if (isEditing) {
+            BasicTextField(
             value = textState,
             onValueChange = { newValue ->
                 val collapsed = newValue.copy(
@@ -189,19 +183,27 @@ if (isEditing) {
             keyboardActions = KeyboardActions(onGo = {
                 if (textState.text.isNotBlank()) onSubmit(textState.text)
             }),
-            decorationBox = { innerTextField ->
-                Box(
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    if (textState.text.isEmpty()) {
-                        Text("Search or type URL", color = colorResource(id = R.color.subtext), fontSize = 14.sp)
-                    }
-                    innerTextField()
-                }
-            }
-        )
-    }
+                decorationBox = { innerTextField ->
+                  Box(
+                     modifier = Modifier.fillMaxWidth().height(52.dp),
+                     contentAlignment = Alignment.CenterStart
+                  ) {
+                     androidx.compose.runtime.CompositionLocalProvider(
+                         androidx.compose.foundation.text.selection.LocalTextSelectionColors provides androidx.compose.foundation.text.selection.TextSelectionColors(
+                             handleColor = Color.Transparent,
+                             backgroundColor = Color.Transparent
+                         )
+                     ) {
+                        Box {
+                            if (textState.text.isEmpty()) {
+                                Text("Search or type URL", color = colorResource(id = R.color.subtext), fontSize = 14.sp)
+                            }
+                            innerTextField()
+                        }
+                     }
+                 }
+             }
+          )
                     if (textState.text.isNotEmpty()) {
                         IconButton(
                             onClick = {
