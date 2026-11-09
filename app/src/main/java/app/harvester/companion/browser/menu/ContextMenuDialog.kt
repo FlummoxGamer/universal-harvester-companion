@@ -68,8 +68,19 @@ fun ContextMenuDialog(
                 if (hitResult is HitResult.UNKNOWN) linkUrl = hitResult.src
 
                 if (imageUrl.isNotEmpty()) {
-                    var rawName = imageUrl.substringAfterLast("/").substringBefore("?")
-                    if (rawName.isBlank() || rawName.length > 30) rawName = "Image"
+                    var rawName = try {
+                        android.net.Uri.decode(imageUrl.substringAfterLast("/").substringBefore("?").substringBefore("#"))
+                    } catch (e: Exception) {
+                        ""
+                    }
+                    if (rawName.isBlank() || rawName.length > 30 || rawName.startsWith("blob:") || rawName.startsWith("data:")) {
+                        val ext = when {
+                            imageUrl.contains(".png") -> "png"
+                            imageUrl.contains(".webp") -> "webp"
+                            else -> "jpg"
+                        }
+                        rawName = "image_${System.currentTimeMillis()}.$ext"
+                    }
                     
                     Row(
                         modifier = Modifier
