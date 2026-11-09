@@ -279,6 +279,11 @@ class BrowserFragment : Fragment() {
 
             UHTheme {
                 if (isEditing) {
+                    val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+                    androidx.compose.runtime.LaunchedEffect(Unit) {
+                        kotlinx.coroutines.delay(150)
+                        keyboardController?.show()
+                    }
                     Dialog(
                         onDismissRequest = { viewModel.exitEditMode() },
                         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
