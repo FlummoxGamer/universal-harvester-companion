@@ -67,27 +67,31 @@ fun ContextMenuDialog(
                 if (hitResult is HitResult.IMAGE_SRC) imageUrl = hitResult.src
                 if (hitResult is HitResult.UNKNOWN) linkUrl = hitResult.src
 
-                if (imageUrl.isNotEmpty()) {
-                    var rawName = ""
-                    if (hitResult is HitResult.IMAGE && !hitResult.title.isNullOrBlank()) {
-                        rawName = hitResult.title
-                    } else if (hitResult is HitResult.IMAGE_SRC && !hitResult.title.isNullOrBlank()) {
-                        rawName = hitResult.title
-                    } else {
-                        rawName = try {
-                            android.net.Uri.decode(imageUrl.substringAfterLast("/").substringBefore("?").substringBefore("#"))
-                        } catch (e: Exception) {
-                            ""
-                        }
-                    }
-                    if (rawName.isBlank() || rawName.length > 30 || rawName.startsWith("blob:") || rawName.startsWith("data:")) {
-                        val ext = when {
-                            imageUrl.contains(".png") -> "png"
-                            imageUrl.contains(".webp") -> "webp"
-                            else -> "jpg"
-                        }
-                        rawName = "image_${System.currentTimeMillis()}.$ext"
-                    }
+if (imageUrl.isNotEmpty()) {
+    var rawName: String? = null
+    if (hitResult is HitResult.IMAGE && !hitResult.title.isNullOrBlank()) {
+        rawName = hitResult.title
+    } else if (hitResult is HitResult.IMAGE_SRC) {
+        rawName = try {
+            android.net.Uri.decode(imageUrl.substringAfterLast("/").substringBefore("?").substringBefore("#"))
+        } catch (e: Exception) {
+            null
+        }
+    } else {
+        rawName = try {
+            android.net.Uri.decode(imageUrl.substringAfterLast("/").substringBefore("?").substringBefore("#"))
+        } catch (e: Exception) {
+            null
+        }
+    }
+    if (rawName.isNullOrBlank() || rawName.length > 30 || rawName.startsWith("blob:") || rawName.startsWith("data:")) {
+        val ext = when {
+            imageUrl.contains(".png") -> "png"
+            imageUrl.contains(".webp") -> "webp"
+            else -> "jpg"
+        }
+        rawName = "image_${System.currentTimeMillis()}.$ext"
+    }
                     
                     Row(
                         modifier = Modifier
