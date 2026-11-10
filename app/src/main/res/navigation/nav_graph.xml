@@ -24,4 +24,13 @@
             app:nullable="true" />
     </fragment>
 
+    <fragment
+        android:id="@+id/downloadsFragment"
+        android:name="app.harvester.companion.data.downloads.ui.UhDownloadsFragment"
+        android:label="Downloads" />
+
+    <action
+        android:id="@+id/action_global_downloadsFragment"
+        app:destination="@id/downloadsFragment" />
+
 </navigation>
