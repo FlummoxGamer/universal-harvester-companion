@@ -2,6 +2,7 @@ package app.harvester.companion.browser.menu
 
 import android.app.Dialog
 import android.content.Intent
+import androidx.navigation.fragment.findNavController
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -110,7 +111,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                             }
                             TopRowItem("Downloads", R.drawable.ic_downloads, Modifier.weight(1f)) {
                                 dismiss()
-                                androidx.navigation.fragment.findNavController().navigate(R.id.action_global_downloadsFragment)
+                                findNavController().navigate(R.id.action_global_downloadsFragment)
                             }
                             TopRowItem("Playlist", R.drawable.ic_playlist, Modifier.weight(1f)) {
                                 dismiss()
