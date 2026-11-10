@@ -118,10 +118,17 @@ if (imageUrl.isNotEmpty()) {
                         )
                     }
                     
-                    MenuItem("Save Image") {
-                        onDismiss()
-                        val filename = "image_${System.currentTimeMillis()}.jpg"
-                        app.harvester.companion.DownloadEngine.startDownload(context, imageUrl, filename, "image/jpeg", null, null, null)
+                     MenuItem("Save Image") {
+                         onDismiss()
+                         val filename = "image_${System.currentTimeMillis()}.jpg"
+                         val components = (context.applicationContext as app.harvester.companion.UHApp).components
+                         val downloadState = mozilla.components.browser.state.state.content.DownloadState(
+                             url = imageUrl,
+                             fileName = filename,
+                             contentType = "image/jpeg",
+                             directoryPath = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).path
+                        )
+                        components.store.dispatch(mozilla.components.browser.state.action.DownloadAction.AddDownloadAction(downloadState))
                     }
                     MenuItem("Copy Image") {
                         onDismiss()
