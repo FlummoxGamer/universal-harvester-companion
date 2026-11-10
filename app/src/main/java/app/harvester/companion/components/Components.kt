@@ -11,8 +11,15 @@ import mozilla.components.concept.engine.DefaultSettings
 import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.engine.mediaquery.PreferredColorScheme
 import mozilla.components.feature.contextmenu.ContextMenuUseCases
+import mozilla.components.feature.downloads.DownloadsUseCases
 import mozilla.components.feature.session.SessionUseCases
 import mozilla.components.feature.tabs.TabsUseCases
+import mozilla.components.support.utils.DefaultDownloadFileUtils
+import mozilla.components.support.utils.DownloadFileUtils
+import android.os.Environment
+import app.harvester.companion.core.downloads.UhDownloadMiddleware
+import app.harvester.companion.core.downloads.UhDownloadService
+import app.harvester.companion.data.downloads.UhDownloadStorage
 import org.mozilla.geckoview.GeckoRuntime
 
 class Components(val context: Context) {
@@ -31,13 +38,34 @@ class Components(val context: Context) {
         )
     }
 
-    val store: BrowserStore by lazy {
-        BrowserStore(
-            middleware = EngineMiddleware.create(engine, trimMemoryAutomatically = false)
-        )
+val downloadFileUtils: DownloadFileUtils by lazy {
+    DefaultDownloadFileUtils(context) {
+        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).path
     }
+}
 
-    val useCases: UseCases by lazy { UseCases(store, engine) }
+val downloadStorage: UhDownloadStorage by lazy { UhDownloadStorage(context) }
+
+val downloadMiddleware: UhDownloadMiddleware by lazy {
+    UhDownloadMiddleware(
+        applicationContext = context,
+        downloadServiceClass = UhDownloadService::class.java,
+        deleteFileFromStorage = { true },
+        downloadFileUtils = downloadFileUtils,
+        downloadStorage = downloadStorage
+    )
+}
+
+val store: BrowserStore by lazy {
+    BrowserStore(
+        middleware = listOf(
+            EngineMiddleware.create(engine, trimMemoryAutomatically = false),
+            downloadMiddleware
+        )
+    )
+}
+
+val useCases: UseCases by lazy { UseCases(store, engine, downloadFileUtils) }
 
     private fun buildDefaultSettings(): DefaultSettings {
         val textScale = SettingsPrefs.getInt(context, SettingsPrefs.K_TEXT_SCALE, 100)
@@ -68,8 +96,9 @@ class Components(val context: Context) {
     }
 }
 
-class UseCases(store: BrowserStore, engine: Engine) {
+class UseCases(store: BrowserStore, engine: Engine, downloadFileUtils: DownloadFileUtils) {
     val sessionUseCases by lazy { SessionUseCases(store) }
     val tabsUseCases by lazy { TabsUseCases(store) }
     val contextMenuUseCases by lazy { ContextMenuUseCases(store) }
+    val downloadsUseCases by lazy { DownloadsUseCases(store, downloadFileUtils) }
 }
