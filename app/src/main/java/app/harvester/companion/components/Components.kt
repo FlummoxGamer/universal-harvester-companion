@@ -57,12 +57,10 @@ val downloadMiddleware: UhDownloadMiddleware by lazy {
 }
 
 val store: BrowserStore by lazy {
-    BrowserStore(
-        middleware = listOf(
-            EngineMiddleware.create(engine, trimMemoryAutomatically = false),
-            downloadMiddleware
-        )
-    )
+    val middlewares = mutableListOf<mozilla.components.lib.state.Middleware<mozilla.components.browser.state.state.BrowserState, mozilla.components.browser.state.action.BrowserAction>>()
+    middlewares.add(EngineMiddleware.create(engine, trimMemoryAutomatically = false))
+    middlewares.add(downloadMiddleware)
+    BrowserStore(middleware = middlewares)
 }
 
 val useCases: UseCases by lazy { UseCases(store, engine, downloadFileUtils) }
