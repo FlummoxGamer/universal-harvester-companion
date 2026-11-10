@@ -24,10 +24,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.work.WorkManager
-import app.harvester.companion.DownloadEngine
 import app.harvester.companion.DownloadHelper
-import app.harvester.companion.DownloadService
-import app.harvester.companion.DownloadStore
+import app.harvester.companion.core.downloads.UhDownloadService
 import app.harvester.companion.R
 import app.harvester.companion.SessionService
 import app.harvester.companion.utils.phoenix.ProcessPhoenix
@@ -110,8 +108,7 @@ class SafeModeActivity : AppCompatActivity() {
 
     private fun stopAllProcesses() {
         try {
-            DownloadStore.activeDownloads.value.forEach { DownloadEngine.cancelDownload(this, it.id) }
-            stopService(android.content.Intent(this, DownloadService::class.java))
+            stopService(android.content.Intent(this, UhDownloadService::class.java))
             stopService(android.content.Intent(this, SessionService::class.java))
             WorkManager.getInstance(this).cancelAllWork()
         } catch (_: Exception) {}
