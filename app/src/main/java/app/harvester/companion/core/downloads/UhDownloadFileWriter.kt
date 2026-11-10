@@ -57,7 +57,6 @@ class UhDownloadFileWriter(private val context: Context) : DownloadFileWriter {
         }
 
         uri?.let { targetUri ->
-            onUpdateState(download.copy(filePath = targetUri.toString()))
             val mode = if (append) "wa" else "w"
             resolver.openOutputStream(targetUri, mode)?.use { outStream ->
                 block(outStream)
@@ -79,8 +78,7 @@ class UhDownloadFileWriter(private val context: Context) : DownloadFileWriter {
         if (!directory.exists()) directory.mkdirs()
         
         val file = File(directory, download.fileName ?: "download")
-        onUpdateState(download.copy(filePath = file.absolutePath))
-        
+
         FileOutputStream(file, append).use { outStream ->
             block(outStream)
         }
