@@ -44,7 +44,7 @@ fun UHSearchOverlay(
     val isBarBottom = SettingsPrefs.getInt(context, SettingsPrefs.K_ADDRESS_BAR_POSITION, 1) == 1
 
     LaunchedEffect(Unit) {
-        delay(150)
+        delay(100)
         keyboardController?.show()
     }
 
