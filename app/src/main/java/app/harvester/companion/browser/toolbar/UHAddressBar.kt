@@ -168,12 +168,6 @@ fun UHAddressBar(
                 contentAlignment = Alignment.CenterStart
             ) {
 if (isEditing) {
-    androidx.compose.runtime.CompositionLocalProvider(
-        androidx.compose.foundation.text.selection.LocalTextSelectionColors provides androidx.compose.foundation.text.selection.TextSelectionColors(
-            handleColor = Color.Transparent,
-            backgroundColor = Color.Transparent
-        )
-    ) {
         BasicTextField(
             value = textState,
             onValueChange = { newValue ->
@@ -191,21 +185,27 @@ if (isEditing) {
             keyboardActions = KeyboardActions(onGo = {
                 if (textState.text.isNotBlank()) onSubmit(textState.text)
             }),
-            decorationBox = { innerTextField ->
-                Box(
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    contentAlignment = Alignment.CenterStart
-                ) {
+    decorationBox = { innerTextField ->
+        Box(
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.foundation.text.selection.LocalTextSelectionColors provides androidx.compose.foundation.text.selection.TextSelectionColors(
+                    handleColor = Color.Transparent,
+                    backgroundColor = Color.Transparent
+                )
+            ) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {
                     if (textState.text.isEmpty()) {
                         Text("Search or type URL", color = colorResource(id = R.color.subtext), fontSize = 14.sp)
                     }
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {
-                        innerTextField()
-                    }
+                    innerTextField()
                 }
             }
-        )
+        }
     }
+)
                     if (textState.text.isNotEmpty()) {
                         IconButton(
                             onClick = {
