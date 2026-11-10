@@ -17,7 +17,6 @@ import mozilla.components.feature.downloads.AbstractFetchDownloadService.Compani
 import mozilla.components.feature.downloads.AbstractFetchDownloadService.Companion.ACTION_PAUSE
 import mozilla.components.feature.downloads.AbstractFetchDownloadService.Companion.ACTION_RESUME
 import mozilla.components.feature.downloads.AbstractFetchDownloadService.Companion.ACTION_TRY_AGAIN
-import mozilla.components.feature.downloads.AbstractFetchDownloadService.DownloadJobState
 import mozilla.components.support.ktx.kotlin.truncateMiddle
 import mozilla.components.support.utils.DownloadFileUtils
 import app.harvester.companion.R
@@ -33,7 +32,7 @@ internal object UhDownloadNotification {
     internal fun createDownloadGroupNotification(
         context: Context,
         fileSizeFormatter: UhFileSizeFormatter,
-        notifications: List<DownloadJobState>,
+        notifications: List<DownloadState>,
         notificationAccentColor: Int,
     ): Notification {
         val allDownloadsHaveFinished = notifications.all { it.status != DownloadState.Status.DOWNLOADING }
@@ -160,11 +159,11 @@ internal object UhDownloadNotification {
     internal fun getSummaryList(
         context: Context,
         fileSizeFormatter: UhFileSizeFormatter,
-        notifications: List<DownloadJobState>,
+        notifications: List<DownloadState>,
     ): List<String> {
         return notifications.take(2).map { downloadState ->
-            val fileName = downloadState.state.fileName.orEmpty().truncateMiddle(MAX_FILENAME_LENGTH)
-            "$fileName ${downloadState.state.getStatusDescription(context, fileSizeFormatter)}"
+            val fileName = downloadState.fileName.orEmpty().truncateMiddle(MAX_FILENAME_LENGTH)
+            "$fileName ${downloadState.getStatusDescription(context, fileSizeFormatter)}"
         }
     }
 
