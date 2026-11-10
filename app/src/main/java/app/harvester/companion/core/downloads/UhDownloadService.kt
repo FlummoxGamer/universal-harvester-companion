@@ -1,21 +1,24 @@
 package app.harvester.companion.core.downloads
 
 import android.content.Context
-import android.content.Intent
 import androidx.core.app.NotificationManagerCompat
-import app.harvester.companion.R
-import app.harvester.companion.UHApp
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.fetch.Client
 import mozilla.components.feature.downloads.AbstractFetchDownloadService
+import mozilla.components.feature.downloads.DefaultDownloadFileWriter
+import mozilla.components.feature.downloads.DefaultFileSizeFormatter
+import mozilla.components.feature.downloads.DownloadEstimator
 import mozilla.components.feature.downloads.FileSizeFormatter
 import mozilla.components.feature.downloads.PackageNameProvider
 import mozilla.components.feature.downloads.filewriter.DownloadFileWriter
+import mozilla.components.lib.fetch.okhttp.OkHttpClient
+import mozilla.components.support.base.android.DefaultNotificationsDelegate
 import mozilla.components.support.base.android.NotificationsDelegate
-import mozilla.components.support.base.android.PowerManagerInfoProvider
 import mozilla.components.support.utils.DefaultDateTimeProvider
 import mozilla.components.support.utils.DefaultDownloadFileUtils
 import mozilla.components.support.utils.DownloadFileUtils
+import app.harvester.companion.R
+import app.harvester.companion.UHApp
 
 class UhDownloadService : AbstractFetchDownloadService() {
 
@@ -26,21 +29,14 @@ class UhDownloadService : AbstractFetchDownloadService() {
     }
 
     override val notificationsDelegate: NotificationsDelegate by lazy {
-        object : NotificationsDelegate {
-            override fun notify(notificationId: Int, notification: android.app.Notification) {
-                NotificationManagerCompat.from(applicationContext).notify(notificationId, notification)
-            }
-        }
+        DefaultNotificationsDelegate(NotificationManagerCompat.from(applicationContext))
     }
 
-    override val httpClient: Client by lazy { (application as UHApp).components.client }
+    override val httpClient: Client by lazy { OkHttpClient() }
 
-    override val fileSizeFormatter: FileSizeFormatter = object : FileSizeFormatter {
-        private val formatter = UhDefaultFileSizeFormatter(applicationContext)
-        override fun formatSizeInBytes(sizeInBytes: Long) = formatter.formatSizeInBytes(sizeInBytes)
-    }
+    override val fileSizeFormatter: FileSizeFormatter by lazy { DefaultFileSizeFormatter(applicationContext) }
 
-    override val downloadEstimator: UhDownloadEstimator by lazy { UhDownloadEstimator(DefaultDateTimeProvider()) }
+    override val downloadEstimator: DownloadEstimator by lazy { DownloadEstimator(DefaultDateTimeProvider()) }
 
     override val downloadFileUtils: DownloadFileUtils by lazy {
         DefaultDownloadFileUtils(applicationContext) {
