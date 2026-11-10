@@ -36,17 +36,26 @@ class UserscriptBridge(private val ctx: Context) {
     @JavascriptInterface
     fun updateOverlayState(active: Boolean) { overlayActive = active }
 
-    @JavascriptInterface
-    fun saveBlob(filename: String, mime: String, base64Data: String, pageUrl: String) {
-        android.os.Handler(android.os.Looper.getMainLooper()).post {
-            try {
-                DownloadEngine.startDownload(ctx, "", filename, mime, base64Data, null, pageUrl)
-                android.widget.Toast.makeText(ctx, "Download started", android.widget.Toast.LENGTH_SHORT).show()
-            } catch (e: Exception) {
-                UHLog.throwable("blob", "service failed", e)
+@JavascriptInterface
+fun saveBlob(filename: String, mime: String, base64Data: String, pageUrl: String) {
+    android.os.Handler(android.os.Looper.getMainLooper()).post {
+        try {
+            val bytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT)
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mime)
+                put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
             }
+            val uri = ctx.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            uri?.let {
+                ctx.contentResolver.openOutputStream(it)?.use { os -> os.write(bytes) }
+            }
+            android.widget.Toast.makeText(ctx, "Download started", android.widget.Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            UHLog.throwable("blob", "service failed", e)
         }
     }
+}
 
     @JavascriptInterface
     fun openImage(url: String) {
