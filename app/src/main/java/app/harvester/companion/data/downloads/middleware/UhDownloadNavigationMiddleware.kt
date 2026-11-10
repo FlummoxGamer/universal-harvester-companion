@@ -19,7 +19,7 @@ class UhDownloadNavigationMiddleware(private val navController: NavController) :
         when (action) {
             is UhDownloadUIAction.NavigationIconClicked -> navController.popBackStack()
             is UhDownloadUIAction.SettingsIconClicked -> {
-                navController.navigate(R.id.action_downloadsFragment_to_downloadSettingsFragment)
+              // Handle settings navigation
             }
             else -> {}
         }
