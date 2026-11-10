@@ -36,7 +36,6 @@ import androidx.compose.ui.unit.sp
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
-import app.harvester.companion.DownloadsActivity
 import app.harvester.companion.HistoryActivity
 import app.harvester.companion.R
 import app.harvester.companion.ScriptsActivity
@@ -111,7 +110,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                             }
                             TopRowItem("Downloads", R.drawable.ic_downloads, Modifier.weight(1f)) {
                                 dismiss()
-                                startActivity(Intent(requireContext(), DownloadsActivity::class.java))
+                                androidx.navigation.fragment.findNavController().navigate(R.id.action_global_downloadsFragment)
                             }
                             TopRowItem("Playlist", R.drawable.ic_playlist, Modifier.weight(1f)) {
                                 dismiss()
