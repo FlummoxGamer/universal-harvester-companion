@@ -115,13 +115,18 @@ object UpdateChecker {
     }
 
 private fun downloadAndInstall(activity: Activity, info: Manifest) {
-    val dir = File(activity.cacheDir, "updates").apply { mkdirs() }
-    dir.listFiles()?.forEach { it.delete() }
-    
-    val fileName = "uh_update_${info.versionName}.apk"
-    DownloadEngine.startDownload(activity, info.apkUrl, fileName, "application/vnd.android.package-archive")
-    
-    android.widget.Toast.makeText(activity, "Downloading update...", android.widget.Toast.LENGTH_LONG).show()
+    try {
+        val request = android.app.DownloadManager.Request(android.net.Uri.parse(info.apkUrl))
+        request.setTitle("uh_update_${info.versionName}.apk")
+        request.setMimeType("application/vnd.android.package-archive")
+        request.setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+        request.setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, "uh_update_${info.versionName}.apk")
+        val dm = activity.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+        dm.enqueue(request)
+        android.widget.Toast.makeText(activity, "Downloading update...", android.widget.Toast.LENGTH_LONG).show()
+    } catch (e: Exception) {
+        android.widget.Toast.makeText(activity, "Failed to start download", android.widget.Toast.LENGTH_SHORT).show()
+    }
 }
 
     private fun installApk(activity: Activity, apk: File) {
