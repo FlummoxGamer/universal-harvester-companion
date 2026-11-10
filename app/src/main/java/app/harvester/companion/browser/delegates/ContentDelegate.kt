@@ -4,7 +4,8 @@ import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
-import app.harvester.companion.DownloadEngine
+import mozilla.components.browser.state.action.DownloadAction
+import mozilla.components.browser.state.state.content.DownloadState
 import app.harvester.companion.UHLog
 import app.harvester.companion.components.Components
 import mozilla.components.browser.state.selector.selectedTab
@@ -40,11 +41,16 @@ class ContentDelegate(
         val contentLength = headers["Content-Length"]?.toLongOrNull() ?: headers["content-length"]?.toLongOrNull() ?: -1L
         val currentUrl = store.state.selectedTab?.content?.url ?: ""
 
-        if (body != null) {
-            DownloadEngine.startStreamDownload(context, filename, contentType ?: "application/octet-stream", body, contentLength, userAgent, currentUrl, response.uri)
-        } else {
-            DownloadEngine.startDownload(context, response.uri, filename, contentType ?: "application/octet-stream", null, userAgent, currentUrl)
-        }
+        val downloadState = mozilla.components.browser.state.state.content.DownloadState(
+            url = response.uri,
+            fileName = filename,
+            contentType = contentType ?: "application/octet-stream",
+            contentLength = contentLength,
+            userAgent = userAgent,
+            referrerUrl = currentUrl,
+            directoryPath = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).path
+        )
+        components.store.dispatch(mozilla.components.browser.state.action.DownloadAction.AddDownloadAction(downloadState))
     }
 
     override fun onCrash(session: GeckoSession) {
