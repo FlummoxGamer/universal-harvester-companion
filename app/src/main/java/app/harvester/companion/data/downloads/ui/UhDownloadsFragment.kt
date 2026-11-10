@@ -7,7 +7,7 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.fragment.compose.content
-import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import mozilla.components.lib.state.helpers.StoreProvider.Companion.fragmentStore
 import mozilla.components.support.utils.DefaultDownloadFileUtils
@@ -23,7 +23,7 @@ class UhDownloadsFragment : Fragment() {
         UhDownloadUIStore(
             initialState = it,
             middleware = UhDownloadUIMiddlewareProvider.provideMiddleware(
-                coroutineScope = viewModelScope,
+                coroutineScope = viewLifecycleOwner.lifecycleScope,
                 applicationContext = requireContext().applicationContext,
                 navController = findNavController(),
             ),
