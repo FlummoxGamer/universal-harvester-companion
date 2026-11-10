@@ -22,4 +22,15 @@
     <string name="toast_no_script">No script available</string>
     <string name="toast_state_cleared">All state cleared</string>
     <string name="settings_view_logs">View logs</string>
+    <string name="download_content_type_filter_all">All</string>
+    <string name="download_content_type_filter_image">Images</string>
+    <string name="download_content_type_filter_video">Videos</string>
+    <string name="download_content_type_filter_document">Documents</string>
+    <string name="download_content_type_filter_other_1">Other</string>
+    <string name="download_header_in_progress">In progress</string>
+    <string name="download_time_period_today">Today</string>
+    <string name="download_time_period_yesterday">Yesterday</string>
+    <string name="download_time_period_last_7_days">Last 7 days</string>
+    <string name="download_time_period_last_30_days">Last 30 days</string>
+    <string name="download_time_period_older">Older</string>
 </resources>
