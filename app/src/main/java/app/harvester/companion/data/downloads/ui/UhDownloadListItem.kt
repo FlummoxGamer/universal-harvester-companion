@@ -78,7 +78,7 @@ fun UhDownloadListItem(
                 )
             }
             if (areIconsVisible) {
-                When(fileItem.status) {
+                when (fileItem.status) {
                     is UhFileItem.Status.Downloading -> {
                         IconButton(onClick = onPauseClick) {
                             Icon(painterResource(R.drawable.ic_uh_media_pause), "Pause", tint = colorResource(id = R.color.text))
