@@ -32,7 +32,6 @@ class UHApp : Application(), coil.ImageLoaderFactory {
         UHLog.init(this)
         SessionRecorder.init(this)
         ThemePrefs.applyCurrent(this)
-        DownloadEngine.initNetworkListener(this)
         movePendingCrashFile()
 
         applicationScope.launch {
