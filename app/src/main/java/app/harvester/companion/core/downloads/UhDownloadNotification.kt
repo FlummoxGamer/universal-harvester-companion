@@ -18,6 +18,7 @@ import mozilla.components.feature.downloads.AbstractFetchDownloadService.Compani
 import mozilla.components.feature.downloads.AbstractFetchDownloadService.Companion.ACTION_RESUME
 import mozilla.components.feature.downloads.AbstractFetchDownloadService.Companion.ACTION_TRY_AGAIN
 import mozilla.components.support.ktx.kotlin.truncateMiddle
+import mozilla.components.support.ktx.kotlin.truncateMiddle
 import mozilla.components.support.utils.DownloadFileUtils
 import app.harvester.companion.R
 
