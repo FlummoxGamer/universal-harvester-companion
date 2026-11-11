@@ -1,6 +1,7 @@
 package app.harvester.companion.core.downloads
 
 import mozilla.components.browser.state.store.BrowserStore
+import mozilla.components.concept.fetch.Client
 import mozilla.components.feature.downloads.AbstractFetchDownloadService
 import mozilla.components.feature.downloads.DefaultPackageNameProvider
 import mozilla.components.feature.downloads.DownloadEstimator
@@ -15,7 +16,7 @@ import app.harvester.companion.R
 import app.harvester.companion.UHApp
 
 class UhDownloadService : AbstractFetchDownloadService() {
-    override val httpClient by lazy { (application as UHApp).components.client }
+    override val httpClient: Client by lazy { (application as UHApp).components.client }
     override val store: BrowserStore by lazy { (application as UHApp).components.store }
     override val style: Style by lazy { Style(R.color.accent) }
     override val notificationsDelegate: NotificationsDelegate by lazy { (application as UHApp).components.notificationsDelegate }
