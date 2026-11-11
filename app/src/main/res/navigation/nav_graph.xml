@@ -29,8 +29,17 @@
         android:name="app.harvester.companion.data.downloads.ui.UhDownloadsFragment"
         android:label="Downloads" />
 
+    <fragment
+        android:id="@+id/downloadSettingsFragment"
+        android:name="app.harvester.companion.data.downloads.ui.UhDownloadSettingsFragment"
+        android:label="Download Settings" />
+
     <action
         android:id="@+id/action_global_downloadsFragment"
         app:destination="@id/downloadsFragment" />
+
+    <action
+        android:id="@+id/action_downloadsFragment_to_settingsFragment"
+        app:destination="@id/downloadSettingsFragment" />
 
 </navigation>
