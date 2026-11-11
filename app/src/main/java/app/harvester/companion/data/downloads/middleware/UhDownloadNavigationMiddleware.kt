@@ -19,7 +19,7 @@ class UhDownloadNavigationMiddleware(private val navController: NavController) :
         when (action) {
             is UhDownloadUIAction.NavigationIconClicked -> navController.popBackStack()
             is UhDownloadUIAction.SettingsIconClicked -> {
-              // Handle settings navigation
+               navController.navigate(app.harvester.companion.R.id.action_downloadsFragment_to_settingsFragment)
             }
             else -> {}
         }
