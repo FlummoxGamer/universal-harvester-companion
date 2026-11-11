@@ -120,8 +120,6 @@ fun UhDownloadSettingsScreen(onBack: () -> Unit) {
                 SettingsCategory("Delete Behavior")
                 Text("Choose what happens when you delete a download.", color = colorResource(id = R.color.subtext), fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp))
                 
-                // In this custom screen, we just map to the global settings pref to keep it 1:1
-                // For simplicity, we'll expose the three options as standard rows
                 DeleteBehaviorRow("Delete from device", "Permanently remove the file", true)
                 DeleteBehaviorRow("Remove from history", "Keep the file on your device", false)
                 DeleteBehaviorRow("Ask every time", "Show a prompt when deleting", false)
