@@ -56,9 +56,20 @@ val downloadMiddleware: UhDownloadMiddleware by lazy {
     )
 }
 
+val client by lazy { org.mozilla.components.browser.engine.gecko.fetch.GeckoViewFetchClient(context, runtime) }
+val fileSizeFormatter by lazy { mozilla.components.feature.downloads.DefaultFileSizeFormatter(context) }
+val downloadEstimator by lazy { mozilla.components.feature.downloads.DownloadEstimator(mozilla.components.support.utils.DefaultDateTimeProvider()) }
+val notificationsDelegate by lazy { 
+    object : mozilla.components.support.base.android.NotificationsDelegate {
+        override fun notify(notificationId: Int, notification: android.app.Notification) {
+            androidx.core.app.NotificationManagerCompat.from(context).notify(notificationId, notification)
+        }
+    }
+}
+
 val store: BrowserStore by lazy {
     val middlewares = mutableListOf<mozilla.components.lib.state.Middleware<mozilla.components.browser.state.state.BrowserState, mozilla.components.browser.state.action.BrowserAction>>()
-    middlewares.add(EngineMiddleware.create(engine, trimMemoryAutomatically = false))
+    middlewares.addAll(EngineMiddleware.create(engine, trimMemoryAutomatically = false))
     middlewares.add(downloadMiddleware)
     BrowserStore(middleware = middlewares)
 }
