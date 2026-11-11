@@ -27,7 +27,6 @@ import mozilla.components.feature.downloads.FileSizeFormatter
 import mozilla.components.feature.session.SessionUseCases
 import mozilla.components.feature.tabs.TabsUseCases
 import mozilla.components.lib.state.Middleware
-import mozilla.components.support.base.android.DefaultNotificationsDelegate
 import mozilla.components.support.base.android.NotificationsDelegate
 import mozilla.components.support.utils.DefaultDateTimeProvider
 import mozilla.components.support.utils.DefaultDownloadFileUtils
@@ -55,7 +54,7 @@ class Components(val context: Context) {
     }
 
     val notificationsDelegate: NotificationsDelegate by lazy {
-        DefaultNotificationsDelegate(NotificationManagerCompat.from(context.applicationContext))
+        NotificationsDelegate(NotificationManagerCompat.from(context.applicationContext))
     }
 
     val engine: Engine by lazy {
