@@ -37,6 +37,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.launch
 import app.harvester.companion.R
 import app.harvester.companion.SettingsPrefs
+import app.harvester.companion.data.downloads.ui.UhDownloadPromptDialog
 import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
 import app.harvester.companion.browser.menu.ContextMenuDialog
@@ -279,6 +280,32 @@ class BrowserFragment : Fragment() {
             }
 
 UHTheme {
+    val downloadState = selectedTab?.content?.download
+    if (downloadState != null) {
+        val isAskBeforeDl = SettingsPrefs.getBool(requireContext(), SettingsPrefs.K_ASK_DL, true)
+        if (isAskBeforeDl) {
+            app.harvester.companion.data.downloads.ui.UhDownloadPromptDialog(
+                fileName = downloadState.fileName ?: "download",
+                fileSize = if (downloadState.contentLength != null && downloadState.contentLength > 0) android.text.format.Formatter.formatShortFileSize(requireContext(), downloadState.contentLength) else "Unknown size",
+                fileUrl = downloadState.url,
+                onDismiss = {
+                    selectedTab.id.let { components.useCases.downloadsUseCases.consumeDownload(it, downloadState.id) }
+                },
+                onDownload = { newName ->
+                    val updatedState = downloadState.copy(fileName = newName, skipConfirmation = true)
+                    components.store.dispatch(mozilla.components.browser.state.action.DownloadAction.AddDownloadAction(updatedState))
+                    selectedTab.id.let { components.useCases.downloadsUseCases.consumeDownload(it, downloadState.id) }
+                }
+            )
+        } else {
+            androidx.compose.runtime.LaunchedEffect(downloadState.id) {
+                val updatedState = downloadState.copy(skipConfirmation = true)
+                components.store.dispatch(mozilla.components.browser.state.action.DownloadAction.AddDownloadAction(updatedState))
+                selectedTab.id.let { components.useCases.downloadsUseCases.consumeDownload(it, downloadState.id) }
+            }
+        }
+    }
+
     if (isEditing) {
         UHSearchOverlay(
             url = selectedTab?.content?.url ?: "",
