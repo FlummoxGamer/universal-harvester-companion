@@ -68,7 +68,7 @@ fun UhDownloadListItem(
                     color = colorResource(id = R.color.text),
                     fontSize = 15.sp,
                     maxLines = 1,
-                    overflow = TextOverflow.MiddleEllipsis
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = fileItem.description,
