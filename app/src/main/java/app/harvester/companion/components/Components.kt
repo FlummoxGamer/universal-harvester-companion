@@ -7,6 +7,18 @@ import app.harvester.companion.ThemePrefs
 import mozilla.components.browser.engine.gecko.GeckoEngine
 import mozilla.components.browser.state.engine.EngineMiddleware
 import mozilla.components.browser.state.store.BrowserStore
+import mozilla.components.browser.state.state.BrowserState
+import mozilla.components.browser.state.action.BrowserAction
+import mozilla.components.lib.state.Middleware
+import mozilla.components.concept.fetch.Client
+import mozilla.components.browser.engine.gecko.fetch.GeckoViewFetchClient
+import mozilla.components.feature.downloads.DefaultFileSizeFormatter
+import mozilla.components.feature.downloads.DownloadEstimator
+import mozilla.components.feature.downloads.FileSizeFormatter
+import mozilla.components.support.utils.DefaultDateTimeProvider
+import mozilla.components.support.base.android.NotificationsDelegate
+import mozilla.components.support.base.android.DefaultNotificationsDelegate
+import androidx.core.app.NotificationManagerCompat
 import mozilla.components.concept.engine.DefaultSettings
 import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.engine.mediaquery.PreferredColorScheme
@@ -25,6 +37,11 @@ import org.mozilla.geckoview.GeckoRuntime
 class Components(val context: Context) {
 
     val appStore: AppStore by lazy { AppStore() }
+
+    val client: Client by lazy { GeckoViewFetchClient(context, runtime) }
+    val fileSizeFormatter: FileSizeFormatter by lazy { DefaultFileSizeFormatter(context) }
+    val downloadEstimator: DownloadEstimator by lazy { DownloadEstimator(DefaultDateTimeProvider()) }
+    val notificationsDelegate: NotificationsDelegate by lazy { DefaultNotificationsDelegate(NotificationManagerCompat.from(context)) }
 
     val runtime: GeckoRuntime by lazy {
         GeckoRuntime.create(context.applicationContext)
@@ -68,10 +85,10 @@ val notificationsDelegate by lazy {
 }
 
 val store: BrowserStore by lazy {
-    val middlewares = mutableListOf<mozilla.components.lib.state.Middleware<mozilla.components.browser.state.state.BrowserState, mozilla.components.browser.state.action.BrowserAction>>()
-    middlewares.addAll(EngineMiddleware.create(engine, trimMemoryAutomatically = false))
-    middlewares.add(downloadMiddleware)
-    BrowserStore(middleware = middlewares)
+    val middlewareList = listOf<Middleware<BrowserState, BrowserAction>>(downloadMiddleware)
+    BrowserStore(
+        middleware = middlewareList + EngineMiddleware.create(engine, trimMemoryAutomatically = false)
+    )
 }
 
 val useCases: UseCases by lazy { UseCases(store, engine, downloadFileUtils) }
