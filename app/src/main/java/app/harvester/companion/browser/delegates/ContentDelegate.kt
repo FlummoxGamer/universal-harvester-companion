@@ -73,7 +73,14 @@ class ContentDelegate(
                                     val js = "javascript:fetch('$imageUrl').then(r=>r.blob()).then(b=>{var reader=new FileReader();reader.onload=function(){window.postMessage({type:'UH_NATIVE_CALL',payload:{type:'SAVE_BLOB',filename:'$filename',mime:b.type,base64:reader.result.split(',')[1]}},'*')};reader.readAsDataURL(b);})"
                                     components.useCases.sessionUseCases.loadUrl(js)
                                 } else {
-                                    DownloadEngine.startDownload(context, imageUrl, filename, "image/jpeg", null, null, currentUrl)
+                                    val downloadState = mozilla.components.browser.state.state.content.DownloadState(
+                                        url = imageUrl,
+                                        fileName = filename,
+                                        contentType = "image/jpeg",
+                                        referrerUrl = currentUrl,
+                                        directoryPath = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).path
+                                    )
+                                    components.store.dispatch(mozilla.components.browser.state.action.DownloadAction.AddDownloadAction(downloadState))
                                 }
                             }
                             1 -> {
