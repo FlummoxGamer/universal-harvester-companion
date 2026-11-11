@@ -102,6 +102,8 @@ private fun downloadStateReducer(
                 searchQuery = "",
             )
         is UhDownloadUIAction.SearchBarVisibilityRequest -> state.copy(isSearchFieldRequested = true)
+        is UhDownloadUIAction.SortingModeSelected -> state.copy(sortingMode = action.mode)
+        is UhDownloadUIAction.ClearAllClicked -> state
         is UhDownloadUIAction.ShowMultiSelectDeleteDialog -> state.copy(dialogState = UhDownloadUIState.DialogState.MultiSelectDeleteConfirmation(items = action.items))
         is UhDownloadUIAction.ConfirmMultiSelectDelete ->
             state.copy(
