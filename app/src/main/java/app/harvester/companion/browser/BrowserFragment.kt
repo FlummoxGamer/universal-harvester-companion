@@ -283,10 +283,16 @@ UHTheme {
     val downloadState = selectedTab?.content?.download
     if (downloadState != null) {
         val isAskBeforeDl = SettingsPrefs.getBool(requireContext(), SettingsPrefs.K_ASK_DL, true)
+        val contentLength = downloadState.contentLength
+        val sizeText = if (contentLength != null && contentLength > 0) {
+            android.text.format.Formatter.formatShortFileSize(requireContext(), contentLength)
+        } else {
+            "Unknown size"
+        }
         if (isAskBeforeDl) {
             app.harvester.companion.data.downloads.ui.UhDownloadPromptDialog(
                 fileName = downloadState.fileName ?: "download",
-                fileSize = if (downloadState.contentLength != null && downloadState.contentLength > 0) android.text.format.Formatter.formatShortFileSize(requireContext(), downloadState.contentLength) else "Unknown size",
+                fileSize = sizeText,
                 fileUrl = downloadState.url,
                 onDismiss = {
                     selectedTab.id.let { components.useCases.downloadsUseCases.consumeDownload(it, downloadState.id) }
