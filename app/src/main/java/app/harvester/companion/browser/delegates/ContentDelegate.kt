@@ -41,7 +41,7 @@ class ContentDelegate(
         val contentLength = headers["Content-Length"]?.toLongOrNull() ?: headers["content-length"]?.toLongOrNull() ?: -1L
         val currentUrl = store.state.selectedTab?.content?.url ?: ""
 
-        val downloadState = DownloadState(
+        val downloadState = mozilla.components.browser.state.state.content.DownloadState(
             url = response.uri,
             fileName = filename,
             contentType = contentType ?: "application/octet-stream",
@@ -50,7 +50,7 @@ class ContentDelegate(
             referrerUrl = currentUrl,
             directoryPath = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).path
         )
-        components.store.dispatch(DownloadAction.AddDownloadAction(downloadState))
+        components.store.dispatch(mozilla.components.browser.state.action.DownloadAction.AddDownloadAction(downloadState))
     }
 
     override fun onCrash(session: GeckoSession) {
