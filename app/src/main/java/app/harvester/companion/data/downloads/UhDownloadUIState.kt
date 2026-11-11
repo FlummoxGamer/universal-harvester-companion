@@ -14,12 +14,19 @@ data class UhDownloadUIState(
     val itemToChangeExtension: UhFileItem? = null,
     val dialogState: DialogState = DialogState.None,
     val deletionSnackbarState: SnackbarState = SnackbarState.None,
+    val sortingMode: SortingMode = SortingMode.DATE,
     private val isSearchFieldRequested: Boolean = false,
     private val userSelectedContentTypeFilter: UhFileItem.ContentTypeFilter = UhFileItem.ContentTypeFilter.All,
 ) : State {
 
     private val visibleItems = items.filter {
         it.id !in pendingDeletionIds && it.id !in unconfirmedDeletionIds
+    }.let { filtered ->
+        when (sortingMode) {
+            SortingMode.DATE -> filtered.sortedByDescending { it.description }
+            SortingMode.NAME -> filtered.sortedBy { it.fileName?.lowercase() }
+            SortingMode.SIZE -> filtered.sortedByDescending { it.description }
+        }
     }
 
     val selectedContentTypeFilter: UhFileItem.ContentTypeFilter
@@ -108,5 +115,9 @@ data class UhDownloadUIState(
         data object None : DialogState
         data class DeleteConfirmation(val items: Set<UhFileItem>) : DialogState
         data class MultiSelectDeleteConfirmation(val items: Set<UhFileItem>) : DialogState
+    }
+
+    enum class SortingMode {
+        DATE, NAME, SIZE
     }
 }
