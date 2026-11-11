@@ -2,24 +2,20 @@ package app.harvester.companion.data.downloads.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -31,9 +27,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,10 +40,14 @@ import app.harvester.companion.data.downloads.UhDownloadUIState
 import app.harvester.companion.data.downloads.UhDownloadUIStore
 import app.harvester.companion.data.downloads.UhFileItem
 import app.harvester.companion.data.downloads.UhHeaderItem
+import app.harvester.companion.data.downloads.ui.components.UhDownloadFilters
+import app.harvester.companion.data.downloads.ui.components.UhDownloadRenameDialog
+import app.harvester.companion.data.downloads.ui.components.UhDownloadSearchBar
 import app.harvester.companion.theme.UHTheme
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun UhDownloadsScreen(
+fun UhDownloadScreen(
     downloadsStore: UhDownloadUIStore,
     onItemClick: (UhFileItem) -> Unit,
     onSettingsClick: () -> Unit,
@@ -101,28 +101,23 @@ fun UhDownloadsScreen(
         else -> {}
     }
 
+    if (uiState.fileToRename != null) {
+        UhDownloadRenameDialog(
+            originalName = uiState.fileToRename!!.fileName ?: "download",
+            onDismiss = { downloadsStore.dispatch(UhDownloadUIAction.RenameFileDismissed) },
+            onConfirm = { newName -> downloadsStore.dispatch(UhDownloadUIAction.RenameFileConfirmed(uiState.fileToRename!!, newName)) }
+        )
+    }
+
     UHTheme {
         Scaffold(
             topBar = {
                 if (uiState.isSearchFieldVisible) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(colorResource(id = R.color.surface))
-                            .padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = { downloadsStore.dispatch(UhDownloadUIAction.SearchBarDismissRequest) }) {
-                            Icon(painterResource(R.drawable.ic_back), "Back")
-                        }
-                        OutlinedTextField(
-                            value = uiState.searchQuery,
-                            onValueChange = { downloadsStore.dispatch(UhDownloadUIAction.SearchQueryEntered(it)) },
-                            placeholder = { Text("Search downloads") },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true
-                        )
-                    }
+                    UhDownloadSearchBar(
+                        query = uiState.searchQuery,
+                        onQueryChanged = { downloadsStore.dispatch(UhDownloadUIAction.SearchQueryEntered(it)) },
+                        onDismiss = { downloadsStore.dispatch(UhDownloadUIAction.SearchBarDismissRequest) }
+                    )
                 } else {
                     Row(
                         modifier = Modifier
@@ -161,6 +156,32 @@ fun UhDownloadsScreen(
                             IconButton(onClick = { downloadsStore.dispatch(UhDownloadUIAction.SearchBarVisibilityRequest) }) {
                                 Icon(painterResource(R.drawable.ic_search), "Search")
                             }
+                            
+                            var showSortMenu by remember { mutableStateOf(false) }
+                            Box {
+                                IconButton(onClick = { showSortMenu = true }) {
+                                    Icon(painterResource(R.drawable.ic_menu), "Sort")
+                                }
+                                DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
+                                    DropdownMenuItem(text = { Text("Sort by Date") }, onClick = { 
+                                        downloadsStore.dispatch(UhDownloadUIAction.SortingModeSelected(UhDownloadUIState.SortingMode.DATE))
+                                        showSortMenu = false 
+                                    })
+                                    DropdownMenuItem(text = { Text("Sort by Name") }, onClick = { 
+                                        downloadsStore.dispatch(UhDownloadUIAction.SortingModeSelected(UhDownloadUIState.SortingMode.NAME))
+                                        showSortMenu = false 
+                                    })
+                                    DropdownMenuItem(text = { Text("Sort by Size") }, onClick = { 
+                                        downloadsStore.dispatch(UhDownloadUIAction.SortingModeSelected(UhDownloadUIState.SortingMode.SIZE))
+                                        showSortMenu = false 
+                                    })
+                                    DropdownMenuItem(text = { Text("Clear All") }, onClick = { 
+                                        downloadsStore.dispatch(UhDownloadUIAction.RequestDeleteMultiple(uiState.items.toSet()))
+                                        showSortMenu = false 
+                                    })
+                                }
+                            }
+
                             IconButton(onClick = onSettingsClick) {
                                 Icon(painterResource(R.drawable.ic_settings), "Settings")
                             }
@@ -170,6 +191,14 @@ fun UhDownloadsScreen(
             }
         ) { padding ->
             Column(modifier = Modifier.padding(padding).fillMaxSize()) {
+                if (uiState.filtersToDisplay.isNotEmpty() && !uiState.isSearchFieldVisible) {
+                    UhDownloadFilters(
+                        selectedFilter = uiState.selectedContentTypeFilter,
+                        filters = uiState.filtersToDisplay,
+                        onFilterSelected = { downloadsStore.dispatch(UhDownloadUIAction.ContentTypeSelected(it)) }
+                    )
+                }
+
                 when (val state = uiState.itemsState) {
                     is UhDownloadUIState.ItemsState.NoItems -> {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -187,7 +216,7 @@ fun UhDownloadsScreen(
                                 when (item) {
                                     is UhHeaderItem -> {
                                         Text(
-                                            text = item.timeCategory.name,
+                                            text = stringResource(id = item.timeCategory.stringRes),
                                             color = colorResource(id = R.color.subtext),
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Bold,
@@ -200,6 +229,7 @@ fun UhDownloadsScreen(
                                             fileItem = item,
                                             isSelected = isSelected,
                                             areIconsVisible = uiState.mode is UhDownloadUIState.Mode.Normal,
+                                            swipingEnabled = uiState.mode is UhDownloadUIState.Mode.Normal,
                                             onClick = {
                                                 if (uiState.mode is UhDownloadUIState.Mode.Editing) {
                                                     if (isSelected) downloadsStore.dispatch(UhDownloadUIAction.RemoveItemForRemoval(item))
