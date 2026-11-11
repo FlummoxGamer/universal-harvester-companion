@@ -46,6 +46,7 @@ android {
         viewBinding = true
         buildConfig = true
         compose = true
+        resValues = true
     }
 
     androidResources {
