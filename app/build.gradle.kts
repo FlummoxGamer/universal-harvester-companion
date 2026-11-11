@@ -131,6 +131,7 @@ dependencies {
     implementation("org.mozilla.components:feature-tabs:154.0.1")
     implementation("org.mozilla.components:support-base:154.0.1")
     implementation("org.mozilla.components:support-utils:154.0.1")
+    implementation("org.mozilla.components:support-ktx:154.0.1")
     implementation("org.mozilla.components:support-locale:154.0.1")
     implementation("org.mozilla.components:support-images:154.0.1")
     implementation("org.mozilla.components:support-webextensions:154.0.1")
