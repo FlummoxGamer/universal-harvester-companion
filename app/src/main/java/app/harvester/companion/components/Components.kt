@@ -95,9 +95,15 @@ class Components(val context: Context) {
     private fun buildDefaultSettings(): DefaultSettings {
         val textScale = SettingsPrefs.getInt(context, SettingsPrefs.K_TEXT_SCALE, 100)
         return DefaultSettings(
-            remoteDebuggingEnabled = false,
-            testingModeEnabled = false,
-            preferredColorScheme = buildPreferredColorScheme(),
+        remoteDebuggingEnabled = false,
+        testingModeEnabled = false,
+        downloadDelegate = mozilla.components.browser.engine.gecko.util.EngineDownloadDelegate(
+            context = context.applicationContext,
+            downloadLocation = {
+                android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).path
+            }
+        ),
+        preferredColorScheme = buildPreferredColorScheme(),
             automaticFontSizeAdjustment = textScale != 100,
             fontInflationEnabled = textScale != 100,
             suspendMediaWhenInactive = false,
