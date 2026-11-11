@@ -38,7 +38,7 @@ class UhDownloadsFragment : Fragment() {
         UhDownloadsScreen(
             downloadsStore = downloadStore,
             onItemClick = { openItem(it) },
-            onSettingsClick = { /* Implement navigation to settings */ },
+            onSettingsClick = { findNavController().navigate(app.harvester.companion.R.id.action_downloadsFragment_to_settingsFragment) },
             onBackClick = { findNavController().popBackStack() }
         )
     }
