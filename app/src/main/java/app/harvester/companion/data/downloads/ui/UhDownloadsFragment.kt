@@ -35,7 +35,7 @@ class UhDownloadsFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?,
     ): View = content {
-        UhDownloadsScreen(
+        UhDownloadScreen(
             downloadsStore = downloadStore,
             onItemClick = { openItem(it) },
             onSettingsClick = { findNavController().navigate(app.harvester.companion.R.id.action_downloadsFragment_to_settingsFragment) },
