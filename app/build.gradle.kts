@@ -2,7 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
-    id("org.jetbrains.kotlin.kapt")
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -13,8 +13,13 @@ android {
     applicationId = "app.harvester.companion"
     minSdk = 29
     targetSdk = 36
-    versionCode = 157
-    versionName = "2.4.87"
+    versionCode = 158
+    versionName = "2.4.88"
+
+    ksp {
+        arg("room.schemaLocation", "$projectDir/schemas")
+        arg("room.generateKotlin", "true")
+    }
 
     buildConfigField("String", "AMO_BASE_URL", "\"https://addons.mozilla.org\"")
     buildConfigField("String", "AMO_COLLECTION_NAME", "\"Extensions-for-Android\"")
@@ -167,7 +172,7 @@ dependencies {
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     implementation("androidx.room:room-paging:2.6.1")
-    kapt("androidx.room:room-compiler:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1")
     implementation("androidx.paging:paging-runtime-ktx:3.2.1")
     implementation("androidx.fragment:fragment-compose:1.8.2")
     implementation("androidx.navigation:navigation-fragment-ktx:2.7.7")
