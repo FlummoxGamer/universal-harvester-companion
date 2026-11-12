@@ -27,6 +27,7 @@ object SettingsPrefs {
     const val K_FORCE_DARK_SITES = "force_dark_sites"
     const val K_ASK_DL = "ask_before_download"
     const val K_DL_LOCATION = "download_location"    
+    const val K_DELETE_BEHAVIOR = "delete_download_behavior"
 
     const val K_PG_ADS = "pg_ads"
     const val K_PG_HTTPS = "pg_https"
