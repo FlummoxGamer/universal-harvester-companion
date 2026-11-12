@@ -19,6 +19,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -52,9 +55,24 @@ fun UhDownloadScreen(
     onSettingsClick: () -> Unit,
     onBackClick: () -> Unit
 ) {
-    val uiState by downloadsStore.stateFlow.collectAsState()
     
-    BackHandler(uiState.isBackHandlerEnabled) {
+val uiState by downloadsStore.stateFlow.collectAsState()
+val snackbarHostState = androidx.compose.runtime.remember { SnackbarHostState() }
+
+androidx.compose.runtime.LaunchedEffect(uiState.deletionSnackbarState) {
+    val state = uiState.deletionSnackbarState
+    if (state is UhDownloadUIState.SnackbarState.UndoDeletion) {
+        val result = snackbarHostState.showSnackbar(
+            message = "Downloads deleted",
+            actionLabel = "Undo"
+        )
+        if (result == SnackbarResult.ActionPerformed) {
+            downloadsStore.dispatch(UhDownloadUIAction.UndoPendingDeletion)
+        }
+    }
+}
+
+BackHandler(uiState.isBackHandlerEnabled) {
         if (uiState.mode is UhDownloadUIState.Mode.Editing) {
             downloadsStore.dispatch(UhDownloadUIAction.ExitEditMode)
         } else if (uiState.isSearchFieldVisible) {
@@ -110,6 +128,7 @@ fun UhDownloadScreen(
 
     UHTheme {
         Scaffold(
+            snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
                 Column(modifier = Modifier.statusBarsPadding()) {
                     if (uiState.isSearchFieldVisible) {
@@ -231,7 +250,10 @@ fun UhDownloadScreen(
                                             onPauseClick = { downloadsStore.dispatch(UhDownloadUIAction.PauseDownload(item.id)) },
                                             onResumeClick = { downloadsStore.dispatch(UhDownloadUIAction.ResumeDownload(item.id)) },
                                             onRetryClick = { downloadsStore.dispatch(UhDownloadUIAction.RetryDownload(item.id)) },
-                                            onDeleteClick = { downloadsStore.dispatch(UhDownloadUIAction.RequestDelete(item)) }
+                                            onDeleteClick = { downloadsStore.dispatch(UhDownloadUIAction.RequestDelete(item)) },
+                                            onShareUrlClick = { downloadsStore.dispatch(UhDownloadUIAction.ShareUrlClicked(item.url)) },
+                                            onShareFileClick = { downloadsStore.dispatch(UhDownloadUIAction.ShareFileClicked(item.directoryPath, item.fileName, item.contentType)) },
+                                            onRenameClick = { downloadsStore.dispatch(UhDownloadUIAction.RenameFileClicked(item)) }
                                         )
                                     }
                                 }
