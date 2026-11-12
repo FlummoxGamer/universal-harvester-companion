@@ -29,7 +29,8 @@ class UhDownloadService : AbstractFetchDownloadService() {
         DefaultDownloadFileUtils(
             context = applicationContext,
             downloadLocation = {
-                android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).path
+                val custom = app.harvester.companion.SettingsPrefs.getString(applicationContext, "custom_download_uri", "")
+                if (custom.isNotBlank()) custom else android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).path
             },
         )
     }
