@@ -27,7 +27,6 @@ sealed interface UhDownloadUIAction : Action {
     data class SearchQueryEntered(val searchQuery: String) : UhDownloadUIAction
     data object SearchBarVisibilityRequest : UhDownloadUIAction
     data object SearchBarDismissRequest : UhDownloadUIAction
-    data class SortingModeSelected(val mode: UhDownloadUIState.SortingMode) : UhDownloadUIAction
     data object ClearAllClicked : UhDownloadUIAction
     data class PauseDownload(val downloadId: String) : UhDownloadUIAction
     data class ResumeDownload(val downloadId: String) : UhDownloadUIAction
