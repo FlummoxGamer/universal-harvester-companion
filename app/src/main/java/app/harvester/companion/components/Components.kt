@@ -77,17 +77,33 @@ class Components(val context: Context) {
         UhDownloadMiddleware(
             applicationContext = context.applicationContext,
             downloadServiceClass = UhDownloadService::class.java,
-            deleteFileFromStorage = { true },
+            deleteFileFromStorage = { 
+                app.harvester.companion.SettingsPrefs.getString(context, app.harvester.companion.SettingsPrefs.K_DELETE_BEHAVIOR, "ask") == "device"
+            },
             downloadFileUtils = downloadFileUtils,
             downloadStorage = downloadStorage
         )
     }
 
     val store: BrowserStore by lazy {
-        val middlewareList = listOf<Middleware<BrowserState, BrowserAction>>(downloadMiddleware)
-        BrowserStore(
-            middleware = middlewareList + EngineMiddleware.create(engine, trimMemoryAutomatically = false)
-        )
+    val middlewareList = listOf<Middleware<BrowserState, BrowserAction>>(downloadMiddleware)
+    val browserStore = BrowserStore(
+        middleware = middlewareList + EngineMiddleware.create(engine, trimMemoryAutomatically = false)
+    )
+    val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+    try {
+        connectivityManager.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                browserStore.state.downloads.values.filter { it.status == mozilla.components.browser.state.state.content.DownloadState.Status.FAILED }.forEach { download ->
+                    val intent = android.content.Intent(context, UhDownloadService::class.java)
+                    intent.putExtra(android.app.DownloadManager.EXTRA_DOWNLOAD_ID, download.id)
+                    intent.action = mozilla.components.feature.downloads.AbstractFetchDownloadService.ACTION_TRY_AGAIN
+                    context.startService(intent)
+                }
+            }
+        })
+    } catch (e: Exception) {}
+    browserStore
     }
 
     val useCases: UseCases by lazy { UseCases(store, engine, downloadFileUtils) }
