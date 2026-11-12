@@ -123,16 +123,26 @@ fun UhDownloadSettingsScreen(onBack: () -> Unit) {
 
                 SettingsCategory("Delete Behavior")
                 Text("Choose what happens when you delete a download.", color = colorResource(id = R.color.subtext), fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp))
-                
-                DeleteBehaviorRow("Delete from device", "Permanently remove the file", true)
-                DeleteBehaviorRow("Remove from history", "Keep the file on your device", false)
-                DeleteBehaviorRow("Ask every time", "Show a prompt when deleting", false)
+
+                var deleteBehavior by remember { mutableStateOf(SettingsPrefs.getString(context, SettingsPrefs.K_DELETE_BEHAVIOR, "ask")) }
+                DeleteBehaviorRow("Delete from device", "Permanently remove the file", deleteBehavior == "device") {
+                    deleteBehavior = "device"
+                    SettingsPrefs.setString(context, SettingsPrefs.K_DELETE_BEHAVIOR, "device")
+                }
+                DeleteBehaviorRow("Remove from history", "Keep the file on your device", deleteBehavior == "history") {
+                    deleteBehavior = "history"
+                    SettingsPrefs.setString(context, SettingsPrefs.K_DELETE_BEHAVIOR, "history")
+                }
+                DeleteBehaviorRow("Ask every time", "Show a prompt when deleting", deleteBehavior == "ask") {
+                    deleteBehavior = "ask"
+                    SettingsPrefs.setString(context, SettingsPrefs.K_DELETE_BEHAVIOR, "ask")
+                }
             }
         }
     }
 }
 
 @Composable
-private fun DeleteBehaviorRow(title: String, subtitle: String, selected: Boolean) {
-    SettingsRow(title = title, subtitle = subtitle, onClick = {})
+private fun DeleteBehaviorRow(title: String, subtitle: String, selected: Boolean, onClick: () -> Unit) {
+    SettingsRow(title = title, subtitle = subtitle, onClick = onClick)
 }
