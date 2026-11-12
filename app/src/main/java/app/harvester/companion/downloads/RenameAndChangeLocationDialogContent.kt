@@ -1,8 +1,8 @@
 package app.harvester.companion.downloads
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,7 +36,6 @@ import androidx.compose.ui.unit.dp
 import java.io.File
 import app.harvester.companion.R
 import app.harvester.companion.data.downloads.UhRenameFileError
-import mozilla.components.support.utils.ext.withExtension
 
 @Composable
 fun RenameAndChangeLocationDialogContent(
@@ -74,7 +74,7 @@ fun RenameAndChangeLocationDialogContent(
         }
 
     val trimmedBaseName = fileNameState.text.trim()
-    val fullName = trimmedBaseName.withExtension(extension)
+    val fullName = if (extension.isEmpty()) trimmedBaseName else "$trimmedBaseName.$extension"
     val isConfirmEnabled = enableConfirmButton(fileName = fullName)
 
     Column(
@@ -103,11 +103,12 @@ fun RenameAndChangeLocationDialogContent(
             Spacer(modifier = Modifier.height(24.dp))
 
             Column(modifier = Modifier.fillMaxWidth()) {
-                androidx.compose.material3.OutlinedTextField(
+                OutlinedTextField(
                     value = fileNameState,
                     onValueChange = { newFileNameState ->
                         fileNameState = newFileNameState
-                        val newFullName = newFileNameState.text.withExtension(extension)
+                        val newBase = newFileNameState.text.trim()
+                        val newFullName = if (extension.isEmpty()) newBase else "$newBase.$extension"
                         onFileNameChange(newFullName)
                     },
                     isError = currentError != null,
