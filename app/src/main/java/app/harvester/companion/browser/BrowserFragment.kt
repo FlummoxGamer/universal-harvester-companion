@@ -126,18 +126,35 @@ override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
             dismissRenameDialog()
             dismissDownloadDialogs()
         },
-        customFirstPartyDownloadDialog = { currentDownloadState, fileNameIfAlreadyDownloaded, positiveAction, negativeAction, openFileAction ->
-            if (canShowDownloadDialog()) {
-                val contentSize = currentDownloadState.value.contentLength ?: 0
-                val fileName = currentDownloadState.value.fileName ?: "download"
-                showRenameDownloadDialog(
-                    fileName = fileName,
-                    currentDownloadState = currentDownloadState,
-                    positiveAction = positiveAction,
-                    negativeAction = negativeAction,
-                )
-            }
-        },
+    customFirstPartyDownloadDialog = { currentDownloadState, fileNameIfAlreadyDownloaded, positiveAction, negativeAction, openFileAction ->
+    if (canShowDownloadDialog()) {
+        if (fileNameIfAlreadyDownloaded.value != null) {
+            downloadDialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+                .setTitle(R.string.mozac_feature_downloads_again_dialog_title)
+                .setMessage(getString(R.string.mozac_feature_downloads_already_exists_dialog_title, fileNameIfAlreadyDownloaded.value))
+                .setPositiveButton(R.string.mozac_feature_downloads_open_existing_file) { dialog, _ ->
+                    openFileAction.value.invoke()
+                    dialog.dismiss()
+                }
+                .setNegativeButton(R.string.mozac_feature_downloads_dialog_download_again) { dialog, _ ->
+                    positiveAction.value.invoke(currentDownloadState.value)
+                    dialog.dismiss()
+                }
+                .setNeutralButton(R.string.mozac_feature_downloads_dialog_cancel) { dialog, _ ->
+                    negativeAction.value.invoke()
+                    dialog.dismiss()
+                }
+                .show()
+        } else {
+            showRenameDownloadDialog(
+                fileName = currentDownloadState.value.fileName ?: "download",
+                currentDownloadState = currentDownloadState,
+                positiveAction = positiveAction,
+                negativeAction = negativeAction,
+            )
+        }
+    }
+},
         customThirdPartyDownloadDialog = { downloaderApps, onAppSelected, negativeActionCallback ->
             if (canShowDownloadDialog()) {
                 downloadDialog = app.harvester.companion.downloads.createDownloadAppDialog(
