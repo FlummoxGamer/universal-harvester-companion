@@ -33,6 +33,11 @@
     <string name="download_time_period_last_7_days">Last 7 days</string>
     <string name="download_time_period_last_30_days">Last 30 days</string>
     <string name="download_time_period_older">Older</string>
+    <string name="mozac_feature_downloads_paused_notification_text">Download paused</string>
+    <string name="mozac_feature_downloads_completed_notification_text2">Download completed</string>
+    <string name="mozac_feature_downloads_failed_notification_text2">Download failed</string>
+    <string name="content_description_menu">More options</string>
+    <string name="library_downloads">Downloads</string>
     <string name="preferences_downloads_no_folder_picker_available">Unable to open the folder picker on this device.</string>
     <string name="download_app_dialog_title">Download file with:</string>
     <string name="download_delete_multiple_items_snackbar_2">Items deleted: %1$d</string>
