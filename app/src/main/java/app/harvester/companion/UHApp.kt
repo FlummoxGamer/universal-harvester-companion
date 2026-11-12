@@ -19,7 +19,11 @@ import xcrash.XCrash
 class UHApp : Application(), coil.ImageLoaderFactory {
 
     val components by lazy { Components(this) }
-    val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val applicationScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, throwable ->
+            UHLog.e("scope", "Unhandled coroutine error: ${throwable.message}")
+        }
+    )
 
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(base)
@@ -32,7 +36,6 @@ class UHApp : Application(), coil.ImageLoaderFactory {
         UHLog.init(this)
         SessionRecorder.init(this)
         ThemePrefs.applyCurrent(this)
-        components.store.dispatch(mozilla.components.browser.state.action.DownloadAction.RestoreDownloadsStateAction)
         movePendingCrashFile()
 
         applicationScope.launch {
