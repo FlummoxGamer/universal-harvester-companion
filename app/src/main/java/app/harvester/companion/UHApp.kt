@@ -1,6 +1,7 @@
 package app.harvester.companion
 
 import android.app.Application
+import android.os.Build
 import android.content.Context
 import android.content.Intent
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -34,6 +35,11 @@ class UHApp : Application(), coil.ImageLoaderFactory {
     override fun onCreate() {
         val start = System.currentTimeMillis()
         super.onCreate()
+    
+        if (File(filesDir, "safe_mode.flag").exists() || applicationContext.packageName != Application.getProcessName()) {
+            return
+        }
+
         UHLog.init(this)
         SessionRecorder.init(this)
         ThemePrefs.applyCurrent(this)
