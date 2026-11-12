@@ -4,6 +4,7 @@ import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -30,7 +31,11 @@ class UhDownloadMiddleware(
     private val downloadStorage: UhDownloadStorage = UhDownloadStorage(applicationContext),
 ) : Middleware<BrowserState, BrowserAction> {
 
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private val scope = CoroutineScope(
+        Dispatchers.IO + CoroutineExceptionHandler { _, throwable ->
+            app.harvester.companion.UHLog.e("download", "DB Error: ${throwable.message}")
+        }
+    )
 
     override fun invoke(
         store: Store<BrowserState, BrowserAction>,
