@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -61,6 +63,7 @@ fun UhDownloadSettingsScreen(onBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .background(colorResource(id = R.color.bg))
+                .statusBarsPadding()
         ) {
             Row(
                 modifier = Modifier
@@ -85,6 +88,7 @@ fun UhDownloadSettingsScreen(onBack: () -> Unit) {
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp)
+                    .navigationBarsPadding()
             ) {
                 SettingsCategory("General")
                 SettingsSwitchRow("Ask before downloading", SettingsPrefs.K_ASK_DL, default = true)
