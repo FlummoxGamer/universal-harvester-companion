@@ -39,7 +39,6 @@ import app.harvester.companion.R
 import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.downloads.RenameAndChangeLocationDialogFragment
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import app.harvester.companion.R
 import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
 import app.harvester.companion.browser.menu.ContextMenuDialog
