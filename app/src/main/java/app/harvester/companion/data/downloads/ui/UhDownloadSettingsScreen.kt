@@ -4,8 +4,6 @@ import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,13 +11,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.Switch
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -36,18 +34,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.harvester.companion.R
 import app.harvester.companion.SettingsPrefs
-import app.harvester.companion.data.downloads.middleware.UhDeleteDownloadBehavior
 import app.harvester.companion.settings.components.SettingsCategory
 import app.harvester.companion.settings.components.SettingsRow
 import app.harvester.companion.settings.components.SettingsSwitchRow
+import app.harvester.companion.settings.downloads.DefaultAndroidFileUtils
+import app.harvester.companion.settings.downloads.DefaultDownloadLocationFormatter
+import app.harvester.companion.settings.downloads.MissingUriPermission
 import app.harvester.companion.theme.UHTheme
-import java.io.File
 
 @Composable
 fun UhDownloadSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     var askBeforeDownload by remember { mutableStateOf(SettingsPrefs.getBool(context, SettingsPrefs.K_ASK_DL, true)) }
+    var deleteBehavior by remember { mutableStateOf(SettingsPrefs.getString(context, SettingsPrefs.K_DELETE_BEHAVIOR, "ask")) }
     
+    val downloadLocationFormatter = remember { DefaultDownloadLocationFormatter(DefaultAndroidFileUtils(context)) }
+
     val folderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
             context.contentResolver.takePersistableUriPermission(
@@ -94,8 +96,13 @@ fun UhDownloadSettingsScreen(onBack: () -> Unit) {
                 SettingsSwitchRow("Ask before downloading", SettingsPrefs.K_ASK_DL, default = true)
 
                 SettingsCategory("Storage")
+                
                 val currentPath = SettingsPrefs.getString(context, "custom_download_uri", "").ifBlank { "/storage/emulated/0/Download" }
-                val displayPath = currentPath.replace("content://com.android.externalstorage.documents/tree/primary%3A", "~/").replace("%2F", "/")
+                val displayPath = try {
+                    downloadLocationFormatter.getFriendlyPath(currentPath)
+                } catch (e: MissingUriPermission) {
+                    "/storage/emulated/0/Download"
+                }
                 
                 SettingsRow(
                     title = "Download Location",
@@ -123,8 +130,7 @@ fun UhDownloadSettingsScreen(onBack: () -> Unit) {
 
                 SettingsCategory("Delete Behavior")
                 Text("Choose what happens when you delete a download.", color = colorResource(id = R.color.subtext), fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp))
-
-                var deleteBehavior by remember { mutableStateOf(SettingsPrefs.getString(context, SettingsPrefs.K_DELETE_BEHAVIOR, "ask")) }
+                
                 DeleteBehaviorRow("Delete from device", "Permanently remove the file", deleteBehavior == "device") {
                     deleteBehavior = "device"
                     SettingsPrefs.setString(context, SettingsPrefs.K_DELETE_BEHAVIOR, "device")
@@ -144,5 +150,17 @@ fun UhDownloadSettingsScreen(onBack: () -> Unit) {
 
 @Composable
 private fun DeleteBehaviorRow(title: String, subtitle: String, selected: Boolean, onClick: () -> Unit) {
-    SettingsRow(title = title, subtitle = subtitle, onClick = onClick)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectable(selected = selected, onClick = onClick)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Column(modifier = Modifier.padding(start = 12.dp)) {
+            Text(title, color = colorResource(id = R.color.text), fontSize = 15.sp)
+            Text(subtitle, color = colorResource(id = R.color.subtext), fontSize = 12.sp)
+        }
+    }
 }
