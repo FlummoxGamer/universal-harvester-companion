@@ -37,7 +37,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.launch
 import app.harvester.companion.R
 import app.harvester.companion.SettingsPrefs
-import app.harvester.companion.data.downloads.ui.UhDownloadPromptDialog
+import app.harvester.companion.downloads.RenameAndChangeLocationDialogFragment
 import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
 import app.harvester.companion.browser.menu.ContextMenuDialog
@@ -84,10 +84,82 @@ class BrowserFragment : Fragment() {
         return binding.root
     }
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-        val context = requireContext()
-        val components = (context.applicationContext as UHApp).components
+private val downloadsFeature = mozilla.components.support.base.feature.ViewBoundFeatureWrapper<mozilla.components.feature.downloads.DownloadsFeature>()
+private var downloadDialog: androidx.appcompat.app.AlertDialog? = null
+
+override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+    super.onViewCreated(view, savedInstanceState)
+    val context = requireContext()
+    val components = (context.applicationContext as UHApp).components
+
+    val downloadFileUtils = mozilla.components.support.utils.DefaultDownloadFileUtils(context.applicationContext) {
+        android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).path
+    }
+
+    val downloadFeature = mozilla.components.feature.downloads.DownloadsFeature(
+        context.applicationContext,
+        store = components.store,
+        useCases = components.useCases.downloadsUseCases,
+        fragmentManager = childFragmentManager,
+        tabId = null,
+        downloadFileUtils = downloadFileUtils,
+        downloadManager = mozilla.components.feature.downloads.manager.FetchDownloadManager(
+            context.applicationContext,
+            components.store,
+            app.harvester.companion.core.downloads.UhDownloadService::class.java,
+            notificationsDelegate = components.notificationsDelegate,
+        ),
+        shouldForwardToThirdParties = { false },
+        promptsStyling = mozilla.components.feature.downloads.DownloadsFeature.PromptsStyling(
+            gravity = android.view.Gravity.BOTTOM,
+            shouldWidthMatchParent = true,
+            positiveButtonBackgroundColor = R.color.accent,
+            positiveButtonTextColor = R.color.bg,
+        ),
+        onDownloadStartedListener = { downloadId ->
+            components.appStore.dispatch(app.harvester.companion.components.appstate.AppAction.SnackbarAction.ShowSnackbar("Download started"))
+        },
+        onNeedToRequestPermissions = { permissions ->
+            requestPermissions(permissions, 1)
+        },
+        dismissCustomFirstPartyDownloadDialog = {
+            dismissRenameDialog()
+            dismissDownloadDialogs()
+        },
+        customFirstPartyDownloadDialog = { currentDownloadState, fileNameIfAlreadyDownloaded, positiveAction, negativeAction, openFileAction ->
+            if (canShowDownloadDialog()) {
+                val contentSize = currentDownloadState.value.contentLength ?: 0
+                val fileName = currentDownloadState.value.fileName ?: "download"
+                showRenameDownloadDialog(
+                    fileName = fileName,
+                    currentDownloadState = currentDownloadState,
+                    positiveAction = positiveAction,
+                    negativeAction = negativeAction,
+                )
+            }
+        },
+        customThirdPartyDownloadDialog = { downloaderApps, onAppSelected, negativeActionCallback ->
+            if (canShowDownloadDialog()) {
+                downloadDialog = app.harvester.companion.downloads.createDownloadAppDialog(
+                    context = context,
+                    downloaderApps = downloaderApps.value,
+                    onAppSelected = onAppSelected.value,
+                    onDismiss = { downloadDialog = null },
+                )
+                downloadDialog?.show()
+            }
+        },
+        fileHasNotEnoughStorageDialog = { filename ->
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+                .setTitle(R.string.download_file_has_not_enough_storage_dialog_title)
+                .setMessage(getString(R.string.download_file_has_not_enough_storage_dialog_message, filename.value))
+                .setPositiveButton(R.string.download_file_has_not_enough_storage_dialog_confirm_button_text) { dialog, _ -> dialog.dismiss() }
+                .setNegativeButton(R.string.download_file_has_not_enough_storage_dialog_cancel_button_text) { dialog, _ -> dialog.dismiss() }
+                .show()
+        }
+    )
+
+    downloadsFeature.set(downloadFeature, owner = this, view = view)
 
         val initStart = System.currentTimeMillis()
         val engineView = components.engine.createView(context, null)
@@ -280,38 +352,6 @@ class BrowserFragment : Fragment() {
             }
 
 UHTheme {
-    val downloadState = selectedTab?.content?.download
-    if (downloadState != null) {
-        val isAskBeforeDl = SettingsPrefs.getBool(requireContext(), SettingsPrefs.K_ASK_DL, true)
-        val contentLength = downloadState.contentLength
-        val sizeText = if (contentLength != null && contentLength > 0) {
-            android.text.format.Formatter.formatShortFileSize(requireContext(), contentLength)
-        } else {
-            "Unknown size"
-        }
-        if (isAskBeforeDl) {
-            app.harvester.companion.data.downloads.ui.UhDownloadPromptDialog(
-                fileName = downloadState.fileName ?: "download",
-                fileSize = sizeText,
-                fileUrl = downloadState.url,
-                onDismiss = {
-                    selectedTab.id.let { components.useCases.downloadsUseCases.consumeDownload(it, downloadState.id) }
-                },
-                onDownload = { newName ->
-                    val updatedState = downloadState.copy(fileName = newName, skipConfirmation = true)
-                    components.store.dispatch(mozilla.components.browser.state.action.DownloadAction.AddDownloadAction(updatedState))
-                    selectedTab.id.let { components.useCases.downloadsUseCases.consumeDownload(it, downloadState.id) }
-                }
-            )
-        } else {
-            androidx.compose.runtime.LaunchedEffect(downloadState.id) {
-                val updatedState = downloadState.copy(skipConfirmation = true)
-                components.store.dispatch(mozilla.components.browser.state.action.DownloadAction.AddDownloadAction(updatedState))
-                selectedTab.id.let { components.useCases.downloadsUseCases.consumeDownload(it, downloadState.id) }
-            }
-        }
-    }
-
     if (isEditing) {
         UHSearchOverlay(
             url = selectedTab?.content?.url ?: "",
@@ -374,8 +414,64 @@ UHTheme {
         return false
     }
 
-    override fun onDestroyView() {
-        _binding = null
-        super.onDestroyView()
+override fun onStart() {
+    super.onStart()
+    downloadsFeature.withFeature { it.start() }
+}
+
+override fun onStop() {
+    super.onStop()
+    downloadsFeature.withFeature { it.stop() }
+    dismissDownloadDialogs()
+}
+
+override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+    super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    if (requestCode == 1) {
+        downloadsFeature.withFeature { it.onPermissionsResult(permissions, grantResults) }
     }
+}
+
+private fun canShowDownloadDialog(): Boolean {
+    val isRenameFragmentShowing = childFragmentManager.findFragmentByTag(app.harvester.companion.downloads.RenameAndChangeLocationDialogFragment.RENAME_AND_CHANGE_LOCATION_DIALOG_TAG) != null
+    return downloadDialog == null && !isRenameFragmentShowing && isAdded
+}
+
+private fun dismissRenameDialog() {
+    val renameDialog = childFragmentManager.findFragmentByTag(app.harvester.companion.downloads.RenameAndChangeLocationDialogFragment.RENAME_AND_CHANGE_LOCATION_DIALOG_TAG) as? app.harvester.companion.downloads.RenameAndChangeLocationDialogFragment
+    renameDialog?.dismissAllowingStateLoss()
+}
+
+private fun dismissDownloadDialogs() {
+    downloadDialog?.dismiss()
+}
+
+private fun showRenameDownloadDialog(
+    fileName: String,
+    currentDownloadState: mozilla.components.feature.downloads.CurrentDownloadState,
+    positiveAction: mozilla.components.feature.downloads.PositiveActionCallback,
+    negativeAction: mozilla.components.feature.downloads.NegativeActionCallback,
+) {
+    val existingFragment = childFragmentManager.findFragmentByTag(app.harvester.companion.downloads.RenameAndChangeLocationDialogFragment.RENAME_AND_CHANGE_LOCATION_DIALOG_TAG)
+    if (existingFragment == null && isAdded && !childFragmentManager.isStateSaved) {
+        val renameDialog = app.harvester.companion.downloads.RenameAndChangeLocationDialogFragment.newInstance(
+            fileName = fileName,
+            directoryPath = currentDownloadState.value.directoryPath,
+            contentSize = currentDownloadState.value.contentLength ?: 0,
+        )
+        renameDialog.onConfirmSave = { newFileName, directoryPath ->
+            val downloadState = currentDownloadState.value.copy(fileName = newFileName, directoryPath = directoryPath)
+            positiveAction.value.invoke(downloadState)
+        }
+        renameDialog.onCancel = {
+            negativeAction.value.invoke()
+        }
+        renameDialog.show(childFragmentManager, app.harvester.companion.downloads.RenameAndChangeLocationDialogFragment.RENAME_AND_CHANGE_LOCATION_DIALOG_TAG)
+    }
+}
+
+override fun onDestroyView() {
+    _binding = null
+    super.onDestroyView()
+}
 }
