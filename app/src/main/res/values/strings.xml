@@ -32,7 +32,8 @@
     <string name="download_time_period_yesterday">Yesterday</string>
     <string name="download_time_period_last_7_days">Last 7 days</string>
     <string name="download_time_period_last_30_days">Last 30 days</string>
-        <string name="download_time_period_older">Older</string>
+    <string name="download_time_period_older">Older</string>
+    <string name="preferences_downloads_no_folder_picker_available">Unable to open the folder picker on this device.</string>
     <string name="download_app_dialog_title">Download file with:</string>
     <string name="download_delete_multiple_items_snackbar_2">Items deleted: %1$d</string>
     <string name="download_delete_single_item_snackbar_2">Deleted “%1$s”</string>
