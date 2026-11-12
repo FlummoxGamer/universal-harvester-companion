@@ -2,7 +2,6 @@ package app.harvester.companion.data.downloads.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,10 +23,10 @@ import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -96,19 +95,16 @@ fun UhDownloadListItem(
                 .padding(12.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (fileItem.contentType?.startsWith("image/") == true && fileItem.filePath.startsWith("content://")) {
-                    AsyncImage(
-                        model = fileItem.filePath,
-                        contentDescription = null,
-                        modifier = Modifier.size(40.dp).clip(RoundedCornerShape(8.dp)),
-                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                    )
-                } else if (fileItem.contentType?.startsWith("image/") == true && File(fileItem.filePath).exists()) {
+                
+                if (fileItem.contentType?.startsWith("image/") == true) {
                     AsyncImage(
                         model = File(fileItem.filePath),
                         contentDescription = null,
                         modifier = Modifier.size(40.dp).clip(RoundedCornerShape(8.dp)),
-                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                        contentScale = ContentScale.Crop,
+                        placeholder = painterResource(id = fileItem.icon),
+                        error = painterResource(id = fileItem.icon),
+                        fallback = painterResource(id = fileItem.icon)
                     )
                 } else {
                     Icon(
