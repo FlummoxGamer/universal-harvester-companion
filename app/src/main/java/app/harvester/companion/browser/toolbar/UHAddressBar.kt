@@ -168,44 +168,41 @@ fun UHAddressBar(
                 contentAlignment = Alignment.CenterStart
             ) {
 if (isEditing) {
-        BasicTextField(
-            value = textState,
-            onValueChange = { newValue ->
-                val collapsed = newValue.copy(
-                    selection = TextRange(newValue.selection.end)
-                )
-                textState = collapsed
-                onEditTextChanged(collapsed.text)
-            },
-            modifier = Modifier.fillMaxWidth().padding(end = 28.dp).focusRequester(focusRequester).background(Color.Transparent),
-            textStyle = TextStyle(color = colorResource(id = R.color.text), fontSize = 14.sp),
-            singleLine = true,
-            cursorBrush = androidx.compose.ui.graphics.SolidColor(colorResource(id = R.color.text)),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-            keyboardActions = KeyboardActions(onGo = {
-                if (textState.text.isNotBlank()) onSubmit(textState.text)
-            }),
-    decorationBox = { innerTextField ->
-        Box(
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            contentAlignment = Alignment.CenterStart
-        ) {
-            androidx.compose.runtime.CompositionLocalProvider(
-                androidx.compose.foundation.text.selection.LocalTextSelectionColors provides androidx.compose.foundation.text.selection.TextSelectionColors(
-                    handleColor = Color.Transparent,
-                    backgroundColor = Color.Transparent
-                )
+androidx.compose.runtime.CompositionLocalProvider(
+    androidx.compose.foundation.text.selection.LocalTextSelectionColors provides androidx.compose.foundation.text.selection.TextSelectionColors(
+        handleColor = Color.Transparent,
+        backgroundColor = Color.Transparent
+    )
+) {
+    BasicTextField(
+        value = textState,
+        onValueChange = { newValue ->
+            val collapsed = newValue.copy(
+                selection = TextRange(newValue.selection.end)
+            )
+            textState = collapsed
+            onEditTextChanged(collapsed.text)
+        },
+        modifier = Modifier.fillMaxWidth().padding(end = 28.dp).focusRequester(focusRequester).background(Color.Transparent),
+        textStyle = TextStyle(color = colorResource(id = R.color.text), fontSize = 14.sp),
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+        keyboardActions = KeyboardActions(onGo = {
+            if (textState.text.isNotBlank()) onSubmit(textState.text)
+        }),
+        decorationBox = { innerTextField ->
+            Box(
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                contentAlignment = Alignment.CenterStart
             ) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {
-                    if (textState.text.isEmpty()) {
-                        Text("Search or type URL", color = colorResource(id = R.color.subtext), fontSize = 14.sp)
-                    }
-                    innerTextField()
+                if (textState.text.isEmpty()) {
+                    Text("Search or type URL", color = colorResource(id = R.color.subtext), fontSize = 14.sp)
                 }
+                innerTextField()
             }
         }
-    }
-)
+    )
+}
                     if (textState.text.isNotEmpty()) {
                         IconButton(
                             onClick = {
