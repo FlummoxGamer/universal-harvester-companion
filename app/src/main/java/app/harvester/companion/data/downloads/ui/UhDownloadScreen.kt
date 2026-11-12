@@ -2,8 +2,6 @@ package app.harvester.companion.data.downloads.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,8 +23,10 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.colorResource
@@ -55,24 +55,23 @@ fun UhDownloadScreen(
     onSettingsClick: () -> Unit,
     onBackClick: () -> Unit
 ) {
-    
-val uiState by downloadsStore.stateFlow.collectAsState()
-val snackbarHostState = androidx.compose.runtime.remember { SnackbarHostState() }
+    val uiState by downloadsStore.stateFlow.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
 
-androidx.compose.runtime.LaunchedEffect(uiState.deletionSnackbarState) {
-    val state = uiState.deletionSnackbarState
-    if (state is UhDownloadUIState.SnackbarState.UndoDeletion) {
-        val result = snackbarHostState.showSnackbar(
-            message = "Downloads deleted",
-            actionLabel = "Undo"
-        )
-        if (result == SnackbarResult.ActionPerformed) {
-            downloadsStore.dispatch(UhDownloadUIAction.UndoPendingDeletion)
+    LaunchedEffect(uiState.deletionSnackbarState) {
+        val state = uiState.deletionSnackbarState
+        if (state is UhDownloadUIState.SnackbarState.UndoDeletion) {
+            val result = snackbarHostState.showSnackbar(
+                message = "Downloads deleted",
+                actionLabel = stringResource(R.string.download_undo_delete_snackbar_action)
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                downloadsStore.dispatch(UhDownloadUIAction.UndoPendingDeletion)
+            }
         }
     }
-}
-
-BackHandler(uiState.isBackHandlerEnabled) {
+    
+    BackHandler(uiState.isBackHandlerEnabled) {
         if (uiState.mode is UhDownloadUIState.Mode.Editing) {
             downloadsStore.dispatch(UhDownloadUIAction.ExitEditMode)
         } else if (uiState.isSearchFieldVisible) {
@@ -84,16 +83,16 @@ BackHandler(uiState.isBackHandlerEnabled) {
         is UhDownloadUIState.DialogState.DeleteConfirmation -> {
             AlertDialog(
                 onDismissRequest = { downloadsStore.dispatch(UhDownloadUIAction.DismissDeleteDialog) },
-                title = { Text("Delete download?") },
-                text = { Text("This will remove the file from your device.") },
+                title = { Text(stringResource(R.string.downloads_delete_dialog_title, dialog.items.size)) },
+                text = { Text(stringResource(R.string.download_delete_multi_select_dialog_confirmation)) },
                 confirmButton = {
                     TextButton(onClick = { downloadsStore.dispatch(UhDownloadUIAction.AddPendingDeletionSet(dialog.items, true)) }) {
-                        Text("Delete", color = colorResource(id = R.color.red))
+                        Text(stringResource(R.string.download_delete_multi_select_dialog_confirm), color = colorResource(id = R.color.red))
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { downloadsStore.dispatch(UhDownloadUIAction.DismissDeleteDialog) }) {
-                        Text("Cancel", color = colorResource(id = R.color.subtext))
+                        Text(stringResource(R.string.download_delete_multi_select_dialog_cancel), color = colorResource(id = R.color.subtext))
                     }
                 }
             )
@@ -101,16 +100,16 @@ BackHandler(uiState.isBackHandlerEnabled) {
         is UhDownloadUIState.DialogState.MultiSelectDeleteConfirmation -> {
             AlertDialog(
                 onDismissRequest = { downloadsStore.dispatch(UhDownloadUIAction.DismissDeleteDialog) },
-                title = { Text("Delete ${dialog.items.size} downloads?") },
-                text = { Text("This will remove the files from your device.") },
+                title = { Text(stringResource(R.string.downloads_delete_dialog_title, dialog.items.size)) },
+                text = { Text(stringResource(R.string.download_delete_multi_select_dialog_confirmation)) },
                 confirmButton = {
                     TextButton(onClick = { downloadsStore.dispatch(UhDownloadUIAction.ConfirmMultiSelectDelete(dialog.items)) }) {
-                        Text("Delete", color = colorResource(id = R.color.red))
+                        Text(stringResource(R.string.download_delete_multi_select_dialog_confirm), color = colorResource(id = R.color.red))
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { downloadsStore.dispatch(UhDownloadUIAction.DismissDeleteDialog) }) {
-                        Text("Cancel", color = colorResource(id = R.color.subtext))
+                        Text(stringResource(R.string.download_delete_multi_select_dialog_cancel), color = colorResource(id = R.color.subtext))
                     }
                 }
             )
@@ -145,58 +144,58 @@ BackHandler(uiState.isBackHandlerEnabled) {
                                 .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                        if (uiState.mode is UhDownloadUIState.Mode.Editing) {
-                            IconButton(onClick = { downloadsStore.dispatch(UhDownloadUIAction.ExitEditMode) }) {
-                                Icon(painterResource(R.drawable.ic_close), "Close")
-                            }
-                            Text(
-                                text = "${uiState.mode.selectedItems.size} selected",
-                                color = colorResource(id = R.color.text),
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.weight(1f)
-                            )
-                            IconButton(onClick = {
-                                downloadsStore.dispatch(UhDownloadUIAction.RequestDeleteMultiple(uiState.mode.selectedItems))
-                            }) {
-                                Icon(painterResource(R.drawable.ic_delete), "Delete", tint = colorResource(id = R.color.red))
-                            }
-                        } else {
-                            IconButton(onClick = onBackClick) {
-                                Icon(painterResource(R.drawable.ic_back), "Back")
-                            }
-                            Text(
-                                text = "Downloads",
-                                color = colorResource(id = R.color.text),
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.weight(1f)
-                            )
-                            IconButton(onClick = { downloadsStore.dispatch(UhDownloadUIAction.SearchBarVisibilityRequest) }) {
-                                Icon(painterResource(R.drawable.ic_search), "Search")
-                            }
-                            
-                            IconButton(onClick = {
-                                downloadsStore.dispatch(UhDownloadUIAction.RequestDeleteMultiple(uiState.items.toSet()))
-                            }) {
-                                Icon(painterResource(R.drawable.ic_delete), "Clear All", tint = colorResource(id = R.color.red))
-                            }
+                            if (uiState.mode is UhDownloadUIState.Mode.Editing) {
+                                IconButton(onClick = { downloadsStore.dispatch(UhDownloadUIAction.ExitEditMode) }) {
+                                    Icon(painterResource(R.drawable.ic_close), "Close")
+                                }
+                                Text(
+                                    text = stringResource(R.string.download_multi_select_title, uiState.mode.selectedItems.size),
+                                    color = colorResource(id = R.color.text),
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(onClick = {
+                                    downloadsStore.dispatch(UhDownloadUIAction.RequestDeleteMultiple(uiState.mode.selectedItems))
+                                }) {
+                                    Icon(painterResource(R.drawable.ic_delete), "Delete", tint = colorResource(id = R.color.red))
+                                }
+                            } else {
+                                IconButton(onClick = onBackClick) {
+                                    Icon(painterResource(R.drawable.ic_back), stringResource(R.string.download_navigate_back_description))
+                                }
+                                Text(
+                                    text = stringResource(R.string.library_downloads),
+                                    color = colorResource(id = R.color.text),
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(onClick = { downloadsStore.dispatch(UhDownloadUIAction.SearchBarVisibilityRequest) }) {
+                                    Icon(painterResource(R.drawable.ic_search), stringResource(R.string.download_search_placeholder))
+                                }
+                                
+                                IconButton(onClick = {
+                                    downloadsStore.dispatch(UhDownloadUIAction.RequestDeleteMultiple(uiState.items.toSet()))
+                                }) {
+                                    Icon(painterResource(R.drawable.ic_delete), "Clear All", tint = colorResource(id = R.color.red))
+                                }
 
                                 IconButton(onClick = onSettingsClick) {
-                                    Icon(painterResource(R.drawable.ic_settings), "Settings")
+                                    Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.download_navigate_settings_description))
                                 }
                             }
                         }
-                   }
-                   }
-               }
-           ) { padding ->
-               Column(
-                   modifier = Modifier
-                       .padding(padding)
-                       .fillMaxSize()
-                       .navigationBarsPadding()
-               ) {
+                    }
+                }
+            }
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .padding(padding)
+                    .fillMaxSize()
+                    .navigationBarsPadding()
+            ) {
                 if (uiState.filtersToDisplay.isNotEmpty() && !uiState.isSearchFieldVisible) {
                     UhDownloadFilters(
                         selectedFilter = uiState.selectedContentTypeFilter,
@@ -208,12 +207,12 @@ BackHandler(uiState.isBackHandlerEnabled) {
                 when (val state = uiState.itemsState) {
                     is UhDownloadUIState.ItemsState.NoItems -> {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("No downloads yet", color = colorResource(id = R.color.subtext))
+                            Text(stringResource(R.string.download_empty_message_2), color = colorResource(id = R.color.subtext))
                         }
                     }
                     is UhDownloadUIState.ItemsState.NoSearchResults -> {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("No results found", color = colorResource(id = R.color.subtext))
+                            Text(stringResource(R.string.download_search_no_results_found), color = colorResource(id = R.color.subtext))
                         }
                     }
                     is UhDownloadUIState.ItemsState.Items -> {
