@@ -12,8 +12,8 @@ android {
     applicationId = "app.harvester.companion"
     minSdk = 29
     targetSdk = 36
-    versionCode = 164
-    versionName = "2.4.94"
+    versionCode = 165
+    versionName = "2.4.95"
 
     ksp {
         arg("room.schemaLocation", "$projectDir/schemas")
@@ -128,8 +128,6 @@ dependencies {
     implementation("org.mozilla.components:service-nimbus:154.0.1")
     implementation("org.mozilla.components:concept-sync:154.0.1")
     implementation("org.mozilla.components:concept-storage:154.0.1")
-    implementation("org.mozilla.components:support-rusterrors:154.0.1")
-    implementation("org.mozilla.components:support-rustlog:154.0.1")
     implementation("org.mozilla.components:concept-engine:154.0.1")
     implementation("org.mozilla.components:feature-session:154.0.1")
     implementation("org.mozilla.components:feature-downloads:154.0.1")
