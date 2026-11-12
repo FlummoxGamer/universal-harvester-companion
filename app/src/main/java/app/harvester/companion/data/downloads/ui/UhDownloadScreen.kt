@@ -9,7 +9,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
@@ -109,20 +111,21 @@ fun UhDownloadScreen(
     UHTheme {
         Scaffold(
             topBar = {
-                if (uiState.isSearchFieldVisible) {
-                    UhDownloadSearchBar(
-                        query = uiState.searchQuery,
-                        onQueryChanged = { downloadsStore.dispatch(UhDownloadUIAction.SearchQueryEntered(it)) },
-                        onDismiss = { downloadsStore.dispatch(UhDownloadUIAction.SearchBarDismissRequest) }
-                    )
-                } else {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(colorResource(id = R.color.surface))
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                Column(modifier = Modifier.statusBarsPadding()) {
+                    if (uiState.isSearchFieldVisible) {
+                        UhDownloadSearchBar(
+                            query = uiState.searchQuery,
+                            onQueryChanged = { downloadsStore.dispatch(UhDownloadUIAction.SearchQueryEntered(it)) },
+                            onDismiss = { downloadsStore.dispatch(UhDownloadUIAction.SearchBarDismissRequest) }
+                        )
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(colorResource(id = R.color.surface))
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                         if (uiState.mode is UhDownloadUIState.Mode.Editing) {
                             IconButton(onClick = { downloadsStore.dispatch(UhDownloadUIAction.ExitEditMode) }) {
                                 Icon(painterResource(R.drawable.ic_close), "Close")
@@ -160,15 +163,21 @@ fun UhDownloadScreen(
                                 Icon(painterResource(R.drawable.ic_delete), "Clear All", tint = colorResource(id = R.color.red))
                             }
 
-                            IconButton(onClick = onSettingsClick) {
-                                Icon(painterResource(R.drawable.ic_settings), "Settings")
+                                IconButton(onClick = onSettingsClick) {
+                                    Icon(painterResource(R.drawable.ic_settings), "Settings")
+                                }
                             }
                         }
-                    }
-                }
-            }
-        ) { padding ->
-            Column(modifier = Modifier.padding(padding).fillMaxSize()) {
+                   }
+                   }
+               }
+           ) { padding ->
+               Column(
+                   modifier = Modifier
+                       .padding(padding)
+                       .fillMaxSize()
+                       .navigationBarsPadding()
+               ) {
                 if (uiState.filtersToDisplay.isNotEmpty() && !uiState.isSearchFieldVisible) {
                     UhDownloadFilters(
                         selectedFilter = uiState.selectedContentTypeFilter,
