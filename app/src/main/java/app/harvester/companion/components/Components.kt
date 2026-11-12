@@ -4,11 +4,19 @@ import android.content.Context
 import android.content.res.Configuration
 import android.os.Environment
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.ThemePrefs
+import app.harvester.companion.browser.storage.sync.GlobalPlacesDependencyProvider
+import app.harvester.companion.browser.storage.sync.PlacesBookmarksStorage
+import app.harvester.companion.browser.storage.sync.PlacesHistoryStorage
+import app.harvester.companion.browser.storage.sync.PlacesHistoryStorageWorker
 import app.harvester.companion.core.downloads.UhDownloadMiddleware
 import app.harvester.companion.core.downloads.UhDownloadService
 import app.harvester.companion.data.downloads.UhDownloadStorage
+import app.harvester.companion.feature.session.HistoryDelegate
+import app.harvester.companion.service.nimbus.Nimbus
+import app.harvester.companion.service.nimbus.NimbusAppInfo
 import mozilla.components.browser.engine.gecko.GeckoEngine
 import mozilla.components.browser.engine.gecko.fetch.GeckoViewFetchClient
 import mozilla.components.browser.state.action.BrowserAction
@@ -43,6 +51,32 @@ class Components(val context: Context) {
 
     val client: Client by lazy {
         GeckoViewFetchClient(context.applicationContext, runtime)
+    }
+
+    val placesHistoryStorage: PlacesHistoryStorage by lazy {
+        PlacesHistoryStorage(context.applicationContext)
+    }
+
+    val placesBookmarksStorage: PlacesBookmarksStorage by lazy {
+        PlacesBookmarksStorage(context.applicationContext)
+    }
+
+    val historyDelegate: HistoryDelegate by lazy {
+        HistoryDelegate(lazy { placesHistoryStorage })
+    }
+
+    val nimbus: Nimbus by lazy {
+        Nimbus(
+            context = context.applicationContext,
+            appInfo = NimbusAppInfo("uh", BuildConfig.VERSION_NAME),
+            server = null,
+            recordedContext = null
+        )
+    }
+
+    init {
+        GlobalPlacesDependencyProvider.initialize(placesHistoryStorage)
+        placesHistoryStorage.registerStorageMaintenanceWorker()
     }
 
     val fileSizeFormatter: FileSizeFormatter by lazy {
@@ -86,24 +120,24 @@ class Components(val context: Context) {
     }
 
     val store: BrowserStore by lazy {
-    val middlewareList = listOf<Middleware<BrowserState, BrowserAction>>(downloadMiddleware)
-    val browserStore = BrowserStore(
-        middleware = middlewareList + EngineMiddleware.create(engine, trimMemoryAutomatically = false)
-    )
-    val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
-    try {
-        connectivityManager.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: android.net.Network) {
-                browserStore.state.downloads.values.filter { it.status == mozilla.components.browser.state.state.content.DownloadState.Status.FAILED }.forEach { download ->
-                    val intent = android.content.Intent(context, UhDownloadService::class.java)
-                    intent.putExtra(android.app.DownloadManager.EXTRA_DOWNLOAD_ID, download.id)
-                    intent.action = mozilla.components.feature.downloads.AbstractFetchDownloadService.ACTION_TRY_AGAIN
-                    context.startService(intent)
+        val middlewareList = listOf<Middleware<BrowserState, BrowserAction>>(downloadMiddleware)
+        val browserStore = BrowserStore(
+            middleware = middlewareList + EngineMiddleware.create(engine, trimMemoryAutomatically = false)
+        )
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        try {
+            connectivityManager.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: android.net.Network) {
+                    browserStore.state.downloads.values.filter { it.status == mozilla.components.browser.state.state.content.DownloadState.Status.FAILED }.forEach { download ->
+                        val intent = android.content.Intent(context, UhDownloadService::class.java)
+                        intent.putExtra(android.app.DownloadManager.EXTRA_DOWNLOAD_ID, download.id)
+                        intent.action = mozilla.components.feature.downloads.AbstractFetchDownloadService.ACTION_TRY_AGAIN
+                        ContextCompat.startForegroundService(context, intent)
+                    }
                 }
-            }
-        })
-    } catch (e: Exception) {}
-    browserStore
+            })
+        } catch (e: Exception) {}
+        browserStore
     }
 
     val useCases: UseCases by lazy { UseCases(store, engine, downloadFileUtils) }
@@ -111,15 +145,15 @@ class Components(val context: Context) {
     private fun buildDefaultSettings(): DefaultSettings {
         val textScale = SettingsPrefs.getInt(context, SettingsPrefs.K_TEXT_SCALE, 100)
         return DefaultSettings(
-        remoteDebuggingEnabled = false,
-        testingModeEnabled = false,
-        downloadDelegate = mozilla.components.browser.engine.gecko.util.EngineDownloadDelegate(
-            context = context.applicationContext,
-            downloadLocation = {
-                android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).path
-            }
-        ),
-        preferredColorScheme = buildPreferredColorScheme(),
+            remoteDebuggingEnabled = false,
+            testingModeEnabled = false,
+            downloadDelegate = mozilla.components.browser.engine.gecko.util.EngineDownloadDelegate(
+                context = context.applicationContext,
+                downloadLocation = {
+                    android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).path
+                }
+            ),
+            preferredColorScheme = buildPreferredColorScheme(),
             automaticFontSizeAdjustment = textScale != 100,
             fontInflationEnabled = textScale != 100,
             suspendMediaWhenInactive = false,
@@ -127,6 +161,7 @@ class Components(val context: Context) {
             loginAutofillEnabled = false,
             enterpriseRootsEnabled = false,
             globalPrivacyControlEnabled = SettingsPrefs.getBool(context, SettingsPrefs.K_ADV_GPC, false),
+            historyTrackingDelegate = historyDelegate,
         )
     }
 
