@@ -32,6 +32,7 @@ class UHApp : Application(), coil.ImageLoaderFactory {
         UHLog.init(this)
         SessionRecorder.init(this)
         ThemePrefs.applyCurrent(this)
+        components.store.dispatch(mozilla.components.browser.state.action.DownloadAction.RestoreDownloadsStateAction)
         movePendingCrashFile()
 
         applicationScope.launch {
