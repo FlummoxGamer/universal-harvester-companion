@@ -111,7 +111,8 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                             }
                             TopRowItem("Downloads", R.drawable.ic_downloads, Modifier.weight(1f)) {
                                 dismiss()
-                                findNavController().navigate(R.id.action_global_downloadsFragment)
+                                val navHostFragment = requireActivity().supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as? androidx.navigation.fragment.NavHostFragment
+                                navHostFragment?.navController?.navigate(R.id.action_global_downloadsFragment)
                             }
                             TopRowItem("Playlist", R.drawable.ic_playlist, Modifier.weight(1f)) {
                                 dismiss()
