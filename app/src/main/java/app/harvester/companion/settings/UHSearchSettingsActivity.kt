@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -58,7 +60,8 @@ fun SearchSettingsScreen() {
         modifier = Modifier
             .fillMaxSize()
             .background(colorResource(id = R.color.bg))
-    ) {
+            .statusBarsPadding()
+     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -93,7 +96,11 @@ fun SearchSettingsScreen() {
             )
         }
 
-        LazyColumn(modifier = Modifier.padding(horizontal = 16.dp)) {
+        LazyColumn(
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .navigationBarsPadding()
+         ) {
             item { SettingsCategory("Search Engine") }
             item { SettingsRow("Default Search Engine", engineName, onClick = { showEnginePicker = true }) }
             item { SettingsRow("Add Custom Engine", "Create your own search engine", onClick = { showAddDialog = true }) }
