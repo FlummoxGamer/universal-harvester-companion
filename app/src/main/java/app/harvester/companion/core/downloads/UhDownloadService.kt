@@ -35,9 +35,6 @@ class UhDownloadService : AbstractFetchDownloadService() {
         )
     }
     override val downloadFileWriter: DownloadFileWriter by lazy {
-        DefaultDownloadFileWriter(
-            context = applicationContext,
-            downloadFileUtils = downloadFileUtils,
-        )
+        app.harvester.companion.core.downloads.UhDownloadFileWriter(applicationContext)
     }
 }
