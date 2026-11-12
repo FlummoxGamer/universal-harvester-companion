@@ -72,40 +72,42 @@ fun CustomizeAddressBarScreen() {
             item { SettingsCategory("Position") }
             item {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .background(colorResource(id = R.color.surface), androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
-                        .padding(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                   modifier = Modifier
+                       .fillMaxWidth()
+                       .padding(vertical = 4.dp)
+                       .background(colorResource(id = R.color.surface), androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
+                       .clickable { 
+                           position = 0
+                           SettingsPrefs.setInt(context, SettingsPrefs.K_ADDRESS_BAR_POSITION, 0)
+                       }
+                       .padding(8.dp),
+                   verticalAlignment = Alignment.CenterVertically
                 ) {
-                    RadioButton(
-                        selected = position == 0,
-                        onClick = { 
-                            position = 0
-                            SettingsPrefs.setInt(context, SettingsPrefs.K_ADDRESS_BAR_POSITION, 0)
-                        }
-                    )
-                    Text("Top", color = colorResource(id = R.color.text), fontSize = 16.sp)
+                   RadioButton(
+                       selected = position == 0,
+                       onClick = null
+                   )
+                   Text("Top", color = colorResource(id = R.color.text), fontSize = 16.sp)
                 }
             }
             item {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .background(colorResource(id = R.color.surface), androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
-                        .padding(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                   modifier = Modifier
+                       .fillMaxWidth()
+                       .padding(vertical = 4.dp)
+                       .background(colorResource(id = R.color.surface), androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
+                       .clickable { 
+                           position = 1
+                           SettingsPrefs.setInt(context, SettingsPrefs.K_ADDRESS_BAR_POSITION, 1)
+                       }
+                       .padding(8.dp),
+                   verticalAlignment = Alignment.CenterVertically
                 ) {
-                    RadioButton(
-                        selected = position == 1,
-                        onClick = { 
-                            position = 1
-                            SettingsPrefs.setInt(context, SettingsPrefs.K_ADDRESS_BAR_POSITION, 1)
-                        }
-                    )
-                    Text("Bottom", color = colorResource(id = R.color.text), fontSize = 16.sp)
+                   RadioButton(
+                       selected = position == 1,
+                       onClick = null
+                   )
+                   Text("Bottom", color = colorResource(id = R.color.text), fontSize = 16.sp)
                 }
             }
 
