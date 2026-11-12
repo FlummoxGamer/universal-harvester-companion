@@ -50,8 +50,12 @@ fun UhDownloadListItem(
     onResumeClick: () -> Unit,
     onRetryClick: () -> Unit,
     onDeleteClick: () -> Unit,
+    onShareUrlClick: () -> Unit,
+    onShareFileClick: () -> Unit,
+    onRenameClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showMenu by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val isFailed = fileItem.status == UhFileItem.Status.Failed
     val tint = if (isFailed) colorResource(id = R.color.red) else colorResource(id = R.color.subtext)
     val bgColor = if (isSelected) colorResource(id = R.color.surface_3) else colorResource(id = R.color.surface)
@@ -151,11 +155,44 @@ fun UhDownloadListItem(
                                 Icon(painterResource(R.drawable.ic_uh_retry), "Retry", tint = colorResource(id = R.color.text))
                             }
                         }
-                        else -> {}
-                    }
-                }
+             else -> {}
+        }
+        Box {
+            IconButton(onClick = { showMenu = true }) {
+                Icon(painterResource(R.drawable.mozac_ic_more_vertical_round_24), "More")
             }
-            
+            androidx.compose.material3.DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false }
+            ) {
+                if (fileItem.status is UhFileItem.Status.Completed) {
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text(stringResource(R.string.download_share_url)) },
+                        onClick = { showMenu = false; onShareUrlClick() }
+                    )
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text(stringResource(R.string.download_share_file)) },
+                        onClick = { showMenu = false; onShareFileClick() }
+                    )
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text(stringResource(R.string.download_rename_file)) },
+                        onClick = { showMenu = false; onRenameClick() }
+                    )
+                } else {
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text(stringResource(R.string.download_share_url)) },
+                        onClick = { showMenu = false; onShareUrlClick() }
+                    )
+                }
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(stringResource(R.string.download_delete_item), color = colorResource(id = R.color.red)) },
+                    onClick = { showMenu = false; onDeleteClick() }
+                )
+            }
+        }
+    }
+}
+
             if (fileItem.status is UhFileItem.Status.Downloading || fileItem.status is UhFileItem.Status.Initiated) {
                 Spacer(modifier = Modifier.height(8.dp))
                 val progress = (fileItem.status as? UhFileItem.Status.Downloading)?.progress ?: 0f
