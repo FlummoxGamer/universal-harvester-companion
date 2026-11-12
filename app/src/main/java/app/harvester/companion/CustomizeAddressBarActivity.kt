@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
@@ -48,20 +50,25 @@ fun CustomizeAddressBarScreen() {
         modifier = Modifier
             .fillMaxSize()
             .background(colorResource(id = R.color.bg))
-    ) {
+            .statusBarsPadding()
+     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Address Bar",
+                text = "Customize Address Bar",
                 color = colorResource(id = R.color.text),
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold
             )
         }
 
-        LazyColumn(modifier = Modifier.padding(horizontal = 16.dp)) {
+        LazyColumn(
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .navigationBarsPadding()
+         ) {
             item { SettingsCategory("Position") }
             item {
                 Row(
