@@ -2,10 +2,6 @@ package app.harvester.companion
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import app.harvester.companion.UHApp
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -33,12 +29,6 @@ class HomeActivity : AppCompatActivity() {
         }
 
         handleIntent(intent)
-    
-        lifecycleScope.launch(Dispatchers.IO) {
-            (application as UHApp).components.store.dispatch(
-                mozilla.components.browser.state.action.DownloadAction.RestoreDownloadsStateAction
-            )
-        }
     }
     
     private fun showComposeSplash() {
