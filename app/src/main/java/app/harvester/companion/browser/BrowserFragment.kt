@@ -84,7 +84,7 @@ class BrowserFragment : Fragment() {
         return binding.root
     }
 
-private val downloadsFeature = mozilla.components.support.base.feature.ViewBoundFeatureWrapper<mozilla.components.feature.downloads.DownloadsFeature>()
+private val downloadsFeature = ViewBoundFeatureWrapper<mozilla.components.feature.downloads.DownloadsFeature>()
 private var downloadDialog: androidx.appcompat.app.AlertDialog? = null
 
 override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -106,7 +106,7 @@ override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         downloadManager = mozilla.components.feature.downloads.manager.FetchDownloadManager(
             context.applicationContext,
             components.store,
-            app.harvester.companion.core.downloads.UhDownloadService::class.java,
+            app.harvester.companion.core.downloads.UhDownloadService::class,
             notificationsDelegate = components.notificationsDelegate,
         ),
         shouldForwardToThirdParties = { false },
@@ -425,7 +425,7 @@ override fun onStop() {
     dismissDownloadDialogs()
 }
 
-override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
     super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     if (requestCode == 1) {
         downloadsFeature.withFeature { it.onPermissionsResult(permissions, grantResults) }
