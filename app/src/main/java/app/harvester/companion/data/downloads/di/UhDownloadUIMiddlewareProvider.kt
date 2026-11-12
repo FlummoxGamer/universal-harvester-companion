@@ -47,7 +47,13 @@ object UhDownloadUIMiddlewareProvider {
             UhDownloadDeleteMiddleware(
                 undoDelay = 4000L,
                 removeDownloadUseCase = components.useCases.downloadsUseCases.removeDownload,
-                deleteBehaviorProvider = { UhDeleteDownloadBehavior.ASK_WHEN_DELETING }
+                deleteBehaviorProvider = { 
+                    when (app.harvester.companion.SettingsPrefs.getString(applicationContext, app.harvester.companion.SettingsPrefs.K_DELETE_BEHAVIOR, "ask")) {
+                        "device" -> UhDeleteDownloadBehavior.DELETE_FROM_DEVICE
+                        "history" -> UhDeleteDownloadBehavior.DELETE_FROM_HISTORY
+                        else -> UhDeleteDownloadBehavior.ASK_WHEN_DELETING
+                    }
+                }
             ),
             UhDownloadsServiceCommunicationMiddleware(applicationContext),
             UhDownloadNavigationMiddleware(navController),
