@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -57,19 +58,20 @@ fun UhDownloadScreen(
 ) {
     val uiState by downloadsStore.stateFlow.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val undoLabel = stringResource(R.string.download_undo_delete_snackbar_action)
 
-    LaunchedEffect(uiState.deletionSnackbarState) {
-        val state = uiState.deletionSnackbarState
-        if (state is UhDownloadUIState.SnackbarState.UndoDeletion) {
-            val result = snackbarHostState.showSnackbar(
-                message = "Downloads deleted",
-                actionLabel = stringResource(R.string.download_undo_delete_snackbar_action)
-            )
-            if (result == SnackbarResult.ActionPerformed) {
-                downloadsStore.dispatch(UhDownloadUIAction.UndoPendingDeletion)
-            }
+LaunchedEffect(uiState.deletionSnackbarState) {
+    val state = uiState.deletionSnackbarState
+    if (state is UhDownloadUIState.SnackbarState.UndoDeletion) {
+        val result = snackbarHostState.showSnackbar(
+            message = "Downloads deleted",
+            actionLabel = undoLabel
+        )
+        if (result == SnackbarResult.ActionPerformed) {
+            downloadsStore.dispatch(UhDownloadUIAction.UndoPendingDeletion)
         }
     }
+}
     
     BackHandler(uiState.isBackHandlerEnabled) {
         if (uiState.mode is UhDownloadUIState.Mode.Editing) {
@@ -83,7 +85,7 @@ fun UhDownloadScreen(
         is UhDownloadUIState.DialogState.DeleteConfirmation -> {
             AlertDialog(
                 onDismissRequest = { downloadsStore.dispatch(UhDownloadUIAction.DismissDeleteDialog) },
-                title = { Text(stringResource(R.string.downloads_delete_dialog_title, dialog.items.size)) },
+                title = { Text(pluralStringResource(R.plurals.downloads_delete_dialog_title, dialog.items.size, dialog.items.size)) },
                 text = { Text(stringResource(R.string.download_delete_multi_select_dialog_confirmation)) },
                 confirmButton = {
                     TextButton(onClick = { downloadsStore.dispatch(UhDownloadUIAction.AddPendingDeletionSet(dialog.items, true)) }) {
@@ -100,7 +102,7 @@ fun UhDownloadScreen(
         is UhDownloadUIState.DialogState.MultiSelectDeleteConfirmation -> {
             AlertDialog(
                 onDismissRequest = { downloadsStore.dispatch(UhDownloadUIAction.DismissDeleteDialog) },
-                title = { Text(stringResource(R.string.downloads_delete_dialog_title, dialog.items.size)) },
+                title = { Text(pluralStringResource(R.plurals.downloads_delete_dialog_title, dialog.items.size, dialog.items.size)) },
                 text = { Text(stringResource(R.string.download_delete_multi_select_dialog_confirmation)) },
                 confirmButton = {
                     TextButton(onClick = { downloadsStore.dispatch(UhDownloadUIAction.ConfirmMultiSelectDelete(dialog.items)) }) {
