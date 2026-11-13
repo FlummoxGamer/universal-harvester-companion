@@ -2,6 +2,7 @@ package app.harvester.companion.search.awesomebar
 
 import kotlinx.coroutines.CoroutineScope
 import mozilla.components.browser.state.search.SearchEngine
+import mozilla.components.browser.state.state.searchEngines
 import mozilla.components.concept.awesomebar.AwesomeBar
 import mozilla.components.feature.awesomebar.provider.SearchSuggestionProvider
 import mozilla.components.feature.awesomebar.provider.SearchActionProvider
