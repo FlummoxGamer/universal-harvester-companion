@@ -37,7 +37,10 @@ fun UhDownloadSearchBar(
     
     LaunchedEffect(query) {
         if (textState.text.toString() != query) {
-            textState.setTextAndPlaceCursorAtEnd(query)
+            textState.edit {
+                replace(0, length, query)
+                placeCursorAtEnd()
+            }
         }
     }
 
@@ -84,7 +87,10 @@ fun UhDownloadSearchBar(
 
         if (textState.text.isNotEmpty()) {
             IconButton(onClick = { 
-                textState.setTextAndPlaceCursorAtEnd("")
+                textState.edit {
+                    replace(0, length, "")
+                    placeCursorAtEnd()
+                }
                 onQueryChanged("") 
             }) {
                 Icon(
