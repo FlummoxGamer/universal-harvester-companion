@@ -128,6 +128,7 @@ dependencies {
     implementation("org.mozilla.components:service-nimbus:154.0.1")
     implementation("org.mozilla.components:concept-sync:154.0.1")
     implementation("org.mozilla.components:concept-storage:154.0.1")
+    implementation("org.mozilla.components:feature-session:154.0.1")
     implementation("org.mozilla.components:concept-engine:154.0.1")
     implementation("org.mozilla.components:feature-session:154.0.1")
     implementation("org.mozilla.components:feature-downloads:154.0.1")
