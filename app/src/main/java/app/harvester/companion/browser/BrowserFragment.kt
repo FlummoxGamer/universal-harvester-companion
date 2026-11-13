@@ -457,8 +457,13 @@ class BrowserFragment : Fragment() {
     }
 
     private fun canShowDownloadDialog(): Boolean {
-        val isRenameFragmentShowing = childFragmentManager.findFragmentByTag(app.harvester.companion.downloads.RenameAndChangeLocationDialogFragment.RENAME_AND_CHANGE_LOCATION_DIALOG_TAG) != null
-        return downloadDialog == null && !isRenameFragmentShowing && isAdded
+        if (!isAdded || view == null || viewLifecycleOwner.lifecycle.currentState == androidx.lifecycle.Lifecycle.State.DESTROYED) return false
+        return try {
+            val isRenameFragmentShowing = childFragmentManager.findFragmentByTag(app.harvester.companion.downloads.RenameAndChangeLocationDialogFragment.RENAME_AND_CHANGE_LOCATION_DIALOG_TAG) != null
+            downloadDialog == null && !isRenameFragmentShowing
+        } catch (e: IllegalStateException) {
+            false
+        }
     }
 
     private fun dismissRenameDialog() {
