@@ -19,7 +19,6 @@ import mozilla.components.concept.storage.StorageMaintenanceRegistry
 import mozilla.components.concept.sync.SyncableStore
 import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.base.utils.NamedThreadFactory
-import mozilla.components.support.rusterrors.reportRustError
 import mozilla.components.support.utils.logElapsedTime
 
 abstract class PlacesStorage(
@@ -113,7 +112,6 @@ abstract class PlacesStorage(
             logger.warn("Ignoring PlacesApiException while running $operation", e)
         } catch (e: UniffiInternalException) {
             logger.error("Ignoring internal uniffi places exception when running $operation", e)
-            reportRustError("places-internal-error", e)
         }
     }
 
@@ -136,7 +134,6 @@ abstract class PlacesStorage(
             default
         } catch (e: UniffiInternalException) {
             logger.error("Ignoring internal uniffi places exception when running $operation", e)
-            reportRustError("places-internal-error", e)
             default
         }
     }
