@@ -127,9 +127,8 @@ class UhSearchSuggestionsComposable(
                 initialState = it,
                 middleware = listOf(
                     UhBrowserToSearchMiddleware(browserStore, lifecycleScope, appStore),
-                    UhSearchStatusSyncMiddleware(appStore, browsingModeManager, lifecycleScope),
                     UhSearchMiddleware(fragment, components, appStore, toolbarStore, navController, browsingModeManager)
                 ),
             )
         }
-}
+    }
