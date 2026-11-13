@@ -63,7 +63,7 @@
     <string name="download_delete_dialog_confirm">Confirm</string>
     <string name="download_rename_dialog_title">Rename file</string>
     <string name="download_rename_dialog_label">Name</string>
-    <string name="download_rename_dialog_confirm_button">Save</string>
+    <string name="download_rename_dialog_confirm_button">Download</string>
     <string name="download_rename_dialog_cancel_button">Cancel</string>
     <string name="download_rename_error_exists_error">A file named “%s” already exists in this location</string>
     <string name="download_rename_error_invalid_name_error">File names can’t use “/”</string>
