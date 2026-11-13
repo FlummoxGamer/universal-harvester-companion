@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -21,33 +23,32 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.Fragment
 import androidx.fragment.compose.content
-import androidx.lifecycle.lifecycleScope
-import androidx.navigation.fragment.findNavController
 import app.harvester.companion.R
 import app.harvester.companion.UHApp
+import app.harvester.companion.UHLog
 import app.harvester.companion.theme.UHTheme
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import mozilla.components.concept.storage.VisitInfo
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 class HistoryFragment : Fragment() {
 
@@ -62,6 +63,7 @@ class HistoryFragment : Fragment() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen() {
     val context = LocalContext.current
@@ -69,6 +71,7 @@ fun HistoryScreen() {
     var historyItems by remember { mutableStateOf<List<VisitInfo>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     val dateFormat = remember { SimpleDateFormat("MMM dd, HH:mm", Locale.US) }
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
@@ -76,7 +79,7 @@ fun HistoryScreen() {
                 val visits = components.placesHistoryStorage.getDetailedVisits(0L, System.currentTimeMillis())
                 historyItems = visits.sortedByDescending { it.visitTime }
             } catch (e: Exception) {
-                app.harvester.companion.UHLog.throwable("history", "Failed to load history", e)
+                UHLog.throwable("history", "Failed to load history", e)
             } finally {
                 isLoading = false
             }
@@ -86,7 +89,7 @@ fun HistoryScreen() {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.library_history), fontWeight = FontWeight.Bold) },
+                title = { Text("History", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = { (context as? androidx.activity.ComponentActivity)?.onBackPressedDispatcher?.onBackPressed() }) {
                         Icon(painterResource(R.drawable.ic_back), contentDescription = "Back")
@@ -97,9 +100,13 @@ fun HistoryScreen() {
                         androidx.appcompat.app.AlertDialog.Builder(context)
                             .setTitle("Clear history?")
                             .setPositiveButton("Clear") { _, _ ->
-                                lifecycleScope.launch {
-                                    components.placesHistoryStorage.deleteEverything()
-                                    historyItems = emptyList()
+                                coroutineScope.launch {
+                                    try {
+                                        components.placesHistoryStorage.deleteEverything()
+                                        historyItems = emptyList()
+                                    } catch (e: Exception) {
+                                        UHLog.throwable("history", "Failed to clear history", e)
+                                    }
                                 }
                             }
                             .setNegativeButton("Cancel", null)
@@ -114,7 +121,7 @@ fun HistoryScreen() {
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding).background(MaterialTheme.colorScheme.background)) {
             if (isLoading) {
-                androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             } else if (historyItems.isEmpty()) {
                 Text(
                     text = "No history yet",
@@ -132,7 +139,7 @@ fun HistoryScreen() {
                                     data = android.net.Uri.parse(item.url)
                                     addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
                                 }
-                                startActivity(intent)
+                                context.startActivity(intent)
                             }
                         )
                     }
@@ -159,14 +166,14 @@ fun HistoryItemRow(
             fontSize = 16.sp,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            overflow = TextOverflow.Ellipsis
         )
         Text(
             text = item.url,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
             maxLines = 1,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            overflow = TextOverflow.Ellipsis
         )
         Text(
             text = dateFormat.format(Date(item.visitTime)),
