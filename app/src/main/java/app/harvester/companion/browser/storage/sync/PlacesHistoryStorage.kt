@@ -80,7 +80,7 @@ open class PlacesHistoryStorage(
                         VisitObservation(
                             url = uri,
                             visitType = null,
-                            title = observation.title?.toWellFormed(),
+                            title = observation.title,
                             previewImageUrl = observation.previewImageUrl,
                         )
                     )
