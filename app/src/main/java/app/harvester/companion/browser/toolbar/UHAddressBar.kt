@@ -6,7 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -14,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -32,11 +32,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -79,24 +77,18 @@ fun UHAddressBar(
         return cleanUrl
     }
 
-    var textState by remember { 
-        mutableStateOf(
-            TextFieldValue(
-                text = if (isEditing) editText else formatUrl(url),
-                selection = TextRange(if (isEditing) editText.length else formatUrl(url).length)
-            )
-        ) 
-    }
+    val textState = rememberTextFieldState()
     val focusRequester = remember { FocusRequester() }
 
     LaunchedEffect(url, isEditing, editText) {
         val targetText = if (!isEditing) formatUrl(url) else editText
-        if (textState.text != targetText) {
-            textState = TextFieldValue(
-                text = targetText,
-                selection = TextRange(targetText.length)
-            )
+        if (textState.text.toString() != targetText) {
+            textState.setTextAndPlaceCursorAtEnd(targetText)
         }
+    }
+
+    LaunchedEffect(textState.text) {
+        onEditTextChanged(textState.text.toString())
     }
 
     LaunchedEffect(isEditing) {
@@ -167,46 +159,38 @@ fun UHAddressBar(
                 modifier = Modifier.weight(1f).height(52.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
-if (isEditing) {
-androidx.compose.runtime.CompositionLocalProvider(
-    androidx.compose.foundation.text.selection.LocalTextSelectionColors provides androidx.compose.foundation.text.selection.TextSelectionColors(
-        handleColor = Color.Transparent,
-        backgroundColor = Color.Transparent
-    )
-) {
-    BasicTextField(
-        value = textState,
-        onValueChange = { newValue ->
-            val collapsed = newValue.copy(
-                selection = TextRange(newValue.selection.end)
-            )
-            textState = collapsed
-            onEditTextChanged(collapsed.text)
-        },
-        modifier = Modifier.fillMaxWidth().padding(end = 28.dp).focusRequester(focusRequester).background(Color.Transparent),
-        textStyle = TextStyle(color = colorResource(id = R.color.text), fontSize = 14.sp),
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-        keyboardActions = KeyboardActions(onGo = {
-            if (textState.text.isNotBlank()) onSubmit(textState.text)
-        }),
-        decorationBox = { innerTextField ->
-            Box(
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                contentAlignment = Alignment.CenterStart
-            ) {
-                if (textState.text.isEmpty()) {
-                    Text("Search or type URL", color = colorResource(id = R.color.subtext), fontSize = 14.sp)
-                }
-                innerTextField()
-            }
-        }
-    )
-}
+                if (isEditing) {
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        androidx.compose.foundation.text.selection.LocalTextSelectionColors provides androidx.compose.foundation.text.selection.TextSelectionColors(
+                            handleColor = Color.Transparent,
+                            backgroundColor = Color.Transparent
+                        )
+                    ) {
+                        BasicTextField(
+                            state = textState,
+                            modifier = Modifier.fillMaxWidth().padding(end = 28.dp).focusRequester(focusRequester).background(Color.Transparent),
+                            textStyle = TextStyle(color = colorResource(id = R.color.text), fontSize = 14.sp),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                            keyboardActions = KeyboardActions(onGo = {
+                                if (textState.text.isNotBlank()) onSubmit(textState.text.toString())
+                            }),
+                            decorator = { innerTextField ->
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
+                                    if (textState.text.isEmpty()) {
+                                        Text("Search or type URL", color = colorResource(id = R.color.subtext), fontSize = 14.sp)
+                                    }
+                                    innerTextField()
+                                }
+                            }
+                        )
+                    }
                     if (textState.text.isNotEmpty()) {
                         IconButton(
                             onClick = {
-                                textState = TextFieldValue("")
+                                textState.setTextAndPlaceCursorAtEnd("")
                                 onClear()
                             },
                             modifier = Modifier.align(Alignment.CenterEnd).size(28.dp)
