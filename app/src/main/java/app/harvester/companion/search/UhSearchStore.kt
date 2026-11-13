@@ -1,8 +1,8 @@
 package app.harvester.companion.search
 
 import mozilla.components.browser.state.search.SearchEngine
-import mozilla.components.browser.state.selector.selectedOrDefaultSearchEngine
-import mozilla.components.concept.awesomebar.AwesomeBar
+import mozilla.components.browser.state.state.selectedOrDefaultSearchEngine
+import app.harvester.companion.search.awesomebar.internal.CurrentTabData
 import mozilla.components.lib.state.Action
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.State
@@ -38,13 +38,13 @@ sealed class UhSearchAction : Action {
     data object CopyCurrentWebsiteDetailsClicked : UhSearchAction()
     data object EditCurrentWebsiteDetailsClicked : UhSearchAction()
     data class UpdateClipboardHasUrl(val hasUrl: Boolean) : UhSearchAction()
-    data class SearchSourceTabUpdated(val tabId: String?, val currentTabData: mozilla.components.compose.browser.awesomebar.internal.CurrentTabData?) : UhSearchAction()
+    data class SearchSourceTabUpdated(val tabId: String?, val currentTabData: CurrentTabData?) : UhSearchAction()
     data class AllowSearchSuggestionsInPrivateModePrompt(val show: Boolean) : UhSearchAction()
 }
 
 data class UhSearchState(
     val query: String,
-    val currentTabData: mozilla.components.compose.browser.awesomebar.internal.CurrentTabData?,
+    val currentTabData: CurrentTabData?,
     val searchEngineSource: UhSearchEngineSource,
     val defaultEngine: SearchEngine?,
     val searchSuggestionsProviders: List<mozilla.components.concept.awesomebar.AwesomeBar.SuggestionProvider>,
