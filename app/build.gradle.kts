@@ -160,6 +160,7 @@ dependencies {
     implementation("org.mozilla.components:browser-session-storage:154.0.1")
     implementation("org.mozilla.components:compose-base:154.0.1")
     implementation("org.mozilla.components:compose-browser-toolbar:154.0.1")
+    implementation("org.mozilla.components:compose-browser-awesomebar:154.0.1")
     implementation("org.mozilla.components:ui-icons:154.0.1")
     implementation("org.mozilla.components:ui-widgets:154.0.1")
     implementation("org.mozilla.components:service-digitalassetlinks:154.0.1")
