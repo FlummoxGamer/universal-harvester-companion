@@ -30,7 +30,10 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(Intent(this, VideoOptionsActivity::class.java))
         }
         findViewById<android.view.View>(R.id.settingsDownloads).setOnClickListener {
-            startActivity(Intent(this, DownloadSettingsActivity::class.java))
+            supportFragmentManager.beginTransaction()
+                .replace(android.R.id.content, app.harvester.companion.data.downloads.ui.UhDownloadSettingsFragment())
+                .addToBackStack(null)
+                .commit()
         }
         findViewById<android.view.View>(R.id.settingsAccessibility).setOnClickListener {
             startActivity(Intent(this, AccessibilityActivity::class.java))
