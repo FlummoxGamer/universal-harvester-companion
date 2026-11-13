@@ -182,8 +182,8 @@ class BrowserFragment : Fragment() {
             }
         }
 
+        applyConstraints()
         setupAddressBar(components)
-        setupProgressBar(components)
         setupInsets()
         setupLogging(components)
     }
@@ -295,7 +295,27 @@ class BrowserFragment : Fragment() {
         )
     }
 
-    private fun setupInsets() {
+private fun applyConstraints() {
+    val isBarBottom = SettingsPrefs.getInt(requireContext(), SettingsPrefs.K_ADDRESS_BAR_POSITION, 1) == 1
+    val constraintSet = androidx.constraintlayout.widget.ConstraintSet()
+    constraintSet.clone(binding.root)
+    if (isBarBottom) {
+        constraintSet.connect(binding.browserLayout.id, androidx.constraintlayout.widget.ConstraintSet.TOP, androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.TOP)
+        constraintSet.connect(binding.browserLayout.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM, binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.TOP)
+        constraintSet.connect(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM, androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.BOTTOM)
+        constraintSet.clear(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.TOP)
+    } else {
+        constraintSet.connect(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.TOP, androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.TOP)
+        constraintSet.connect(binding.browserLayout.id, androidx.constraintlayout.widget.ConstraintSet.TOP, binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM)
+        constraintSet.connect(binding.browserLayout.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM, androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.BOTTOM)
+        constraintSet.clear(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM)
+    }
+    constraintSet.applyTo(binding.root)
+}
+
+private fun setupInsets() {
+    val isBarBottom = SettingsPrefs.getInt(requireContext(), SettingsPrefs.K_ADDRESS_BAR_POSITION, 1) == 1
+    if (isBarBottom) {
         ViewCompat.setOnApplyWindowInsetsListener(binding.browserLayout) { v, insets ->
             val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
             v.setPadding(0, top, 0, 0)
@@ -306,12 +326,19 @@ class BrowserFragment : Fragment() {
             v.setPadding(0, 0, 0, bottom)
             insets
         }
-        ViewCompat.setOnApplyWindowInsetsListener(binding.progressBarContainer) { v, insets ->
+    } else {
+        ViewCompat.setOnApplyWindowInsetsListener(binding.addressBarContainer) { v, insets ->
             val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
             v.setPadding(0, top, 0, 0)
             insets
         }
+        ViewCompat.setOnApplyWindowInsetsListener(binding.browserLayout) { v, insets ->
+            val bottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            v.setPadding(0, 0, 0, bottom)
+            insets
+        }
     }
+}
 
     private fun setupLogging(components: app.harvester.companion.components.Components) {
         viewLifecycleOwner.lifecycleScope.launch {
@@ -326,16 +353,6 @@ class BrowserFragment : Fragment() {
                         }
                     }
                 }
-            }
-        }
-    }
-
-    private fun setupProgressBar(components: app.harvester.companion.components.Components) {
-        binding.progressBarContainer.setContent {
-            val browserState by components.store.stateFlow.collectAsState()
-            val progress = browserState.selectedTab?.content?.progress ?: 0
-            UHTheme {
-                AnimatedProgressBar(progress = progress)
             }
         }
     }
@@ -375,6 +392,11 @@ class BrowserFragment : Fragment() {
 
             UHTheme {
                 if (isEditing) {
+                    val browserState by components.store.stateFlow.collectAsState()
+                    val progress = browserState.selectedTab?.content?.progress ?: 0
+                    if (!isBarBottom) {
+                        AnimatedProgressBar(progress = progress)
+                    }
                     UHSearchOverlay(
                         url = selectedTab?.content?.url ?: "",
                         tabCount = browserState.tabs.size,
@@ -402,7 +424,15 @@ class BrowserFragment : Fragment() {
                             components.useCases.sessionUseCases.loadUrl(target)
                         }
                     )
+                    if (isBarBottom) {
+                        AnimatedProgressBar(progress = progress)
+                    }
                 } else {
+                    val browserState by components.store.stateFlow.collectAsState()
+                    val progress = browserState.selectedTab?.content?.progress ?: 0
+                    if (!isBarBottom) {
+                        AnimatedProgressBar(progress = progress)
+                    }
                     Box(modifier = Modifier.fillMaxWidth()) {
                         UHAddressBar(
                             url = selectedTab?.content?.url ?: "",
@@ -420,6 +450,9 @@ class BrowserFragment : Fragment() {
                             onMenuClick = { MainMenuDialogFragment.newInstance(false).show(parentFragmentManager, "MainMenu") },
                             onTabCountClick = {}
                         )
+                    }
+                    if (isBarBottom) {
+                        AnimatedProgressBar(progress = progress)
                     }
                 }
             }
