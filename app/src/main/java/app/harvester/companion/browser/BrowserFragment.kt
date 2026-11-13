@@ -33,6 +33,8 @@ import app.harvester.companion.browser.menu.ContextMenuDialog
 import app.harvester.companion.browser.menu.MainMenuDialogFragment
 import app.harvester.companion.browser.search.UHSearchEnginePicker
 import app.harvester.companion.browser.toolbar.UHAddressBar
+import app.harvester.companion.search.awesomebar.UhSearchSuggestionsComposable
+import app.harvester.companion.search.UhToolbarStore
 import app.harvester.companion.browser.toolbar.UHSearchOverlay
 import app.harvester.companion.compose.base.progressbar.AnimatedProgressBar
 import app.harvester.companion.databinding.FragmentBrowserBinding
@@ -62,6 +64,7 @@ class BrowserFragment : Fragment() {
     
     private val viewModel: BrowserViewModel by activityViewModels()
     private var initialUrl: String? = null
+    private val browsingModeManager = app.harvester.companion.browser.browsingmode.UhBrowsingModeManager()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -422,6 +425,19 @@ private fun setupInsets() {
                             val target = viewModel.normalize(suggestion)
                             viewModel.exitEditMode()
                             components.useCases.sessionUseCases.loadUrl(target)
+                        },
+                        searchSuggestionsContent = {
+                            val toolbarStore = remember { UhToolbarStore() }
+                            UhSearchSuggestionsComposable(
+                                fragment = this@BrowserFragment,
+                                modifier = Modifier.fillMaxSize(),
+                                components = components,
+                                appStore = components.appStore,
+                                browserStore = components.store,
+                                toolbarStore = toolbarStore,
+                                navController = findNavController(),
+                                browsingModeManager = browsingModeManager
+                            ).SearchSuggestions()
                         }
                     )
                     if (isBarBottom) {
