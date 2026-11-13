@@ -134,6 +134,7 @@ dependencies {
     implementation("org.mozilla.components:feature-prompts:154.0.1")
     implementation("org.mozilla.components:feature-tabs:154.0.1")
     implementation("org.mozilla.components:support-base:154.0.1")
+    implementation("org.mozilla.components:support-ktx:154.0.1")
     implementation("org.mozilla.components:support-utils:154.0.1")
     implementation("org.mozilla.components:support-ktx:154.0.1")
     implementation("org.mozilla.components:support-locale:154.0.1")
@@ -163,7 +164,7 @@ dependencies {
     implementation("org.mozilla.components:service-digitalassetlinks:154.0.1")
 
     implementation("androidx.activity:activity-compose:1.9.2")
-    implementation(platform("androidx.compose:compose-bom:2024.09.03"))
+    implementation(platform("androidx.compose:compose-bom:2026.09.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
