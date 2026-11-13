@@ -67,14 +67,13 @@ fun UhDownloadListItem(
     val tint = if (isFailed) colorResource(id = R.color.red) else colorResource(id = R.color.subtext)
     val bgColor = if (isSelected) colorResource(id = R.color.surface_3) else colorResource(id = R.color.surface)
 
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = {
-            if (it == SwipeToDismissBoxValue.EndToStart) {
-                onDeleteClick()
-                true
-            } else false
+    val dismissState = rememberSwipeToDismissBoxState()
+
+    androidx.compose.runtime.LaunchedEffect(dismissState.currentValue) {
+        if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart) {
+            onDeleteClick()
         }
-    )
+    }
 
     SwipeToDismissBox(
         state = dismissState,
