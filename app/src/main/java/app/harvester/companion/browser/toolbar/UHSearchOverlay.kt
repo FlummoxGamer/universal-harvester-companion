@@ -36,8 +36,10 @@ fun UHSearchOverlay(
     onScriptMenuClick: () -> Unit,
     onMenuClick: () -> Unit,
     onTabCountClick: () -> Unit,
-    onSuggestionClick: (String) -> Unit
+    onSuggestionClick: (String) -> Unit,
+    searchSuggestionsContent: @Composable () -> Unit = {}
 ) {
+    
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -80,18 +82,7 @@ fun UHSearchOverlay(
                     onTabCountClick = onTabCountClick
                 )
 
-                if (suggestions.isNotEmpty()) {
-                    UHSuggestionsPanel(
-                        suggestions = suggestions,
-                        onSuggestionClick = { suggestion ->
-                            focusManager.clearFocus()
-                            onSuggestionClick(suggestion)
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                } else {
-                    Box(modifier = Modifier.weight(1f))
-                }
+                searchSuggestionsContent()
             }
         }
     }
