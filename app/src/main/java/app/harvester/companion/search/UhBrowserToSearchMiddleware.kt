@@ -5,9 +5,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import mozilla.components.browser.state.store.BrowserStore
-import mozilla.components.compose.browser.awesomebar.internal.CurrentTabData
 import mozilla.components.browser.state.selector.findTab
-import mozilla.components.compose.browser.awesomebar.internal.CurrentTabData
 import mozilla.components.compose.browser.awesomebar.internal.CurrentTabData
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.Store
