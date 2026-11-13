@@ -1,6 +1,7 @@
 package app.harvester.companion.search
 
 import androidx.fragment.app.Fragment
+import mozilla.components.compose.browser.awesomebar.internal.CurrentTabData
 import androidx.lifecycle.coroutineScope
 import androidx.navigation.NavController
 import kotlinx.coroutines.launch
