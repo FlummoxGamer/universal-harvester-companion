@@ -90,6 +90,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             }
             
             _suggestions.value = combined.distinct().take(8)
+            app.harvester.companion.UHLog.d("suggestions", "Loaded ${combined.size} suggestions for $typed")
         }
     }
 
