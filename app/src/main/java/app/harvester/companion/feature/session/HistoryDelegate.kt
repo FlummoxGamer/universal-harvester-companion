@@ -30,19 +30,6 @@ class HistoryDelegate(private val historyStorage: Lazy<HistoryStorage>) : Histor
         return historyStorage.value.getVisited()
     }
 
-    override suspend fun hasVisitedSince(
-        host: String,
-        afterEpochMillis: Long,
-        beforeEpochMillis: Long,
-    ): Boolean {
-        if (beforeEpochMillis <= afterEpochMillis) {
-            return false
-        }
-        return historyStorage.value.getDetailedVisits(afterEpochMillis, beforeEpochMillis - 1).any {
-            it.url.hostMatchesDomain(host)
-        }
-    }
-
     override fun shouldStoreUri(uri: String) = historyStorage.value.canAddUri(uri)
 }
 
