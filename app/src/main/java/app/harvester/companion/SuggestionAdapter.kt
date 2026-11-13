@@ -7,6 +7,7 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
+import mozilla.components.concept.storage.VisitInfo
 
 class SuggestionAdapter(
     private val onClick: (String) -> Unit,
@@ -17,8 +18,8 @@ class SuggestionAdapter(
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     private sealed class Row {
-        data class Query(val id: Long, val text: String) : Row()
-        data class Page(val id: Long, val url: String, val title: String) : Row()
+        data class Query(val text: String) : Row()
+        data class Page(val url: String, val title: String) : Row()
     }
 
     private val rows = mutableListOf<Row>()
@@ -48,10 +49,8 @@ class SuggestionAdapter(
                 val h = holder as QueryVH
                 h.text.text = r.text
                 h.itemView.setOnClickListener { onClick(r.text) }
-                // Real history entries get delete; live prediction rows do not
-                h.delete.visibility = if (r.id > 0L) View.VISIBLE else View.GONE
-                h.delete.setOnClickListener { onDeleteQuery(r.id) }
-                h.arrow.visibility = if (r.id > 0L) View.GONE else View.VISIBLE
+                h.delete.visibility = View.GONE
+                h.arrow.visibility = View.VISIBLE
             }
             is Row.Page -> {
                 val h = holder as PageVH
@@ -60,17 +59,17 @@ class SuggestionAdapter(
                 h.itemView.setOnClickListener { onClick(r.url) }
                 h.edit.setOnClickListener { onEdit(r.url) }
                 h.copy.setOnClickListener { onCopy(r.url) }
-                h.delete.setOnClickListener { onDeletePage(r.id) }
+                h.delete.setOnClickListener { onDeletePage(0L) }
             }
         }
     }
 
     override fun getItemCount() = rows.size
 
-    fun submitAll(queries: List<HistoryStore.SearchQuery>, pages: List<HistoryStore.Entry>) {
+    fun submitAll(queries: List<String>, pages: List<VisitInfo>) {
         rows.clear()
-        queries.forEach { rows.add(Row.Query(it.id, it.query)) }
-        pages.forEach { rows.add(Row.Page(it.id, it.url, it.title)) }
+        queries.forEach { rows.add(Row.Query(it)) }
+        pages.forEach { rows.add(Row.Page(it.url, it.title ?: "")) }
         notifyDataSetChanged()
     }
 
