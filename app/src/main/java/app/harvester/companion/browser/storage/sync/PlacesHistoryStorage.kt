@@ -31,7 +31,7 @@ import mozilla.components.concept.sync.SyncableStore
 import mozilla.components.concept.toolbar.AutocompleteProvider
 import mozilla.components.concept.toolbar.AutocompleteResult
 import mozilla.components.support.base.log.logger.Logger
-import mozilla.components.support.ktx.kotlin.toWellFormed
+import app.harvester.companion.utils.toWellFormed
 import mozilla.components.support.utils.segmentAwareDomainMatch
 
 private const val AUTOCOMPLETE_SOURCE_NAME = "placesHistory"
