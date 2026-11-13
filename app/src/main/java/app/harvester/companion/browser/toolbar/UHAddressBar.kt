@@ -11,8 +11,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.KeyboardActionHandler
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -83,7 +83,10 @@ fun UHAddressBar(
     LaunchedEffect(url, isEditing, editText) {
         val targetText = if (!isEditing) formatUrl(url) else editText
         if (textState.text.toString() != targetText) {
-            textState.setTextAndPlaceCursorAtEnd(targetText)
+            textState.edit {
+                replace(0, length, targetText)
+                placeCursorAtEnd()
+            }
         }
     }
 
@@ -171,9 +174,9 @@ fun UHAddressBar(
                             modifier = Modifier.fillMaxWidth().padding(end = 28.dp).focusRequester(focusRequester).background(Color.Transparent),
                             textStyle = TextStyle(color = colorResource(id = R.color.text), fontSize = 14.sp),
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                            keyboardActions = KeyboardActions(onGo = {
+                            onKeyboardAction = KeyboardActionHandler {
                                 if (textState.text.isNotBlank()) onSubmit(textState.text.toString())
-                            }),
+                            },
                             decorator = { innerTextField ->
                                 Box(
                                     modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -190,7 +193,10 @@ fun UHAddressBar(
                     if (textState.text.isNotEmpty()) {
                         IconButton(
                             onClick = {
-                                textState.setTextAndPlaceCursorAtEnd("")
+                                textState.edit {
+                                    replace(0, length, "")
+                                    placeCursorAtEnd()
+                                }
                                 onClear()
                             },
                             modifier = Modifier.align(Alignment.CenterEnd).size(28.dp)
