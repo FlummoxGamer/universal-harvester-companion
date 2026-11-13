@@ -37,7 +37,6 @@ import androidx.compose.ui.unit.sp
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
-import app.harvester.companion.HistoryActivity
 import app.harvester.companion.R
 import app.harvester.companion.ScriptsActivity
 import app.harvester.companion.SettingsActivity
