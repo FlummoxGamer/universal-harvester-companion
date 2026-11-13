@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -32,6 +33,17 @@ fun UhDownloadSearchBar(
     onDismiss: () -> Unit
 ) {
     val focusRequester = remember { FocusRequester() }
+    val textState = rememberTextFieldState(query)
+    
+    LaunchedEffect(query) {
+        if (textState.text.toString() != query) {
+            textState.setTextAndPlaceCursorAtEnd(query)
+        }
+    }
+
+    LaunchedEffect(textState.text) {
+        onQueryChanged(textState.text.toString())
+    }
     
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
@@ -59,21 +71,22 @@ fun UhDownloadSearchBar(
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             contentAlignment = Alignment.CenterStart
         ) {
-            if (query.isEmpty()) {
+            if (textState.text.isEmpty()) {
                 Text("Search downloads", color = colorResource(id = R.color.subtext), fontSize = 14.sp)
             }
             BasicTextField(
-                value = query,
-                onValueChange = onQueryChanged,
+                state = textState,
                 textStyle = TextStyle(color = colorResource(id = R.color.text), fontSize = 14.sp),
                 cursorBrush = SolidColor(colorResource(id = R.color.accent)),
-                singleLine = true,
                 modifier = Modifier.fillMaxWidth().focusRequester(focusRequester)
             )
         }
 
-        if (query.isNotEmpty()) {
-            IconButton(onClick = { onQueryChanged("") }) {
+        if (textState.text.isNotEmpty()) {
+            IconButton(onClick = { 
+                textState.setTextAndPlaceCursorAtEnd("")
+                onQueryChanged("") 
+            }) {
                 Icon(
                     painter = painterResource(id = R.drawable.ic_close),
                     contentDescription = "Clear Search",
