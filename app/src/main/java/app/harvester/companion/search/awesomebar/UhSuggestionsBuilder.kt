@@ -27,17 +27,51 @@ class UhSuggestionsBuilder(
 ) {
     private val engineForSpeculativeConnects = if (browsingModeManager.mode == BrowsingMode.Normal) components.engine else null
 
-    private val defaultHistoryStorageProvider = HistoryStorageSuggestionProvider(components.placesHistoryStorage, loadUrlUseCase, components.engine, engineForSpeculativeConnects, false)
-    private val defaultSearchSuggestionProvider = SearchSuggestionProvider(store = components.store, searchUseCase = searchUseCase, fetchClient = components.client, mode = SearchSuggestionProvider.Mode.MULTIPLE_SUGGESTIONS, limit = 3, engine = engineForSpeculativeConnects, filterExactMatch = true, private = browsingModeManager.mode.isPrivate)
-    private val defaultSearchActionProvider = SearchActionProvider(store = components.store, searchUseCase = searchUseCase)
-    private var searchEngineSuggestionProvider: SearchEngineSuggestionProvider = SearchEngineSuggestionProvider(components.store.state.search.searchEngines, {}, titleFormatter = { "Search with $it" })
+    private val defaultHistoryStorageProvider = HistoryStorageSuggestionProvider(
+        historyStorage = components.placesHistoryStorage,
+        loadUrlUseCase = loadUrlUseCase,
+        icons = components.icons,
+        engine = engineForSpeculativeConnects,
+        showEditSuggestion = false,
+        suggestionsHeader = null
+    )
+
+    private val defaultSearchSuggestionProvider = SearchSuggestionProvider(
+        store = components.store,
+        searchUseCase = searchUseCase,
+        fetchClient = components.client,
+        mode = SearchSuggestionProvider.Mode.MULTIPLE_SUGGESTIONS,
+        limit = 3,
+        icon = null,
+        showDescription = false,
+        engine = engineForSpeculativeConnects,
+        filterExactMatch = true,
+        private = browsingModeManager.mode.isPrivate,
+        suggestionsHeader = null
+    )
+
+    private val defaultSearchActionProvider = SearchActionProvider(
+        store = components.store,
+        searchUseCase = searchUseCase,
+        icon = null,
+        showDescription = false,
+        suggestionsHeader = null
+    )
+
+    private var searchEngineSuggestionProvider = SearchEngineSuggestionProvider(
+        searchEnginesList = components.store.state.search.searchEngines,
+        selectShortcutEngine = {},
+        description = null,
+        searchIcon = null,
+        titleFormatter = { "Search with $it" }
+    )
     
     internal fun getProvidersToAdd(state: UhProviderState): Set<AwesomeBar.SuggestionProvider> {
         val providers = mutableSetOf<AwesomeBar.SuggestionProvider>()
         providers.add(defaultSearchActionProvider)
         providers.add(defaultSearchSuggestionProvider)
         providers.add(defaultHistoryStorageProvider)
-        providers.add(BookmarksStorageSuggestionProvider(components.placesBookmarksStorage, loadUrlUseCase, components.engine, engineForSpeculativeConnects, false))
+        providers.add(BookmarksStorageSuggestionProvider(components.placesBookmarksStorage, loadUrlUseCase, components.icons, engineForSpeculativeConnects, showEditSuggestion = false))
         providers.add(searchEngineSuggestionProvider)
         return providers
     }
