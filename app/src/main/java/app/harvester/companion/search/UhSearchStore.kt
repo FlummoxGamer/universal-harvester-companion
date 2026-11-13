@@ -1,6 +1,8 @@
 package app.harvester.companion.search
 
 import mozilla.components.browser.state.search.SearchEngine
+import mozilla.components.browser.state.selector.selectedOrDefaultSearchEngine
+import mozilla.components.concept.awesomebar.AwesomeBar
 import mozilla.components.lib.state.Action
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.State
