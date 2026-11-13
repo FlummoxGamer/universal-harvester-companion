@@ -3,7 +3,6 @@ package app.harvester.companion.browser
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import app.harvester.companion.HistoryStore
 import app.harvester.companion.SearchEnginePrefs
 import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.UHApp
@@ -64,11 +63,18 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             val showHistory = SettingsPrefs.getBool(context, SettingsPrefs.K_SEARCH_HISTORY, true)
             val showRemote = SettingsPrefs.getBool(context, SettingsPrefs.K_SEARCH_REMOTE, true)
 
-            val queries = if (isUrl || typed.isBlank() || !showHistory) emptyList() else withContext(Dispatchers.IO) { 
-                HistoryStore.get(context).searchSearchQueries(typed).map { it.query } 
-            }
-            val pages = if (showHistory) withContext(Dispatchers.IO) { 
-                HistoryStore.get(context).searchHistory(typed, 10).map { it.url } 
+            val queries = emptyList<String>()
+            val pages = if (showHistory && typed.isNotBlank()) withContext(Dispatchers.IO) { 
+                try {
+                    val visits = components.placesHistoryStorage.getDetailedVisits(0L, System.currentTimeMillis())
+                    visits.filter { it.url.contains(typed, ignoreCase = true) || (it.title?.contains(typed, ignoreCase = true) == true) }
+                        .sortedByDescending { it.visitTime }
+                        .take(10)
+                        .map { it.url }
+                } catch (e: Exception) {
+                    app.harvester.companion.UHLog.throwable("browser", "Failed to fetch history suggestions", e)
+                    emptyList()
+                }
             } else emptyList()
             
             var combined = queries + pages
