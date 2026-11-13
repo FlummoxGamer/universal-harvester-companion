@@ -38,6 +38,8 @@ import app.harvester.companion.search.UhToolbarStore
 import app.harvester.companion.browser.toolbar.UHSearchOverlay
 import app.harvester.companion.compose.base.progressbar.AnimatedProgressBar
 import app.harvester.companion.databinding.FragmentBrowserBinding
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.navigation.fragment.findNavController
 import app.harvester.companion.theme.UHTheme
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.feature.app.links.AppLinksFeature
