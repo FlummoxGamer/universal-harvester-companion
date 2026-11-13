@@ -53,9 +53,9 @@ open class PlacesBookmarksStorage(
         }
     }
 
-    override suspend fun getRecentBookmarks(limit: Int, maxAge: Long?): Result<List<BookmarkNode>> {
+    override suspend fun getRecentBookmarks(limit: Int, maxAge: Long?, currentTime: Long): Result<List<BookmarkNode>> {
         return withContext(readScope.coroutineContext) {
-            val threshold = if (maxAge != null) currentTimeMillis() - maxAge else 0
+            val threshold = if (maxAge != null) currentTime - maxAge else 0
             Result.runCatching {
                 reader.getRecentBookmarks(limit).map { it.asBookmarkNode() }.filter { it.dateAdded >= threshold }
             }
@@ -64,13 +64,13 @@ open class PlacesBookmarksStorage(
 
     override suspend fun addItem(parentGuid: String, url: String, title: String, position: UInt?): Result<String> {
         return withContext(writeScope.coroutineContext) {
-            Result.runCatching { writer.createBookmarkItem(parentGuid, url, title.toWellFormed(), position) }
+            Result.runCatching { writer.createBookmarkItem(parentGuid, url, title, position) }
         }
     }
 
     override suspend fun addFolder(parentGuid: String, title: String, position: UInt?): Result<String> {
         return withContext(writeScope.coroutineContext) {
-            Result.runCatching { writer.createFolder(parentGuid, title.toWellFormed(), position) }
+            Result.runCatching { writer.createFolder(parentGuid, title, position) }
         }
     }
 
@@ -83,8 +83,7 @@ open class PlacesBookmarksStorage(
     override suspend fun updateNode(guid: String, info: BookmarkInfo): Result<Unit> {
         return withContext(writeScope.coroutineContext) {
             Result.runCatching {
-                val title = info.title?.toWellFormed()
-                writer.updateBookmark(guid, info.parentGuid, info.position, title, info.url)
+                writer.updateBookmark(guid, info.parentGuid, info.position, info.title, info.url)
             }
         }
     }
