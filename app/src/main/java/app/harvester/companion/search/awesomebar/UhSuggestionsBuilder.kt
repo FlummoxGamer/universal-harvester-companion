@@ -72,7 +72,7 @@ class UhSuggestionsBuilder(
         providers.add(defaultSearchActionProvider)
         providers.add(defaultSearchSuggestionProvider)
         providers.add(defaultHistoryStorageProvider)
-        providers.add(BookmarksStorageSuggestionProvider(components.placesBookmarksStorage, loadUrlUseCase, components.icons, engineForSpeculativeConnects, showEditSuggestion = false))
+        providers.add(BookmarksStorageSuggestionProvider(bookmarksStorage = components.placesBookmarksStorage, loadUrlUseCase = loadUrlUseCase, icons = components.icons, engine = engineForSpeculativeConnects, showEditSuggestion = false, indicatorIcon = null))
         providers.add(searchEngineSuggestionProvider)
         return providers
     }
