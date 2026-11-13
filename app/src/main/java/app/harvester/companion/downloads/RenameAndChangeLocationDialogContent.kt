@@ -85,13 +85,6 @@ fun RenameAndChangeLocationDialogContent(
             modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Icon(
-                painter = painterResource(id = R.drawable.mozac_ic_download_24),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
 
             Text(
                 text = title,
@@ -113,6 +106,7 @@ fun RenameAndChangeLocationDialogContent(
                     },
                     isError = currentError != null,
                     label = { Text(stringResource(R.string.download_rename_dialog_label)) },
+                    suffix = { if (extension.isNotEmpty()) Text(".$extension") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().onFocusChanged { focusState -> isFocused = focusState.isFocused },
                 )
