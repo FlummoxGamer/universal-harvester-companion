@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.browser.state.selector.findTab
-import mozilla.components.compose.browser.awesomebar.internal.CurrentTabData
+import app.harvester.companion.search.awesomebar.internal.CurrentTabData
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.Store
 import mozilla.components.lib.state.ext.flow
