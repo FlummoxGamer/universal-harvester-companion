@@ -116,15 +116,17 @@ object UpdateChecker {
 
 private fun downloadAndInstall(activity: Activity, info: Manifest) {
     try {
-        val request = android.app.DownloadManager.Request(android.net.Uri.parse(info.apkUrl))
-        request.setTitle("uh_update_${info.versionName}.apk")
-        request.setMimeType("application/vnd.android.package-archive")
-        request.setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-        request.setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, "uh_update_${info.versionName}.apk")
-        val dm = activity.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
-        dm.enqueue(request)
+        val components = (activity.application as app.harvester.companion.UHApp).components
+        val downloadState = mozilla.components.browser.state.state.content.DownloadState(
+            url = info.apkUrl,
+            fileName = "uh_update_${info.versionName}.apk",
+            contentType = "application/vnd.android.package-archive",
+            directoryPath = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).path
+        )
+        components.store.dispatch(mozilla.components.browser.state.action.DownloadAction.AddDownloadAction(downloadState))
         android.widget.Toast.makeText(activity, "Downloading update...", android.widget.Toast.LENGTH_LONG).show()
     } catch (e: Exception) {
+        UHLog.throwable("update", "Failed to start download", e)
         android.widget.Toast.makeText(activity, "Failed to start download", android.widget.Toast.LENGTH_SHORT).show()
     }
 }
