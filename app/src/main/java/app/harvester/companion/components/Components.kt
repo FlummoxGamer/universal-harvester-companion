@@ -5,6 +5,7 @@ import android.content.res.Configuration
 import android.os.Environment
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import app.harvester.companion.BuildConfig
 import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.ThemePrefs
 import app.harvester.companion.browser.storage.sync.GlobalPlacesDependencyProvider
