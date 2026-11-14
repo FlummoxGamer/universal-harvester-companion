@@ -65,6 +65,7 @@ class UhSearchSuggestionsComposable(
     private val navController: NavController,
     private val browsingModeManager: UhBrowsingModeManager,
     private val searchAccessPoint: MetricsUtils.Source = MetricsUtils.Source.NONE,
+    private val query: String = ""
 ) {
     private val searchStore by initializeSearchStore()
 
@@ -77,6 +78,10 @@ class UhSearchSuggestionsComposable(
         val focusManager = LocalFocusManager.current
         val keyboardController = LocalSoftwareKeyboardController.current
 
+        LaunchedEffect(query) {
+            searchStore.dispatch(UhSearchAction.UpdateQuery(query))
+        }
+
         LaunchedEffect(isSearchActive) {
             if (!isSearchActive) {
                 focusManager.clearFocus()
@@ -85,7 +90,7 @@ class UhSearchSuggestionsComposable(
         }
 
         if (isSearchActive) {
-            if (state.shouldShowSearchSuggestions) {
+            if (state.shouldShowSearchSuggestions || (state.query.isBlank() && state.currentTabData != null)) {
                 Box(
                     modifier = modifier.background(Color(MATERIAL_DESIGN_SCRIM.toColorInt())).fillMaxSize().pointerInput(
                         WindowInsets.isImeVisible
