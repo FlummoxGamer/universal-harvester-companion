@@ -6,7 +6,10 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.activity.compose.BackHandler
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -16,12 +19,14 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.compose.content
 import androidx.lifecycle.coroutineScope
 import androidx.lifecycle.lifecycleScope
+import androidx.navigation.fragment.findNavController
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import kotlinx.coroutines.flow.map
 import mozilla.components.browser.state.selector.findTabOrCustomTab
 import mozilla.components.lib.state.helpers.StoreProvider.Companion.fragmentStore
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 import app.harvester.companion.UHApp
+import app.harvester.companion.components.PermissionStorage
 import app.harvester.companion.settings.trustpanel.bindings.SecurityInfoBinding
 import app.harvester.companion.settings.trustpanel.middleware.TrustPanelMiddleware
 import app.harvester.companion.settings.trustpanel.middleware.TrustPanelNavigationMiddleware
@@ -29,14 +34,23 @@ import app.harvester.companion.settings.trustpanel.store.TrustPanelAction
 import app.harvester.companion.settings.trustpanel.store.TrustPanelState
 import app.harvester.companion.settings.trustpanel.store.TrustPanelStore
 import app.harvester.companion.settings.trustpanel.store.WebsiteInfoState
+import app.harvester.companion.settings.trustpanel.store.WebsitePermission
 import app.harvester.companion.settings.trustpanel.ui.ClearSiteDataDialog
 import app.harvester.companion.settings.trustpanel.ui.ProtectionPanel
+import app.harvester.companion.settings.trustpanel.ui.TrackerCategoryDetailsPanel
+import app.harvester.companion.settings.trustpanel.ui.TrackersBlockedPanel
 import app.harvester.companion.theme.UHTheme
 import java.security.cert.X509Certificate
 
 class TrustPanelFragment : BottomSheetDialogFragment() {
-    private val securityInfoBinding = ViewBoundFeatureWrapper<SecurityInfoBinding>()
     private val args by lazy { requireNotNull(arguments) }
+    private val securityInfoBinding = ViewBoundFeatureWrapper<SecurityInfoBinding>()
+    private val snackbarHostState = SnackbarHostState()
+    private lateinit var permissionsCallback: ((Map<String, Boolean>) -> Unit)
+    
+    private val requestPermissionsLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { isGranted ->
+        permissionsCallback.invoke(isGranted)
+    }
 
     private val store by fragmentStore(TrustPanelState()) {
         val components = (requireContext().applicationContext as UHApp).components
@@ -44,27 +58,34 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
         val session = components.store.state.findTabOrCustomTab(sessionId)
 
         TrustPanelStore(
-            initialState = TrustPanelState(
-                isTrackingProtectionEnabled = session?.trackingProtection?.enabled ?: true,
-                sessionState = session,
-                websiteInfoState = WebsiteInfoState(
-                    isSecured = args.getBoolean("isSecured", true),
-                    websiteUrl = args.getString("url") ?: "",
-                    websiteTitle = args.getString("title") ?: "",
-                    certificate = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) args.getSerializable("certificate", X509Certificate::class.java) else @Suppress("DEPRECATION") args.getSerializable("certificate") as? X509Certificate
-                )
+            isTrackingProtectionEnabled = session?.trackingProtection?.enabled ?: true,
+            websiteInfoState = WebsiteInfoState(
+                isSecured = args.getBoolean("isSecured", true),
+                websiteUrl = args.getString("url") ?: "",
+                websiteTitle = args.getString("title") ?: "",
+                certificate = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) args.getSerializable("certificate", X509Certificate::class.java) else @Suppress("DEPRECATION") args.getSerializable("certificate") as? X509Certificate
             ),
+            sessionState = session,
+            settings = components.settings,
+            sitePermissions = null,
+            permissionHighlights = session?.content?.permissionHighlights ?: mozilla.components.browser.state.state.content.PermissionHighlightsState(),
+            isPermissionBlockedByAndroid = { false },
             middleware = listOf(
                 TrustPanelMiddleware(
                     engine = components.engine,
+                    publicSuffixList = components.publicSuffixList,
                     sessionUseCases = components.useCases.sessionUseCases,
                     trackingProtectionUseCases = components.useCases.trackingProtectionUseCases,
+                    settings = components.settings,
+                    permissionStorage = PermissionStorage(requireContext()),
+                    requestPermissionsLauncher = requestPermissionsLauncher,
                     onDismiss = { dismiss() },
                     scope = viewLifecycleOwner.lifecycleScope
                 ),
                 TrustPanelNavigationMiddleware(
-                    tabsUseCases = components.useCases.tabsUseCases,
+                    privacySecurityPrefKey = "",
                     appStore = components.appStore,
+                    tabsUseCases = components.useCases.tabsUseCases,
                     scope = viewLifecycleOwner.lifecycleScope
                 )
             )
@@ -104,7 +125,7 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                             onClearSiteDataMenuClick = { contentState = Route.ClearSiteDataDialog },
                             onPrivacySecuritySettingsClick = { dismiss() },
                             onAutoplayValueClick = {},
-                            onToggleablePermissionClick = {},
+                            onToggleablePermissionClick = { store.dispatch(TrustPanelAction.TogglePermission(it)) },
                             onViewCertificateClick = { store.dispatch(TrustPanelAction.Navigate.SecurityCertificate) },
                         )
                     }
@@ -128,7 +149,9 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
             feature = SecurityInfoBinding(
                 browserStore = components.store,
                 sessionId = args.getString("sessionId") ?: "",
-                onSecurityInfoUpdate = { store.dispatch(it) }
+                urlHost = args.getString("url")?.let { android.net.Uri.parse(it).host },
+                onSecurityInfoUpdate = { store.dispatch(it) },
+                onHostChange = { dismiss() }
             ),
             owner = viewLifecycleOwner,
             view = view
