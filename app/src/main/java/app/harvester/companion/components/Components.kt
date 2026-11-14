@@ -54,6 +54,12 @@ class Components(val context: Context) {
         GeckoViewFetchClient(context.applicationContext, runtime)
     }
 
+    val geckoSitePermissionsStorage: mozilla.components.feature.sitepermissions.SitePermissionsStorage by lazy {
+        mozilla.components.feature.sitepermissions.OnDiskSitePermissionsStorage(context.applicationContext)
+    }
+
+    val settings by lazy { app.harvester.companion.utils.Settings(context.applicationContext) }
+
     val placesHistoryStorage: PlacesHistoryStorage by lazy {
         PlacesHistoryStorage(context.applicationContext)
     }
