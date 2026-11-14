@@ -5,8 +5,15 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -18,12 +25,14 @@ import app.harvester.companion.CustomizeHomeActivity
 import app.harvester.companion.R
 import app.harvester.companion.ShortcutAdapter
 import app.harvester.companion.ShortcutStore
+import app.harvester.companion.UHApp
 import app.harvester.companion.WallpaperStore
 import app.harvester.companion.browser.BrowserViewModel
 import app.harvester.companion.browser.menu.MainMenuDialogFragment
 import app.harvester.companion.browser.toolbar.UHAddressBar
-import app.harvester.companion.browser.toolbar.UHSearchOverlay
 import app.harvester.companion.databinding.FragmentHomeBinding
+import app.harvester.companion.search.UhToolbarStore
+import app.harvester.companion.search.awesomebar.UhSearchSuggestionsComposable
 import app.harvester.companion.theme.UHTheme
 
 class HomeFragment : Fragment() {
@@ -36,7 +45,6 @@ class HomeFragment : Fragment() {
 
     private val prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == app.harvester.companion.SettingsPrefs.K_ADDRESS_BAR_POSITION) {
-            setupHomeLayout()
             setupInsets()
         }
     }
@@ -93,41 +101,59 @@ private fun setupAddressBar() {
         val isEditing by browserViewModel.isEditing.collectAsState()
         val editText by browserViewModel.editText.collectAsState()
         val suggestions by browserViewModel.suggestions.collectAsState()
+        val components = (requireContext().applicationContext as UHApp).components
+        val browsingModeManager = remember { app.harvester.companion.browser.browsingmode.UhBrowsingModeManager() }
         
         UHTheme {
             if (isEditing) {
-                UHSearchOverlay(
-                    url = "",
-                    tabCount = 1,
-                    iconState = 0,
-                    editText = editText,
-                    suggestions = suggestions,
-                    onEditTextChanged = { browserViewModel.onTextChanged(it) },
-                    onSubmit = { 
-                        val target = browserViewModel.normalize(it)
-                        if (target.isNotBlank()) {
-                            browserViewModel.exitEditMode()
-                            navigateToBrowser(target)
-                        }
-                    },
-                    onEditStart = { browserViewModel.enterEditMode("") },
-                    onClear = { browserViewModel.onTextChanged("") },
+                Dialog(
                     onDismissRequest = { browserViewModel.exitEditMode() },
-                    onSearchEngineClick = {},
-                    onLockClick = {},
-                    onScriptMenuClick = {},
-                    onMenuClick = {},
-                    onTabCountClick = {},
-                    onSuggestionClick = { suggestion ->
-                        val target = browserViewModel.normalize(suggestion)
-                        browserViewModel.exitEditMode()
-                        navigateToBrowser(target)
+                    properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+                ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        UHAddressBar(
+                            url = "",
+                            isEditing = true,
+                            tabCount = 1,
+                            iconState = 0,
+                            isWallpaperActive = true,
+                            editText = editText,
+                            onEditTextChanged = { browserViewModel.onTextChanged(it) },
+                            onSubmit = { 
+                                val target = browserViewModel.normalize(it)
+                                if (target.isNotBlank()) {
+                                    browserViewModel.exitEditMode()
+                                    navigateToBrowser(target)
+                                }
+                            },
+                            onEditStart = { browserViewModel.enterEditMode("") },
+                            onClear = { browserViewModel.onTextChanged("") },
+                            onSearchEngineClick = {},
+                            onLockClick = {},
+                            onScriptMenuClick = {},
+                            onMenuClick = {},
+                            onTabCountClick = {}
+                        )
+                        Box(modifier = Modifier.weight(1f)) {
+                            val toolbarStore = remember { UhToolbarStore() }
+                            UhSearchSuggestionsComposable(
+                                fragment = this@HomeFragment,
+                                modifier = Modifier.fillMaxSize(),
+                                components = components,
+                                appStore = components.appStore,
+                                browserStore = components.store,
+                                toolbarStore = toolbarStore,
+                                navController = findNavController(),
+                                browsingModeManager = browsingModeManager,
+                                query = editText
+                            ).SearchSuggestions()
+                        }
                     }
-                )
+                }
             } else {
                 UHAddressBar(
                     url = "",
-                    isEditing = isEditing,
+                    isEditing = false,
                     tabCount = 1,
                     iconState = 0,
                     isWallpaperActive = true,
@@ -150,6 +176,14 @@ private fun setupAddressBar() {
     private fun navigateToBrowser(url: String) {
         val bundle = Bundle().apply { putString("url", url) }
         findNavController().navigate(R.id.action_homeFragment_to_browserFragment, bundle)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        applyWallpaper()
+        shortcutAdapter.submit(ShortcutStore.list(requireContext()))
+        homeVideoPlayer?.play()
+        requireContext().getSharedPreferences("uh_settings", android.content.Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener(prefListener)
     }
 
     private fun applyWallpaper() {
@@ -189,25 +223,17 @@ private fun setupAddressBar() {
         }
     }
 
-override fun onResume() {
-    super.onResume()
-    applyWallpaper()
-    shortcutAdapter.submit(ShortcutStore.list(requireContext()))
-    homeVideoPlayer?.play()
-    requireContext().getSharedPreferences("uh_settings", android.content.Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener(prefListener)
-}
+    override fun onPause() {
+        super.onPause()
+        homeVideoPlayer?.pause()
+        requireContext().getSharedPreferences("uh_settings", android.content.Context.MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(prefListener)
+    }
 
-override fun onPause() {
-    super.onPause()
-    homeVideoPlayer?.pause()
-    requireContext().getSharedPreferences("uh_settings", android.content.Context.MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(prefListener)
-}
-
-override fun onDestroyView() {
-    binding.wallpaperVideo.player = null
-    homeVideoPlayer?.release()
-    homeVideoPlayer = null
-    _binding = null
-    super.onDestroyView()
-}
+    override fun onDestroyView() {
+        binding.wallpaperVideo.player = null
+        homeVideoPlayer?.release()
+        homeVideoPlayer = null
+        _binding = null
+        super.onDestroyView()
+    }
 }
