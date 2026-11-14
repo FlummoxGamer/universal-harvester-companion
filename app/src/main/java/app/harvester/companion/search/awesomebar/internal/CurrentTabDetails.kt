@@ -89,7 +89,7 @@ internal fun CurrentTabDetails(
 
         IconButton(onClick = { onInteraction(CurrentTabDetailsInteractions.CopyClicked) }) {
             Icon(
-                painter = painterResource(R.drawable.mozac_ic_copy_24),
+                painter = painterResource(R.drawable.uh_ic_copy_24),
                 contentDescription = "Copy",
                 modifier = Modifier.size(20.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -98,7 +98,7 @@ internal fun CurrentTabDetails(
 
         IconButton(onClick = { onInteraction(CurrentTabDetailsInteractions.EditClicked) }) {
             Icon(
-                painter = painterResource(R.drawable.mozac_ic_edit_24),
+                painter = painterResource(R.drawable.uh_ic_edit_24),
                 contentDescription = "Edit",
                 modifier = Modifier.size(20.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
