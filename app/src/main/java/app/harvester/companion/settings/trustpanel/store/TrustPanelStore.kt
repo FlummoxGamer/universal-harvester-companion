@@ -14,27 +14,7 @@ class TrustPanelStore(
     initialState = initialState,
     reducer = ::reducer,
     middleware = middleware,
-) {
-    constructor(
-        isTrackingProtectionEnabled: Boolean,
-        websiteInfoState: WebsiteInfoState,
-        sessionState: SessionState?,
-        settings: app.harvester.companion.utils.Settings,
-        sitePermissions: SitePermissions?,
-        permissionHighlights: PermissionHighlightsState,
-        isPermissionBlockedByAndroid: (PhoneFeature) -> Boolean,
-        middleware: List<Middleware<TrustPanelState, TrustPanelAction>> = emptyList(),
-    ) : this(
-        initialState = TrustPanelState(
-            isTrackingProtectionEnabled = isTrackingProtectionEnabled,
-            numberOfTrackersBlocked = sessionState?.trackingProtection?.blockedTrackers?.size ?: 0,
-            sessionState = sessionState,
-            sitePermissions = sitePermissions,
-            websiteInfoState = websiteInfoState,
-        ),
-        middleware = middleware,
-    )
-}
+)
 
 private fun reducer(state: TrustPanelState, action: TrustPanelAction): TrustPanelState {
     return when (action) {
