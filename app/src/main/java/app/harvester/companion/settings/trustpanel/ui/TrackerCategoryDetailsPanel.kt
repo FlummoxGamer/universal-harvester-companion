@@ -11,7 +11,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import mozilla.components.support.ktx.kotlin.tryGetHostFromUrl
 import app.harvester.companion.components.menu.compose.MenuScaffold
 import app.harvester.companion.components.menu.compose.header.SubmenuHeader
 import app.harvester.companion.trackingprotection.TrackerBuckets
@@ -35,7 +34,7 @@ internal fun TrackerCategoryDetailsPanel(
                 Text(text = "Blocked", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(8.dp))
                 bucketedTrackers.get(detailedTrackerCategory, true).forEach { tracker ->
-                    Text(text = tracker.url.tryGetHostFromUrl(), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                    Text(text = tracker.url, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }
