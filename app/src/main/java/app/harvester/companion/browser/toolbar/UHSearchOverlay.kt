@@ -33,6 +33,7 @@ fun UHSearchOverlay(
     onClear: () -> Unit,
     onDismissRequest: () -> Unit,
     onSearchEngineClick: () -> Unit,
+    onLockClick: () -> Unit,
     onScriptMenuClick: () -> Unit,
     onMenuClick: () -> Unit,
     onTabCountClick: () -> Unit,
@@ -77,6 +78,7 @@ fun UHSearchOverlay(
                     onEditStart = onEditStart,
                     onClear = onClear,
                     onSearchEngineClick = onSearchEngineClick,
+                    onLockClick = onLockClick,
                     onScriptMenuClick = onScriptMenuClick,
                     onMenuClick = onMenuClick,
                     onTabCountClick = onTabCountClick
