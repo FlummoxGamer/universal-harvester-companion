@@ -7,6 +7,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -17,6 +18,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
@@ -33,7 +36,6 @@ import app.harvester.companion.browser.menu.ContextMenuDialog
 import app.harvester.companion.browser.menu.MainMenuDialogFragment
 import app.harvester.companion.browser.search.UHSearchEnginePicker
 import app.harvester.companion.browser.toolbar.UHAddressBar
-import app.harvester.companion.browser.toolbar.UHSearchOverlay
 import app.harvester.companion.compose.base.progressbar.AnimatedProgressBar
 import app.harvester.companion.databinding.FragmentBrowserBinding
 import app.harvester.companion.search.UhToolbarStore
@@ -404,64 +406,67 @@ class BrowserFragment : Fragment() {
                 if (isEditing) {
                     val browserState by components.store.stateFlow.collectAsState()
                     val progress = browserState.selectedTab?.content?.progress ?: 0
-                    if (!isBarBottom) {
-                        AnimatedProgressBar(progress = progress)
-                    }
-                    UHSearchOverlay(
-                        url = selectedTab?.content?.url ?: "",
-                        tabCount = browserState.tabs.size,
-                        iconState = if (selectedTab?.content?.url?.startsWith("https") == true) 1 else 0,
-                        editText = editText,
-                        suggestions = suggestions,
-                        onEditTextChanged = { viewModel.onTextChanged(it) },
-                        onSubmit = { 
-                            val target = viewModel.normalize(it)
-                            if (target.isNotBlank()) {
-                                viewModel.exitEditMode()
-                                components.useCases.sessionUseCases.loadUrl(target)
-                            }
-                        },
-                        onEditStart = { viewModel.enterEditMode(selectedTab?.content?.url ?: "") },
-                        onClear = { viewModel.onTextChanged("") },
+                    
+                    Dialog(
                         onDismissRequest = { viewModel.exitEditMode() },
-                        onSearchEngineClick = { showSearchEnginePicker = true },
-                        onLockClick = {
-                            val tab = components.store.state.selectedTab
-                            if (tab != null) {
-                                val trustPanel = app.harvester.companion.settings.trustpanel.TrustPanelFragment.newInstance(
-                                    sessionId = tab.id,
-                                    url = tab.content.url,
-                                    title = tab.content.title ?: "",
-                                    isSecured = tab.content.securityInfo.isSecure,
-                                    certificate = tab.content.securityInfo.certificate
-                                )
-                                trustPanel.show(parentFragmentManager, "TrustPanel")
+                        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+                    ) {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            if (!isBarBottom) {
+                                AnimatedProgressBar(progress = progress)
                             }
-                        },
-                        onScriptMenuClick = {},
-                        onMenuClick = {},
-                        onTabCountClick = {},
-                        onSuggestionClick = { suggestion ->
-                            val target = viewModel.normalize(suggestion)
-                            viewModel.exitEditMode()
-                            components.useCases.sessionUseCases.loadUrl(target)
-                        },
-                        searchSuggestionsContent = {
-                            val toolbarStore = remember { UhToolbarStore() }
-                            UhSearchSuggestionsComposable(
-                                fragment = this@BrowserFragment,
-                                modifier = Modifier.fillMaxSize(),
-                                components = components,
-                                appStore = components.appStore,
-                                browserStore = components.store,
-                                toolbarStore = toolbarStore,
-                                navController = findNavController(),
-                                browsingModeManager = browsingModeManager
-                            ).SearchSuggestions()
+                            UHAddressBar(
+                                url = selectedTab?.content?.url ?: "",
+                                isEditing = true,
+                                tabCount = browserState.tabs.size,
+                                iconState = if (selectedTab?.content?.url?.startsWith("https") == true) 1 else 0,
+                                isWallpaperActive = false,
+                                editText = editText,
+                                onEditTextChanged = { viewModel.onTextChanged(it) },
+                                onSubmit = { 
+                                    val target = viewModel.normalize(it)
+                                    if (target.isNotBlank()) {
+                                        viewModel.exitEditMode()
+                                        components.useCases.sessionUseCases.loadUrl(target)
+                                    }
+                                },
+                                onEditStart = { viewModel.enterEditMode(selectedTab?.content?.url ?: "") },
+                                onClear = { viewModel.onTextChanged("") },
+                                onSearchEngineClick = { showSearchEnginePicker = true },
+                                onLockClick = {
+                                    val tab = components.store.state.selectedTab
+                                    if (tab != null) {
+                                        app.harvester.companion.settings.trustpanel.TrustPanelFragment.newInstance(
+                                            sessionId = tab.id,
+                                            url = tab.content.url,
+                                            title = tab.content.title ?: "",
+                                            isSecured = tab.content.securityInfo.isSecure,
+                                            certificate = tab.content.securityInfo.certificate
+                                        ).show(parentFragmentManager, "TrustPanel")
+                                    }
+                                },
+                                onScriptMenuClick = {},
+                                onMenuClick = {},
+                                onTabCountClick = {}
+                            )
+                            Box(modifier = Modifier.weight(1f)) {
+                                val toolbarStore = remember { UhToolbarStore() }
+                                UhSearchSuggestionsComposable(
+                                    fragment = this@BrowserFragment,
+                                    modifier = Modifier.fillMaxSize(),
+                                    components = components,
+                                    appStore = components.appStore,
+                                    browserStore = components.store,
+                                    toolbarStore = toolbarStore,
+                                    navController = findNavController(),
+                                    browsingModeManager = browsingModeManager,
+                                    query = editText
+                                ).SearchSuggestions()
+                            }
+                            if (isBarBottom) {
+                                AnimatedProgressBar(progress = progress)
+                            }
                         }
-                    )
-                    if (isBarBottom) {
-                        AnimatedProgressBar(progress = progress)
                     }
                 } else {
                     val browserState by components.store.stateFlow.collectAsState()
@@ -472,7 +477,7 @@ class BrowserFragment : Fragment() {
                     Box(modifier = Modifier.fillMaxWidth()) {
                         UHAddressBar(
                             url = selectedTab?.content?.url ?: "",
-                            isEditing = isEditing,
+                            isEditing = false,
                             tabCount = browserState.tabs.size,
                             iconState = if (selectedTab?.content?.url?.startsWith("https") == true) 1 else 0,
                             isWallpaperActive = false,
@@ -485,14 +490,13 @@ class BrowserFragment : Fragment() {
                             onLockClick = {
                                 val tab = components.store.state.selectedTab
                                 if (tab != null) {
-                                    val trustPanel = app.harvester.companion.settings.trustpanel.TrustPanelFragment.newInstance(
+                                    app.harvester.companion.settings.trustpanel.TrustPanelFragment.newInstance(
                                         sessionId = tab.id,
                                         url = tab.content.url,
                                         title = tab.content.title ?: "",
                                         isSecured = tab.content.securityInfo.isSecure,
                                         certificate = tab.content.securityInfo.certificate
-                                    )
-                                    trustPanel.show(parentFragmentManager, "TrustPanel")
+                                    ).show(parentFragmentManager, "TrustPanel")
                                 }
                             },
                             onScriptMenuClick = {},
@@ -527,6 +531,16 @@ class BrowserFragment : Fragment() {
         super.onStop()
         downloadsFeature.withFeature { it.stop() }
         dismissDownloadDialogs()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        requireContext().getSharedPreferences("uh_settings", android.content.Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener(prefListener)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        requireContext().getSharedPreferences("uh_settings", android.content.Context.MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(prefListener)
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
@@ -581,18 +595,8 @@ class BrowserFragment : Fragment() {
         }
     }
 
-override fun onResume() {
-    super.onResume()
-    requireContext().getSharedPreferences("uh_settings", android.content.Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener(prefListener)
-}
-
-override fun onPause() {
-    super.onPause()
-    requireContext().getSharedPreferences("uh_settings", android.content.Context.MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(prefListener)
-}
-
-override fun onDestroyView() {
-    _binding = null
-    super.onDestroyView()
-}
+    override fun onDestroyView() {
+        _binding = null
+        super.onDestroyView()
+    }
 }
