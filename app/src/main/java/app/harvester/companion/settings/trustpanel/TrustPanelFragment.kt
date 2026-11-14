@@ -9,17 +9,13 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.fragment.app.Fragment
 import androidx.fragment.compose.content
-import androidx.lifecycle.coroutineScope
 import androidx.lifecycle.lifecycleScope
-import androidx.navigation.fragment.findNavController
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import kotlinx.coroutines.flow.map
 import mozilla.components.browser.state.selector.findTabOrCustomTab
@@ -34,11 +30,8 @@ import app.harvester.companion.settings.trustpanel.store.TrustPanelAction
 import app.harvester.companion.settings.trustpanel.store.TrustPanelState
 import app.harvester.companion.settings.trustpanel.store.TrustPanelStore
 import app.harvester.companion.settings.trustpanel.store.WebsiteInfoState
-import app.harvester.companion.settings.trustpanel.store.WebsitePermission
 import app.harvester.companion.settings.trustpanel.ui.ClearSiteDataDialog
 import app.harvester.companion.settings.trustpanel.ui.ProtectionPanel
-import app.harvester.companion.settings.trustpanel.ui.TrackerCategoryDetailsPanel
-import app.harvester.companion.settings.trustpanel.ui.TrackersBlockedPanel
 import app.harvester.companion.theme.UHTheme
 import java.security.cert.X509Certificate
 
@@ -47,7 +40,7 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
     private val securityInfoBinding = ViewBoundFeatureWrapper<SecurityInfoBinding>()
     private val snackbarHostState = SnackbarHostState()
     private lateinit var permissionsCallback: ((Map<String, Boolean>) -> Unit)
-    
+
     private val requestPermissionsLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { isGranted ->
         permissionsCallback.invoke(isGranted)
     }
@@ -66,7 +59,7 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                 certificate = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) args.getSerializable("certificate", X509Certificate::class.java) else @Suppress("DEPRECATION") args.getSerializable("certificate") as? X509Certificate
             ),
             sessionState = session,
-            settings = components.settings,
+            rules = components.sitePermissionRules,
             sitePermissions = null,
             permissionHighlights = session?.content?.permissionHighlights ?: mozilla.components.browser.state.state.content.PermissionHighlightsState(),
             isPermissionBlockedByAndroid = { false },
@@ -76,7 +69,7 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                     publicSuffixList = components.publicSuffixList,
                     sessionUseCases = components.useCases.sessionUseCases,
                     trackingProtectionUseCases = components.useCases.trackingProtectionUseCases,
-                    settings = components.settings,
+                    rules = components.sitePermissionRules,
                     permissionStorage = PermissionStorage(requireContext()),
                     requestPermissionsLauncher = requestPermissionsLauncher,
                     onDismiss = { dismiss() },
@@ -111,7 +104,7 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                         val websiteInfoState by store.stateFlow.map { it.websiteInfoState }.collectAsState(initial = store.state.websiteInfoState)
                         val isTrackingProtectionEnabled by store.stateFlow.map { it.isTrackingProtectionEnabled }.collectAsState(initial = store.state.isTrackingProtectionEnabled)
                         val websitePermissions by store.stateFlow.map { it.websitePermissionsState.values }.collectAsState(initial = emptyList())
-                        
+
                         ProtectionPanel(
                             websiteInfoState = websiteInfoState,
                             icon = null,
