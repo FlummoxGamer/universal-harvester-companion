@@ -35,6 +35,6 @@ fun PhoneFeature.toPermission(): SitePermissionsStorage.Permission {
     }
 }
 
-fun PhoneFeature.getStatus(sitePermissions: SitePermissions?, settings: app.harvester.companion.utils.Settings? = null): SitePermissions.Status {
+fun PhoneFeature.getStatus(sitePermissions: SitePermissions?, rules: app.harvester.companion.utils.SitePermissionRules? = null): SitePermissions.Status {
     return sitePermissions?.get(this.toPermission()) ?: SitePermissions.Status.NO_DECISION
 }
