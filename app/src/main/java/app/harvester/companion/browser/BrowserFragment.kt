@@ -66,6 +66,13 @@ class BrowserFragment : Fragment() {
     private var initialUrl: String? = null
     private val browsingModeManager = app.harvester.companion.browser.browsingmode.UhBrowsingModeManager()
 
+    private val prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == SettingsPrefs.K_ADDRESS_BAR_POSITION) {
+            applyConstraints()
+            setupInsets()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         initialUrl = arguments?.getString("url")
@@ -574,8 +581,18 @@ class BrowserFragment : Fragment() {
         }
     }
 
-    override fun onDestroyView() {
-        _binding = null
-        super.onDestroyView()
-    }
+override fun onResume() {
+    super.onResume()
+    requireContext().getSharedPreferences("uh_settings", android.content.Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener(prefListener)
+}
+
+override fun onPause() {
+    super.onPause()
+    requireContext().getSharedPreferences("uh_settings", android.content.Context.MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(prefListener)
+}
+
+override fun onDestroyView() {
+    _binding = null
+    super.onDestroyView()
+}
 }
