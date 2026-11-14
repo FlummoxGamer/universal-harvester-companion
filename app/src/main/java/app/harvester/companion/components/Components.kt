@@ -104,6 +104,10 @@ class Components(val context: Context) {
         mozilla.components.browser.icons.BrowserIcons(context.applicationContext, client)
     }
 
+    val publicSuffixList by lazy {
+        mozilla.components.lib.publicsuffixlist.PublicSuffixList(context.applicationContext)
+    }
+
     val downloadFileUtils: DownloadFileUtils by lazy {
         DefaultDownloadFileUtils(context.applicationContext) {
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).path
