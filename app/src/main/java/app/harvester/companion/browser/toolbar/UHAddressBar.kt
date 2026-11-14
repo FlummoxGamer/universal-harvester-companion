@@ -175,6 +175,7 @@ fun UHAddressBar(
                             state = textState,
                             modifier = Modifier.fillMaxWidth().padding(end = 28.dp).focusRequester(focusRequester).background(Color.Transparent),
                             textStyle = TextStyle(color = colorResource(id = R.color.text), fontSize = 14.sp),
+                            lineLimits = androidx.compose.foundation.text.input.TextFieldLineLimits.SingleLine,
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                             onKeyboardAction = KeyboardActionHandler {
                                 if (textState.text.isNotBlank()) onSubmit(textState.text.toString())
