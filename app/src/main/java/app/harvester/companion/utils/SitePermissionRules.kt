@@ -24,6 +24,10 @@ class SitePermissionRules(val context: Context) {
         )
     }
 
+    fun getAutoplayUserSetting(): Int {
+        return SettingsPrefs.getInt(context, "autoplay_user_setting", 3)
+    }
+
     private fun getAction(feature: PhoneFeature): SitePermissionsRules.Action {
         val key = "site_perm_${feature.name.lowercase()}"
         return when (SettingsPrefs.getInt(context, key, 1)) {
