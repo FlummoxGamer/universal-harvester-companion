@@ -8,6 +8,8 @@ import mozilla.components.concept.engine.permission.SitePermissions.AutoplayStat
 import mozilla.components.lib.state.State
 import app.harvester.companion.R
 import app.harvester.companion.settings.PhoneFeature
+import app.harvester.companion.trackingprotection.TrackerBuckets
+import app.harvester.companion.trackingprotection.TrackingProtectionCategory
 
 typealias WebsitePermissionsState = Map<PhoneFeature, WebsitePermission>
 
@@ -15,6 +17,8 @@ data class TrustPanelState(
     val baseDomain: String? = null,
     val isTrackingProtectionEnabled: Boolean = true,
     val numberOfTrackersBlocked: Int = 0,
+    val bucketedTrackers: TrackerBuckets = TrackerBuckets(),
+    val detailedTrackerCategory: TrackingProtectionCategory? = null,
     val sessionState: SessionState? = null,
     val sitePermissions: SitePermissions? = null,
     val websiteInfoState: WebsiteInfoState = WebsiteInfoState(),
@@ -29,6 +33,7 @@ data class WebsiteInfoState(
     val certificate: X509Certificate? = null,
     val qwac: X509Certificate? = null,
 ) {
+    val certificateDetails: CertificateDetails? by lazy { certificate?.toCertificateDetails() }
     val isQwac: Boolean get() = qwac != null
 }
 
@@ -52,8 +57,22 @@ sealed class WebsitePermission(
 
 enum class AutoplayValue(
     @param:StringRes val title: Int,
+    val autoplayAudibleStatus: AutoplayStatus,
+    val autoplayInaudibleStatus: AutoplayStatus,
 ) {
-    AUTOPLAY_ALLOW_ALL(title = R.string.download_content_type_filter_all),
-    AUTOPLAY_BLOCK_ALL(title = R.string.download_content_type_filter_image),
-    AUTOPLAY_BLOCK_AUDIBLE(title = R.string.download_content_type_filter_video),
+    AUTOPLAY_ALLOW_ALL(
+        title = R.string.download_content_type_filter_all,
+        autoplayAudibleStatus = AutoplayStatus.ALLOWED,
+        autoplayInaudibleStatus = AutoplayStatus.ALLOWED,
+    ),
+    AUTOPLAY_BLOCK_ALL(
+        title = R.string.download_content_type_filter_image,
+        autoplayAudibleStatus = AutoplayStatus.BLOCKED,
+        autoplayInaudibleStatus = AutoplayStatus.BLOCKED,
+    ),
+    AUTOPLAY_BLOCK_AUDIBLE(
+        title = R.string.download_content_type_filter_video,
+        autoplayAudibleStatus = AutoplayStatus.BLOCKED,
+        autoplayInaudibleStatus = AutoplayStatus.ALLOWED,
+    ),
 }
