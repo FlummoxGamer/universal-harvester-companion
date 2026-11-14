@@ -34,6 +34,13 @@ class HomeFragment : Fragment() {
     private var homeVideoPlayer: androidx.media3.exoplayer.ExoPlayer? = null
     private val browserViewModel: BrowserViewModel by activityViewModels()
 
+    private val prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == app.harvester.companion.SettingsPrefs.K_ADDRESS_BAR_POSITION) {
+            setupHomeLayout()
+            setupInsets()
+        }
+    }
+
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentHomeBinding.inflate(inflater, container, false)
         return binding.root
@@ -145,13 +152,6 @@ private fun setupAddressBar() {
         findNavController().navigate(R.id.action_homeFragment_to_browserFragment, bundle)
     }
 
-    override fun onResume() {
-        super.onResume()
-        applyWallpaper()
-        shortcutAdapter.submit(ShortcutStore.list(requireContext()))
-        homeVideoPlayer?.play()
-    }
-
     private fun applyWallpaper() {
         val wpPath = WallpaperStore.getCurrentWallpaper(requireContext())
         val isVideo = WallpaperStore.isCurrentVideo(requireContext())
@@ -189,16 +189,25 @@ private fun setupAddressBar() {
         }
     }
 
-    override fun onPause() {
-        super.onPause()
-        homeVideoPlayer?.pause()
-    }
+override fun onResume() {
+    super.onResume()
+    applyWallpaper()
+    shortcutAdapter.submit(ShortcutStore.list(requireContext()))
+    homeVideoPlayer?.play()
+    requireContext().getSharedPreferences("uh_settings", android.content.Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener(prefListener)
+}
 
-    override fun onDestroyView() {
-        binding.wallpaperVideo.player = null
-        homeVideoPlayer?.release()
-        homeVideoPlayer = null
-        _binding = null
-        super.onDestroyView()
-    }
+override fun onPause() {
+    super.onPause()
+    homeVideoPlayer?.pause()
+    requireContext().getSharedPreferences("uh_settings", android.content.Context.MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(prefListener)
+}
+
+override fun onDestroyView() {
+    binding.wallpaperVideo.player = null
+    homeVideoPlayer?.release()
+    homeVideoPlayer = null
+    _binding = null
+    super.onDestroyView()
+}
 }
