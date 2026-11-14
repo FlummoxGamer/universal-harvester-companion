@@ -107,6 +107,7 @@ private fun setupAddressBar() {
                     onClear = { browserViewModel.onTextChanged("") },
                     onDismissRequest = { browserViewModel.exitEditMode() },
                     onSearchEngineClick = {},
+                    onLockClick = {},
                     onScriptMenuClick = {},
                     onMenuClick = {},
                     onTabCountClick = {},
@@ -129,6 +130,7 @@ private fun setupAddressBar() {
                     onEditStart = { browserViewModel.enterEditMode("") },
                     onClear = { },
                     onSearchEngineClick = {},
+                    onLockClick = {},
                     onScriptMenuClick = {},
                     onMenuClick = { MainMenuDialogFragment.newInstance(true).show(parentFragmentManager, "MainMenu") },
                     onTabCountClick = {}
