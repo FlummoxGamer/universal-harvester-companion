@@ -420,6 +420,19 @@ private fun setupInsets() {
                         onClear = { viewModel.onTextChanged("") },
                         onDismissRequest = { viewModel.exitEditMode() },
                         onSearchEngineClick = { showSearchEnginePicker = true },
+                        onLockClick = {
+                            val tab = components.store.state.selectedTab
+                            if (tab != null) {
+                                val trustPanel = app.harvester.companion.settings.trustpanel.TrustPanelFragment.newInstance(
+                                    sessionId = tab.id,
+                                    url = tab.content.url,
+                                    title = tab.content.title ?: "",
+                                    isSecured = tab.content.securityInfo.isSecure,
+                                    certificate = tab.content.securityInfo.certificate
+                                )
+                                trustPanel.show(parentFragmentManager, "TrustPanel")
+                            }
+                        },
                         onScriptMenuClick = {},
                         onMenuClick = {},
                         onTabCountClick = {},
@@ -464,6 +477,19 @@ private fun setupInsets() {
                             onEditStart = { viewModel.enterEditMode(selectedTab?.content?.url ?: "") },
                             onClear = { },
                             onSearchEngineClick = { showSearchEnginePicker = true },
+                            onLockClick = {
+                                val tab = components.store.state.selectedTab
+                                if (tab != null) {
+                                    val trustPanel = app.harvester.companion.settings.trustpanel.TrustPanelFragment.newInstance(
+                                        sessionId = tab.id,
+                                        url = tab.content.url,
+                                        title = tab.content.title ?: "",
+                                        isSecured = tab.content.securityInfo.isSecure,
+                                        certificate = tab.content.securityInfo.certificate
+                                    )
+                                    trustPanel.show(parentFragmentManager, "TrustPanel")
+                                }
+                            },
                             onScriptMenuClick = {},
                             onMenuClick = { MainMenuDialogFragment.newInstance(false).show(parentFragmentManager, "MainMenu") },
                             onTabCountClick = {}
