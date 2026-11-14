@@ -7,7 +7,7 @@ import mozilla.components.concept.engine.permission.SitePermissions
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.Store
 import app.harvester.companion.settings.PhoneFeature
-import app.harvester.companion.utils.Settings
+import app.harvester.companion.utils.SitePermissionRules
 
 class TrustPanelStore(
     initialState: TrustPanelState = TrustPanelState(),
@@ -21,7 +21,7 @@ class TrustPanelStore(
         isTrackingProtectionEnabled: Boolean,
         websiteInfoState: WebsiteInfoState,
         sessionState: SessionState?,
-        settings: Settings,
+        rules: SitePermissionRules,
         sitePermissions: SitePermissions?,
         permissionHighlights: PermissionHighlightsState,
         isPermissionBlockedByAndroid: (PhoneFeature) -> Boolean,
@@ -34,7 +34,7 @@ class TrustPanelStore(
             sitePermissions = sitePermissions,
             websiteInfoState = websiteInfoState,
             websitePermissionsState = createWebsitePermissionState(
-                settings = settings,
+                rules = rules,
                 sitePermissions = sitePermissions,
                 permissionHighlights = permissionHighlights,
                 isPermissionBlockedByAndroid = isPermissionBlockedByAndroid,
@@ -46,7 +46,7 @@ class TrustPanelStore(
     companion object {
         @VisibleForTesting
         fun createWebsitePermissionState(
-            settings: Settings,
+            rules: SitePermissionRules,
             sitePermissions: SitePermissions?,
             permissionHighlights: PermissionHighlightsState,
             isPermissionBlockedByAndroid: (PhoneFeature) -> Boolean,
@@ -56,23 +56,23 @@ class TrustPanelStore(
                 when (phoneFeature) {
                     PhoneFeature.AUTOPLAY -> {
                         WebsitePermission.Autoplay(
-                            autoplayValue = sitePermissions.toAutoplayValue(settings),
+                            autoplayValue = sitePermissions.toAutoplayValue(rules),
                             isVisible = sitePermissions != null || permissionHighlights.isAutoPlayBlocking,
                             deviceFeature = phoneFeature,
                         )
                     }
                     PhoneFeature.LOCAL_NETWORK_ACCESS,
                     PhoneFeature.LOCAL_DEVICE_ACCESS -> {
-                        val status = phoneFeature.getStatus(sitePermissions, settings)
+                        val status = phoneFeature.getStatus(sitePermissions, rules)
                         WebsitePermission.Toggleable(
                             isEnabled = status.isAllowed(),
                             isBlockedByAndroid = false,
-                            isVisible = settings.isLnaFeatureEnabled && sitePermissions != null && status.doNotAskAgain(),
+                            isVisible = rules.isLnaFeatureEnabled && sitePermissions != null && status.doNotAskAgain(),
                             deviceFeature = phoneFeature,
                         )
                     }
                     else -> {
-                        val status = phoneFeature.getStatus(sitePermissions, settings)
+                        val status = phoneFeature.getStatus(sitePermissions, rules)
                         WebsitePermission.Toggleable(
                             isEnabled = status.isAllowed(),
                             isBlockedByAndroid = isPermissionBlockedByAndroid(phoneFeature),
@@ -83,13 +83,17 @@ class TrustPanelStore(
                 }
             }
 
-        private fun SitePermissions?.toAutoplayValue(settings: Settings): AutoplayValue =
+        private fun SitePermissions?.toAutoplayValue(rules: SitePermissionRules): AutoplayValue =
             this?.let { sitePermissions ->
                 AutoplayValue.entries.find {
                     it.autoplayAudibleStatus == sitePermissions.autoplayAudible &&
                         it.autoplayInaudibleStatus == sitePermissions.autoplayInaudible
                 }
-            } ?: AutoplayValue.AUTOPLAY_BLOCK_AUDIBLE
+            } ?: when (rules.getAutoplayUserSetting()) {
+                1 -> AutoplayValue.AUTOPLAY_ALLOW_ALL
+                4 -> AutoplayValue.AUTOPLAY_BLOCK_ALL
+                else -> AutoplayValue.AUTOPLAY_BLOCK_AUDIBLE
+            }
     }
 }
 
