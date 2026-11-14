@@ -199,6 +199,6 @@ class UseCases(store: BrowserStore, engine: Engine, downloadFileUtils: DownloadF
     val tabsUseCases by lazy { TabsUseCases(store) }
     val contextMenuUseCases by lazy { ContextMenuUseCases(store) }
     val downloadsUseCases by lazy { DownloadsUseCases(store, downloadFileUtils) }
-    val searchUseCases by lazy { mozilla.components.feature.search.SearchUseCases(store, tabsUseCases, engine) }
+    val searchUseCases by lazy { mozilla.components.feature.search.SearchUseCases(store, tabsUseCases, sessionUseCases, engine) }
     val trackingProtectionUseCases by lazy { mozilla.components.feature.session.TrackingProtectionUseCases(store) }
 }
