@@ -23,14 +23,15 @@ import app.harvester.companion.settings.trustpanel.store.WebsitePermission
 import app.harvester.companion.settings.trustpanel.store.WebsitePermissionsState
 import app.harvester.companion.trackingprotection.TrackerBuckets
 import app.harvester.companion.trackingprotection.TrackingProtectionCategory
-import app.harvester.companion.utils.Settings
+import app.harvester.companion.utils.SitePermissionRules
+import app.harvester.companion.settings.toggle
 
 class TrustPanelMiddleware(
     private val engine: Engine,
     private val publicSuffixList: PublicSuffixList,
     private val sessionUseCases: SessionUseCases,
     private val trackingProtectionUseCases: TrackingProtectionUseCases,
-    private val settings: Settings,
+    private val rules: SitePermissionRules,
     private val permissionStorage: PermissionStorage,
     private val requestPermissionsLauncher: ActivityResultLauncher<Array<String>>,
     private val onDismiss: suspend () -> Unit,
@@ -122,7 +123,7 @@ class TrustPanelMiddleware(
             val updatedSitePermissions: SitePermissions
             if (currentState.sitePermissions == null) {
                 val origin = requireNotNull(session.content.url.getOrigin())
-                updatedSitePermissions = settings.getSitePermissionsCustomSettingsRules().toSitePermissions(origin).updateAutoplayPermissions(autoplayValue)
+                updatedSitePermissions = rules.getSitePermissionsCustomSettingsRules().toSitePermissions(origin).updateAutoplayPermissions(autoplayValue)
                 permissionStorage.add(sitePermissions = updatedSitePermissions, private = session.content.private)
             } else {
                 updatedSitePermissions = currentState.sitePermissions.updateAutoplayPermissions(autoplayValue)
