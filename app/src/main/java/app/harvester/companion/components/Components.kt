@@ -33,6 +33,7 @@ import mozilla.components.feature.downloads.DefaultFileSizeFormatter
 import mozilla.components.feature.downloads.DownloadEstimator
 import mozilla.components.feature.downloads.DownloadsUseCases
 import mozilla.components.feature.downloads.FileSizeFormatter
+import mozilla.components.concept.engine.permission.SitePermissionsStorage
 import mozilla.components.feature.session.SessionUseCases
 import mozilla.components.feature.tabs.TabsUseCases
 import mozilla.components.lib.state.Middleware
@@ -54,11 +55,11 @@ class Components(val context: Context) {
         GeckoViewFetchClient(context.applicationContext, runtime)
     }
 
-    val geckoSitePermissionsStorage: mozilla.components.feature.sitepermissions.SitePermissionsStorage by lazy {
+    val geckoSitePermissionsStorage: SitePermissionsStorage by lazy {
         mozilla.components.feature.sitepermissions.OnDiskSitePermissionsStorage(context.applicationContext)
     }
 
-    val settings by lazy { app.harvester.companion.utils.Settings(context.applicationContext) }
+    val sitePermissionRules by lazy { app.harvester.companion.utils.SitePermissionRules(context.applicationContext) }
 
     val placesHistoryStorage: PlacesHistoryStorage by lazy {
         PlacesHistoryStorage(context.applicationContext)
@@ -198,6 +199,6 @@ class UseCases(store: BrowserStore, engine: Engine, downloadFileUtils: DownloadF
     val tabsUseCases by lazy { TabsUseCases(store) }
     val contextMenuUseCases by lazy { ContextMenuUseCases(store) }
     val downloadsUseCases by lazy { DownloadsUseCases(store, downloadFileUtils) }
-    val searchUseCases by lazy { mozilla.components.feature.search.SearchUseCases(store, tabsUseCases, sessionUseCases) }
+    val searchUseCases by lazy { mozilla.components.feature.search.SearchUseCases(store, engine, sessionUseCases) }
     val trackingProtectionUseCases by lazy { mozilla.components.feature.session.TrackingProtectionUseCases(store) }
 }
