@@ -108,4 +108,14 @@
     <string name="mozac_feature_downloads_open_existing_file">Open existing file</string>
     <string name="mozac_feature_downloads_dialog_download">Download</string>
     <string name="mozac_feature_downloads_dialog_cancel">Cancel</string>
+    <string name="protection_panel_banner_protected_title">%s is on guard</string>
+    <string name="protection_panel_banner_not_secure_title">Connection is not secure</string>
+    <string name="protection_panel_banner_not_secure_description">Information sent over this connection can be read by others.</string>
+    <string name="protection_panel_banner_not_protected_title">Tracking protection is off</string>
+    <string name="protection_panel_banner_not_protected_description">%s is not blocking trackers on this site.</string>
+    <string name="protection_panel_banner_protected_no_blocked_trackers_description">No trackers blocked on this site.</string>
+    <plurals name="protection_panel_banner_protected_blocked_trackers_description">
+        <item quantity="one">%d tracker blocked on this site.</item>
+        <item quantity="other">%d trackers blocked on this site.</item>
+    </plurals>
 </resources>
