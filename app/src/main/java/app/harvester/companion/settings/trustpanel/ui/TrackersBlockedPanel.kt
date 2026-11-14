@@ -13,7 +13,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
-import app.harvester.companion.R
 import app.harvester.companion.components.menu.compose.MenuGroup
 import app.harvester.companion.components.menu.compose.MenuItem
 import app.harvester.companion.components.menu.compose.MenuScaffold
