@@ -4,11 +4,7 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,7 +19,6 @@ import app.harvester.companion.R
 import app.harvester.companion.components.menu.compose.MenuGroup
 import app.harvester.companion.components.menu.compose.MenuItem
 import app.harvester.companion.components.menu.compose.MenuScaffold
-import app.harvester.companion.settings.PhoneFeature
 import app.harvester.companion.settings.trustpanel.store.AutoplayValue
 import app.harvester.companion.settings.trustpanel.store.WebsiteInfoState
 import app.harvester.companion.settings.trustpanel.store.WebsitePermission
