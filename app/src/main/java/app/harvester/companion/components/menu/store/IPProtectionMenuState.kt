@@ -1,9 +1,8 @@
 package app.harvester.companion.components.menu.store
 
-import mozilla.components.feature.ipprotection.store.state.DataVolume
-import mozilla.components.feature.ipprotection.store.state.IPProtectionStatus
+enum class IPProtectionStatus { Disabled, Enabled }
 
 data class IPProtectionMenuState(
-    val status: IPProtectionStatus = IPProtectionStatus.Uninitialized,
-    val dataLimit: DataVolume? = null,
+    val status: IPProtectionStatus = IPProtectionStatus.Disabled,
+    val dataLimit: Any? = null,
 )
