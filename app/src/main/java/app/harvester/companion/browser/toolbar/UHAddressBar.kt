@@ -56,6 +56,7 @@ fun UHAddressBar(
     onEditStart: () -> Unit,
     onClear: () -> Unit,
     onSearchEngineClick: () -> Unit,
+    onLockClick: () -> Unit,
     onScriptMenuClick: () -> Unit,
     onMenuClick: () -> Unit,
     onTabCountClick: () -> Unit,
@@ -136,7 +137,7 @@ fun UHAddressBar(
                 modifier = Modifier.size(36.dp),
                 contentAlignment = Alignment.Center
             ) {
-                IconButton(onClick = onSearchEngineClick, modifier = Modifier.size(24.dp)) {
+                IconButton(onClick = { if (iconState == 0) onSearchEngineClick() else onLockClick() }, modifier = Modifier.size(24.dp)) {
                     when (iconState) {
                         1 -> Icon(painterResource(R.drawable.ic_lock), contentDescription = "Lock", tint = colorResource(id = R.color.accent), modifier = Modifier.size(24.dp).clickable { onSearchEngineClick() })
                         2 -> Icon(painterResource(R.drawable.ic_lock_open), contentDescription = "Open Lock", tint = colorResource(id = R.color.red), modifier = Modifier.size(24.dp).clickable { onSearchEngineClick() })
