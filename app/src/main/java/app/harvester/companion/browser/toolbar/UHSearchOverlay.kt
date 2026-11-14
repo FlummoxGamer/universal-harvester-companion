@@ -45,7 +45,9 @@ fun UHSearchOverlay(
     val keyboardController = LocalSoftwareKeyboardController.current
 
     LaunchedEffect(Unit) {
-        delay(300)
+        delay(100)
+        focusManager.clearFocus()
+        delay(100)
         keyboardController?.show()
     }
 
