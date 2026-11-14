@@ -32,7 +32,10 @@ import app.harvester.companion.settings.trustpanel.store.TrustPanelStore
 import app.harvester.companion.settings.trustpanel.store.WebsiteInfoState
 import app.harvester.companion.settings.trustpanel.ui.ClearSiteDataDialog
 import app.harvester.companion.settings.trustpanel.ui.ProtectionPanel
+import app.harvester.companion.settings.trustpanel.ui.TrackerCategoryDetailsPanel
+import app.harvester.companion.settings.trustpanel.ui.TrackersBlockedPanel
 import app.harvester.companion.theme.UHTheme
+import app.harvester.companion.trackingprotection.TrackingProtectionCategory
 import java.security.cert.X509Certificate
 
 class TrustPanelFragment : BottomSheetDialogFragment() {
@@ -122,6 +125,30 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                             onViewCertificateClick = { store.dispatch(TrustPanelAction.Navigate.SecurityCertificate) },
                         )
                     }
+                    Route.TrackersPanel -> {
+                        TrackersBlockedPanel(
+                            title = args.getString("title") ?: "",
+                            url = args.getString("url") ?: "",
+                            numberOfTrackersBlocked = store.state.numberOfTrackersBlocked,
+                            numberOfTrackersBlockedThisWeek = 0,
+                            bucketedTrackers = store.state.bucketedTrackers,
+                            onTrackerCategoryClick = { category ->
+                                store.dispatch(TrustPanelAction.UpdateDetailedTrackerCategory(category))
+                                contentState = Route.TrackerCategoryDetailsPanel
+                            },
+                            onTrackersBlockedThisWeekClicked = { /* Not implemented */ },
+                            onBackButtonClick = { contentState = Route.ProtectionPanel },
+                        )
+                    }
+                    Route.TrackerCategoryDetailsPanel -> {
+                        TrackerCategoryDetailsPanel(
+                            title = args.getString("title") ?: "",
+                            url = args.getString("url") ?: "",
+                            detailedTrackerCategory = store.state.detailedTrackerCategory,
+                            bucketedTrackers = store.state.bucketedTrackers,
+                            onBackButtonClick = { contentState = Route.TrackersPanel },
+                        )
+                    }
                     Route.ClearSiteDataDialog -> {
                         ClearSiteDataDialog(
                             baseDomain = store.state.baseDomain ?: "",
@@ -129,7 +156,6 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                             onCancelClick = { dismiss() },
                         )
                     }
-                    else -> {}
                 }
             }
         }
