@@ -139,13 +139,13 @@ fun UHAddressBar(
             ) {
                 IconButton(onClick = { if (iconState == 0) onSearchEngineClick() else onLockClick() }, modifier = Modifier.size(24.dp)) {
                     when (iconState) {
-                        1 -> Icon(painterResource(R.drawable.ic_lock), contentDescription = "Lock", tint = colorResource(id = R.color.accent), modifier = Modifier.size(24.dp).clickable { onSearchEngineClick() })
-                        2 -> Icon(painterResource(R.drawable.ic_lock_open), contentDescription = "Open Lock", tint = colorResource(id = R.color.red), modifier = Modifier.size(24.dp).clickable { onSearchEngineClick() })
+                        1 -> Icon(painterResource(R.drawable.uh_ic_lock), contentDescription = "Lock", tint = colorResource(id = R.color.accent), modifier = Modifier.size(24.dp))
+                        2 -> Icon(painterResource(R.drawable.uh_ic_lock_open), contentDescription = "Open Lock", tint = colorResource(id = R.color.red), modifier = Modifier.size(24.dp))
                         else -> {
                             AsyncImage(
                                 model = searchEngineEntry.iconUrl,
                                 contentDescription = "Search Engine",
-                                modifier = Modifier.size(24.dp).clickable { onSearchEngineClick() }
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                     }
