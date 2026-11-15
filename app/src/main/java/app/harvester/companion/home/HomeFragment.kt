@@ -24,6 +24,7 @@ import kotlinx.coroutines.launch
 import androidx.recyclerview.widget.GridLayoutManager
 import app.harvester.companion.CustomizeHomeActivity
 import app.harvester.companion.R
+import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.ShortcutAdapter
 import app.harvester.companion.ShortcutStore
 import app.harvester.companion.UHApp
