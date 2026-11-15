@@ -43,11 +43,13 @@ internal fun TrackersBlockedPanel(
             Spacer(modifier = Modifier.height(8.dp))
             MenuGroup {
                 TrackingProtectionCategory.entries.filter { bucketedTrackers.get(it, true).isNotEmpty() }.forEach { category ->
-                    MenuItem(
-                        label = "${category.name.lowercase().replaceFirstChar { it.uppercase() }} (${bucketedTrackers.get(category, true).size})",
-                        beforeIconPainter = painterResource(id = category.icon),
-                        onClick = { onTrackerCategoryClick(category) },
-                    )
+                    key(category) {
+                        MenuItem(
+                            label = "${category.name.lowercase().replaceFirstChar { it.uppercase() }} (${bucketedTrackers.get(category, true).size})",
+                            beforeIconPainter = painterResource(id = category.icon),
+                            onClick = { onTrackerCategoryClick(category) },
+                        )
+                    }
                 }
             }
         }
