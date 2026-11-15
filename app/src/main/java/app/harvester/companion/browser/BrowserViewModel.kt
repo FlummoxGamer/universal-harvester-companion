@@ -1,6 +1,7 @@
 package app.harvester.companion.browser
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.harvester.companion.SearchEnginePrefs
@@ -16,12 +17,20 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
-    private val context = application.applicationContext
-    private val components = (application as UHApp).components
+    val context = application.applicationContext
+    val components = (application as UHApp).components
     private val suggestionClient = SearchSuggestionClient()
+
+    val browsingModeManager = app.harvester.companion.browser.browsingmode.UhBrowsingModeManager()
 
     private val _isEditing = MutableStateFlow(false)
     val isEditing: StateFlow<Boolean> = _isEditing
+
+    private val _isBarBottom = MutableStateFlow(SettingsPrefs.getInt(context, SettingsPrefs.K_ADDRESS_BAR_POSITION, 1) == 1)
+    val isBarBottom: StateFlow<Boolean> = _isBarBottom
+
+    private val _searchEngine = MutableStateFlow(SearchEnginePrefs.currentEntry(context))
+    val searchEngine: StateFlow<SearchEnginePrefs.Entry> = _searchEngine
 
     private val _editText = MutableStateFlow("")
     val editText: StateFlow<String> = _editText
@@ -30,6 +39,17 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val suggestions: StateFlow<List<String>> = _suggestions
 
     private var suggestJob: Job? = null
+
+    init {
+        context.getSharedPreferences("uh_settings", Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener { _, key ->
+            if (key == SettingsPrefs.K_ADDRESS_BAR_POSITION) {
+                _isBarBottom.value = SettingsPrefs.getInt(context, SettingsPrefs.K_ADDRESS_BAR_POSITION, 1) == 1
+            }
+        }
+        context.getSharedPreferences("uh_search", Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener { _, _ ->
+            _searchEngine.value = SearchEnginePrefs.currentEntry(context)
+        }
+    }
 
     fun enterEditMode(currentUrl: String) {
         _isEditing.value = true
@@ -64,7 +84,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             val showRemote = SettingsPrefs.getBool(context, SettingsPrefs.K_SEARCH_REMOTE, true)
 
             val queries = emptyList<String>()
-            val pages = if (showHistory && typed.isNotBlank()) withContext(Dispatchers.IO) { 
+            val pages = if (showHistory && typed.isNotBlank()) withContext(Dispatchers.IO) {
                 try {
                     val visits = components.placesHistoryStorage.getDetailedVisits(0L, System.currentTimeMillis())
                     visits.filter { it.url.contains(typed, ignoreCase = true) || (it.title?.contains(typed, ignoreCase = true) == true) }
@@ -72,11 +92,10 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         .take(10)
                         .map { it.url }
                 } catch (e: Exception) {
-                    app.harvester.companion.UHLog.throwable("browser", "Failed to fetch history suggestions", e)
                     emptyList()
                 }
             } else emptyList()
-            
+
             var combined = queries + pages
 
             if (!isUrl && typed.length >= 2 && showRemote) {
@@ -88,9 +107,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                     }
                 } catch (_: Exception) {}
             }
-            
+
             _suggestions.value = combined.distinct().take(8)
-            app.harvester.companion.UHLog.d("suggestions", "Loaded ${combined.size} suggestions for $typed")
         }
     }
 
