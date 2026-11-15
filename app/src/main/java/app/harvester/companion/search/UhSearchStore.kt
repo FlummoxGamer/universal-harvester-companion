@@ -55,6 +55,8 @@ data class UhSearchState(
     val showSearchSuggestionsHint: Boolean,
     val showClipboardSuggestions: Boolean,
     val clipboardHasUrl: Boolean = false,
+    val showRecentSearches: Boolean = true,
+    val showTrendingSearches: Boolean = true,
     val searchAccessPoint: app.harvester.companion.components.appstate.MetricsUtils.Source,
     val tabId: String?
 ) : State
@@ -72,6 +74,7 @@ private fun searchStateReducer(state: UhSearchState, action: UhSearchAction): Uh
         is UhSearchAction.SearchSourceTabUpdated -> state.copy(tabId = action.tabId, currentTabData = action.currentTabData)
         is UhSearchAction.UpdateQuery -> state.copy(query = action.query)
         is UhSearchAction.UpdateSearchState -> state.copy(defaultEngine = action.search.selectedOrDefaultSearchEngine(private = action.isPrivate))
+        is UhSearchAction.UpdateClipboardHasUrl -> state.copy(clipboardHasUrl = action.hasUrl)
         is UhSearchAction.SearchSuggestionsVisibilityUpdated -> state.copy(shouldShowSearchSuggestions = action.visible)
         is UhSearchAction.SearchProvidersUpdated -> state.copy(searchSuggestionsProviders = action.providers)
         is UhSearchAction.SearchStarted -> state.copy(searchStartedForCurrentUrl = action.searchStartedForCurrentUrl)
