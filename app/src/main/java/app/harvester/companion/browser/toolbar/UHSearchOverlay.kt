@@ -1,10 +1,12 @@
 package app.harvester.companion.browser.toolbar
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -37,7 +39,11 @@ fun UHSearchOverlay(
     val browserState by components.store.stateFlow.collectAsState()
     val selectedTab = browserState.selectedTab
 
-    Column(modifier = Modifier.fillMaxSize().background(colorResource(id = R.color.bg)).imePadding()) {
+    BackHandler {
+        onDismissRequest()
+    }
+
+    Column(modifier = Modifier.fillMaxSize().background(colorResource(id = R.color.bg)).statusBarsPadding().imePadding()) {
         if (!isBarBottom) {
             UHAddressBar(
                 url = selectedTab?.content?.url ?: "",
