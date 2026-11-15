@@ -181,9 +181,17 @@ class BrowserFragment : Fragment() {
             }
         }
 
+        applyConstraints()
         setupAddressBar(components)
         setupInsets()
         setupLogging(components)
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.isBarBottom.collect { 
+                applyConstraints()
+                setupInsets()
+            }
+        }
     }
 
     private fun setupFeatures(components: app.harvester.companion.components.Components, engineView: mozilla.components.concept.engine.EngineView) {
@@ -293,16 +301,48 @@ class BrowserFragment : Fragment() {
         )
     }
 
-    private fun setupInsets() {
-        ViewCompat.setOnApplyWindowInsetsListener(binding.browserLayout) { v, insets ->
-            val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
-            v.setPadding(0, top, 0, 0)
-            insets
+    private fun applyConstraints() {
+        val isBarBottom = SettingsPrefs.getInt(requireContext(), SettingsPrefs.K_ADDRESS_BAR_POSITION, 1) == 1
+        val constraintSet = androidx.constraintlayout.widget.ConstraintSet()
+        constraintSet.clone(binding.root)
+        if (isBarBottom) {
+            constraintSet.connect(binding.browserLayout.id, androidx.constraintlayout.widget.ConstraintSet.TOP, androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.TOP)
+            constraintSet.connect(binding.browserLayout.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM, binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.TOP)
+            constraintSet.connect(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM, androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.BOTTOM)
+            constraintSet.clear(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.TOP)
+        } else {
+            constraintSet.connect(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.TOP, androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.TOP)
+            constraintSet.connect(binding.browserLayout.id, androidx.constraintlayout.widget.ConstraintSet.TOP, binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM)
+            constraintSet.connect(binding.browserLayout.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM, androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.BOTTOM)
+            constraintSet.clear(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM)
         }
-        ViewCompat.setOnApplyWindowInsetsListener(binding.addressBarContainer) { v, insets ->
-            val bottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
-            v.setPadding(0, 0, 0, bottom)
-            insets
+        constraintSet.applyTo(binding.root)
+    }
+
+    private fun setupInsets() {
+        val isBarBottom = SettingsPrefs.getInt(requireContext(), SettingsPrefs.K_ADDRESS_BAR_POSITION, 1) == 1
+        if (isBarBottom) {
+            ViewCompat.setOnApplyWindowInsetsListener(binding.browserLayout) { v, insets ->
+                val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
+                v.setPadding(0, top, 0, 0)
+                insets
+            }
+            ViewCompat.setOnApplyWindowInsetsListener(binding.addressBarContainer) { v, insets ->
+                val bottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+                v.setPadding(0, 0, 0, bottom)
+                insets
+            }
+        } else {
+            ViewCompat.setOnApplyWindowInsetsListener(binding.addressBarContainer) { v, insets ->
+                val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
+                v.setPadding(0, top, 0, 0)
+                insets
+            }
+            ViewCompat.setOnApplyWindowInsetsListener(binding.browserLayout) { v, insets ->
+                val bottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+                v.setPadding(0, 0, 0, bottom)
+                insets
+            }
         }
     }
 
@@ -328,7 +368,6 @@ class BrowserFragment : Fragment() {
         binding.addressBarContainer.setContent {
             val browserState by components.store.stateFlow.collectAsState()
             val isEditing by viewModel.isEditing.collectAsState()
-            val isBarBottom by viewModel.isBarBottom.collectAsState()
             val searchEngine by viewModel.searchEngine.collectAsState()
             val editText by viewModel.editText.collectAsState()
             val selectedTab = browserState.selectedTab
