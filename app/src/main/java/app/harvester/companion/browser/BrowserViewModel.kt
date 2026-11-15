@@ -112,6 +112,12 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun updateBarPosition(isBottom: Boolean) {
+        if (_isBarBottom.value != isBottom) {
+            _isBarBottom.value = isBottom
+        }
+    }
+
     fun normalize(input: String): String {
         val t = input.trim()
         if (t.isEmpty()) return ""
