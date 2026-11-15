@@ -42,6 +42,7 @@ import app.harvester.companion.R
 import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
 import app.harvester.companion.theme.UHTheme
+import app.harvester.companion.utils.SearchHistoryUtils
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -77,7 +78,8 @@ fun HistoryScreen() {
         withContext(Dispatchers.IO) {
             try {
                 val visits = components.placesHistoryStorage.getDetailedVisits(0L, System.currentTimeMillis())
-                historyItems = visits.sortedByDescending { it.visitTime }
+                val filteredVisits = visits.filter { !SearchHistoryUtils.isSearchUrl(context, it.url) }
+                historyItems = filteredVisits.sortedByDescending { it.visitTime }
             } catch (e: Exception) {
                 UHLog.throwable("history", "Failed to load history", e)
             } finally {
