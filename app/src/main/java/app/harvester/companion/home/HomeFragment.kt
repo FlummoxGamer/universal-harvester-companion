@@ -6,14 +6,13 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -29,10 +28,10 @@ import app.harvester.companion.UHApp
 import app.harvester.companion.WallpaperStore
 import app.harvester.companion.browser.BrowserViewModel
 import app.harvester.companion.browser.menu.MainMenuDialogFragment
+import app.harvester.companion.browser.search.UHSearchEnginePicker
 import app.harvester.companion.browser.toolbar.UHAddressBar
+import app.harvester.companion.browser.toolbar.UHSearchOverlay
 import app.harvester.companion.databinding.FragmentHomeBinding
-import app.harvester.companion.search.UhToolbarStore
-import app.harvester.companion.search.awesomebar.UhSearchSuggestionsComposable
 import app.harvester.companion.theme.UHTheme
 
 class HomeFragment : Fragment() {
@@ -42,12 +41,6 @@ class HomeFragment : Fragment() {
     private lateinit var shortcutAdapter: ShortcutAdapter
     private var homeVideoPlayer: androidx.media3.exoplayer.ExoPlayer? = null
     private val browserViewModel: BrowserViewModel by activityViewModels()
-
-    private val prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == app.harvester.companion.SettingsPrefs.K_ADDRESS_BAR_POSITION) {
-            setupInsets()
-        }
-    }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentHomeBinding.inflate(inflater, container, false)
@@ -96,82 +89,60 @@ class HomeFragment : Fragment() {
         }
     }
 
-private fun setupAddressBar() {
-    binding.addressBarContainer.setContent {
-        val isEditing by browserViewModel.isEditing.collectAsState()
-        val editText by browserViewModel.editText.collectAsState()
-        val suggestions by browserViewModel.suggestions.collectAsState()
-        val components = (requireContext().applicationContext as UHApp).components
-        val browsingModeManager = remember { app.harvester.companion.browser.browsingmode.UhBrowsingModeManager() }
-        
-        UHTheme {
-            if (isEditing) {
-                Dialog(
-                    onDismissRequest = { browserViewModel.exitEditMode() },
-                    properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
-                ) {
-                    Column(modifier = Modifier.fillMaxSize()) {
+    private fun setupAddressBar() {
+        binding.addressBarContainer.setContent {
+            val isEditing by browserViewModel.isEditing.collectAsState()
+            val isBarBottom by browserViewModel.isBarBottom.collectAsState()
+            val searchEngine by browserViewModel.searchEngine.collectAsState()
+            val editText by browserViewModel.editText.collectAsState()
+            val components = (requireContext().applicationContext as UHApp).components
+            
+            var showSearchEnginePicker by remember { mutableStateOf(false) }
+            val isBarBottomSettings = app.harvester.companion.SettingsPrefs.getInt(requireContext(), app.harvester.companion.SettingsPrefs.K_ADDRESS_BAR_POSITION, 1) == 1
+
+            if (showSearchEnginePicker) {
+                UHSearchEnginePicker(
+                    onDismiss = { showSearchEnginePicker = false },
+                    onSelect = { browserViewModel.enterEditMode("") }
+                )
+            }
+
+            UHTheme {
+                if (isEditing) {
+                    UHSearchOverlay(
+                        viewModel = browserViewModel,
+                        fragment = this@HomeFragment,
+                        onDismissRequest = { browserViewModel.exitEditMode() },
+                        onSearchEngineClick = { showSearchEnginePicker = true },
+                        onLockClick = {},
+                        onMenuClick = {},
+                        onTabCountClick = {}
+                    )
+                } else {
+                    Box(modifier = Modifier.fillMaxWidth()) {
                         UHAddressBar(
                             url = "",
-                            isEditing = true,
+                            isEditing = isEditing,
                             tabCount = 1,
                             iconState = 0,
                             isWallpaperActive = true,
                             editText = editText,
                             onEditTextChanged = { browserViewModel.onTextChanged(it) },
-                            onSubmit = { 
-                                val target = browserViewModel.normalize(it)
-                                if (target.isNotBlank()) {
-                                    browserViewModel.exitEditMode()
-                                    navigateToBrowser(target)
-                                }
-                            },
+                            onSubmit = { },
                             onEditStart = { browserViewModel.enterEditMode("") },
-                            onClear = { browserViewModel.onTextChanged("") },
-                            onSearchEngineClick = {},
+                            onClear = { },
+                            onSearchEngineClick = { showSearchEnginePicker = true },
                             onLockClick = {},
                             onScriptMenuClick = {},
-                            onMenuClick = {},
-                            onTabCountClick = {}
+                            onMenuClick = { MainMenuDialogFragment.newInstance(true).show(parentFragmentManager, "MainMenu") },
+                            onTabCountClick = {},
+                            searchEngine = searchEngine
                         )
-                        Box(modifier = Modifier.weight(1f)) {
-                            val toolbarStore = remember { UhToolbarStore() }
-                            UhSearchSuggestionsComposable(
-                                fragment = this@HomeFragment,
-                                modifier = Modifier.fillMaxSize(),
-                                components = components,
-                                appStore = components.appStore,
-                                browserStore = components.store,
-                                toolbarStore = toolbarStore,
-                                navController = findNavController(),
-                                browsingModeManager = browsingModeManager,
-                                query = editText
-                            ).SearchSuggestions()
-                        }
                     }
                 }
-            } else {
-                UHAddressBar(
-                    url = "",
-                    isEditing = false,
-                    tabCount = 1,
-                    iconState = 0,
-                    isWallpaperActive = true,
-                    editText = editText,
-                    onEditTextChanged = { browserViewModel.onTextChanged(it) },
-                    onSubmit = { },
-                    onEditStart = { browserViewModel.enterEditMode("") },
-                    onClear = { },
-                    onSearchEngineClick = {},
-                    onLockClick = {},
-                    onScriptMenuClick = {},
-                    onMenuClick = { MainMenuDialogFragment.newInstance(true).show(parentFragmentManager, "MainMenu") },
-                    onTabCountClick = {}
-                )
             }
         }
     }
-}
 
     private fun navigateToBrowser(url: String) {
         val bundle = Bundle().apply { putString("url", url) }
@@ -183,7 +154,6 @@ private fun setupAddressBar() {
         applyWallpaper()
         shortcutAdapter.submit(ShortcutStore.list(requireContext()))
         homeVideoPlayer?.play()
-        requireContext().getSharedPreferences("uh_settings", android.content.Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener(prefListener)
     }
 
     private fun applyWallpaper() {
@@ -226,7 +196,6 @@ private fun setupAddressBar() {
     override fun onPause() {
         super.onPause()
         homeVideoPlayer?.pause()
-        requireContext().getSharedPreferences("uh_settings", android.content.Context.MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(prefListener)
     }
 
     override fun onDestroyView() {
