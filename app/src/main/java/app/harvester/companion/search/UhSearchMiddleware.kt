@@ -58,18 +58,23 @@ class UhSearchMiddleware(
         }
     }
 
-    private fun updateSearchProviders(store: Store<UhSearchState, UhSearchAction>) {
-        val providers = suggestionsProvidersBuilder?.getProvidersToAdd(
-            UhSuggestionsBuilder.UhProviderState(
-                searchEngineSource = store.state.searchEngineSource,
-                showRecentSearches = store.state.showRecentSearches,
-                showTrendingSearches = store.state.showTrendingSearches
-            )
-        )
-        if (providers != null) {
-            store.dispatch(UhSearchAction.SearchProvidersUpdated(providers.toList()))
-        }
+private fun updateSearchProviders(store: Store<UhSearchState, UhSearchAction>) {
+    val defaultEngine = components.store.state.search.selectedOrDefaultSearchEngine()
+    var source = store.state.searchEngineSource
+    if (source is UhSearchEngineSource.None && defaultEngine != null) {
+        source = UhSearchEngineSource.Default(defaultEngine)
     }
+    val providers = suggestionsProvidersBuilder?.getProvidersToAdd(
+        UhSuggestionsBuilder.UhProviderState(
+            searchEngineSource = source,
+            showRecentSearches = store.state.showRecentSearches,
+            showTrendingSearches = store.state.showTrendingSearches
+        )
+    )
+    if (providers != null) {
+        store.dispatch(UhSearchAction.SearchProvidersUpdated(providers.toList()))
+    }
+}
 
     private fun isCurrentUrl(query: String, url: String?): Boolean {
         return url != null && query == url
