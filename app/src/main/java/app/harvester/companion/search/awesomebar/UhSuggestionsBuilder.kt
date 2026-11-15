@@ -9,7 +9,6 @@ import mozilla.components.feature.awesomebar.provider.SearchActionProvider
 import mozilla.components.feature.awesomebar.provider.HistoryStorageSuggestionProvider
 import mozilla.components.feature.awesomebar.provider.BookmarksStorageSuggestionProvider
 import mozilla.components.feature.awesomebar.provider.SearchEngineSuggestionProvider
-import mozilla.components.feature.awesomebar.provider.RecentSearchSuggestionsProvider
 import mozilla.components.feature.awesomebar.provider.TrendingSearchProvider
 import mozilla.components.feature.search.SearchUseCases
 import mozilla.components.feature.session.SessionUseCases.LoadUrlUseCase
@@ -77,14 +76,14 @@ class UhSuggestionsBuilder(
         providers.add(BookmarksStorageSuggestionProvider(bookmarksStorage = components.placesBookmarksStorage, loadUrlUseCase = loadUrlUseCase, icons = components.icons, engine = engineForSpeculativeConnects, showEditSuggestion = false, indicatorIcon = null))
         providers.add(searchEngineSuggestionProvider)
 
-    if (state.showRecentSearches) {
-        providers.add(RecentSearchSuggestionsProvider(
-            historyStorage = components.placesHistoryStorage,
-            searchUseCase = searchUseCase,
-            searchEngine = state.searchEngineSource.searchEngine,
-            engine = engineForSpeculativeConnects
-        ))
-    }
+if (state.showRecentSearches) {
+    providers.add(UhRecentSearchSuggestionsProvider(
+        historyStorage = components.placesHistoryStorage,
+        searchUseCase = searchUseCase,
+        searchEngine = state.searchEngineSource.searchEngine,
+        engine = engineForSpeculativeConnects
+    ))
+}
 
     if (state.showTrendingSearches) {
         val trendingProvider = TrendingSearchProvider(
