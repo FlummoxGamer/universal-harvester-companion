@@ -3,9 +3,12 @@ package app.harvester.companion
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.NavHostFragment
+import app.harvester.companion.browser.BrowserViewModel
 import app.harvester.companion.databinding.ActivityHomeBinding
 
 class HomeActivity : AppCompatActivity() {
@@ -19,8 +22,21 @@ class HomeActivity : AppCompatActivity() {
         window.statusBarColor = android.graphics.Color.TRANSPARENT
         window.navigationBarColor = android.graphics.Color.TRANSPARENT
 
-        binding = ActivityHomeBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+binding = ActivityHomeBinding.inflate(layoutInflater)
+setContentView(binding.root)
+
+val browserViewModel: BrowserViewModel by viewModels()
+onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+    override fun handleOnBackPressed() {
+        if (browserViewModel.isEditing.value) {
+            browserViewModel.exitEditMode()
+        } else {
+            isEnabled = false
+            onBackPressedDispatcher.onBackPressed()
+            isEnabled = true
+        }
+    }
+})
 
         if (savedInstanceState == null) {
             showComposeSplash()
