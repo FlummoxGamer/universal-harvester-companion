@@ -101,21 +101,21 @@ fun SearchSettingsScreen() {
                 .padding(horizontal = 16.dp)
                 .navigationBarsPadding()
          ) {
-            item { SettingsCategory("Search Engine") }
-            item { SettingsRow("Default Search Engine", engineName, onClick = { showEnginePicker = true }) }
-            item { SettingsRow("Add Custom Engine", "Create your own search engine", onClick = { showAddDialog = true }) }
+            item(key = "cat_search") { SettingsCategory("Search Engine") }
+            item(key = "row_default_engine") { SettingsRow("Default Search Engine", engineName, onClick = { showEnginePicker = true }) }
+            item(key = "row_add_engine") { SettingsRow("Add Custom Engine", "Create your own search engine", onClick = { showAddDialog = true }) }
 
-            item { SettingsCategory("Suggestions") }
-            item { SettingsSwitchRow("Show Search Suggestions", SettingsPrefs.K_SEARCH_SUGGESTIONS, default = true) }
-            item { SettingsSwitchRow("Allow in Private Mode", SettingsPrefs.K_SEARCH_SUGGESTIONS_PRIVATE, default = false) }
-            item { SettingsSwitchRow("Show History", SettingsPrefs.K_SEARCH_HISTORY, default = true) }
-            item { SettingsSwitchRow("Show Bookmarks", SettingsPrefs.K_SEARCH_BOOKMARKS, default = true) }
-            item { SettingsSwitchRow("Show Remote Suggestions", SettingsPrefs.K_SEARCH_REMOTE, default = true) }
-            
-            item { SettingsCategory("Address Bar") }
-            item { SettingsSwitchRow("Show Clipboard", SettingsPrefs.K_SEARCH_CLIPBOARD, default = true) }
-            item { SettingsSwitchRow("Autocomplete URLs", SettingsPrefs.K_SEARCH_AUTOCOMPLETE, default = true) }
-            item { SettingsSwitchRow("Show Voice Search", SettingsPrefs.K_SEARCH_VOICE, default = true) }
+            item(key = "cat_suggestions") { SettingsCategory("Suggestions") }
+            item(key = "row_sug_show") { SettingsSwitchRow("Show Search Suggestions", SettingsPrefs.K_SEARCH_SUGGESTIONS, default = true) }
+            item(key = "row_sug_private") { SettingsSwitchRow("Allow in Private Mode", SettingsPrefs.K_SEARCH_SUGGESTIONS_PRIVATE, default = false) }
+            item(key = "row_sug_history") { SettingsSwitchRow("Show History", SettingsPrefs.K_SEARCH_HISTORY, default = true) }
+            item(key = "row_sug_bookmarks") { SettingsSwitchRow("Show Bookmarks", SettingsPrefs.K_SEARCH_BOOKMARKS, default = true) }
+            item(key = "row_sug_remote") { SettingsSwitchRow("Show Remote Suggestions", SettingsPrefs.K_SEARCH_REMOTE, default = true) }
+
+            item(key = "cat_addr_bar") { SettingsCategory("Address Bar") }
+            item(key = "row_addr_clipboard") { SettingsSwitchRow("Show Clipboard", SettingsPrefs.K_SEARCH_CLIPBOARD, default = true) }
+            item(key = "row_addr_autocomplete") { SettingsSwitchRow("Autocomplete URLs", SettingsPrefs.K_SEARCH_AUTOCOMPLETE, default = true) }
+            item(key = "row_addr_voice") { SettingsSwitchRow("Show Voice Search", SettingsPrefs.K_SEARCH_VOICE, default = true) }
         }
     }
 }
