@@ -5,6 +5,7 @@ import androidx.lifecycle.coroutineScope
 import androidx.navigation.NavController
 import kotlinx.coroutines.launch
 import mozilla.components.browser.state.search.SearchEngine
+import mozilla.components.browser.state.state.selectedOrDefaultSearchEngine
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.Store
 import app.harvester.companion.components.AppStore
