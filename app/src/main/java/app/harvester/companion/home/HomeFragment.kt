@@ -13,6 +13,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.viewmodel.compose.viewModel
+import app.harvester.companion.search.UhSearchViewModel
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -149,7 +151,8 @@ private fun setupInsets(isBarBottom: Boolean) {
             val searchEngine by browserViewModel.searchEngine.collectAsState()
             val editText by browserViewModel.editText.collectAsState()
             val components = (requireContext().applicationContext as UHApp).components
-            
+            val searchViewModel: UhSearchViewModel = viewModel(this@HomeFragment)
+    
             var showSearchEnginePicker by remember { mutableStateOf(false) }
 
             if (showSearchEnginePicker) {
@@ -159,18 +162,53 @@ private fun setupInsets(isBarBottom: Boolean) {
                 )
             }
 
-            UHTheme {
-                if (isEditing) {
-                    UHSearchOverlay(
-                        viewModel = browserViewModel,
-                        fragment = this@HomeFragment,
-                        onDismissRequest = { browserViewModel.exitEditMode() },
-                        onSearchEngineClick = { showSearchEnginePicker = true },
-                        onLockClick = {},
-                        onMenuClick = {},
-                        onTabCountClick = {}
-                    )
-                } else {
+UHTheme {
+    if (isEditing) {
+        app.harvester.companion.search.ui.UhSearchScreen(
+            viewModel = searchViewModel,
+            isBarBottom = browserViewModel.isBarBottom.collectAsState().value,
+            addressBarContent = {
+                UHAddressBar(
+                    url = "",
+                    isEditing = isEditing,
+                    tabCount = 1,
+                    iconState = 0,
+                    isWallpaperActive = true,
+                    editText = editText,
+                    onEditTextChanged = { 
+                        browserViewModel.onTextChanged(it)
+                        searchViewModel.onQueryChanged(it)
+                    },
+                    onSubmit = { query ->
+                        val target = browserViewModel.normalize(query)
+                        if (target.isNotBlank()) {
+                            navigateToBrowser(target)
+                            browserViewModel.exitEditMode()
+                        }
+                    },
+                    onEditStart = { },
+                    onClear = { 
+                        browserViewModel.onTextChanged("")
+                        searchViewModel.clearQuery()
+                    },
+                    onSearchEngineClick = { showSearchEnginePicker = true },
+                    onLockClick = {},
+                    onScriptMenuClick = {},
+                    onMenuClick = { MainMenuDialogFragment.newInstance(true).show(parentFragmentManager, "MainMenu") },
+                    onTabCountClick = {},
+                    searchEngine = searchEngine
+                )
+            },
+            onDismiss = { browserViewModel.exitEditMode() },
+            onSubmit = { query ->
+                val target = browserViewModel.normalize(query)
+                if (target.isNotBlank()) {
+                    navigateToBrowser(target)
+                    browserViewModel.exitEditMode()
+                }
+            }
+        )
+    } else {
                     Box(modifier = Modifier.fillMaxWidth()) {
                         UHAddressBar(
                             url = "",
@@ -179,16 +217,22 @@ private fun setupInsets(isBarBottom: Boolean) {
                             iconState = 0,
                             isWallpaperActive = true,
                             editText = editText,
-                            onEditTextChanged = { browserViewModel.onTextChanged(it) },
+                            onEditTextChanged = { 
+                                browserViewModel.onTextChanged(it)
+                                searchViewModel.onQueryChanged(it)
+                            },
                             onSubmit = { query ->
                                 val target = browserViewModel.normalize(query)
                                 if (target.isNotBlank()) {
-                                    browserViewModel.exitEditMode()
                                     navigateToBrowser(target)
+                                    browserViewModel.exitEditMode()
                                 }
                             },
                             onEditStart = { browserViewModel.enterEditMode("") },
-                            onClear = { },
+                            onClear = { 
+                                browserViewModel.onTextChanged("")
+                                searchViewModel.clearQuery()
+                            },
                             onSearchEngineClick = { showSearchEnginePicker = true },
                             onLockClick = {},
                             onScriptMenuClick = {},
