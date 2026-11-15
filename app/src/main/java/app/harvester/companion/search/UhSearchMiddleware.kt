@@ -39,6 +39,9 @@ class UhSearchMiddleware(
             }
             is UhSearchAction.SearchStarted -> {
                 next(action)
+                val clipboard = fragment.requireContext().getSystemService(android.content.ClipboardManager::class.java)
+                val hasUrl = clipboard.primaryClipDescription?.hasMimeType("text/plain") == true && clipboard.primaryClip?.getItemAt(0)?.text?.toString()?.startsWith("http") == true
+                store.dispatch(UhSearchAction.UpdateClipboardHasUrl(hasUrl))
                 components.engine.speculativeCreateSession(action.inPrivateMode)
             }
             is UhSearchAction.UpdateQuery -> {
@@ -56,7 +59,13 @@ class UhSearchMiddleware(
     }
 
     private fun updateSearchProviders(store: Store<UhSearchState, UhSearchAction>) {
-        val providers = suggestionsProvidersBuilder?.getProvidersToAdd(UhSuggestionsBuilder.UhProviderState(store.state.searchEngineSource))
+        val providers = suggestionsProvidersBuilder?.getProvidersToAdd(
+            UhSuggestionsBuilder.UhProviderState(
+                searchEngineSource = store.state.searchEngineSource,
+                showRecentSearches = store.state.showRecentSearches,
+                showTrendingSearches = store.state.showTrendingSearches
+            )
+        )
         if (providers != null) {
             store.dispatch(UhSearchAction.SearchProvidersUpdated(providers.toList()))
         }
