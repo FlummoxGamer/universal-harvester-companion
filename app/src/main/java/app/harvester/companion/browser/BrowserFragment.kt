@@ -484,10 +484,16 @@ private fun applyConstraints(isEditing: Boolean, isBarBottom: Boolean) {
         return false
     }
 
-    override fun onStart() {
-        super.onStart()
-        downloadsFeature.withFeature { it.start() }
-    }
+override fun onStart() {
+    super.onStart()
+    downloadsFeature.withFeature { it.start() }
+}
+
+override fun onResume() {
+    super.onResume()
+    val isBottom = SettingsPrefs.getInt(requireContext(), SettingsPrefs.K_ADDRESS_BAR_POSITION, 1) == 1
+    viewModel.updateBarPosition(isBottom)
+}
 
     override fun onStop() {
         super.onStop()
