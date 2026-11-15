@@ -84,15 +84,15 @@ fun UHAddressBar(
     val textState = rememberTextFieldState()
     val focusRequester = remember { FocusRequester() }
 
-    LaunchedEffect(url, isEditing, editText) {
-        val targetText = if (!isEditing) formatUrl(url) else editText
-        if (textState.text.toString() != targetText) {
-            textState.edit {
-                replace(0, length, targetText)
-                placeCursorAtEnd()
-            }
+LaunchedEffect(url, isEditing) {
+    val targetText = if (!isEditing) formatUrl(url) else editText
+    if (textState.text.toString() != targetText) {
+        textState.edit {
+            replace(0, length, targetText)
+            placeCursorAtEnd()
         }
     }
+}
 
     LaunchedEffect(textState.text) {
         onEditTextChanged(textState.text.toString())
