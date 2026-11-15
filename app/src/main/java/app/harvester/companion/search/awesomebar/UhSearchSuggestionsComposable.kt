@@ -106,7 +106,7 @@ if (isSearchActive) {
 
     if (state.shouldShowSearchSuggestions || (state.query.isBlank() && state.currentTabData != null)) {
                 Box(
-                    modifier = modifier.background(Color(MATERIAL_DESIGN_SCRIM.toColorInt())).fillMaxSize().pointerInput(
+                    modifier = modifier.background(colorResource(id = app.harvester.companion.R.color.bg)).fillMaxSize().pointerInput(
                         WindowInsets.isImeVisible
                     ) {
                         detectTapGestures(
