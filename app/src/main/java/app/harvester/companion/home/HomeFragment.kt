@@ -18,7 +18,9 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
+import kotlinx.coroutines.launch
 import androidx.recyclerview.widget.GridLayoutManager
 import app.harvester.companion.CustomizeHomeActivity
 import app.harvester.companion.R
@@ -48,14 +50,53 @@ class HomeFragment : Fragment() {
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-        setupHomeGrid()
-        setupAddressBar()
-        setupInsets()
-    }
+    super.onViewCreated(view, savedInstanceState)
+    setupHomeGrid()
+    setupAddressBar()
+    applyConstraints(browserViewModel.isEditing.value, browserViewModel.isBarBottom.value)
+    setupInsets(browserViewModel.isBarBottom.value)
 
-    private fun setupInsets() {
-        ViewCompat.setOnApplyWindowInsetsListener(binding.homeScreen) { v, insets ->
+    viewLifecycleOwner.lifecycleScope.launch {
+        browserViewModel.isBarBottom.collect { isBottom ->
+            applyConstraints(browserViewModel.isEditing.value, isBottom)
+            setupInsets(isBottom)
+        }
+    }
+    viewLifecycleOwner.lifecycleScope.launch {
+        browserViewModel.isEditing.collect { isEditing ->
+            applyConstraints(isEditing, browserViewModel.isBarBottom.value)
+            setupInsets(browserViewModel.isBarBottom.value)
+        }
+    }
+}
+
+private fun applyConstraints(isEditing: Boolean, isBarBottom: Boolean) {
+    val constraintSet = androidx.constraintlayout.widget.ConstraintSet()
+    constraintSet.clone(binding.root)
+    if (isEditing) {
+        constraintSet.constrainHeight(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.MATCH_CONSTRAINT)
+        constraintSet.connect(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.TOP, androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.TOP)
+        constraintSet.connect(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM, androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.BOTTOM)
+    } else {
+        constraintSet.constrainHeight(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.WRAP_CONTENT)
+        if (isBarBottom) {
+            constraintSet.connect(binding.contentContainer.id, androidx.constraintlayout.widget.ConstraintSet.TOP, androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.TOP)
+            constraintSet.connect(binding.contentContainer.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM, binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.TOP)
+            constraintSet.connect(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM, androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.BOTTOM)
+            constraintSet.clear(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.TOP)
+        } else {
+            constraintSet.connect(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.TOP, androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.TOP)
+            constraintSet.connect(binding.contentContainer.id, androidx.constraintlayout.widget.ConstraintSet.TOP, binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM)
+            constraintSet.connect(binding.contentContainer.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM, androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.BOTTOM)
+            constraintSet.clear(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM)
+        }
+    }
+    constraintSet.applyTo(binding.root)
+}
+
+private fun setupInsets(isBarBottom: Boolean) {
+    if (isBarBottom) {
+        ViewCompat.setOnApplyWindowInsetsListener(binding.contentContainer) { v, insets ->
             val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
             v.setPadding(0, top, 0, 0)
             insets
@@ -65,14 +106,26 @@ class HomeFragment : Fragment() {
             v.setPadding(0, 0, 0, bottom)
             insets
         }
-        ViewCompat.setOnApplyWindowInsetsListener(binding.btnEditHome) { v, insets ->
+    } else {
+        ViewCompat.setOnApplyWindowInsetsListener(binding.addressBarContainer) { v, insets ->
             val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
-            val lp = v.layoutParams as ViewGroup.MarginLayoutParams
-            lp.topMargin = top + (16 * resources.displayMetrics.density).toInt()
-            v.layoutParams = lp
+            v.setPadding(0, top, 0, 0)
+            insets
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(binding.contentContainer) { v, insets ->
+            val bottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            v.setPadding(0, 0, 0, bottom)
             insets
         }
     }
+    ViewCompat.setOnApplyWindowInsetsListener(binding.btnEditHome) { v, insets ->
+        val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
+        val lp = v.layoutParams as ViewGroup.MarginLayoutParams
+        lp.topMargin = top + (16 * resources.displayMetrics.density).toInt()
+        v.layoutParams = lp
+        insets
+    }
+}
 
     private fun setupHomeGrid() {
         shortcutAdapter = ShortcutAdapter(
