@@ -43,7 +43,7 @@ fun UHSearchOverlay(
                 editText = editText,
                 onEditTextChanged = { 
                     viewModel.onTextChanged(it)
-                    searchViewModel.onQueryChanged(it)
+                    searchViewModel.onQueryChanged(it, isBarBottom)
                 },
                 onSubmit = { 
                     val target = viewModel.normalize(it)
@@ -55,7 +55,7 @@ fun UHSearchOverlay(
                 onEditStart = { },
                 onClear = { 
                     viewModel.onTextChanged("")
-                    searchViewModel.clearQuery()
+                    searchViewModel.clearQuery(isBarBottom)
                 },
                 onSearchEngineClick = onSearchEngineClick,
                 onLockClick = onLockClick,
