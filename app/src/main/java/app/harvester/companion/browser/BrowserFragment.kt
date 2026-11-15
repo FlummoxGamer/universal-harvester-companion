@@ -338,22 +338,17 @@ private fun applyConstraints(isEditing: Boolean, isBarBottom: Boolean) {
                 v.setPadding(0, top, 0, 0)
                 insets
             }
-            ViewCompat.setOnApplyWindowInsetsListener(binding.addressBarContainer) { v, insets ->
-                val bottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
-                v.setPadding(0, 0, 0, bottom)
-                insets
-            }
-        } else {
-            ViewCompat.setOnApplyWindowInsetsListener(binding.addressBarContainer) { v, insets ->
-                val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
-                v.setPadding(0, top, 0, 0)
-                insets
-            }
             ViewCompat.setOnApplyWindowInsetsListener(binding.browserLayout) { v, insets ->
                 val bottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
                 v.setPadding(0, 0, 0, bottom)
                 insets
             }
+        } else {
+            ViewCompat.setOnApplyWindowInsetsListener(binding.browserLayout) { v, insets ->
+                val bottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+                v.setPadding(0, 0, 0, bottom)
+                insets
+            }   
         }
     }
 
@@ -445,7 +440,7 @@ private fun applyConstraints(isEditing: Boolean, isBarBottom: Boolean) {
                             editText = editText,
                             onEditTextChanged = { viewModel.onTextChanged(it) },
                             onSubmit = { },
-                            onEditStart = { viewModel.enterEditMode(selectedTab?.content?.url ?: "") },
+                            onEditStart = { viewModel.enterEditMode("") },
                             onClear = { },
                             onSearchEngineClick = { showSearchEnginePicker = true },
                             onLockClick = {
