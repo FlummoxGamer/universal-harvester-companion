@@ -89,8 +89,22 @@ class UhSearchSuggestionsComposable(
             }
         }
 
-        if (isSearchActive) {
-            if (state.shouldShowSearchSuggestions || (state.query.isBlank() && state.currentTabData != null)) {
+if (isSearchActive) {
+    val shouldShowClipboardBar = state.showClipboardSuggestions && state.query.isEmpty() && state.clipboardHasUrl
+    if (shouldShowClipboardBar) {
+        ClipboardSuggestionBar(
+            shouldUseBottomToolbar = state.searchSuggestionsOrientedAtBottom,
+            onClick = {
+                val clipboard = view.context.getSystemService(android.content.ClipboardManager::class.java)
+                val url = clipboard.primaryClip?.getItemAt(0)?.text?.toString()
+                url?.let {
+                    toolbarStore.dispatch(BrowserEditToolbarAction.SearchQueryUpdated(BrowserToolbarQuery(it), isQueryPrefilled = true))
+                }
+            }
+        )
+    }
+
+    if (state.shouldShowSearchSuggestions || (state.query.isBlank() && state.currentTabData != null)) {
                 Box(
                     modifier = modifier.background(Color(MATERIAL_DESIGN_SCRIM.toColorInt())).fillMaxSize().pointerInput(
                         WindowInsets.isImeVisible
