@@ -13,8 +13,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.KeyboardActionHandler
-import androidx.compose.foundation.text.input.placeCursorAtEnd
 import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.text.input.placeCursorAtEnd
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -60,11 +60,11 @@ fun UHAddressBar(
     onScriptMenuClick: () -> Unit,
     onMenuClick: () -> Unit,
     onTabCountClick: () -> Unit,
+    searchEngine: SearchEnginePrefs.Entry,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val bottomBarColor = if (isWallpaperActive) Color.Transparent else colorResource(id = R.color.bg)
-    val searchEngineEntry = remember(context) { SearchEnginePrefs.currentEntry(ctx = context) }
     val showFullUrl = SettingsPrefs.getBool(context, SettingsPrefs.K_SHOW_FULL_URL, false)
     
     fun formatUrl(rawUrl: String): String {
@@ -98,6 +98,7 @@ fun UHAddressBar(
 
     LaunchedEffect(isEditing) {
         if (isEditing) {
+            kotlinx.coroutines.delay(100)
             focusRequester.requestFocus()
         }
     }
@@ -143,7 +144,7 @@ fun UHAddressBar(
                         2 -> Icon(painterResource(R.drawable.uh_ic_shield_slash_24), contentDescription = "Not Secure", tint = colorResource(id = R.color.red), modifier = Modifier.size(24.dp))
                         else -> {
                             AsyncImage(
-                                model = searchEngineEntry.iconUrl,
+                                model = searchEngine.iconUrl,
                                 contentDescription = "Search Engine",
                                 modifier = Modifier.size(24.dp)
                             )
