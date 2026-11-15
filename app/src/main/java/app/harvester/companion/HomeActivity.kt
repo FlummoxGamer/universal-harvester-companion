@@ -79,16 +79,4 @@ onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
         setIntent(intent)
         handleIntent(intent)
     }
-    
-    override fun onBackPressed() {
-        val navHostFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as NavHostFragment
-        val currentFragment = navHostFragment.childFragmentManager.primaryNavigationFragment
-        if (currentFragment is app.harvester.companion.browser.BrowserFragment) {
-            if (!currentFragment.onBackPressed()) {
-                navHostFragment.navController.popBackStack()
-            }
-        } else {
-            super.onBackPressed()
-        }
-    }
 }
