@@ -20,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -176,7 +177,9 @@ if (imageUrl.isNotEmpty()) {
                         context.startActivity(Intent.createChooser(intent, "Share Link"))
                     }
                 } else {
-                    MenuItem("Close") { onDismiss() }
+                    key("close_menu") {
+                        MenuItem("Close") { onDismiss() }
+                    }  
                 }
             }
         }
