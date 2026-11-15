@@ -11,6 +11,7 @@ import app.harvester.companion.search.model.UhSearchListItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mozilla.components.browser.state.selector.selectedTab
+import mozilla.components.feature.search.trendingsearches.TrendingSearchClient
 
 object UhSearchDataProvider {
     private val suggestionClient = SearchSuggestionClient()
@@ -56,28 +57,45 @@ object UhSearchDataProvider {
                 UHLog.e("search_error", "Failed to fetch recent history: ${e.message}")
             }
 
-            items.add(UhSearchListItem.Header("Trending"))
+items.add(UhSearchListItem.Header("Trending"))
+try {
+    val currentEngine = components.store.state.search.selectedOrDefaultSearchEngine(private = false)
+    if (currentEngine != null) {
+        val client = TrendingSearchClient { url ->
             try {
-                val engine = SearchEnginePrefs.currentEntry(context)
-                val trends = listOf("weather", "news", "sports", "stocks", "crypto")
-                trends.forEach { trend ->
-                    items.add(UhSearchListItem.Suggestion(trend, SuggestionType.TRENDING))
-                }
-            } catch (e: Exception) {
-                UHLog.e("search_error", "Trending fetch failed: ${e.message}")
+                java.net.URL(url).openStream().bufferedReader().use { it.readText() }
+            } catch (e: Exception) { null }
+        }
+        client.setSearchEngine(currentEngine)
+        val trends = client.getTrendingSearches() ?: emptyList()
+        if (trends.isNotEmpty()) {
+            trends.take(5).forEach { trend ->
+                items.add(UhSearchListItem.Suggestion(trend, SuggestionType.TRENDING))
             }
+        } else {
+            items.add(UhSearchListItem.Suggestion("No trending searches available", SuggestionType.TRENDING))
+        }
+    }
+} catch (e: Exception) {
+    UHLog.e("search_error", "Trending fetch failed: ${e.message}")
+}
 
         } else {
-            items.add(UhSearchListItem.Header("Search"))
-            try {
-                val engine = SearchEnginePrefs.currentEntry(context)
-                val remoteSuggestions = suggestionClient.getSuggestions(engine.id, engine.suggestionsUrl, query) ?: emptyList()
-                remoteSuggestions.take(5).forEach { sug ->
-                    items.add(UhSearchListItem.Suggestion(sug, SuggestionType.SEARCH))
-                }
-            } catch (e: Exception) {
-                UHLog.e("search_error", "Remote suggestions failed: ${e.message}")
-            }
+items.add(UhSearchListItem.Header("Search"))
+try {
+    val engine = SearchEnginePrefs.currentEntry(context)
+    val remoteSuggestions = suggestionClient.getSuggestions(engine.id, engine.suggestionsUrl, query)
+    if (remoteSuggestions.isNullOrEmpty()) {
+        items.add(UhSearchListItem.Suggestion(query, SuggestionType.SEARCH))
+    } else {
+        remoteSuggestions.take(5).forEach { sug ->
+            items.add(UhSearchListItem.Suggestion(sug, SuggestionType.SEARCH))
+        }
+    }
+} catch (e: Exception) {
+    UHLog.e("search_error", "Remote suggestions failed: ${e.message}")
+    items.add(UhSearchListItem.Suggestion(query, SuggestionType.SEARCH))
+}
 
             try {
                 val visits = components.placesHistoryStorage.getDetailedVisits(0L, System.currentTimeMillis())
