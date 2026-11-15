@@ -1,17 +1,18 @@
 package app.harvester.companion.browser.toolbar
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.colorResource
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 import app.harvester.companion.R
@@ -37,9 +38,9 @@ fun UHSearchOverlay(
     val browserState by components.store.stateFlow.collectAsState()
     val selectedTab = browserState.selectedTab
 
-    Dialog(
-        onDismissRequest = onDismissRequest,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    Popup(
+        alignment = androidx.compose.ui.Alignment.TopCenter,
+        properties = PopupProperties(focusable = true)
     ) {
         Column(modifier = Modifier.fillMaxSize().background(colorResource(id = R.color.bg))) {
             if (!isBarBottom) {
@@ -67,7 +68,7 @@ fun UHSearchOverlay(
                     onTabCountClick = onTabCountClick,
                     searchEngine = searchEngine
                 )
-                Box(modifier = Modifier.weight(1f)) {
+                androidx.compose.foundation.layout.Box(modifier = Modifier.weight(1f)) {
                     val toolbarStore = remember { UhToolbarStore() }
                     UhSearchSuggestionsComposable(
                         fragment = fragment,
@@ -82,7 +83,7 @@ fun UHSearchOverlay(
                     ).SearchSuggestions()
                 }
             } else {
-                Box(modifier = Modifier.weight(1f)) {
+                androidx.compose.foundation.layout.Box(modifier = Modifier.weight(1f)) {
                     val toolbarStore = remember { UhToolbarStore() }
                     UhSearchSuggestionsComposable(
                         fragment = fragment,
