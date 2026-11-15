@@ -11,6 +11,7 @@ import app.harvester.companion.search.model.UhSearchListItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mozilla.components.browser.state.selector.selectedTab
+import mozilla.components.browser.state.state.selectedOrDefaultSearchEngine
 import mozilla.components.feature.search.trendingsearches.TrendingSearchClient
 
 object UhSearchDataProvider {
