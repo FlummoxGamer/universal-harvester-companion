@@ -10,6 +10,7 @@ import app.harvester.companion.search.model.SuggestionType
 import app.harvester.companion.search.model.UhSearchListItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import mozilla.components.browser.state.selector.selectedTab
 
 object UhSearchDataProvider {
     private val suggestionClient = SearchSuggestionClient()
@@ -45,12 +46,12 @@ object UhSearchDataProvider {
     items.add(UhSearchListItem.Header("Recent Searches"))
             try {
                 val visits = components.placesHistoryStorage.getDetailedVisits(0L, System.currentTimeMillis())
-                visits.filter { it.title != null && it.title.isNotBlank() }
+                visits.filter { !it.title.isNullOrBlank() }
                     .distinctBy { it.title }
                     .take(5)
                     .forEach { visit ->
-                        items.add(UhSearchListItem.Suggestion(visit.title ?: visit.url, SuggestionType.HISTORY))
-                    }
+                        items.add(UhSearchListItem.Suggestion(visit.title.orEmpty(), SuggestionType.HISTORY))
+                    }   
             } catch (e: Exception) {
                 UHLog.e("search_error", "Failed to fetch recent history: ${e.message}")
             }
@@ -58,7 +59,6 @@ object UhSearchDataProvider {
             items.add(UhSearchListItem.Header("Trending"))
             try {
                 val engine = SearchEnginePrefs.currentEntry(context)
-                // Mocking trending since we removed Mozilla's provider
                 val trends = listOf("weather", "news", "sports", "stocks", "crypto")
                 trends.forEach { trend ->
                     items.add(UhSearchListItem.Suggestion(trend, SuggestionType.TRENDING))
