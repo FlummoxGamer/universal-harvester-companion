@@ -60,7 +60,7 @@ class UhSearchMiddleware(
     }
 
 private fun updateSearchProviders(store: Store<UhSearchState, UhSearchAction>) {
-    val defaultEngine = components.store.state.search.selectedOrDefaultSearchEngine()
+    val defaultEngine = components.store.state.search.selectedOrDefaultSearchEngine(private = browsingModeManager.mode.isPrivate)
     var source = store.state.searchEngineSource
     if (source is UhSearchEngineSource.None && defaultEngine != null) {
         source = UhSearchEngineSource.Default(defaultEngine)
