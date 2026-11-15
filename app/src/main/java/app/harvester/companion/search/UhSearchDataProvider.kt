@@ -8,6 +8,7 @@ import app.harvester.companion.UHLog
 import app.harvester.companion.browser.search.SearchSuggestionClient
 import app.harvester.companion.search.model.SuggestionType
 import app.harvester.companion.search.model.UhSearchListItem
+import app.harvester.companion.utils.SearchHistoryUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mozilla.components.browser.state.selector.selectedTab
@@ -45,18 +46,20 @@ object UhSearchDataProvider {
         )
     }
 
-    items.add(UhSearchListItem.Header("Recent Searches"))
-            try {
-                val visits = components.placesHistoryStorage.getDetailedVisits(0L, System.currentTimeMillis())
-                visits.filter { !it.title.isNullOrBlank() }
-                    .distinctBy { it.title }
-                    .take(5)
-                    .forEach { visit ->
-                        items.add(UhSearchListItem.Suggestion(visit.title.orEmpty(), SuggestionType.HISTORY))
-                    }   
-            } catch (e: Exception) {
-                UHLog.e("search_error", "Failed to fetch recent history: ${e.message}")
-            }
+items.add(UhSearchListItem.Header("Recent Searches"))
+try {
+    val metadata = components.placesHistoryStorage.getHistoryMetadataSince(0L)
+    metadata.asSequence()
+        .filter { !it.key.searchTerm.isNullOrBlank() }
+        .distinctBy { it.key.searchTerm }
+        .sortedByDescending { it.createdAt }
+        .take(5)
+        .forEach { item ->
+            items.add(UhSearchListItem.Suggestion(item.key.searchTerm.orEmpty(), SuggestionType.HISTORY))
+        }
+} catch (e: Exception) {
+    UHLog.e("search_error", "Failed to fetch recent history: ${e.message}")
+}
 
 items.add(UhSearchListItem.Header("Trending"))
 try {
@@ -101,7 +104,8 @@ try {
             try {
                 val visits = components.placesHistoryStorage.getDetailedVisits(0L, System.currentTimeMillis())
                 val historyMatches = visits.filter { 
-                    it.url.contains(query, ignoreCase = true) || (it.title?.contains(query, ignoreCase = true) == true) 
+                    !SearchHistoryUtils.isSearchUrl(context, it.url) && 
+                    (it.url.contains(query, ignoreCase = true) || (it.title?.contains(query, ignoreCase = true) == true)) 
                 }.take(5)
                 
                 if (historyMatches.isNotEmpty()) {
