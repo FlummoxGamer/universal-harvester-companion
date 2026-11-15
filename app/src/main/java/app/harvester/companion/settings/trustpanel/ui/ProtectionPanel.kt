@@ -83,30 +83,32 @@ internal fun ProtectionPanel(
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.padding(top = 16.dp, bottom = 8.dp, start = 16.dp)
             )
-            MenuGroup {
-                websitePermissions.forEach { websitePermission ->
-                    val stateDescription = when (websitePermission) {
-                        is WebsitePermission.Autoplay -> AutoplayValue.entries.find { it == websitePermission.autoplayValue }?.title?.let { stringResource(it) } ?: ""
-                        is WebsitePermission.Toggleable -> if (websitePermission.isBlockedByAndroid) "Blocked by Android" else if (websitePermission.isEnabled) "Allowed" else "Blocked"
-                    }
-                    MenuItem(
-                        label = stringResource(id = websitePermission.deviceFeature.getLabelId()),
-                        beforeIconPainter = painterResource(id = websitePermission.deviceFeature.getIconId()),
-                        stateDescription = stateDescription,
-                        afterContent = {
-                            Text(
-                                text = stateDescription,
-                                color = MaterialTheme.colorScheme.tertiary,
-                                textAlign = TextAlign.End,
-                                modifier = Modifier.clickable {
-                                    if (websitePermission is WebsitePermission.Toggleable) onToggleablePermissionClick(websitePermission)
-                                }
-                            )
-                        },
-                    )
-                }
+MenuGroup {
+    websitePermissions.forEach { websitePermission ->
+        key(websitePermission.deviceFeature) {
+            val stateDescription = when (websitePermission) {
+                is WebsitePermission.Autoplay -> AutoplayValue.entries.find { it == websitePermission.autoplayValue }?.title?.let { stringResource(it) } ?: ""
+                is WebsitePermission.Toggleable -> if (websitePermission.isBlockedByAndroid) "Blocked by Android" else if (websitePermission.isEnabled) "Allowed" else "Blocked"
             }
+            MenuItem(
+                label = stringResource(id = websitePermission.deviceFeature.getLabelId()),
+                beforeIconPainter = painterResource(id = websitePermission.deviceFeature.getIconId()),
+                stateDescription = stateDescription,
+                afterContent = {
+                    Text(
+                        text = stateDescription,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier.clickable {
+                            if (websitePermission is WebsitePermission.Toggleable) onToggleablePermissionClick(websitePermission)
+                        }
+                    )
+                },
+            )
         }
+    }
+}
+}
 
         Text(
             text = "Privacy Settings",
