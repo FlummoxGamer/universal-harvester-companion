@@ -23,6 +23,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -122,36 +123,40 @@ fun HistoryScreen() {
         }
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding).background(MaterialTheme.colorScheme.background)) {
-            if (isLoading) {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-            } else if (historyItems.isEmpty()) {
-                Text(
-                    text = "No history yet",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.align(Alignment.Center)
-                )
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(
-                        items = historyItems,
-                        key = { item -> "${item.visitTime}_${item.url}" }
-                    ) { item ->
-                        HistoryItemRow(
-                            item = item,
-                            dateFormat = dateFormat,
-                            onClick = {
-                                val intent = android.content.Intent(context, app.harvester.companion.HomeActivity::class.java).apply {
-                                    data = android.net.Uri.parse(item.url)
-                                    addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                                }
-                                context.startActivity(intent)
-                            }
-                        )
+if (isLoading) {
+    key("loading") { CircularProgressIndicator(modifier = Modifier.align(Alignment.Center)) }
+} else if (historyItems.isEmpty()) {
+    key("empty") {
+        Text(
+            text = "No history yet",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.align(Alignment.Center)
+        )
+    }
+} else {
+    key("list") {
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
+            items(
+                items = historyItems,
+                key = { item -> "${item.visitTime}_${item.url}" }
+            ) { item ->
+                HistoryItemRow(
+                    item = item,
+                    dateFormat = dateFormat,
+                    onClick = {
+                        val intent = android.content.Intent(context, app.harvester.companion.HomeActivity::class.java).apply {
+                            data = android.net.Uri.parse(item.url)
+                            addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                        }
+                        context.startActivity(intent)
                     }
-                }
+                )
             }
         }
     }
+}
+}
+}
 }
 
 @Composable
