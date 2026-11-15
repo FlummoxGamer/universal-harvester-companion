@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -168,34 +169,44 @@ fun UhDownloadListItem(
                         IconButton(onClick = { showMenu = true }) {
                             Icon(painterResource(R.drawable.mozac_ic_more_vertical_round_24), contentDescription = stringResource(R.string.content_description_menu))
                         }
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false }
-                        ) {
-                            if (fileItem.status is UhFileItem.Status.Completed) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.download_share_url)) },
-                                    onClick = { showMenu = false; onShareUrlClick() }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.download_share_file)) },
-                                    onClick = { showMenu = false; onShareFileClick() }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.download_rename_file)) },
-                                    onClick = { showMenu = false; onRenameClick() }
-                                )
-                            } else {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.download_share_url)) },
-                                    onClick = { showMenu = false; onShareUrlClick() }
-                                )
-                            }
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.download_delete_item), color = colorResource(id = R.color.red)) },
-                                onClick = { showMenu = false; onDeleteClick() }
-                            )
-                        }
+DropdownMenu(
+    expanded = showMenu,
+    onDismissRequest = { showMenu = false }
+) {
+    if (fileItem.status is UhFileItem.Status.Completed) {
+        key("share_url") {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.download_share_url)) },
+                onClick = { showMenu = false; onShareUrlClick() }
+            )
+        }
+        key("share_file") {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.download_share_file)) },
+                onClick = { showMenu = false; onShareFileClick() }
+            )
+        }
+        key("rename") {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.download_rename_file)) },
+                onClick = { showMenu = false; onRenameClick() }
+            )
+        }
+    } else {
+        key("share_url_not_completed") {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.download_share_url)) },
+                onClick = { showMenu = false; onShareUrlClick() }
+            )
+        }
+    }
+    key("delete") {
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.download_delete_item), color = colorResource(id = R.color.red)) },
+            onClick = { showMenu = false; onDeleteClick() }
+        )
+    }
+}
                     }
                 }
             }
