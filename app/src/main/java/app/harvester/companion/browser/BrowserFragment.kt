@@ -181,19 +181,25 @@ class BrowserFragment : Fragment() {
             }
         }
 
-        applyConstraints()
-        setupAddressBar(components)
-        setupInsets()
-        setupLogging(components)
+    applyConstraints(viewModel.isEditing.value, viewModel.isBarBottom.value)
+    setupAddressBar(components)
+    setupInsets(viewModel.isBarBottom.value)
+    setupLogging(components)
 
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.isBarBottom.collect { 
-                applyConstraints()
-                setupInsets()
-            }
+    viewLifecycleOwner.lifecycleScope.launch {
+        viewModel.isBarBottom.collect { isBottom ->
+            applyConstraints(viewModel.isEditing.value, isBottom)
+            setupInsets(isBottom)
         }
     }
-
+    viewLifecycleOwner.lifecycleScope.launch {
+        viewModel.isEditing.collect { isEditing ->
+            applyConstraints(isEditing, viewModel.isBarBottom.value)
+            setupInsets(viewModel.isBarBottom.value)
+        }
+    }
+    }
+    
     private fun setupFeatures(components: app.harvester.companion.components.Components, engineView: mozilla.components.concept.engine.EngineView) {
         sessionFeature.set(
             feature = SessionFeature(
@@ -301,10 +307,15 @@ class BrowserFragment : Fragment() {
         )
     }
 
-    private fun applyConstraints() {
-        val isBarBottom = SettingsPrefs.getInt(requireContext(), SettingsPrefs.K_ADDRESS_BAR_POSITION, 1) == 1
-        val constraintSet = androidx.constraintlayout.widget.ConstraintSet()
-        constraintSet.clone(binding.root)
+private fun applyConstraints(isEditing: Boolean, isBarBottom: Boolean) {
+    val constraintSet = androidx.constraintlayout.widget.ConstraintSet()
+    constraintSet.clone(binding.root)
+    if (isEditing) {
+        constraintSet.constrainHeight(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.MATCH_CONSTRAINT)
+        constraintSet.connect(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.TOP, androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.TOP)
+        constraintSet.connect(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM, androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.BOTTOM)
+    } else {
+        constraintSet.constrainHeight(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.WRAP_CONTENT)
         if (isBarBottom) {
             constraintSet.connect(binding.browserLayout.id, androidx.constraintlayout.widget.ConstraintSet.TOP, androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.TOP)
             constraintSet.connect(binding.browserLayout.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM, binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.TOP)
@@ -316,11 +327,11 @@ class BrowserFragment : Fragment() {
             constraintSet.connect(binding.browserLayout.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM, androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.BOTTOM)
             constraintSet.clear(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM)
         }
-        constraintSet.applyTo(binding.root)
     }
+    constraintSet.applyTo(binding.root)
+}
 
-    private fun setupInsets() {
-        val isBarBottom = SettingsPrefs.getInt(requireContext(), SettingsPrefs.K_ADDRESS_BAR_POSITION, 1) == 1
+    private fun setupInsets(isBarBottom: Boolean) {
         if (isBarBottom) {
             ViewCompat.setOnApplyWindowInsetsListener(binding.browserLayout) { v, insets ->
                 val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
