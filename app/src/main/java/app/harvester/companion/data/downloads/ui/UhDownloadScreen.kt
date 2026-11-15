@@ -219,7 +219,16 @@ LaunchedEffect(uiState.deletionSnackbarState) {
                     }
                     is UhDownloadUIState.ItemsState.Items -> {
                         LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            items(state.items) { item ->
+                            items(
+                                items = state.items,
+                                key = { item ->
+                                    when (item) {
+                                        is UhHeaderItem -> "header_${item.timeCategory.name}"
+                                        is UhFileItem -> "file_${item.id}"
+                                        else -> item.hashCode().toString()
+                                    }
+                                }
+                            ) { item ->
                                 when (item) {
                                     is UhHeaderItem -> {
                                         Text(
