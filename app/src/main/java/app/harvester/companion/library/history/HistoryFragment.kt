@@ -132,7 +132,10 @@ fun HistoryScreen() {
                 )
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(historyItems) { item ->
+                    items(
+                        items = historyItems,
+                        key = { item -> "${item.visitTime}_${item.url}" }
+                    ) { item ->
                         HistoryItemRow(
                             item = item,
                             dateFormat = dateFormat,
