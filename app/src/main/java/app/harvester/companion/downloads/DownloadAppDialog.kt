@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -67,7 +68,7 @@ private fun DownloaderAppList(
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(modifier = modifier) {
-        items(apps) { app ->
+        items(apps, key = { it.name }) { app ->
             DownloaderAppItem(
                 iconBitmap = app.resolver.loadIcon(LocalContext.current.packageManager).toBitmap().asImageBitmap(),
                 appName = app.name,
