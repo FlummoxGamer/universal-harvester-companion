@@ -21,6 +21,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -92,44 +93,48 @@ fun UhDownloadSettingsScreen(onBack: () -> Unit) {
                     .padding(horizontal = 16.dp)
                     .navigationBarsPadding()
             ) {
-                SettingsCategory("General")
-                SettingsSwitchRow("Ask before downloading", SettingsPrefs.K_ASK_DL, default = true)
+key("cat_general") { SettingsCategory("General") }
+key("row_ask_dl") { SettingsSwitchRow("Ask before downloading", SettingsPrefs.K_ASK_DL, default = true) }
 
-                SettingsCategory("Storage")
-                
-                val currentPath = SettingsPrefs.getString(context, "custom_download_uri", "").ifBlank { "/storage/emulated/0/Download" }
-                val displayPath = try {
-                    downloadLocationFormatter.getFriendlyPath(currentPath)
-                } catch (e: MissingUriPermission) {
-                    "/storage/emulated/0/Download"
-                }
-                
-                SettingsRow(
-                    title = "Download Location",
-                    subtitle = displayPath,
-                    onClick = { folderLauncher.launch(null) }
-                )
+key("cat_storage") { SettingsCategory("Storage") }
 
-                val stat = android.os.StatFs(android.os.Environment.getExternalStorageDirectory().path)
-                val freeBytes = stat.availableBlocksLong * stat.blockSizeLong
-                val totalBytes = stat.blockCountLong * stat.blockSizeLong
-                val usedBytes = totalBytes - freeBytes
-                val progress = usedBytes.toFloat() / totalBytes.toFloat()
+val currentPath = SettingsPrefs.getString(context, "custom_download_uri", "").ifBlank { "/storage/emulated/0/Download" }
+val displayPath = try {
+    downloadLocationFormatter.getFriendlyPath(currentPath)
+} catch (e: MissingUriPermission) {
+    "/storage/emulated/0/Download"
+}
 
-                Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                    Text("Internal Storage", color = colorResource(id = R.color.text), fontSize = 14.sp)
-                    LinearProgressIndicator(
-                        progress = { progress },
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                        color = if (progress > 0.9f) colorResource(id = R.color.red) else colorResource(id = R.color.accent),
-                        trackColor = colorResource(id = R.color.surface_2)
-                    )
-                    val freeGb = freeBytes / (1024f * 1024f * 1024f)
-                    Text("${String.format("%.1f", freeGb)} GB free", color = colorResource(id = R.color.subtext), fontSize = 12.sp)
-                }
+key("row_dl_location") {
+    SettingsRow(
+        title = "Download Location",
+        subtitle = displayPath,
+        onClick = { folderLauncher.launch(null) }
+    )
+}
 
-                SettingsCategory("Delete Behavior")
-                Text("Choose what happens when you delete a download.", color = colorResource(id = R.color.subtext), fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp))
+val stat = android.os.StatFs(android.os.Environment.getExternalStorageDirectory().path)
+val freeBytes = stat.availableBlocksLong * stat.blockSizeLong
+val totalBytes = stat.blockCountLong * stat.blockSizeLong
+val usedBytes = totalBytes - freeBytes
+val progress = usedBytes.toFloat() / totalBytes.toFloat()
+
+key("storage_progress") {
+    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+        Text("Internal Storage", color = colorResource(id = R.color.text), fontSize = 14.sp)
+        LinearProgressIndicator(
+            progress = { progress },
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            color = if (progress > 0.9f) colorResource(id = R.color.red) else colorResource(id = R.color.accent),
+            trackColor = colorResource(id = R.color.surface_2)
+        )
+        val freeGb = freeBytes / (1024f * 1024f * 1024f)
+        Text("${String.format("%.1f", freeGb)} GB free", color = colorResource(id = R.color.subtext), fontSize = 12.sp)
+    }
+}
+
+key("cat_delete_behavior") { SettingsCategory("Delete Behavior") }
+key("text_delete_behavior") { Text("Choose what happens when you delete a download.", color = colorResource(id = R.color.subtext), fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp)) }
                 
                 androidx.compose.runtime.key("device") {
                     DeleteBehaviorRow("Delete from device", "Permanently remove the file", deleteBehavior == "device") {
