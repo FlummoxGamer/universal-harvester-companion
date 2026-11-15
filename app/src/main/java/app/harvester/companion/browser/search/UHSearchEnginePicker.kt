@@ -56,7 +56,7 @@ fun UHSearchEnginePicker(onDismiss: () -> Unit, onSelect: () -> Unit) {
             )
             
             LazyColumn {
-                items(engines) { entry ->
+                items(engines, key = { it.id }) { entry ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
