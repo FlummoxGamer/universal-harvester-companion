@@ -20,8 +20,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -39,42 +39,41 @@ fun UhSearchScreen(
     onDismiss: () -> Unit,
     onSubmit: (String) -> Unit
 ) {
-    val state by viewModel.state.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
 
     BackHandler {
         onDismiss()
     }
 
-    UHTheme {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .imePadding()
-        ) {
-            if (!isBarBottom) {
-                Box(modifier = Modifier.statusBarsPadding()) {
-                    addressBarContent()
-                }
-                SearchContent(
-                    state = state,
-                    isBarBottom = isBarBottom,
-                    modifier = Modifier.weight(1f),
-                    onSubmit = onSubmit,
-                    viewModel = viewModel
-                )
-            } else {
-                SearchContent(
-                    state = state,
-                    isBarBottom = isBarBottom,
-                    modifier = Modifier.weight(1f).statusBarsPadding(),
-                    onSubmit = onSubmit,
-                    viewModel = viewModel
-                )
-                addressBarContent()
-            }
-        }
+   UHTheme {
+    Column(
+    modifier = Modifier
+        .fillMaxSize()
+        .background(MaterialTheme.colorScheme.background)
+        .statusBarsPadding()
+        .imePadding()
+) {
+    if (!isBarBottom) {
+        addressBarContent()
+        SearchContent(
+            state = state,
+            isBarBottom = isBarBottom,
+            modifier = Modifier.weight(1f),
+            onSubmit = onSubmit,
+            viewModel = viewModel
+        )
+    } else {
+        SearchContent(
+            state = state,
+            isBarBottom = isBarBottom,
+            modifier = Modifier.weight(1f),
+            onSubmit = onSubmit,
+            viewModel = viewModel
+        )
+        addressBarContent()
     }
+}
+}
 }
 
 @Composable
@@ -90,37 +89,41 @@ private fun SearchContent(
             items(state.items) { item ->
                 UhSearchListItem(
                     item = item,
-                    onClick = { result ->
-                        viewModel.onQueryChanged(result)
-                        onSubmit(result)
-                    }
+                    onSubmit = { result -> onSubmit(result) },
+                    onPencilClick = { url -> viewModel.onQueryChanged(url) }
                 )
             }
         }
 
         state.clipboardUrl?.let { url ->
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.fillMaxWidth()
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
+                contentAlignment = Alignment.CenterStart
             ) {
-                Row(
-                    modifier = Modifier
-                        .clickable { onSubmit(url) }
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                    modifier = Modifier.clickable { onSubmit(url) }
                 ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_link),
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "Fill link from clipboard",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 14.sp,
-                        modifier = Modifier.padding(start = 12.dp)
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_link),
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Paste URL",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
+                    }
                 }
             }
         }
