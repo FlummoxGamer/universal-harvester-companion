@@ -107,12 +107,18 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                             TopRowItem("History", R.drawable.ic_history, Modifier.weight(1f)) {
                                 dismiss()
                                 val navHostFragment = requireActivity().supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as? androidx.navigation.fragment.NavHostFragment
-                                navHostFragment?.navController?.navigate(R.id.historyFragment)
+                                navHostFragment?.navController?.navigate(R.id.historyFragment) {
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
                             }
                             TopRowItem("Downloads", R.drawable.ic_downloads, Modifier.weight(1f)) {
                                 dismiss()
                                 val navHostFragment = requireActivity().supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as? androidx.navigation.fragment.NavHostFragment
-                                navHostFragment?.navController?.navigate(R.id.action_global_downloadsFragment)
+                                navHostFragment?.navController?.navigate(R.id.action_global_downloadsFragment) {
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
                             }
                             TopRowItem("Playlist", R.drawable.ic_playlist, Modifier.weight(1f)) {
                                 dismiss()
