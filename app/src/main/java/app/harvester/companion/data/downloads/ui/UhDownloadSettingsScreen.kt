@@ -131,17 +131,23 @@ fun UhDownloadSettingsScreen(onBack: () -> Unit) {
                 SettingsCategory("Delete Behavior")
                 Text("Choose what happens when you delete a download.", color = colorResource(id = R.color.subtext), fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp))
                 
-                DeleteBehaviorRow("Delete from device", "Permanently remove the file", deleteBehavior == "device") {
-                    deleteBehavior = "device"
-                    SettingsPrefs.setString(context, SettingsPrefs.K_DELETE_BEHAVIOR, "device")
+                androidx.compose.runtime.key("device") {
+                    DeleteBehaviorRow("Delete from device", "Permanently remove the file", deleteBehavior == "device") {
+                        deleteBehavior = "device"
+                        SettingsPrefs.setString(context, SettingsPrefs.K_DELETE_BEHAVIOR, "device")
+                    }
                 }
-                DeleteBehaviorRow("Remove from history", "Keep the file on your device", deleteBehavior == "history") {
-                    deleteBehavior = "history"
-                    SettingsPrefs.setString(context, SettingsPrefs.K_DELETE_BEHAVIOR, "history")
+                androidx.compose.runtime.key("history") {
+                    DeleteBehaviorRow("Remove from history", "Keep the file on your device", deleteBehavior == "history") {
+                        deleteBehavior = "history"
+                        SettingsPrefs.setString(context, SettingsPrefs.K_DELETE_BEHAVIOR, "history")
+                    }
                 }
-                DeleteBehaviorRow("Ask every time", "Show a prompt when deleting", deleteBehavior == "ask") {
-                    deleteBehavior = "ask"
-                    SettingsPrefs.setString(context, SettingsPrefs.K_DELETE_BEHAVIOR, "ask")
+                androidx.compose.runtime.key("ask") {
+                    DeleteBehaviorRow("Ask every time", "Show a prompt when deleting", deleteBehavior == "ask") {
+                        deleteBehavior = "ask"
+                        SettingsPrefs.setString(context, SettingsPrefs.K_DELETE_BEHAVIOR, "ask")
+                    }
                 }
             }
         }
