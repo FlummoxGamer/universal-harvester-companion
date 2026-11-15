@@ -71,8 +71,8 @@ fun CustomizeAddressBarScreen() {
                 .padding(horizontal = 16.dp)
                 .navigationBarsPadding()
          ) {
-            item { SettingsCategory("Position") }
-item {
+            item(key = "cat_position") { SettingsCategory("Position") }
+item(key = "row_pos_top") {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -93,7 +93,7 @@ item {
         Text("Top", color = colorResource(id = R.color.text), fontSize = 16.sp)
     }
 }
-item {
+item(key = "row_pos_bottom") {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -115,10 +115,10 @@ item {
     }
 }
 
-            item { SettingsCategory("Behavior") }
-            item { SettingsSwitchRow("Auto-hide Bar", SettingsPrefs.K_AUTO_HIDE_BAR, default = false) }
-            item { SettingsSwitchRow("Swipe for Fullscreen", SettingsPrefs.K_SWIPE_FULLSCREEN, default = false) }
-            item { SettingsSwitchRow("Show Full URL", SettingsPrefs.K_SHOW_FULL_URL, default = false) }
+            item(key = "cat_behavior") { SettingsCategory("Behavior") }
+            item(key = "row_autohide") { SettingsSwitchRow("Auto-hide Bar", SettingsPrefs.K_AUTO_HIDE_BAR, default = false) }
+            item(key = "row_swipe") { SettingsSwitchRow("Swipe for Fullscreen", SettingsPrefs.K_SWIPE_FULLSCREEN, default = false) }
+            item(key = "row_fullurl") { SettingsSwitchRow("Show Full URL", SettingsPrefs.K_SHOW_FULL_URL, default = false) }
         }
     }
 }
