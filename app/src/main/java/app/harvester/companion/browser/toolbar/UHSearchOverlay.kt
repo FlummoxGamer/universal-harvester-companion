@@ -1,25 +1,14 @@
 package app.harvester.companion.browser.toolbar
 
-import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.colorResource
 import androidx.fragment.app.Fragment
-import androidx.navigation.fragment.findNavController
-import app.harvester.companion.R
+import androidx.lifecycle.viewmodel.compose.viewModel
 import app.harvester.companion.UHApp
 import app.harvester.companion.browser.BrowserViewModel
-import app.harvester.companion.search.UhToolbarStore
-import app.harvester.companion.search.awesomebar.UhSearchSuggestionsComposable
+import app.harvester.companion.search.UhSearchViewModel
+import app.harvester.companion.search.ui.UhSearchScreen
 import mozilla.components.browser.state.selector.selectedTab
 
 @Composable
@@ -38,13 +27,13 @@ fun UHSearchOverlay(
     val searchEngine by viewModel.searchEngine.collectAsState()
     val browserState by components.store.stateFlow.collectAsState()
     val selectedTab = browserState.selectedTab
+    
+    val searchViewModel: UhSearchViewModel = viewModel(fragment)
 
-    BackHandler {
-        onDismissRequest()
-    }
-
-    Column(modifier = Modifier.fillMaxSize().background(colorResource(id = R.color.bg)).statusBarsPadding().imePadding()) {
-        if (!isBarBottom) {
+    UhSearchScreen(
+        viewModel = searchViewModel,
+        isBarBottom = isBarBottom,
+        addressBarContent = {
             UHAddressBar(
                 url = selectedTab?.content?.url ?: "",
                 isEditing = true,
@@ -52,16 +41,22 @@ fun UHSearchOverlay(
                 iconState = if (selectedTab?.content?.url?.startsWith("https") == true) 1 else 0,
                 isWallpaperActive = false,
                 editText = editText,
-                onEditTextChanged = { viewModel.onTextChanged(it) },
+                onEditTextChanged = { 
+                    viewModel.onTextChanged(it)
+                    searchViewModel.onQueryChanged(it)
+                },
                 onSubmit = { 
                     val target = viewModel.normalize(it)
                     if (target.isNotBlank()) {
-                        viewModel.exitEditMode()
                         components.useCases.sessionUseCases.loadUrl(target)
+                        viewModel.exitEditMode()
                     }
                 },
                 onEditStart = { },
-                onClear = { viewModel.onTextChanged("") },
+                onClear = { 
+                    viewModel.onTextChanged("")
+                    searchViewModel.clearQuery()
+                },
                 onSearchEngineClick = onSearchEngineClick,
                 onLockClick = onLockClick,
                 onScriptMenuClick = {},
@@ -69,59 +64,14 @@ fun UHSearchOverlay(
                 onTabCountClick = onTabCountClick,
                 searchEngine = searchEngine
             )
-            Box(modifier = Modifier.weight(1f)) {
-                val toolbarStore = remember { UhToolbarStore() }
-                UhSearchSuggestionsComposable(
-                    fragment = fragment,
-                    modifier = Modifier.fillMaxSize(),
-                    components = components,
-                    appStore = components.appStore,
-                    browserStore = components.store,
-                    toolbarStore = toolbarStore,
-                    navController = fragment.findNavController(),
-                    browsingModeManager = viewModel.browsingModeManager,
-                    query = editText
-                ).SearchSuggestions()
+        },
+        onDismiss = { onDismissRequest() },
+        onSubmit = { query ->
+            val target = viewModel.normalize(query)
+            if (target.isNotBlank()) {
+                components.useCases.sessionUseCases.loadUrl(target)
+                viewModel.exitEditMode()
             }
-        } else {
-            Box(modifier = Modifier.weight(1f)) {
-                val toolbarStore = remember { UhToolbarStore() }
-                UhSearchSuggestionsComposable(
-                    fragment = fragment,
-                    modifier = Modifier.fillMaxSize(),
-                    components = components,
-                    appStore = components.appStore,
-                    browserStore = components.store,
-                    toolbarStore = toolbarStore,
-                    navController = fragment.findNavController(),
-                    browsingModeManager = viewModel.browsingModeManager,
-                    query = editText
-                ).SearchSuggestions()
-            }
-            UHAddressBar(
-                url = selectedTab?.content?.url ?: "",
-                isEditing = true,
-                tabCount = browserState.tabs.size,
-                iconState = if (selectedTab?.content?.url?.startsWith("https") == true) 1 else 0,
-                isWallpaperActive = false,
-                editText = editText,
-                onEditTextChanged = { viewModel.onTextChanged(it) },
-                onSubmit = { 
-                    val target = viewModel.normalize(it)
-                    if (target.isNotBlank()) {
-                        viewModel.exitEditMode()
-                        components.useCases.sessionUseCases.loadUrl(target)
-                    }
-                },
-                onEditStart = { },
-                onClear = { viewModel.onTextChanged("") },
-                onSearchEngineClick = onSearchEngineClick,
-                onLockClick = onLockClick,
-                onScriptMenuClick = {},
-                onMenuClick = onMenuClick,
-                onTabCountClick = onTabCountClick,
-                searchEngine = searchEngine
-            )
         }
-    }
+    )
 }
