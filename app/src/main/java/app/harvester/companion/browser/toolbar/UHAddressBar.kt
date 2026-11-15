@@ -31,6 +31,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -66,6 +67,7 @@ fun UHAddressBar(
     val context = LocalContext.current
     val bottomBarColor = if (isWallpaperActive) Color.Transparent else colorResource(id = R.color.bg)
     val showFullUrl = SettingsPrefs.getBool(context, SettingsPrefs.K_SHOW_FULL_URL, false)
+    val keyboardController = LocalSoftwareKeyboardController.current
     
     fun formatUrl(rawUrl: String): String {
         var cleanUrl = rawUrl
@@ -98,8 +100,9 @@ fun UHAddressBar(
 
     LaunchedEffect(isEditing) {
         if (isEditing) {
-            kotlinx.coroutines.delay(100)
+            kotlinx.coroutines.delay(150)
             focusRequester.requestFocus()
+            keyboardController?.show()
         }
     }
 
