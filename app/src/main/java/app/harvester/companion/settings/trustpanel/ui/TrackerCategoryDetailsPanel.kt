@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -34,7 +35,9 @@ internal fun TrackerCategoryDetailsPanel(
                 Text(text = "Blocked", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(8.dp))
                 bucketedTrackers.get(detailedTrackerCategory, true).forEach { tracker ->
-                    Text(text = tracker.url, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                    key(tracker.url) {
+                        Text(text = tracker.url, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
             }
         }
