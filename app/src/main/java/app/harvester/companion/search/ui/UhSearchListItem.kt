@@ -30,7 +30,8 @@ import app.harvester.companion.search.model.UhSearchListItem as Model
 @Composable
 fun UhSearchListItem(
     item: Model,
-    onClick: (String) -> Unit
+    onSubmit: (String) -> Unit,
+    onPencilClick: (String) -> Unit
 ) {
     when (item) {
         is Model.CurrentTab -> {
@@ -38,9 +39,10 @@ fun UhSearchListItem(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clickable { onSubmit(item.url) }
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
-            ) {
+             ) {
                 if (item.icon != null) {
                     AsyncImage(
                         model = item.icon,
@@ -92,19 +94,28 @@ fun UhSearchListItem(
                     )
                 }
 
-                IconButton(onClick = {
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("URL", item.url))
-                }) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.uh_ic_copy_24),
-                        contentDescription = "Copy",
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
+        IconButton(onClick = {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("URL", item.url))
+        }) {
+            Icon(
+                painter = painterResource(id = R.drawable.uh_ic_copy_24),
+                contentDescription = "Copy",
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
+
+        IconButton(onClick = { onPencilClick(item.url) }) {
+            Icon(
+                painter = painterResource(id = R.drawable.ic_edit),
+                contentDescription = "Edit",
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+    }
         is Model.Header -> {
             Text(
                 text = item.title,
@@ -119,7 +130,7 @@ fun UhSearchListItem(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onClick(item.title) }
+                    .clickable { onSubmit(item.title) }
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -154,7 +165,7 @@ fun UhSearchListItem(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onClick(item.url) }
+                    .clickable { onSubmit(item.url) }
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
