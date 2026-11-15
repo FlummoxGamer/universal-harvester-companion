@@ -20,6 +20,7 @@ import app.harvester.companion.UHApp
 import app.harvester.companion.browser.BrowserViewModel
 import app.harvester.companion.search.UhToolbarStore
 import app.harvester.companion.search.awesomebar.UhSearchSuggestionsComposable
+import mozilla.components.browser.state.selector.selectedTab
 
 @Composable
 fun UHSearchOverlay(
