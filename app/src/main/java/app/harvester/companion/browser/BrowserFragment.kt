@@ -7,8 +7,6 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.collectAsState
@@ -18,8 +16,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
@@ -36,10 +32,9 @@ import app.harvester.companion.browser.menu.ContextMenuDialog
 import app.harvester.companion.browser.menu.MainMenuDialogFragment
 import app.harvester.companion.browser.search.UHSearchEnginePicker
 import app.harvester.companion.browser.toolbar.UHAddressBar
+import app.harvester.companion.browser.toolbar.UHSearchOverlay
 import app.harvester.companion.compose.base.progressbar.AnimatedProgressBar
 import app.harvester.companion.databinding.FragmentBrowserBinding
-import app.harvester.companion.search.UhToolbarStore
-import app.harvester.companion.search.awesomebar.UhSearchSuggestionsComposable
 import app.harvester.companion.theme.UHTheme
 import kotlinx.coroutines.launch
 import mozilla.components.browser.state.selector.selectedTab
@@ -66,14 +61,6 @@ class BrowserFragment : Fragment() {
     
     private val viewModel: BrowserViewModel by activityViewModels()
     private var initialUrl: String? = null
-    private val browsingModeManager = app.harvester.companion.browser.browsingmode.UhBrowsingModeManager()
-
-    private val prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == SettingsPrefs.K_ADDRESS_BAR_POSITION) {
-            applyConstraints()
-            setupInsets()
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -194,7 +181,6 @@ class BrowserFragment : Fragment() {
             }
         }
 
-        applyConstraints()
         setupAddressBar(components)
         setupInsets()
         setupLogging(components)
@@ -307,48 +293,16 @@ class BrowserFragment : Fragment() {
         )
     }
 
-    private fun applyConstraints() {
-        val isBarBottom = SettingsPrefs.getInt(requireContext(), SettingsPrefs.K_ADDRESS_BAR_POSITION, 1) == 1
-        val constraintSet = androidx.constraintlayout.widget.ConstraintSet()
-        constraintSet.clone(binding.root)
-        if (isBarBottom) {
-            constraintSet.connect(binding.browserLayout.id, androidx.constraintlayout.widget.ConstraintSet.TOP, androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.TOP)
-            constraintSet.connect(binding.browserLayout.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM, binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.TOP)
-            constraintSet.connect(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM, androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.BOTTOM)
-            constraintSet.clear(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.TOP)
-        } else {
-            constraintSet.connect(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.TOP, androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.TOP)
-            constraintSet.connect(binding.browserLayout.id, androidx.constraintlayout.widget.ConstraintSet.TOP, binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM)
-            constraintSet.connect(binding.browserLayout.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM, androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.BOTTOM)
-            constraintSet.clear(binding.addressBarContainer.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM)
-        }
-        constraintSet.applyTo(binding.root)
-    }
-
     private fun setupInsets() {
-        val isBarBottom = SettingsPrefs.getInt(requireContext(), SettingsPrefs.K_ADDRESS_BAR_POSITION, 1) == 1
-        if (isBarBottom) {
-            ViewCompat.setOnApplyWindowInsetsListener(binding.browserLayout) { v, insets ->
-                val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
-                v.setPadding(0, top, 0, 0)
-                insets
-            }
-            ViewCompat.setOnApplyWindowInsetsListener(binding.addressBarContainer) { v, insets ->
-                val bottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
-                v.setPadding(0, 0, 0, bottom)
-                insets
-            }
-        } else {
-            ViewCompat.setOnApplyWindowInsetsListener(binding.addressBarContainer) { v, insets ->
-                val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
-                v.setPadding(0, top, 0, 0)
-                insets
-            }
-            ViewCompat.setOnApplyWindowInsetsListener(binding.browserLayout) { v, insets ->
-                val bottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
-                v.setPadding(0, 0, 0, bottom)
-                insets
-            }
+        ViewCompat.setOnApplyWindowInsetsListener(binding.browserLayout) { v, insets ->
+            val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
+            v.setPadding(0, top, 0, 0)
+            insets
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(binding.addressBarContainer) { v, insets ->
+            val bottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            v.setPadding(0, 0, 0, bottom)
+            insets
         }
     }
 
@@ -373,16 +327,14 @@ class BrowserFragment : Fragment() {
     private fun setupAddressBar(components: app.harvester.companion.components.Components) {
         binding.addressBarContainer.setContent {
             val browserState by components.store.stateFlow.collectAsState()
-            val appState by components.appStore.stateFlow.collectAsState()
-            val isEditing = appState.searchState.isSearchActive
-            
+            val isEditing by viewModel.isEditing.collectAsState()
+            val isBarBottom by viewModel.isBarBottom.collectAsState()
+            val searchEngine by viewModel.searchEngine.collectAsState()
             val editText by viewModel.editText.collectAsState()
-            val suggestions by viewModel.suggestions.collectAsState()
             val selectedTab = browserState.selectedTab
             
             var showSearchEnginePicker by remember { mutableStateOf(false) }
-            val focusManager = LocalFocusManager.current
-            val isBarBottom = SettingsPrefs.getInt(requireContext(), SettingsPrefs.K_ADDRESS_BAR_POSITION, 1) == 1
+            val isBarBottomSettings = SettingsPrefs.getInt(requireContext(), SettingsPrefs.K_ADDRESS_BAR_POSITION, 1) == 1
 
             if (showSearchEnginePicker) {
                 UHSearchEnginePicker(
@@ -404,80 +356,39 @@ class BrowserFragment : Fragment() {
 
             UHTheme {
                 if (isEditing) {
-                    val browserState by components.store.stateFlow.collectAsState()
-                    val progress = browserState.selectedTab?.content?.progress ?: 0
-                    
-                    Dialog(
+                    UHSearchOverlay(
+                        viewModel = viewModel,
+                        fragment = this@BrowserFragment,
                         onDismissRequest = { viewModel.exitEditMode() },
-                        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
-                    ) {
-                        Column(modifier = Modifier.fillMaxSize()) {
-                            if (!isBarBottom) {
-                                AnimatedProgressBar(progress = progress)
+                        onSearchEngineClick = { showSearchEnginePicker = true },
+                        onLockClick = {
+                            val tab = components.store.state.selectedTab
+                            if (tab != null) {
+                                app.harvester.companion.settings.trustpanel.TrustPanelFragment.newInstance(
+                                    sessionId = tab.id,
+                                    url = tab.content.url,
+                                    title = tab.content.title ?: "",
+                                    isSecured = tab.content.securityInfo.isSecure,
+                                    certificate = tab.content.securityInfo.certificate
+                                ).show(parentFragmentManager, "TrustPanel")
                             }
-                            UHAddressBar(
-                                url = selectedTab?.content?.url ?: "",
-                                isEditing = true,
-                                tabCount = browserState.tabs.size,
-                                iconState = if (selectedTab?.content?.url?.startsWith("https") == true) 1 else 0,
-                                isWallpaperActive = false,
-                                editText = editText,
-                                onEditTextChanged = { viewModel.onTextChanged(it) },
-                                onSubmit = { 
-                                    val target = viewModel.normalize(it)
-                                    if (target.isNotBlank()) {
-                                        viewModel.exitEditMode()
-                                        components.useCases.sessionUseCases.loadUrl(target)
-                                    }
-                                },
-                                onEditStart = { viewModel.enterEditMode(selectedTab?.content?.url ?: "") },
-                                onClear = { viewModel.onTextChanged("") },
-                                onSearchEngineClick = { showSearchEnginePicker = true },
-                                onLockClick = {
-                                    val tab = components.store.state.selectedTab
-                                    if (tab != null) {
-                                        app.harvester.companion.settings.trustpanel.TrustPanelFragment.newInstance(
-                                            sessionId = tab.id,
-                                            url = tab.content.url,
-                                            title = tab.content.title ?: "",
-                                            isSecured = tab.content.securityInfo.isSecure,
-                                            certificate = tab.content.securityInfo.certificate
-                                        ).show(parentFragmentManager, "TrustPanel")
-                                    }
-                                },
-                                onScriptMenuClick = {},
-                                onMenuClick = {},
-                                onTabCountClick = {}
-                            )
-                            Box(modifier = Modifier.weight(1f)) {
-                                val toolbarStore = remember { UhToolbarStore() }
-                                UhSearchSuggestionsComposable(
-                                    fragment = this@BrowserFragment,
-                                    modifier = Modifier.fillMaxSize(),
-                                    components = components,
-                                    appStore = components.appStore,
-                                    browserStore = components.store,
-                                    toolbarStore = toolbarStore,
-                                    navController = findNavController(),
-                                    browsingModeManager = browsingModeManager,
-                                    query = editText
-                                ).SearchSuggestions()
-                            }
-                            if (isBarBottom) {
-                                AnimatedProgressBar(progress = progress)
-                            }
-                        }
+                        },
+                        onMenuClick = { MainMenuDialogFragment.newInstance(false).show(parentFragmentManager, "MainMenu") },
+                        onTabCountClick = {}
+                    )
+                    val progress = browserState.selectedTab?.content?.progress ?: 0
+                    if (!isBarBottomSettings) {
+                        AnimatedProgressBar(progress = progress)
                     }
                 } else {
-                    val browserState by components.store.stateFlow.collectAsState()
                     val progress = browserState.selectedTab?.content?.progress ?: 0
-                    if (!isBarBottom) {
+                    if (!isBarBottomSettings) {
                         AnimatedProgressBar(progress = progress)
                     }
                     Box(modifier = Modifier.fillMaxWidth()) {
                         UHAddressBar(
                             url = selectedTab?.content?.url ?: "",
-                            isEditing = false,
+                            isEditing = isEditing,
                             tabCount = browserState.tabs.size,
                             iconState = if (selectedTab?.content?.url?.startsWith("https") == true) 1 else 0,
                             isWallpaperActive = false,
@@ -501,10 +412,11 @@ class BrowserFragment : Fragment() {
                             },
                             onScriptMenuClick = {},
                             onMenuClick = { MainMenuDialogFragment.newInstance(false).show(parentFragmentManager, "MainMenu") },
-                            onTabCountClick = {}
+                            onTabCountClick = {},
+                            searchEngine = searchEngine
                         )
                     }
-                    if (isBarBottom) {
+                    if (isBarBottomSettings) {
                         AnimatedProgressBar(progress = progress)
                     }
                 }
@@ -531,16 +443,6 @@ class BrowserFragment : Fragment() {
         super.onStop()
         downloadsFeature.withFeature { it.stop() }
         dismissDownloadDialogs()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        requireContext().getSharedPreferences("uh_settings", android.content.Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener(prefListener)
-    }
-
-    override fun onPause() {
-        super.onPause()
-        requireContext().getSharedPreferences("uh_settings", android.content.Context.MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(prefListener)
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
