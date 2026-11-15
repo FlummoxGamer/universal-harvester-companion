@@ -177,7 +177,7 @@ UHTheme {
                     editText = editText,
                     onEditTextChanged = { 
                         browserViewModel.onTextChanged(it)
-                        searchViewModel.onQueryChanged(it)
+                        searchViewModel.onQueryChanged(it, browserViewModel.isBarBottom.value)
                     },
                     onSubmit = { query ->
                         val target = browserViewModel.normalize(query)
@@ -189,7 +189,7 @@ UHTheme {
                     onEditStart = { },
                     onClear = { 
                         browserViewModel.onTextChanged("")
-                        searchViewModel.clearQuery()
+                        searchViewModel.clearQuery(browserViewModel.isBarBottom.value)
                     },
                     onSearchEngineClick = { showSearchEnginePicker = true },
                     onLockClick = {},
@@ -219,7 +219,7 @@ UHTheme {
                             editText = editText,
                             onEditTextChanged = { 
                                 browserViewModel.onTextChanged(it)
-                                searchViewModel.onQueryChanged(it)
+                                searchViewModel.onQueryChanged(it, browserViewModel.isBarBottom.value)
                             },
                             onSubmit = { query ->
                                 val target = browserViewModel.normalize(query)
@@ -231,7 +231,7 @@ UHTheme {
                             onEditStart = { browserViewModel.enterEditMode("") },
                             onClear = { 
                                 browserViewModel.onTextChanged("")
-                                searchViewModel.clearQuery()
+                                searchViewModel.clearQuery(browserViewModel.isBarBottom.value)
                             },
                             onSearchEngineClick = { showSearchEnginePicker = true },
                             onLockClick = {},
