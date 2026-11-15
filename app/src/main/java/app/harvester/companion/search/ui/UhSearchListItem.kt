@@ -31,7 +31,7 @@ import app.harvester.companion.search.model.UhSearchListItem as Model
 fun UhSearchListItem(
     item: Model,
     onSubmit: (String) -> Unit,
-    onPencilClick: (String) -> Unit
+    onEditUrl: (String) -> Unit
 ) {
     when (item) {
         is Model.CurrentTab -> {
@@ -106,7 +106,7 @@ fun UhSearchListItem(
             )
         }
 
-        IconButton(onClick = { onPencilClick(item.url) }) {
+        IconButton(onClick = { onEditUrl(item.url) }) {
             Icon(
                 painter = painterResource(id = R.drawable.ic_edit),
                 contentDescription = "Edit",
