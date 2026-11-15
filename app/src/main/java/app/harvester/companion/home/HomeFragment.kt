@@ -179,7 +179,13 @@ private fun setupInsets(isBarBottom: Boolean) {
                             isWallpaperActive = true,
                             editText = editText,
                             onEditTextChanged = { browserViewModel.onTextChanged(it) },
-                            onSubmit = { },
+                            onSubmit = { query ->
+                                val target = browserViewModel.normalize(query)
+                                if (target.isNotBlank()) {
+                                    browserViewModel.exitEditMode()
+                                    navigateToBrowser(target)
+                                }
+                            },
                             onEditStart = { browserViewModel.enterEditMode("") },
                             onClear = { },
                             onSearchEngineClick = { showSearchEnginePicker = true },
