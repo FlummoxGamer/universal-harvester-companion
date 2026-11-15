@@ -92,13 +92,11 @@ class HomeFragment : Fragment() {
     private fun setupAddressBar() {
         binding.addressBarContainer.setContent {
             val isEditing by browserViewModel.isEditing.collectAsState()
-            val isBarBottom by browserViewModel.isBarBottom.collectAsState()
             val searchEngine by browserViewModel.searchEngine.collectAsState()
             val editText by browserViewModel.editText.collectAsState()
             val components = (requireContext().applicationContext as UHApp).components
             
             var showSearchEnginePicker by remember { mutableStateOf(false) }
-            val isBarBottomSettings = app.harvester.companion.SettingsPrefs.getInt(requireContext(), app.harvester.companion.SettingsPrefs.K_ADDRESS_BAR_POSITION, 1) == 1
 
             if (showSearchEnginePicker) {
                 UHSearchEnginePicker(
