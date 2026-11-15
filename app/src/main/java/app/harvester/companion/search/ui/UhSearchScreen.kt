@@ -1,6 +1,5 @@
 package app.harvester.companion.search.ui
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -41,11 +40,7 @@ fun UhSearchScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
-    BackHandler {
-        onDismiss()
-    }
-
-   UHTheme {
+UHTheme {
     Column(
     modifier = Modifier
         .fillMaxSize()
@@ -85,48 +80,58 @@ private fun SearchContent(
     viewModel: UhSearchViewModel
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
-        LazyColumn(modifier = Modifier.weight(1f)) {
-            items(state.items) { item ->
-                UhSearchListItem(
-                    item = item,
-                    onSubmit = { result -> onSubmit(result) },
-                    onPencilClick = { url -> viewModel.onQueryChanged(url) }
+LazyColumn(modifier = Modifier.weight(1f)) {
+    items(
+        items = state.items,
+        key = { item ->
+            when (item) {
+                is app.harvester.companion.search.model.UhSearchListItem.Header -> "header_${item.title}"
+                is app.harvester.companion.search.model.UhSearchListItem.CurrentTab -> "current_tab"
+                is app.harvester.companion.search.model.UhSearchListItem.Suggestion -> "sug_${item.title}_${item.type}"
+                is app.harvester.companion.search.model.UhSearchListItem.History -> "hist_${item.url}"
+            }
+        }
+    ) { item ->
+        UhSearchListItem(
+            item = item,
+            onSubmit = { result -> onSubmit(result) },
+            onEditUrl = { url -> viewModel.onQueryChanged(url, isBarBottom) }
+        )
+    }
+}
+
+state.clipboardUrl?.let { url ->
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp),
+        contentAlignment = Alignment.CenterEnd
+    ) {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+            modifier = Modifier.clickable { onSubmit(url) }
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_link),
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "Paste",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(start = 8.dp)
                 )
             }
         }
-
-        state.clipboardUrl?.let { url ->
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-                contentAlignment = Alignment.CenterStart
-            ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
-                    modifier = Modifier.clickable { onSubmit(url) }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_link),
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "Paste URL",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(start = 8.dp)
-                        )
-                    }
-                }
-            }
-        }
+    }
+}
 
         if (isBarBottom) {
             Box(modifier = Modifier.navigationBarsPadding())
