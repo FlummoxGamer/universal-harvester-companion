@@ -31,7 +31,18 @@ object UhSearchDataProvider {
         val components = (context.applicationContext as UHApp).components
 
         if (query.isBlank()) {
-            items.add(UhSearchListItem.Header("Recent Searches"))
+    val selectedTab = components.store.state.selectedTab
+    if (selectedTab != null && selectedTab.content.url != "about:blank" && selectedTab.content.url.isNotBlank()) {
+        items.add(
+            UhSearchListItem.CurrentTab(
+                title = selectedTab.content.title,
+                url = selectedTab.content.url,
+                icon = selectedTab.content.icon
+            )
+        )
+    }
+
+    items.add(UhSearchListItem.Header("Recent Searches"))
             try {
                 val visits = components.placesHistoryStorage.getDetailedVisits(0L, System.currentTimeMillis())
                 visits.filter { it.title != null && it.title.isNotBlank() }
