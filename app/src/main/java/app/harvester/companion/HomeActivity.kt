@@ -4,9 +4,9 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.NavHostFragment
 import app.harvester.companion.browser.BrowserViewModel
 import app.harvester.companion.databinding.ActivityHomeBinding
