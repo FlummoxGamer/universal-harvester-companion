@@ -12,16 +12,16 @@ class UhSearchViewModel(application: Application) : AndroidViewModel(application
     val state: StateFlow<UhSearchState> = store.stateFlow
     private var fetchJob: Job? = null
 
-    fun onQueryChanged(query: String) {
-        store.dispatch(UhSearchAction.UpdateQuery(query))
-        fetchJob?.cancel()
-        fetchJob = viewModelScope.launch {
-            val (items, clipboard) = UhSearchDataProvider.fetchData(getApplication(), query)
-            store.dispatch(UhSearchAction.UpdateResults(items, clipboard))
-        }
+fun onQueryChanged(query: String, isBarBottom: Boolean) {
+    store.dispatch(UhSearchAction.UpdateQuery(query))
+    fetchJob?.cancel()
+    fetchJob = viewModelScope.launch {
+        val (items, clipboard) = UhSearchDataProvider.fetchData(getApplication(), query, isBarBottom)
+        store.dispatch(UhSearchAction.UpdateResults(items, clipboard))
     }
+}
 
-    fun clearQuery() {
-        onQueryChanged("")
-    }
+fun clearQuery(isBarBottom: Boolean) {
+    onQueryChanged("", isBarBottom)
+}
 }
