@@ -9,6 +9,8 @@ import mozilla.components.feature.awesomebar.provider.SearchActionProvider
 import mozilla.components.feature.awesomebar.provider.HistoryStorageSuggestionProvider
 import mozilla.components.feature.awesomebar.provider.BookmarksStorageSuggestionProvider
 import mozilla.components.feature.awesomebar.provider.SearchEngineSuggestionProvider
+import mozilla.components.feature.awesomebar.provider.RecentSearchSuggestionsProvider
+import mozilla.components.feature.awesomebar.provider.TrendingSearchProvider
 import mozilla.components.feature.search.SearchUseCases
 import mozilla.components.feature.session.SessionUseCases.LoadUrlUseCase
 import mozilla.components.feature.tabs.TabsUseCases
@@ -74,19 +76,42 @@ class UhSuggestionsBuilder(
         providers.add(defaultHistoryStorageProvider)
         providers.add(BookmarksStorageSuggestionProvider(bookmarksStorage = components.placesBookmarksStorage, loadUrlUseCase = loadUrlUseCase, icons = components.icons, engine = engineForSpeculativeConnects, showEditSuggestion = false, indicatorIcon = null))
         providers.add(searchEngineSuggestionProvider)
-        return providers
+
+    if (state.showRecentSearches) {
+        providers.add(RecentSearchSuggestionsProvider(
+            historyStorage = components.placesHistoryStorage,
+            searchUseCase = searchUseCase,
+            searchEngine = state.searchEngineSource.searchEngine,
+            engine = engineForSpeculativeConnects
+        ))
+    }
+
+    if (state.showTrendingSearches) {
+        val trendingProvider = TrendingSearchProvider(
+            fetchClient = components.client,
+            privateMode = browsingModeManager.mode.isPrivate,
+            searchUseCase = searchUseCase,
+            engine = engineForSpeculativeConnects
+        )
+        trendingProvider.setSearchEngine(state.searchEngineSource.searchEngine)
+        providers.add(trendingProvider)
+    }
+
+    return providers
     }
 
     internal fun getFilterForCurrentEngineResults(state: UhProviderState): UhResultFilter? {
         return state.searchEngineSource.searchEngine?.resultsUrl?.let { UhResultFilter.CurrentEngine(it) }
     }
 
-    data class UhProviderState(
-        val searchEngineSource: UhSearchEngineSource,
-        val showSearchSuggestions: Boolean = true,
-        val showAllHistorySuggestions: Boolean = true,
-        val showAllBookmarkSuggestions: Boolean = true,
-    )
+data class UhProviderState(
+    val searchEngineSource: UhSearchEngineSource,
+    val showSearchSuggestions: Boolean = true,
+    val showAllHistorySuggestions: Boolean = true,
+    val showAllBookmarkSuggestions: Boolean = true,
+    val showRecentSearches: Boolean = true,
+    val showTrendingSearches: Boolean = true,
+)
 
     sealed interface UhResultFilter {
         data class CurrentEngine(val resultsUri: android.net.Uri) : UhResultFilter
