@@ -18,7 +18,7 @@ import mozilla.components.feature.search.trendingsearches.TrendingSearchClient
 object UhSearchDataProvider {
     private val suggestionClient = SearchSuggestionClient()
 
-    suspend fun fetchData(context: Context, query: String): Pair<List<UhSearchListItem>, String?> = withContext(Dispatchers.IO) {
+    suspend fun fetchData(context: Context, query: String, isBarBottom: Boolean): Pair<List<UhSearchListItem>, String?> = withContext(Dispatchers.IO) {
         val items = mutableListOf<UhSearchListItem>()
         var clipboardUrl: String? = null
 
@@ -34,19 +34,20 @@ object UhSearchDataProvider {
 
         val components = (context.applicationContext as UHApp).components
 
-        if (query.isBlank()) {
+if (query.isBlank()) {
     val selectedTab = components.store.state.selectedTab
     if (selectedTab != null && selectedTab.content.url != "about:blank" && selectedTab.content.url.isNotBlank()) {
-        items.add(
-            UhSearchListItem.CurrentTab(
-                title = selectedTab.content.title,
-                url = selectedTab.content.url,
-                icon = selectedTab.content.icon
-            )
+        val currentTabItem = UhSearchListItem.CurrentTab(
+            title = selectedTab.content.title,
+            url = selectedTab.content.url,
+            icon = selectedTab.content.icon
         )
+        if (!isBarBottom) {
+            items.add(currentTabItem)
+        }
     }
 
-items.add(UhSearchListItem.Header("Recent Searches"))
+    items.add(UhSearchListItem.Header("Recent Searches"))
 try {
     val metadata = components.placesHistoryStorage.getHistoryMetadataSince(0L)
     metadata.asSequence()
@@ -65,11 +66,15 @@ items.add(UhSearchListItem.Header("Trending"))
 try {
     val currentEngine = components.store.state.search.selectedOrDefaultSearchEngine(private = false)
     if (currentEngine != null) {
-        val client = TrendingSearchClient { url ->
-            try {
-                java.net.URL(url).openStream().bufferedReader().use { it.readText() }
-            } catch (e: Exception) { null }
-        }
+val client = TrendingSearchClient { url ->
+    try {
+        val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Android)")
+        conn.connectTimeout = 5000
+        conn.readTimeout = 5000
+        conn.inputStream.bufferedReader().use { it.readText() }
+    } catch (e: Exception) { null }
+}
         client.setSearchEngine(currentEngine)
         val trends = client.getTrendingSearches() ?: emptyList()
         if (trends.isNotEmpty()) {
@@ -80,11 +85,23 @@ try {
             items.add(UhSearchListItem.Suggestion("No trending searches available", SuggestionType.TRENDING))
         }
     }
-} catch (e: Exception) {
-    UHLog.e("search_error", "Trending fetch failed: ${e.message}")
-}
+    } catch (e: Exception) {
+        UHLog.e("search_error", "Trending fetch failed: ${e.message}")
+    }
 
-        } else {
+    if (isBarBottom) {
+        val selectedTab = components.store.state.selectedTab
+        if (selectedTab != null && selectedTab.content.url != "about:blank" && selectedTab.content.url.isNotBlank()) {
+            items.add(
+                UhSearchListItem.CurrentTab(
+                    title = selectedTab.content.title,
+                    url = selectedTab.content.url,
+                    icon = selectedTab.content.icon
+                )
+            )
+        }
+    }
+} else {
 items.add(UhSearchListItem.Header("Search"))
 try {
     val engine = SearchEnginePrefs.currentEntry(context)
