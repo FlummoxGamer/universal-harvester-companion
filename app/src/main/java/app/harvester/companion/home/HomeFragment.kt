@@ -206,12 +206,14 @@ private fun setupInsets(isBarBottom: Boolean) {
         findNavController().navigate(R.id.action_homeFragment_to_browserFragment, bundle)
     }
 
-    override fun onResume() {
-        super.onResume()
-        applyWallpaper()
-        shortcutAdapter.submit(ShortcutStore.list(requireContext()))
-        homeVideoPlayer?.play()
-    }
+override fun onResume() {
+    super.onResume()
+    val isBottom = SettingsPrefs.getInt(requireContext(), SettingsPrefs.K_ADDRESS_BAR_POSITION, 1) == 1
+    browserViewModel.updateBarPosition(isBottom)
+    applyWallpaper()
+    shortcutAdapter.submit(ShortcutStore.list(requireContext()))
+    homeVideoPlayer?.play()
+}
 
     private fun applyWallpaper() {
         val wpPath = WallpaperStore.getCurrentWallpaper(requireContext())
