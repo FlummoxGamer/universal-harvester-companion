@@ -58,5 +58,7 @@ class HomeFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         browserViewModel.isEditing.value
+        val homeViewModel: HomeViewModel = androidx.lifecycle.viewmodel.compose.viewModel(this)
+        homeViewModel.refresh()
     }
 }
