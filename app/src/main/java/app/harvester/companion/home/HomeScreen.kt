@@ -57,6 +57,10 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import app.harvester.companion.R
 import app.harvester.companion.Shortcut
+import app.harvester.companion.utils.reorderable.rememberReorderableLazyGridState
+import app.harvester.companion.utils.reorderable.ReorderableItem
+import app.harvester.companion.utils.reorderable.draggableHandle
+import app.harvester.companion.utils.reorderable.DragGestureDetector
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -75,6 +79,7 @@ fun HomeScreen(
 ) {
     var isAdding by remember { mutableStateOf(false) }
     var shortcutToEdit by remember { mutableStateOf<Shortcut?>(null) }
+    var popupForShortcut by remember { mutableStateOf<Shortcut?>(null) }
 
     if (isAdding || shortcutToEdit != null) {
         ShortcutDialog(
@@ -100,9 +105,9 @@ fun HomeScreen(
     val isLandscape = config.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     val gridState = rememberLazyGridState()
-    val scope = rememberCoroutineScope()
-    var draggedIndex by remember { mutableIntStateOf(-1) }
-    var dragOffset by remember { mutableStateOf(Offset.Zero) }
+    val reorderableState = rememberReorderableLazyGridState(gridState) { from, to ->
+        onMoveShortcut(from.index, to.index)
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(if (wallpaperPath == null || wallpaperPath == "default") MaterialTheme.colorScheme.background else Color.Transparent)) {
         WallpaperBackground(path = wallpaperPath, isVideo = isVideo)
@@ -134,99 +139,26 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                itemsIndexed(shortcuts, key = { _, item -> item.id }) { index, shortcut ->
-                    val isDragging = draggedIndex == index
-                    val itemModifier = if (isDragging) {
-                        Modifier
-                            .zIndex(1f)
-                            .graphicsLayer {
-                                translationY = dragOffset.y
-                                translationX = dragOffset.x
-                            }
-                    } else {
-                        Modifier
+                itemsIndexed(shortcuts, key = { _, item -> item.id }) { _, shortcut ->
+                    ReorderableItem(reorderableState, key = shortcut.id) { isDragging ->
+                        val elevation = if (isDragging) 8.dp else 0.dp
+                        ShortcutItem(
+                            name = shortcut.name,
+                            iconUrl = shortcut.iconUrl,
+                            textColor = textColor,
+                            shadowColor = shadowColor,
+                            onOpen = { onShortcutOpen(shortcut.url) },
+                            onEdit = { shortcutToEdit = shortcut },
+                            onRemove = { onRemoveShortcut(shortcut) },
+                            onShowPopup = { popupForShortcut = shortcut },
+                            modifier = Modifier
+                                .graphicsLayer { shadowElevation = elevation.toPx() }
+                                .draggableHandle(
+                                    dragGestureDetector = DragGestureDetector.H1,
+                                    onH1Popup = { popupForShortcut = shortcut }
+                                )
+                        )
                     }
-
-                    ShortcutItem(
-                        name = shortcut.name,
-                        iconUrl = shortcut.iconUrl,
-                        textColor = textColor,
-                        shadowColor = shadowColor,
-                        onOpen = { onShortcutOpen(shortcut.url) },
-                        onEdit = { shortcutToEdit = shortcut },
-                        onRemove = { onRemoveShortcut(shortcut) },
-                        modifier = itemModifier.pointerInput(Unit) {
-                            awaitEachGesture {
-                                val down = awaitFirstDown(requireUnconsumed = false)
-                                var isDragReady = false
-                                var isPopupShowing = false
-                                var isDragging = false
-
-                                val dragJob = scope.launch {
-                                    delay(150)
-                                    isDragReady = true
-                                }
-                                val popupJob = scope.launch {
-                                    delay(500)
-                                    if (!isDragging && !isPopupShowing) {
-                                        isPopupShowing = true
-                                        shortcutToEdit = shortcut
-                                    }
-                                }
-
-                                var offset = Offset.Zero
-
-                                while (true) {
-                                    val event = awaitPointerEvent()
-                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                                    if (!change.pressed) break
-
-                                    if (isPopupShowing) break
-
-                                    val delta = change.positionChange()
-                                    offset += delta
-
-                                    if (offset.getDistance() > 20f) {
-                                        popupJob.cancel()
-                                        if (isDragReady && !isDragging) {
-                                            isDragging = true
-                                            draggedIndex = index
-                                            dragOffset = Offset.Zero
-                                        } else if (!isDragReady) {
-                                            dragJob.cancel()
-                                        }
-                                    }
-
-                                    if (isDragging) {
-                                        dragOffset += delta
-
-                                        val currentItem = gridState.layoutInfo.visibleItemsInfo.find { it.index == draggedIndex }
-                                        if (currentItem != null) {
-                                            val centerY = currentItem.offset.y + currentItem.size.height / 2 + dragOffset.y
-                                            val targetItem = gridState.layoutInfo.visibleItemsInfo.find {
-                                                centerY.toInt() in it.offset.y..(it.offset.y + it.size.height) && it.index != draggedIndex
-                                            }
-                                            if (targetItem != null && targetItem.index < shortcuts.size) {
-                                                onMoveShortcut(draggedIndex, targetItem.index)
-                                                draggedIndex = targetItem.index
-                                                dragOffset = Offset.Zero
-                                            }
-                                        }
-                                    }
-
-                                    if (change.pressed) change.consume()
-                                }
-
-                                dragJob.cancel()
-                                popupJob.cancel()
-
-                                if (isDragging) {
-                                    draggedIndex = -1
-                                    dragOffset = Offset.Zero
-                                }
-                            }
-                        }
-                    )
                 }
                 item(key = "add_shortcut") {
                     AddShortcutItem(
@@ -252,6 +184,21 @@ fun HomeScreen(
                 shadowColor = shadowColor
             )
         }
+
+        popupForShortcut?.let { shortcut ->
+            EditRemovePopup(
+                shortcut = shortcut,
+                onDismiss = { popupForShortcut = null },
+                onEdit = { 
+                    shortcutToEdit = shortcut
+                    popupForShortcut = null 
+                },
+                onRemove = { 
+                    onRemoveShortcut(shortcut)
+                    popupForShortcut = null 
+                }
+            )
+        }
     }
 }
 
@@ -264,10 +211,9 @@ private fun ShortcutItem(
     onOpen: () -> Unit,
     onEdit: () -> Unit,
     onRemove: () -> Unit,
+    onShowPopup: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var showMenu by remember { mutableStateOf(false) }
-
     Box(modifier = modifier) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -293,36 +239,44 @@ private fun ShortcutItem(
                 style = TextStyle(shadow = Shadow(color = shadowColor, offset = Offset(0f, 2f), blurRadius = 8f))
             )
         }
+    }
+}
 
-        if (showMenu) {
-            Popup(
-                onDismissRequest = { showMenu = false },
-                properties = PopupProperties(focusable = true)
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(24.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.width(160.dp)
-                ) {
-                    Column {
-                        Text(
-                            text = "Edit",
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { showMenu = false; onEdit() }
-                                .padding(16.dp)
-                        )
-                        Text(
-                            text = "Remove",
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { showMenu = false; onRemove() }
-                                .padding(16.dp)
-                        )
-                    }
-                }
+@Composable
+private fun EditRemovePopup(
+    shortcut: Shortcut,
+    onDismiss: () -> Unit,
+    onEdit: () -> Unit,
+    onRemove: () -> Unit
+) {
+    Popup(
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(focusable = true)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier.width(180.dp)
+        ) {
+            Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                Text(
+                    text = "Edit",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 16.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onEdit() }
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                )
+                Text(
+                    text = "Remove",
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 16.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onRemove() }
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                )
             }
         }
     }
