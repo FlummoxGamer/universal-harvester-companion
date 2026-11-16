@@ -14,7 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavHostController
+import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import app.harvester.companion.R
 import app.harvester.companion.UHApp
@@ -24,11 +24,12 @@ import app.harvester.companion.browser.search.UHSearchEnginePicker
 import app.harvester.companion.search.UhSearchViewModel
 import app.harvester.companion.search.ui.UhSearchScreen
 import app.harvester.companion.settings.trustpanel.TrustPanelFragment
+import mozilla.components.browser.state.selector.selectedTab
 
 @Composable
 fun UhGlobalToolbar(
     viewModel: BrowserViewModel,
-    navController: NavHostController,
+    navController: NavController,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
