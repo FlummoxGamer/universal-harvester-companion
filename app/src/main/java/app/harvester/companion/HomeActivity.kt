@@ -55,13 +55,12 @@ class HomeActivity : AppCompatActivity() {
                     )
 
                     if (::navController.isInitialized) {
-                        Box(modifier = Modifier.zIndex(1f)) {
-                            UhGlobalToolbar(
-                                viewModel = browserViewModel,
-                                navController = navController,
-                                onDismiss = { browserViewModel.exitEditMode() }
-                            )
-                        }
+                        UhGlobalToolbar(
+                            viewModel = browserViewModel,
+                            navController = navController,
+                            onDismiss = { browserViewModel.exitEditMode() },
+                            modifier = Modifier.zIndex(1f)
+                        )
                     }
                 }
             }
