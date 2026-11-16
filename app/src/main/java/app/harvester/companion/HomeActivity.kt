@@ -2,18 +2,26 @@ package app.harvester.companion
 
 import android.content.Intent
 import android.os.Bundle
-import android.view.View
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.fragment.app.FragmentContainerView
+import androidx.navigation.NavHostController
 import androidx.navigation.fragment.NavHostFragment
 import app.harvester.companion.browser.BrowserViewModel
-import app.harvester.companion.databinding.ActivityHomeBinding
+import app.harvester.companion.browser.toolbar.UhGlobalToolbar
+import app.harvester.companion.theme.UHTheme
 
 class HomeActivity : AppCompatActivity() {
 
-    private lateinit var binding: ActivityHomeBinding
+    private val browserViewModel: BrowserViewModel by viewModels()
+    private lateinit var navController: NavHostController
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
@@ -22,52 +30,66 @@ class HomeActivity : AppCompatActivity() {
         window.statusBarColor = android.graphics.Color.TRANSPARENT
         window.navigationBarColor = android.graphics.Color.TRANSPARENT
 
-binding = ActivityHomeBinding.inflate(layoutInflater)
-setContentView(binding.root)
+        setContent {
+            UHTheme {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    AndroidView(
+                        factory = { context ->
+                            FragmentContainerView(context).apply {
+                                id = R.id.nav_host_fragment
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                        update = { view ->
+                            if (supportFragmentManager.findFragmentById(R.id.nav_host_fragment) == null) {
+                                val navHostFragment = NavHostFragment.create(R.navigation.nav_graph)
+                                supportFragmentManager.beginTransaction()
+                                    .replace(R.id.nav_host_fragment, navHostFragment)
+                                    .setPrimaryNavigationFragment(navHostFragment)
+                                    .commitNow()
+                                navController = navHostFragment.navController
+                                handleIntent(intent)
+                            }
+                        }
+                    )
 
-val browserViewModel: BrowserViewModel by viewModels()
-onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-    override fun handleOnBackPressed() {
-        if (browserViewModel.isEditing.value) {
-            browserViewModel.exitEditMode()
-        } else {
-            isEnabled = false
-            onBackPressedDispatcher.onBackPressed()
-            isEnabled = true
-        }
-    }
-})
-
-        if (savedInstanceState == null) {
-            showComposeSplash()
-        } else {
-            binding.splashScreen.visibility = View.GONE
-        }
-
-        handleIntent(intent)
-    }
-    
-    private fun showComposeSplash() {
-        val composeView = androidx.compose.ui.platform.ComposeView(this).apply {
-            setContent {
-                app.harvester.companion.splash.ComposeSplashScreen(
-                    onSplashFinished = {
-                        binding.splashScreen.visibility = View.GONE
+                    if (::navController.isInitialized) {
+                        UhGlobalToolbar(
+                            viewModel = browserViewModel,
+                            navController = navController,
+                            onDismiss = { browserViewModel.exitEditMode() }
+                        )
                     }
-                )
+                }
             }
         }
-        binding.splashScreen.removeAllViews()
-        binding.splashScreen.addView(composeView)
-        binding.splashScreen.visibility = View.VISIBLE
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (browserViewModel.isEditing.value) {
+                    browserViewModel.exitEditMode()
+                } else if (::navController.isInitialized && navController.currentDestination?.id == R.id.browserFragment) {
+                    val currentFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment)?.childFragmentManager?.primaryNavigationFragment
+                    if (currentFragment is app.harvester.companion.browser.BrowserFragment) {
+                        if (!currentFragment.onBackPressed()) {
+                            navController.popBackStack()
+                        }
+                    } else {
+                        navController.popBackStack()
+                    }
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
+            }
+        })
     }
 
     private fun handleIntent(intent: Intent?) {
         val url = intent?.data?.toString() ?: return
         if (url.startsWith("http")) {
-            val navHostFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as NavHostFragment
-            val navController = navHostFragment.navController
-            if (navController.currentDestination?.id == R.id.homeFragment) {
+            if (::navController.isInitialized && navController.currentDestination?.id == R.id.homeFragment) {
                 val bundle = Bundle().apply { putString("url", url) }
                 navController.navigate(R.id.action_homeFragment_to_browserFragment, bundle)
             }
