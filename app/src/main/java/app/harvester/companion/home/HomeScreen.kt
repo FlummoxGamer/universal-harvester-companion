@@ -38,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.Font
@@ -85,7 +86,7 @@ fun HomeScreen(
     }
 
     val textColor = if (textColorInt == 0) MaterialTheme.colorScheme.onBackground else Color(textColorInt)
-    val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(textColor.copy(alpha = 1f).value)
+    val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(textColor.toArgb())
     val shadowColor = if (luminance > 0.5) Color.Black else Color.White
 
     val config = LocalConfiguration.current
