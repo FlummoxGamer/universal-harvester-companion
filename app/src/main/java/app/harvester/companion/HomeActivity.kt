@@ -59,7 +59,7 @@ class HomeActivity : AppCompatActivity() {
                             viewModel = browserViewModel,
                             navController = navController,
                             onDismiss = { browserViewModel.exitEditMode() },
-                            modifier = Modifier.zIndex(1f)
+                            modifier = Modifier.zIndex(1f).fillMaxSize()
                         )
                     }
                 }
