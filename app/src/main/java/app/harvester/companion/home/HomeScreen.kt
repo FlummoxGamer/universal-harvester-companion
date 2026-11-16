@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import app.harvester.companion.UHLog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -156,17 +158,21 @@ fun HomeScreen(
                                                 var isDragging = false
                                                 var offset = Offset.Zero
 
-                                                val dragJob = launch {
-                                                    delay(150)
-                                                    isDragReady = true
-                                                }
-                                                val popupJob = launch {
-                                                    delay(600)
-                                                    if (!isDragging && !isPopupShowing && offset.getDistance() < 20f) {
-                                                        isPopupShowing = true
-                                                        popupForShortcut = shortcut
-                                                    }
-                                                }
+                                                var isHolding = false
+
+val dragJob = launch {
+    delay(150)
+    isDragReady = true
+}
+val popupJob = launch {
+    delay(600)
+    if (!isDragging && !isPopupShowing && offset.getDistance() < 20f) {
+        isPopupShowing = true
+        isHolding = true
+        UHLog.d("ui_debug", "Widget popup triggered by 600ms hold.")
+        popupForShortcut = shortcut
+    }
+}
 
                                                 while (true) {
                                                     val event = awaitPointerEvent()
@@ -257,9 +263,22 @@ private fun ShortcutItem(
     onShowPopup: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var wasHold by remember { mutableStateOf(false) }
+
+    LaunchedEffect(onShowPopup) {
+        wasHold = true
+        delay(1000)
+        wasHold = false
+    }
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = modifier.clickable { onOpen() }
+        modifier = modifier.clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null
+        ) { 
+            if (!wasHold) onOpen() else UHLog.d("ui_debug", "Click blocked: widget was held.")
+        }
     ) {
         Box(
             modifier = Modifier
@@ -289,13 +308,14 @@ private fun EditRemovePopup(
     onEdit: () -> Unit,
     onRemove: () -> Unit
 ) {
-    DropdownMenu(
-        expanded = true,
-        onDismissRequest = onDismiss,
-        modifier = Modifier
-            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(24.dp))
-            .width(180.dp)
-    ) {
+DropdownMenu(
+    expanded = true,
+    onDismissRequest = onDismiss,
+    shape = RoundedCornerShape(24.dp),
+    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+    modifier = Modifier
+        .width(180.dp)
+) {
         DropdownMenuItem(
             text = { Text("Edit", color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp) },
             onClick = { onEdit() },
