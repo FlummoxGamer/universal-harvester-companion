@@ -126,10 +126,6 @@ internal data class CollectionScrollPadding(
     }
 }
 
-/**
- * The offsets in the main axis from the start of the content to the
- * start and end of the content minus the padding.
- */
 internal data class ScrollAreaOffsets(
     val start: Float,
     val end: Float,
@@ -613,7 +609,6 @@ interface ReorderableCollectionItemScope {
         interactionSource: MutableInteractionSource? = null,
         onDragStarted: (startedPosition: Offset) -> Unit = {},
         onDragStopped: () -> Unit = {},
-        onH1Popup: () -> Unit = {},
         dragGestureDetector: DragGestureDetector = DragGestureDetector.Press
     ): Modifier
 
@@ -621,8 +616,7 @@ interface ReorderableCollectionItemScope {
         enabled: Boolean = true,
         interactionSource: MutableInteractionSource? = null,
         onDragStarted: (startedPosition: Offset) -> Unit = {},
-        onDragStopped: () -> Unit = {},
-        onH1Popup: () -> Unit = {}
+        onDragStopped: () -> Unit = {}
     ): Modifier
 }
 
@@ -636,7 +630,6 @@ internal class ReorderableCollectionItemScopeImpl(
         interactionSource: MutableInteractionSource?,
         onDragStarted: (startedPosition: Offset) -> Unit,
         onDragStopped: () -> Unit,
-        onH1Popup: () -> Unit,
         dragGestureDetector: DragGestureDetector
     ): Modifier = composed {
         var handleOffset by remember { mutableStateOf(Offset.Zero) }
@@ -652,7 +645,6 @@ internal class ReorderableCollectionItemScopeImpl(
             enabled = enabled && (reorderableLazyCollectionState.isItemDragging(key).value || !reorderableLazyCollectionState.isAnyItemDragging),
             interactionSource = interactionSource,
             dragGestureDetector = dragGestureDetector,
-            onH1Popup = onH1Popup,
             onDragStarted = {
                 coroutineScope.launch {
                     val handleOffsetRelativeToItem = handleOffset - itemPositionProvider()
@@ -681,14 +673,12 @@ internal class ReorderableCollectionItemScopeImpl(
         interactionSource: MutableInteractionSource?,
         onDragStarted: (startedPosition: Offset) -> Unit,
         onDragStopped: () -> Unit,
-        onH1Popup: () -> Unit,
     ) =
         draggableHandle(
             enabled = enabled,
             interactionSource = interactionSource,
             onDragStarted = onDragStarted,
             onDragStopped = onDragStopped,
-            onH1Popup = onH1Popup,
             dragGestureDetector = DragGestureDetector.LongPress
         )
 }
