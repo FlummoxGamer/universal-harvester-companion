@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.fragment.app.FragmentContainerView
 import androidx.navigation.NavController
@@ -55,12 +57,22 @@ class HomeActivity : AppCompatActivity() {
                     )
 
                     if (::navController.isInitialized) {
-                        UhGlobalToolbar(
-                            viewModel = browserViewModel,
-                            navController = navController,
-                            onDismiss = { browserViewModel.exitEditMode() },
-                            modifier = Modifier.zIndex(1f).fillMaxSize()
-                        )
+                        Dialog(
+                            onDismissRequest = { },
+                            properties = DialogProperties(
+                                usePlatformDefaultWidth = false,
+                                decorFitsSystemWindows = false,
+                                dismissOnBackPress = false,
+                                dismissOnClickOutside = false
+                            )
+                         ) {
+                            UhGlobalToolbar(
+                                viewModel = browserViewModel,
+                                navController = navController,
+                                onDismiss = { browserViewModel.exitEditMode() },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
                 }
             }
