@@ -22,7 +22,6 @@ internal fun Modifier.draggable(
     dragGestureDetector: DragGestureDetector = DragGestureDetector.Press,
     onDragStarted: (Offset) -> Unit = { },
     onDragStopped: () -> Unit = { },
-    onH1Popup: () -> Unit = { },
     onDrag: (change: PointerInputChange, dragAmount: Offset) -> Unit,
 ) = composed {
     val coroutineScope = rememberCoroutineScope()
@@ -54,7 +53,6 @@ internal fun Modifier.draggable(
 
         with(dragGestureDetector) {
             detect(
-                onH1Popup = onH1Popup,
                 onDragStart = {
                     dragStarted = true
                     dragInteractionStart = DragInteraction.Start().also {
