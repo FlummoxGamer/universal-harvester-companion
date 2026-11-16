@@ -2,10 +2,9 @@ package app.harvester.companion.home
 
 import android.content.res.Configuration
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,20 +15,18 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -55,12 +52,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import app.harvester.companion.R
 import app.harvester.companion.Shortcut
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.util.Collections
 
 @Composable
 fun HomeScreen(
@@ -101,6 +99,11 @@ fun HomeScreen(
     val config = LocalConfiguration.current
     val isLandscape = config.orientation == Configuration.ORIENTATION_LANDSCAPE
 
+    val gridState = rememberLazyGridState()
+    val scope = rememberCoroutineScope()
+    var draggedIndex by remember { mutableIntStateOf(-1) }
+    var dragOffset by remember { mutableStateOf(Offset.Zero) }
+
     Box(modifier = Modifier.fillMaxSize().background(if (wallpaperPath == null || wallpaperPath == "default") MaterialTheme.colorScheme.background else Color.Transparent)) {
         WallpaperBackground(path = wallpaperPath, isVideo = isVideo)
 
@@ -123,11 +126,6 @@ fun HomeScreen(
                     modifier = Modifier.padding(bottom = 36.dp)
                 )
             }
-
-            val gridState = rememberLazyGridState()
-            val scope = rememberCoroutineScope()
-            var draggedIndex by remember { mutableIntStateOf(-1) }
-            var dragOffset by remember { mutableStateOf(Offset.Zero) }
 
             LazyVerticalGrid(
                 state = gridState,
@@ -162,65 +160,70 @@ fun HomeScreen(
                                 val down = awaitFirstDown(requireUnconsumed = false)
                                 var isDragReady = false
                                 var isPopupShowing = false
+                                var isDragging = false
 
-                                val dragTimer = scope.launch {
+                                val dragJob = scope.launch {
                                     delay(150)
-                                    if (!isPopupShowing) {
-                                        isDragReady = true
-                                        draggedIndex = index
-                                        dragOffset = Offset.Zero
-                                    }
+                                    isDragReady = true
                                 }
-
-                                val popupTimer = scope.launch {
+                                val popupJob = scope.launch {
                                     delay(500)
-                                    if (dragOffset.getDistance() < 20f) {
+                                    if (!isDragging && !isPopupShowing) {
                                         isPopupShowing = true
-                                        dragTimer.cancel()
                                         shortcutToEdit = shortcut
                                     }
                                 }
 
-                                var isDragging = false
-                                do {
+                                var offset = Offset.Zero
+
+                                while (true) {
                                     val event = awaitPointerEvent()
-                                    val dragEvent = event.changes.firstOrNull { it.id == down.id }
-                                    if (dragEvent != null) {
-                                        if (dragEvent.pressed) {
-                                            val delta = dragEvent.positionChange()
-                                            dragOffset += delta
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!change.pressed) break
 
-                                            if (dragOffset.getDistance() > 20f) {
-                                                popupTimer.cancel()
-                                            }
+                                    if (isPopupShowing) break
 
-                                            if (isDragReady) {
-                                                isDragging = true
-                                                // simple edge scroll
-                                                val visibleItem = gridState.layoutInfo.visibleItemsInfo.find { it.index == draggedIndex }
-                                                if (visibleItem != null) {
-                                                    val centerY = visibleItem.offset.y + visibleItem.size.height / 2 + dragOffset.y
-                                                    val target = gridState.layoutInfo.visibleItemsInfo.find { 
-                                                        centerY.toInt() in it.offset.y..(it.offset.y + it.size.height) && it.index != draggedIndex 
-                                                    }
-                                                    if (target != null) {
-                                                        onMoveShortcut(draggedIndex, target.index)
-                                                        draggedIndex = target.index
-                                                        dragOffset = Offset.Zero
-                                                    }
-                                                }
-                                            }
-                                        } else {
-                                            dragTimer.cancel()
-                                            popupTimer.cancel()
-                                            if (isDragging) {
-                                                draggedIndex = -1
-                                                dragOffset = Offset.Zero
-                                            }
-                                            break
+                                    val delta = change.positionChange()
+                                    offset += delta
+
+                                    if (offset.getDistance() > 20f) {
+                                        popupJob.cancel()
+                                        if (isDragReady && !isDragging) {
+                                            isDragging = true
+                                            draggedIndex = index
+                                            dragOffset = Offset.Zero
+                                        } else if (!isDragReady) {
+                                            dragJob.cancel()
                                         }
                                     }
-                                } while (event.changes.any { it.pressed })
+
+                                    if (isDragging) {
+                                        dragOffset += delta
+
+                                        val currentItem = gridState.layoutInfo.visibleItemsInfo.find { it.index == draggedIndex }
+                                        if (currentItem != null) {
+                                            val centerY = currentItem.offset.y + currentItem.size.height / 2 + dragOffset.y
+                                            val targetItem = gridState.layoutInfo.visibleItemsInfo.find {
+                                                centerY.toInt() in it.offset.y..(it.offset.y + it.size.height) && it.index != draggedIndex
+                                            }
+                                            if (targetItem != null && targetItem.index < shortcuts.size) {
+                                                onMoveShortcut(draggedIndex, targetItem.index)
+                                                draggedIndex = targetItem.index
+                                                dragOffset = Offset.Zero
+                                            }
+                                        }
+                                    }
+
+                                    if (change.pressed) change.consume()
+                                }
+
+                                dragJob.cancel()
+                                popupJob.cancel()
+
+                                if (isDragging) {
+                                    draggedIndex = -1
+                                    dragOffset = Offset.Zero
+                                }
                             }
                         }
                     )
@@ -268,10 +271,7 @@ private fun ShortcutItem(
     Box(modifier = modifier) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.combinedClickable(
-                onClick = onOpen,
-                onLongClick = { showMenu = true }
-            )
+            modifier = Modifier.clickable { onOpen() }
         ) {
             Box(
                 modifier = Modifier
@@ -294,23 +294,36 @@ private fun ShortcutItem(
             )
         }
 
-        DropdownMenu(
-            expanded = showMenu,
-            onDismissRequest = { showMenu = false },
-            modifier = Modifier
-                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(24.dp))
-                .padding(vertical = 8.dp)
-        ) {
-            DropdownMenuItem(
-                text = { Text("Edit", color = MaterialTheme.colorScheme.onSurface) },
-                onClick = { showMenu = false; onEdit() },
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
-            DropdownMenuItem(
-                text = { Text("Remove", color = MaterialTheme.colorScheme.error) },
-                onClick = { showMenu = false; onRemove() },
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
+        if (showMenu) {
+            Popup(
+                onDismissRequest = { showMenu = false },
+                properties = PopupProperties(focusable = true)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.width(160.dp)
+                ) {
+                    Column {
+                        Text(
+                            text = "Edit",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showMenu = false; onEdit() }
+                                .padding(16.dp)
+                        )
+                        Text(
+                            text = "Remove",
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showMenu = false; onRemove() }
+                                .padding(16.dp)
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -323,7 +336,7 @@ private fun AddShortcutItem(
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.combinedClickable(onClick = onClick, onLongClick = {})
+        modifier = Modifier.clickable { onClick() }
     ) {
         Box(
             modifier = Modifier
