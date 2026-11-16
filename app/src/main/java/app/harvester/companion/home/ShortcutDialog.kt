@@ -58,7 +58,7 @@ fun ShortcutDialog(
                     val fixed = if (raw.startsWith("http://") || raw.startsWith("https://")) raw else "https://$raw"
                     val finalName = if (name.isBlank()) ShortcutStore.shortNameFor(fixed) else name.trim()
                     val icon = ShortcutStore.iconUrlFor(fixed)
-                    onSave(Shortcut(finalName, fixed, icon))
+                    onSave(Shortcut(name = finalName, url = fixed, iconUrl = icon))
                 },
                 enabled = url.isNotBlank()
             ) {
