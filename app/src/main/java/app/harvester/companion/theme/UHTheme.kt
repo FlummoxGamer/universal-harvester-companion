@@ -4,26 +4,33 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import app.harvester.companion.ThemePrefs
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Color(0xFF457B9D),
-    background = Color(0xFF0A0F1A),
-    surface = Color(0xFF171B21),
-    onPrimary = Color(0xFF0A0F1A),
-    onBackground = Color(0xFFE6E9EE),
-    onSurface = Color(0xFFE6E9EE)
+    primary = UH_Accent,
+    background = UH_Dark_Bg,
+    surface = UH_Dark_Surface,
+    surfaceVariant = UH_Dark_Surface2,
+    onPrimary = UH_Dark_Bg,
+    onBackground = UH_Dark_Text,
+    onSurface = UH_Dark_Text,
+    onSurfaceVariant = UH_Dark_Text,
+    error = UH_Dark_Red,
+    outline = UH_Dark_Border
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Color(0xFF457B9D),
-    background = Color(0xFFFFFFFF),
-    surface = Color(0xFFF4F6F9),
-    onPrimary = Color(0xFFFFFFFF),
-    onBackground = Color(0xFF1D3557),
-    onSurface = Color(0xFF1D3557)
+    primary = UH_Accent,
+    background = UH_Light_Bg,
+    surface = UH_Light_Surface,
+    surfaceVariant = UH_Light_Surface2,
+    onPrimary = UH_Light_Bg,
+    onBackground = UH_Light_Text,
+    onSurface = UH_Light_Text,
+    onSurfaceVariant = UH_Light_Text,
+    error = UH_Light_Red,
+    outline = UH_Light_Border
 )
 
 @Composable
