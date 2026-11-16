@@ -19,6 +19,7 @@ import androidx.compose.runtime.SideEffect
 import android.graphics.drawable.ColorDrawable
 import android.graphics.Color
 import androidx.compose.material3.Surface
+import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.fragment.app.FragmentContainerView
 import androidx.navigation.NavController
@@ -77,7 +78,7 @@ class HomeActivity : AppCompatActivity() {
                                 dialogWindowProvider?.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
                                 dialogWindowProvider?.window?.setDimAmount(0f)
                              }
-                             Surface(color = Color.Transparent, modifier = Modifier.fillMaxSize()) {
+                             Surface(color = ComposeColor.Transparent, modifier = Modifier.fillMaxSize()) {
                                  UhGlobalToolbar(
                                      viewModel = browserViewModel,
                                      navController = navController,
