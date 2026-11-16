@@ -57,8 +57,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.ui.zIndex
 import app.harvester.companion.R
 import app.harvester.companion.Shortcut
@@ -146,18 +146,18 @@ fun HomeScreen(
                 itemsIndexed(shortcuts, key = { _, item -> item.id }) { _, shortcut ->
                     ReorderableItem(reorderableState, key = shortcut.id) { isDragging ->
                         val elevation = if (isDragging) 8.dp else 0.dp
-                        ShortcutItem(
-                            name = shortcut.name,
-                            iconUrl = shortcut.iconUrl,
-                            textColor = textColor,
-                            shadowColor = shadowColor,
-                            onOpen = { onShortcutOpen(shortcut.url) },
-                            onEdit = { shortcutToEdit = shortcut },
-                            onRemove = { onRemoveShortcut(shortcut) },
-                            onShowPopup = { popupForShortcut = shortcut },
-                            modifier = Modifier
-                                .graphicsLayer { shadowElevation = elevation.toPx() }
-.draggableHandle(
+Box {
+    ShortcutItem(
+        name = shortcut.name,
+        iconUrl = shortcut.iconUrl,
+        textColor = textColor,
+        shadowColor = shadowColor,
+        onOpen = { onShortcutOpen(shortcut.url) },
+        onEdit = { shortcutToEdit = shortcut },
+        onRemove = { onRemoveShortcut(shortcut) },
+        onShowPopup = { popupForShortcut = shortcut },
+        modifier = Modifier
+            .draggableHandle(
     dragGestureDetector = DragGestureDetector.Compose { onDragStart, onDragEnd, onDragCancel, onDrag ->
         coroutineScope {
             awaitEachGesture {
@@ -172,7 +172,7 @@ fun HomeScreen(
                     isDragReady = true
                 }
                 val popupJob = launch {
-                    delay(500)
+                    delay(600)
                     if (!isDragging && !isPopupShowing && offset.getDistance() < 20f) {
                         isPopupShowing = true
                         popupForShortcut = shortcut
@@ -200,20 +200,34 @@ fun HomeScreen(
 
                     if (isDragging) {
                         onDrag(change, delta)
-                        change.consume()
                     }
+                    change.consume()
                 }
 
                 dragJob.cancel()
                 popupJob.cancel()
-                if (isDragging) onDragEnd() else onDragCancel()
+                                    if (isDragging) onDragEnd() else onDragCancel()
+                                }
+                            }
+                        }
+                    )
+            if (popupForShortcut?.id == shortcut.id) {
+                EditRemovePopup(
+                    shortcut = shortcut,
+                    onDismiss = { popupForShortcut = null },
+                    onEdit = { 
+                        shortcutToEdit = shortcut
+                        popupForShortcut = null 
+                    },
+                    onRemove = { 
+                        onRemoveShortcut(shortcut)
+                        popupForShortcut = null 
+                    }
+                )
             }
         }
     }
-)
-                        )
-                    }
-                }
+    }
                 item(key = "add_shortcut") {
                     AddShortcutItem(
                         textColor = textColor,
@@ -236,21 +250,6 @@ fun HomeScreen(
             ShadowedPencilIcon(
                 tint = textColor,
                 shadowColor = shadowColor
-            )
-        }
-
-        popupForShortcut?.let { shortcut ->
-            EditRemovePopup(
-                shortcut = shortcut,
-                onDismiss = { popupForShortcut = null },
-                onEdit = { 
-                    shortcutToEdit = shortcut
-                    popupForShortcut = null 
-                },
-                onRemove = { 
-                    onRemoveShortcut(shortcut)
-                    popupForShortcut = null 
-                }
             )
         }
     }
@@ -303,36 +302,23 @@ private fun EditRemovePopup(
     onEdit: () -> Unit,
     onRemove: () -> Unit
 ) {
-    Popup(
+    DropdownMenu(
+        expanded = true,
         onDismissRequest = onDismiss,
-        properties = PopupProperties(focusable = true)
+        modifier = Modifier
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(24.dp))
+            .width(180.dp)
     ) {
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            modifier = Modifier.width(180.dp)
-        ) {
-            Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                Text(
-                    text = "Edit",
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 16.sp,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onEdit() }
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                )
-                Text(
-                    text = "Remove",
-                    color = MaterialTheme.colorScheme.error,
-                    fontSize = 16.sp,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onRemove() }
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                )
-            }
-        }
+        DropdownMenuItem(
+            text = { Text("Edit", color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp) },
+            onClick = { onEdit() },
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
+        DropdownMenuItem(
+            text = { Text("Remove", color = MaterialTheme.colorScheme.error, fontSize = 16.sp) },
+            onClick = { onRemove() },
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
     }
 }
 
