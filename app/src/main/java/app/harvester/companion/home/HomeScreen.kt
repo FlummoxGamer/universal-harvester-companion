@@ -5,6 +5,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -152,10 +157,60 @@ fun HomeScreen(
                             onShowPopup = { popupForShortcut = shortcut },
                             modifier = Modifier
                                 .graphicsLayer { shadowElevation = elevation.toPx() }
-                                .draggableHandle(
-                                    dragGestureDetector = DragGestureDetector.H1,
-                                    onH1Popup = { popupForShortcut = shortcut }
-                                )
+.draggableHandle(
+    dragGestureDetector = DragGestureDetector.Compose { onDragStart, onDragEnd, onDragCancel, onDrag ->
+        coroutineScope {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                var isDragReady = false
+                var isPopupShowing = false
+                var isDragging = false
+                var offset = Offset.Zero
+
+                val dragJob = launch {
+                    delay(150)
+                    isDragReady = true
+                }
+                val popupJob = launch {
+                    delay(500)
+                    if (!isDragging && !isPopupShowing && offset.getDistance() < 20f) {
+                        isPopupShowing = true
+                        popupForShortcut = shortcut
+                    }
+                }
+
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                    if (!change.pressed) break
+                    if (isPopupShowing) break
+
+                    val delta = change.positionChange()
+                    offset += delta
+
+                    if (offset.getDistance() > 20f) {
+                        popupJob.cancel()
+                        if (isDragReady && !isDragging) {
+                            isDragging = true
+                            onDragStart(down.position)
+                        } else if (!isDragReady) {
+                            dragJob.cancel()
+                        }
+                    }
+
+                    if (isDragging) {
+                        onDrag(change, delta)
+                        change.consume()
+                    }
+                }
+
+                dragJob.cancel()
+                popupJob.cancel()
+                if (isDragging) onDragEnd() else onDragCancel()
+            }
+        }
+    }
+)
                         )
                     }
                 }
