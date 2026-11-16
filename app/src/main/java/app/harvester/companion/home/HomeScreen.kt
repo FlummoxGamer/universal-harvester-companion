@@ -59,7 +59,6 @@ import app.harvester.companion.R
 import app.harvester.companion.Shortcut
 import app.harvester.companion.utils.reorderable.rememberReorderableLazyGridState
 import app.harvester.companion.utils.reorderable.ReorderableItem
-import app.harvester.companion.utils.reorderable.draggableHandle
 import app.harvester.companion.utils.reorderable.DragGestureDetector
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
