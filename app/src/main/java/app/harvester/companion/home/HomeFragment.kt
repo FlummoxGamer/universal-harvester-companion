@@ -5,24 +5,17 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.fragment.findNavController
 import app.harvester.companion.CustomizeHomeActivity
 import app.harvester.companion.R
-import app.harvester.companion.WallpaperStore
 import app.harvester.companion.browser.BrowserViewModel
 import app.harvester.companion.theme.UHTheme
-import mozilla.components.browser.state.selector.selectedTab
 
 class HomeFragment : Fragment() {
 
@@ -35,20 +28,28 @@ class HomeFragment : Fragment() {
     ): View = ComposeView(requireContext()).apply {
         setContent {
             UHTheme {
-                val context = requireContext()
-                val wpPath = WallpaperStore.getCurrentWallpaper(context)
-                val isVideo = WallpaperStore.isCurrentVideo(context)
+                val homeViewModel: HomeViewModel = viewModel(this@HomeFragment)
+                val shortcuts by homeViewModel.shortcuts.collectAsState()
+                val wpPath by homeViewModel.wallpaperPath.collectAsState()
+                val isVideo by homeViewModel.isVideo.collectAsState()
+                val textColor by homeViewModel.textColor.collectAsState()
 
                 HomeScreen(
+                    shortcuts = shortcuts,
                     wallpaperPath = wpPath,
                     isVideo = isVideo,
-                    onEditClick = {
+                    textColorInt = textColor,
+                    onEditHomeClick = {
                         startActivity(Intent(requireContext(), CustomizeHomeActivity::class.java))
                     },
-                    onShortcutClick = { url ->
+                    onShortcutOpen = { url ->
                         val bundle = Bundle().apply { putString("url", url) }
                         findNavController().navigate(R.id.action_homeFragment_to_browserFragment, bundle)
-                    }
+                    },
+                    onMoveShortcut = { from, to -> homeViewModel.moveShortcut(from, to) },
+                    onAddShortcut = { homeViewModel.addShortcut(it) },
+                    onRemoveShortcut = { homeViewModel.removeShortcut(it) },
+                    onUpdateShortcut = { old, new -> homeViewModel.updateShortcut(old, new) }
                 )
             }
         }
