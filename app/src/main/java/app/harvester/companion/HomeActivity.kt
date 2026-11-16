@@ -8,6 +8,7 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -54,11 +55,13 @@ class HomeActivity : AppCompatActivity() {
                     )
 
                     if (::navController.isInitialized) {
-                        UhGlobalToolbar(
-                            viewModel = browserViewModel,
-                            navController = navController,
-                            onDismiss = { browserViewModel.exitEditMode() }
-                        )
+                        Box(modifier = Modifier.zIndex(1f)) {
+                            UhGlobalToolbar(
+                                viewModel = browserViewModel,
+                                navController = navController,
+                                onDismiss = { browserViewModel.exitEditMode() }
+                            )
+                        }
                     }
                 }
             }
