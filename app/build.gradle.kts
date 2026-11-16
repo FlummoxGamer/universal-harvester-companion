@@ -203,6 +203,7 @@ dependencies {
     implementation("androidx.media3:media3-ui:1.2.1")
     implementation("io.coil-kt:coil-video:2.6.0")
     implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.9")
+    implementation("sh.calvin.reorderable:reorderable:3.1.0")
 }
 
 tasks.configureEach {
