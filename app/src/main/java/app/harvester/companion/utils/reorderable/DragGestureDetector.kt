@@ -8,6 +8,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.positionChange
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -32,14 +33,15 @@ fun interface DragGestureDetector {
         }
     }
 
-    object H1 : DragGestureDetector {
-        override suspend fun PointerInputScope.detect(
-            onDragStart: (Offset) -> Unit,
-            onDragEnd: () -> Unit,
-            onDragCancel: () -> Unit,
-            onDrag: (change: PointerInputChange, dragAmount: Offset) -> Unit,
-            onH1Popup: () -> Unit
-        ) {
+object H1 : DragGestureDetector {
+    override suspend fun PointerInputScope.detect(
+        onDragStart: (Offset) -> Unit,
+        onDragEnd: () -> Unit,
+        onDragCancel: () -> Unit,
+        onDrag: (change: PointerInputChange, dragAmount: Offset) -> Unit,
+        onH1Popup: () -> Unit
+    ) {
+        coroutineScope {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
                 var isDragReady = false
@@ -90,6 +92,7 @@ fun interface DragGestureDetector {
             }
         }
     }
+}
 
     object LongPress : DragGestureDetector {
         override suspend fun PointerInputScope.detect(
