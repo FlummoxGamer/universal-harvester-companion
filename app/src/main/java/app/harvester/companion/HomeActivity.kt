@@ -13,6 +13,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.runtime.SideEffect
+import android.graphics.drawable.ColorDrawable
+import android.graphics.Color
+import androidx.compose.material3.Surface
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.fragment.app.FragmentContainerView
 import androidx.navigation.NavController
@@ -66,12 +72,19 @@ class HomeActivity : AppCompatActivity() {
                                 dismissOnClickOutside = false
                             )
                          ) {
-                            UhGlobalToolbar(
-                                viewModel = browserViewModel,
-                                navController = navController,
-                                onDismiss = { browserViewModel.exitEditMode() },
-                                modifier = Modifier.fillMaxSize()
-                            )
+                             val dialogWindowProvider = LocalView.current.parent as? DialogWindowProvider
+                             SideEffect {
+                                dialogWindowProvider?.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                                dialogWindowProvider?.window?.setDimAmount(0f)
+                             }
+                             Surface(color = Color.Transparent, modifier = Modifier.fillMaxSize()) {
+                                 UhGlobalToolbar(
+                                     viewModel = browserViewModel,
+                                     navController = navController,
+                                     onDismiss = { browserViewModel.exitEditMode() },
+                                     modifier = Modifier.fillMaxSize()
+                                 )
+                             }
                         }
                     }
                 }
