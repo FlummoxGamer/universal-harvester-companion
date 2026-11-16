@@ -155,7 +155,10 @@ class BrowserFragment : Fragment() {
         setupFeatures(components, engineView)
 
         if (initialUrl != null) {
+            UHLog.d("web_debug", "Loading initial URL: $initialUrl")
             components.useCases.sessionUseCases.loadUrl(initialUrl!!)
+        } else {
+            UHLog.w("web_debug", "BrowserFragment created without an initial URL.")
         }
 
         setupLogging(components)
