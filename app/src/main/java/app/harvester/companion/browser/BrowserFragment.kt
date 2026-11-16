@@ -155,11 +155,7 @@ class BrowserFragment : Fragment() {
         setupFeatures(components, engineView)
 
         if (initialUrl != null) {
-            if (components.store.state.tabs.isEmpty()) {
-                components.useCases.tabsUseCases.addTab(initialUrl!!)
-            } else {
-                components.useCases.sessionUseCases.loadUrl(initialUrl!!)
-            }
+            components.useCases.sessionUseCases.loadUrl(initialUrl!!)
         }
 
         setupLogging(components)
