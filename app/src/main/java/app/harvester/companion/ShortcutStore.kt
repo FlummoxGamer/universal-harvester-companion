@@ -19,7 +19,7 @@ object ShortcutStore {
             val out = mutableListOf<Shortcut>()
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
-                out.add(Shortcut(o.optString("name"), o.optString("url"), o.optString("iconUrl")))
+                out.add(Shortcut(o.optString("id", java.util.UUID.randomUUID().toString()), o.optString("name"), o.optString("url"), o.optString("iconUrl")))
             }
             out
         } catch (_: Exception) { mutableListOf() }
@@ -50,6 +50,7 @@ object ShortcutStore {
         val arr = JSONArray()
         for (s in list) {
             val o = JSONObject()
+            o.put("id", s.id)
             o.put("name", s.name)
             o.put("url", s.url)
             o.put("iconUrl", s.iconUrl)
@@ -91,9 +92,9 @@ object ShortcutStore {
     }
 
     private fun defaultList(): MutableList<Shortcut> = mutableListOf(
-        Shortcut("Duck AI", "https://duck.ai", iconUrlFor("https://duck.ai")),
-        Shortcut("YouTube", "https://m.youtube.com", iconUrlFor("https://m.youtube.com")),
-        Shortcut("Calmly", "https://www.calmlywriter.com/online/", iconUrlFor("https://www.calmlywriter.com")),
-        Shortcut("Cobalt", "https://cobalt.tools", iconUrlFor("https://cobalt.tools"))
-    )
+        Shortcut(name = "Duck AI", url = "https://duck.ai", iconUrl = iconUrlFor("https://duck.ai")),
+        Shortcut(name = "YouTube", url = "https://m.youtube.com", iconUrl = iconUrlFor("https://m.youtube.com")),
+        Shortcut(name = "Calmly", url = "https://www.calmlywriter.com/online/", iconUrl = iconUrlFor("https://www.calmlywriter.com")),
+        Shortcut(name = "Cobalt", url = "https://cobalt.tools", iconUrl = iconUrlFor("https://cobalt.tools"))
+   )
 }
