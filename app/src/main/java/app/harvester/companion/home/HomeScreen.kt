@@ -167,12 +167,10 @@ fun HomeScreen(
                 .align(Alignment.TopEnd)
                 .statusBarsPadding()
                 .padding(16.dp)
-        ) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_pencil),
-                contentDescription = "Edit Home",
+         ) {
+            ShadowedPencilIcon(
                 tint = textColor,
-                modifier = Modifier.shadow(8.dp, spotColor = shadowColor)
+                shadowColor = shadowColor
             )
         }
     }
