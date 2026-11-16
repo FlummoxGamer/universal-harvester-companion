@@ -20,6 +20,7 @@ import android.graphics.drawable.ColorDrawable
 import android.graphics.Color
 import androidx.compose.material3.Surface
 import androidx.compose.ui.graphics.Color as ComposeColor
+import app.harvester.companion.UHLog
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.fragment.app.FragmentContainerView
 import androidx.navigation.NavController
@@ -63,31 +64,38 @@ class HomeActivity : AppCompatActivity() {
                         }
                     )
 
-                    if (::navController.isInitialized) {
-                        Dialog(
-                            onDismissRequest = { },
-                            properties = DialogProperties(
-                                usePlatformDefaultWidth = false,
-                                decorFitsSystemWindows = false,
-                                dismissOnBackPress = false,
-                                dismissOnClickOutside = false
-                            )
-                         ) {
-                             val dialogWindowProvider = LocalView.current.parent as? DialogWindowProvider
-                             SideEffect {
-                                dialogWindowProvider?.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-                                dialogWindowProvider?.window?.setDimAmount(0f)
-                             }
-                             Surface(color = ComposeColor.Transparent, modifier = Modifier.fillMaxSize()) {
-                                 UhGlobalToolbar(
-                                     viewModel = browserViewModel,
-                                     navController = navController,
-                                     onDismiss = { browserViewModel.exitEditMode() },
-                                     modifier = Modifier.fillMaxSize()
-                                 )
-                             }
-                        }
-                    }
+if (::navController.isInitialized) {
+    UHLog.d("ui_debug", "NavController ready. Showing Address Bar Dialog.")
+    Dialog(
+        onDismissRequest = { },
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false
+        )
+    ) {
+        val dialogWindowProvider = LocalView.current.parent as? DialogWindowProvider
+        if (dialogWindowProvider == null) {
+            UHLog.e("ui_error", "Address Bar failed: DialogWindowProvider is null. UI will be invisible.")
+        } else {
+            SideEffect {
+                dialogWindowProvider.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                dialogWindowProvider.window?.setDimAmount(0f)
+            }
+        }
+        Surface(color = ComposeColor.Transparent, modifier = Modifier.fillMaxSize()) {
+            UhGlobalToolbar(
+                viewModel = browserViewModel,
+                navController = navController,
+                onDismiss = { browserViewModel.exitEditMode() },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    }
+} else {
+    UHLog.e("ui_error", "Address Bar failed: NavController not initialized yet.")
+}
                 }
             }
         }
