@@ -10,7 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.fragment.app.viewModels
 import androidx.navigation.fragment.findNavController
 import app.harvester.companion.CustomizeHomeActivity
 import app.harvester.companion.R
@@ -20,6 +20,7 @@ import app.harvester.companion.theme.UHTheme
 class HomeFragment : Fragment() {
 
     private val browserViewModel: BrowserViewModel by activityViewModels()
+    private val homeViewModel: HomeViewModel by viewModels()
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -28,7 +29,6 @@ class HomeFragment : Fragment() {
     ): View = ComposeView(requireContext()).apply {
         setContent {
             UHTheme {
-                val homeViewModel: HomeViewModel = viewModel(this@HomeFragment)
                 val shortcuts by homeViewModel.shortcuts.collectAsState()
                 val wpPath by homeViewModel.wallpaperPath.collectAsState()
                 val isVideo by homeViewModel.isVideo.collectAsState()
@@ -58,7 +58,6 @@ class HomeFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         browserViewModel.isEditing.value
-        val homeViewModel: HomeViewModel = androidx.lifecycle.viewmodel.compose.viewModel(this)
         homeViewModel.refresh()
     }
 }
