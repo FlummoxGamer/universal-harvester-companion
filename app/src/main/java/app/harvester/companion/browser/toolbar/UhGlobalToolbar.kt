@@ -30,7 +30,8 @@ import mozilla.components.browser.state.selector.selectedTab
 fun UhGlobalToolbar(
     viewModel: BrowserViewModel,
     navController: NavController,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val components = (context.applicationContext as UHApp).components
@@ -59,11 +60,12 @@ fun UhGlobalToolbar(
         }
     }
 
-    if (isEditing) {
-        UhSearchScreen(
-            viewModel = searchViewModel,
-            isBarBottom = isBarBottom,
-            addressBarContent = {
+    Box(modifier = modifier) {
+        if (isEditing) {
+            UhSearchScreen(
+                viewModel = searchViewModel,
+                isBarBottom = isBarBottom,
+                addressBarContent = {
                 UHAddressBar(
                     url = selectedTab?.content?.url ?: "",
                     isEditing = true,
@@ -105,11 +107,11 @@ fun UhGlobalToolbar(
             onDismiss = { viewModel.exitEditMode() },
             onSubmit = onSearchSubmit
         )
-    } else {
+}     else {
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = if (isBarBottom) Alignment.BottomCenter else Alignment.TopCenter
-        ) {
+         ) {
             UHAddressBar(
                 url = selectedTab?.content?.url ?: "",
                 isEditing = isEditing,
@@ -143,8 +145,9 @@ fun UhGlobalToolbar(
             )
         }
     }
+}
 
-    if (showSearchEnginePicker) {
+if (showSearchEnginePicker) {
         UHSearchEnginePicker(
             onDismiss = { showSearchEnginePicker = false },
             onSelect = { 
