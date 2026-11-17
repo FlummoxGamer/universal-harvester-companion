@@ -1,5 +1,6 @@
 package app.harvester.companion.home
 
+import androidx.compose.runtime.LaunchedEffect
 import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
