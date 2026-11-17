@@ -1,7 +1,6 @@
 package app.harvester.companion
 
 import android.content.Intent
-import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
@@ -9,20 +8,23 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.zIndex
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.runtime.SideEffect
+import android.graphics.drawable.ColorDrawable
+import android.graphics.Color
+import androidx.compose.material3.Surface
+import androidx.compose.ui.graphics.Color as ComposeColor
+import app.harvester.companion.UHLog
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import androidx.core.view.WindowCompat
 import androidx.fragment.app.FragmentContainerView
 import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
-import app.harvester.companion.browser.BrowserFragment
 import app.harvester.companion.browser.BrowserViewModel
 import app.harvester.companion.browser.toolbar.UhGlobalToolbar
 import app.harvester.companion.theme.UHTheme
@@ -30,19 +32,17 @@ import app.harvester.companion.theme.UHTheme
 class HomeActivity : AppCompatActivity() {
 
     private val browserViewModel: BrowserViewModel by viewModels()
-    private var activeNavController: NavController? = null
+    private lateinit var navController: NavController
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.statusBarColor = Color.TRANSPARENT
-        window.navigationBarColor = Color.TRANSPARENT
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
 
         setContent {
             UHTheme {
-                var navControllerState by remember { mutableStateOf<NavController?>(null) }
-
                 Box(modifier = Modifier.fillMaxSize()) {
                     AndroidView(
                         factory = { context ->
@@ -51,61 +51,67 @@ class HomeActivity : AppCompatActivity() {
                             }
                         },
                         modifier = Modifier.fillMaxSize(),
-                        update = {
+                        update = { view ->
                             if (supportFragmentManager.findFragmentById(R.id.nav_host_fragment) == null) {
-                                try {
-                                    val navHostFragment = NavHostFragment.create(R.navigation.nav_graph)
-                                    supportFragmentManager.beginTransaction()
-                                        .replace(R.id.nav_host_fragment, navHostFragment)
-                                        .setPrimaryNavigationFragment(navHostFragment)
-                                        .commitNow()
-                                    val controller = navHostFragment.navController
-                                    activeNavController = controller
-                                    navControllerState = controller
-                                    handleIntent(intent)
-                                } catch (e: Exception) {
-                                    UHLog.e("ui_error", "Failed to initialize NavHostFragment: ${e.message}", e)
-                                }
+                                val navHostFragment = NavHostFragment.create(R.navigation.nav_graph)
+                                supportFragmentManager.beginTransaction()
+                                    .replace(R.id.nav_host_fragment, navHostFragment)
+                                    .setPrimaryNavigationFragment(navHostFragment)
+                                    .commitNow()
+                                navController = navHostFragment.navController
+                                handleIntent(intent)
                             }
                         }
                     )
 
-                    val currentNav = navControllerState
-                    if (currentNav != null) {
-                        UhGlobalToolbar(
-                            viewModel = browserViewModel,
-                            navController = currentNav,
-                            onDismiss = { browserViewModel.exitEditMode() },
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .zIndex(10f)
-                        )
-                    } else {
-                        LaunchedEffect(Unit) {
-                            kotlinx.coroutines.delay(1500)
-                            if (navControllerState == null) {
-                                UHLog.e("ui_error", "Address Bar failed: NavController timed out.")
-                            }
-                        }
-                    }
+if (::navController.isInitialized) {
+    UHLog.d("ui_debug", "NavController ready. Showing Address Bar Dialog.")
+    Dialog(
+        onDismissRequest = { },
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false
+        )
+    ) {
+        val dialogWindowProvider = LocalView.current.parent as? DialogWindowProvider
+        if (dialogWindowProvider == null) {
+            UHLog.e("ui_error", "Address Bar failed: DialogWindowProvider is null. UI will be invisible.")
+        } else {
+            SideEffect {
+                dialogWindowProvider.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                dialogWindowProvider.window?.setDimAmount(0f)
+            }
+        }
+        Surface(color = ComposeColor.Transparent, modifier = Modifier.fillMaxSize()) {
+            UhGlobalToolbar(
+                viewModel = browserViewModel,
+                navController = navController,
+                onDismiss = { browserViewModel.exitEditMode() },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    }
+} else {
+    UHLog.e("ui_error", "Address Bar failed: NavController not initialized yet.")
+}
                 }
             }
         }
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                val nav = activeNavController
                 if (browserViewModel.isEditing.value) {
                     browserViewModel.exitEditMode()
-                } else if (nav != null && nav.currentDestination?.id == R.id.browserFragment) {
-                    val currentFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment)
-                        ?.childFragmentManager?.primaryNavigationFragment
-                    if (currentFragment is BrowserFragment) {
+                } else if (::navController.isInitialized && navController.currentDestination?.id == R.id.browserFragment) {
+                    val currentFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment)?.childFragmentManager?.primaryNavigationFragment
+                    if (currentFragment is app.harvester.companion.browser.BrowserFragment) {
                         if (!currentFragment.onBackPressed()) {
-                            nav.popBackStack()
+                            navController.popBackStack()
                         }
                     } else {
-                        nav.popBackStack()
+                        navController.popBackStack()
                     }
                 } else {
                     isEnabled = false
@@ -118,14 +124,11 @@ class HomeActivity : AppCompatActivity() {
 
     private fun handleIntent(intent: Intent?) {
         val url = intent?.data?.toString() ?: return
-        val nav = activeNavController
-        if (nav == null) {
-            UHLog.w("ui_warn", "Intent received before NavController ready: $url")
-            return
-        }
-        if (url.startsWith("http") && nav.currentDestination?.id == R.id.homeFragment) {
-            val bundle = Bundle().apply { putString("url", url) }
-            nav.navigate(R.id.action_homeFragment_to_browserFragment, bundle)
+        if (url.startsWith("http")) {
+            if (::navController.isInitialized && navController.currentDestination?.id == R.id.homeFragment) {
+                val bundle = Bundle().apply { putString("url", url) }
+                navController.navigate(R.id.action_homeFragment_to_browserFragment, bundle)
+            }
         }
     }
 
