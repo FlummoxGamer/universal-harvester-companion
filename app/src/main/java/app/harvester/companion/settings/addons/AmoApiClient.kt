@@ -23,8 +23,14 @@ data class AmoAddon(
     val homepageUrl: String,
     val author: String,
     val permissions: List<String>,
-    val isRecommended: Boolean = false
+    val isRecommended: Boolean = false,
+    val lastUpdated: String = "",
 )
+
+sealed class CatalogLoadResult {
+    data class Success(val addons: List<AmoAddon>) : CatalogLoadResult()
+    data class Error(val message: String) : CatalogLoadResult()
+}
 
 object AmoApiClient {
 
@@ -45,28 +51,51 @@ object AmoApiClient {
                 parseAddon(JSONObject(body))
             }
         } catch (e: Exception) {
-            UHLog.w("addons_warn", "AMO fetchAddon($slugOrGuid) failed: ${e.message}")
+            UHLog.w("addons_warn", "Catalog fetchAddon($slugOrGuid) failed: ${e.message}")
             null
         }
     }
 
-    fun fetchFeatured(pageSize: Int = 20): List<AmoAddon> {
-        val collectionUrl =
-            "$API_V5/../accounts/account/${BuildConfig.AMO_COLLECTION_USER}/collections/${BuildConfig.AMO_COLLECTION_NAME}/addons/?page_size=$pageSize&app=android"
-        val collectionResults = fetchListFromEndpoint(collectionUrl)
-        if (collectionResults.isNotEmpty()) return collectionResults
+    fun fetchCatalog(
+        category: CatalogCategory = CatalogCategory.FEATURED,
+        sort: CatalogSort = CatalogSort.POPULAR,
+        pageSize: Int = 24,
+    ): CatalogLoadResult {
+        if (category == CatalogCategory.FEATURED && sort == CatalogSort.POPULAR) {
+            val collectionUrl =
+                "https://addons.mozilla.org/api/v5/accounts/account/${BuildConfig.AMO_COLLECTION_USER}/collections/${BuildConfig.AMO_COLLECTION_NAME}/addons/?page_size=$pageSize&app=android"
+            val collectionResult = fetchListFromEndpoint(collectionUrl)
+            if (collectionResult is CatalogLoadResult.Success && collectionResult.addons.isNotEmpty()) {
+                return collectionResult
+            }
+        }
 
-        val fallbackUrl = "$API_V5/search/?app=android&sort=users&page_size=$pageSize&lang=en-US"
-        return fetchListFromEndpoint(fallbackUrl)
-    }
-
-    fun searchAddons(query: String, pageSize: Int = 24): List<AmoAddon> {
-        val q = URLEncoder.encode(query.trim(), "UTF-8")
-        val url = "$API_V5/search/?app=android&q=$q&sort=relevance&page_size=$pageSize&lang=en-US"
+        val catQuery = category.apiSlug?.let { "&category=$it" }.orEmpty()
+        val url = "$API_V5/search/?app=android&type=extension$catQuery&sort=${sort.apiParam}&page_size=$pageSize&lang=en-US"
         return fetchListFromEndpoint(url)
     }
 
-    private fun fetchListFromEndpoint(url: String): List<AmoAddon> {
+    fun fetchFeatured(pageSize: Int = 20): List<AmoAddon> {
+        return when (val result = fetchCatalog(CatalogCategory.FEATURED, CatalogSort.POPULAR, pageSize)) {
+            is CatalogLoadResult.Success -> result.addons
+            is CatalogLoadResult.Error -> emptyList()
+        }
+    }
+
+    fun searchAddons(
+        query: String,
+        sort: CatalogSort = CatalogSort.POPULAR,
+        pageSize: Int = 24,
+    ): CatalogLoadResult {
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) return fetchCatalog(CatalogCategory.FEATURED, sort, pageSize)
+        val q = URLEncoder.encode(trimmed, "UTF-8")
+        val sortParam = if (sort == CatalogSort.POPULAR) "relevance" else sort.apiParam
+        val url = "$API_V5/search/?app=android&type=extension&q=$q&sort=$sortParam&page_size=$pageSize&lang=en-US"
+        return fetchListFromEndpoint(url)
+    }
+
+    private fun fetchListFromEndpoint(url: String): CatalogLoadResult {
         return try {
             val req = Request.Builder()
                 .url(url)
@@ -74,21 +103,23 @@ object AmoApiClient {
                 .header("User-Agent", UhHttpClient.DEFAULT_USER_AGENT)
                 .build()
             UhHttpClient.client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return emptyList()
-                val body = resp.body?.string() ?: return emptyList()
+                if (!resp.isSuccessful) {
+                    return CatalogLoadResult.Error("Catalog unavailable (HTTP ${resp.code})")
+                }
+                val body = resp.body?.string() ?: return CatalogLoadResult.Error("Empty catalog response")
                 val root = JSONObject(body)
-                val results = root.optJSONArray("results") ?: return emptyList()
+                val results = root.optJSONArray("results") ?: return CatalogLoadResult.Success(emptyList())
                 val out = mutableListOf<AmoAddon>()
                 for (i in 0 until results.length()) {
                     val raw = results.optJSONObject(i) ?: continue
                     val addonJson = raw.optJSONObject("addon") ?: raw
                     parseAddon(addonJson)?.let { out.add(it) }
                 }
-                out
+                CatalogLoadResult.Success(out)
             }
         } catch (e: Exception) {
-            UHLog.w("addons_warn", "AMO request failed ($url): ${e.message}")
-            emptyList()
+            UHLog.w("addons_warn", "Catalog request failed ($url): ${e.message}")
+            CatalogLoadResult.Error("Couldn't reach extension catalog. Check your connection.")
         }
     }
 
@@ -113,7 +144,7 @@ object AmoApiClient {
         }
 
         val authors = obj.optJSONArray("authors")
-        val author = authors?.optJSONObject(0)?.optString("name").orEmpty().ifBlank { "Mozilla Add-ons" }
+        val author = authors?.optJSONObject(0)?.optString("name").orEmpty().ifBlank { "Extension Developer" }
         val ratings = obj.optJSONObject("ratings")
         val avgRating = ratings?.optDouble("average", 0.0) ?: 0.0
         val countRating = ratings?.optInt("count", 0) ?: 0
@@ -128,6 +159,7 @@ object AmoApiClient {
             .ifBlank { obj.optString("url").orEmpty() }
         val isRecommended = currentVersion?.optBoolean("is_recommended", false) == true ||
             (obj.optJSONObject("promoted")?.optString("category") == "recommended")
+        val lastUpdated = obj.optString("last_updated").orEmpty().take(10)
 
         return AmoAddon(
             guid = guid,
@@ -144,7 +176,8 @@ object AmoApiClient {
             homepageUrl = homepage,
             author = author,
             permissions = permsList,
-            isRecommended = isRecommended
+            isRecommended = isRecommended,
+            lastUpdated = lastUpdated,
         )
     }
 
@@ -167,6 +200,7 @@ object AmoApiClient {
             .replace("&lt;", "<")
             .replace("&gt;", ">")
             .replace("&quot;", "\"")
+            .replace("&#39;", "'")
             .replace(Regex("\\s+"), " ")
             .trim()
     }

@@ -33,6 +33,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,6 +52,9 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -61,12 +65,16 @@ import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
 import app.harvester.companion.UserscriptManager
 import app.harvester.companion.browser.BrowserViewModel
+import app.harvester.companion.browser.menu.BrowserExtensionsSheet
 import app.harvester.companion.browser.menu.CaptureQuickSheet
+import app.harvester.companion.browser.menu.ExtensionPopupSheet
 import app.harvester.companion.browser.menu.MainMenuDialogFragment
 import app.harvester.companion.browser.menu.ScriptsSheet
 import app.harvester.companion.browser.search.UHSearchEnginePicker
 import app.harvester.companion.search.UhSearchViewModel
 import app.harvester.companion.search.ui.UhSearchScreen
+import app.harvester.companion.settings.addons.UhExtensionManager
+import app.harvester.companion.settings.addons.ui.ExtensionPermissionPromptSheet
 import app.harvester.companion.settings.trustpanel.TrustPanelFragment
 import mozilla.components.browser.state.selector.selectedTab
 
@@ -92,9 +100,24 @@ fun UhGlobalToolbar(
     val showScriptsSheet by viewModel.showScriptsSheet.collectAsState()
     val showCaptureQuickSheet by viewModel.showCaptureQuickSheet.collectAsState()
     val showAddToHomeDialog by viewModel.showAddToHomeDialog.collectAsState()
+    val showExtensionsSheet by viewModel.showExtensionsSheet.collectAsState()
+    val pendingExtensionPrompt by UhExtensionManager.pendingPrompt.collectAsState()
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var isHostResumed by remember(lifecycleOwner) {
+        mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+    }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, _ ->
+            isHostResumed = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val browserState by components.store.stateFlow.collectAsState()
     val selectedTab = browserState.selectedTab
+    val activePopupExtension = browserState.extensions.values.firstOrNull { it.popupSession != null }
     val searchViewModel: UhSearchViewModel = viewModel()
     var showSearchEnginePicker by remember { mutableStateOf(false) }
 
@@ -400,6 +423,35 @@ fun UhGlobalToolbar(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = RoundedCornerShape(20.dp)
         )
+    }
+
+    if (showExtensionsSheet) {
+        BrowserExtensionsSheet(
+            onOpenUrlInTab = { targetUrl ->
+                if (isBrowser) {
+                    components.useCases.sessionUseCases.loadUrl(targetUrl)
+                } else {
+                    val bundle = Bundle().apply { putString("url", targetUrl) }
+                    navController.navigate(R.id.action_homeFragment_to_browserFragment, bundle)
+                }
+            },
+            onDismiss = { viewModel.closeExtensionsSheet() }
+        )
+    }
+
+    val popupExt = activePopupExtension
+    val popupSession = popupExt?.popupSession
+    if (popupExt != null && popupSession != null) {
+        ExtensionPopupSheet(
+            extensionId = popupExt.id,
+            extensionName = popupExt.name?.ifBlank { popupExt.id } ?: popupExt.id,
+            popupSession = popupSession
+        )
+    }
+
+    val activePrompt = pendingExtensionPrompt
+    if (isHostResumed && activePrompt != null) {
+        ExtensionPermissionPromptSheet(prompt = activePrompt)
     }
 }
 

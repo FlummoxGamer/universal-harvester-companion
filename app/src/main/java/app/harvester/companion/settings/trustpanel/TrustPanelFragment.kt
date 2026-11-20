@@ -274,6 +274,8 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                                     numberOfTrackersBlocked = trackersBlockedCount,
                                     ublockInstalled = ublockState.isInstalled,
                                     ublockGlobalEnabled = ublockState.isEnabled,
+                                    ublockUpdating = ublockState.isUpdating,
+                                    ublockError = ublockState.lastError,
                                     ublockSitePaused = isUblockSitePaused,
                                     ublockVersion = ublockState.version,
                                     ublockBlockedCount = ublockState.totalBlockedCount,
@@ -282,6 +284,12 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                                         store.state.sessionState?.let {
                                             components.useCases.sessionUseCases.reload(it.id)
                                         }
+                                    },
+                                    onRetryUblock = {
+                                        UBlockOriginManager.checkAndInstallOrUpdate(force = true)
+                                    },
+                                    onCancelUblock = {
+                                        UBlockOriginManager.cancelUpdate()
                                     },
                                     onOpenExtensions = {
                                         dismissAllowingStateLoss()

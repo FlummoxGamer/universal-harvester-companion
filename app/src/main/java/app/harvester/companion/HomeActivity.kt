@@ -155,8 +155,11 @@ class HomeActivity : AppCompatActivity() {
 
     private fun handleIntent(intent: Intent?, controller: NavController? = navControllerState) {
         val url = intent?.data?.toString() ?: return
-        if (!url.startsWith("http")) {
-            UHLog.w("ui_warn", "Ignored non-http intent URL: $url")
+        val isSupportedScheme = url.startsWith("http://") ||
+            url.startsWith("https://") ||
+            url.startsWith("moz-extension://")
+        if (!isSupportedScheme) {
+            UHLog.w("ui_warn", "Ignored unsupported intent URL: $url")
             return
         }
         if (controller == null) {

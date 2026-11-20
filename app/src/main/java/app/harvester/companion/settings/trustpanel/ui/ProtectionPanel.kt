@@ -43,10 +43,14 @@ internal fun ProtectionPanel(
     numberOfTrackersBlocked: Int,
     ublockInstalled: Boolean = false,
     ublockGlobalEnabled: Boolean = true,
+    ublockUpdating: Boolean = false,
+    ublockError: String? = null,
     ublockSitePaused: Boolean = false,
     ublockVersion: String = "",
     ublockBlockedCount: Int = 0,
     onToggleUblockSite: () -> Unit = {},
+    onRetryUblock: () -> Unit = {},
+    onCancelUblock: () -> Unit = {},
     onOpenExtensions: () -> Unit = {},
     websitePermissions: List<WebsitePermission>,
     onTrackerBlockedMenuClick: () -> Unit,
@@ -70,35 +74,63 @@ internal fun ProtectionPanel(
         // uBlock Origin Adblocker card integrated directly into Trust Panel
         MenuGroup {
             val ublockStatusDesc = when {
-                !ublockInstalled -> "Provisioning uBlock Origin..."
+                ublockUpdating -> "Updating uBlock Origin…"
+                !ublockError.isNullOrBlank() -> ublockError
+                !ublockInstalled -> "Not installed — tap Install"
                 !ublockGlobalEnabled -> "Disabled globally in Extensions"
                 ublockSitePaused -> "Paused for this site"
                 ublockVersion.isNotBlank() -> "Active (v$ublockVersion)"
                 else -> "Active protection"
             }
             MenuItem(
-                label = "uBlock Origin Adblocker",
+                label = "uBlock Origin Shield",
                 description = ublockStatusDesc,
                 beforeIconPainter = painterResource(id = R.drawable.fx_ic_shield_lock_24),
-                onClick = if (ublockInstalled && ublockGlobalEnabled) onToggleUblockSite else onOpenExtensions,
+                onClick = when {
+                    ublockUpdating -> onCancelUblock
+                    !ublockInstalled || !ublockError.isNullOrBlank() -> onRetryUblock
+                    ublockGlobalEnabled -> onToggleUblockSite
+                    else -> onOpenExtensions
+                },
                 afterContent = {
-                    if (ublockInstalled && ublockGlobalEnabled) {
-                        Switch(
-                            checked = !ublockSitePaused,
-                            onCheckedChange = { onToggleUblockSite() },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = MaterialTheme.colorScheme.background,
-                                checkedTrackColor = MaterialTheme.colorScheme.primary
+                    when {
+                        ublockUpdating -> {
+                            Text(
+                                text = "Cancel",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.clickable { onCancelUblock() }
                             )
-                        )
-                    } else {
-                        Text(
-                            text = "Manage",
-                            color = MaterialTheme.colorScheme.primary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.clickable { onOpenExtensions() }
-                        )
+                        }
+                        !ublockInstalled || !ublockError.isNullOrBlank() -> {
+                            Text(
+                                text = if (!ublockError.isNullOrBlank()) "Retry" else "Install",
+                                color = MaterialTheme.colorScheme.primary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.clickable { onRetryUblock() }
+                            )
+                        }
+                        ublockGlobalEnabled -> {
+                            Switch(
+                                checked = !ublockSitePaused,
+                                onCheckedChange = { onToggleUblockSite() },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = MaterialTheme.colorScheme.background,
+                                    checkedTrackColor = MaterialTheme.colorScheme.primary
+                                )
+                            )
+                        }
+                        else -> {
+                            Text(
+                                text = "Manage",
+                                color = MaterialTheme.colorScheme.primary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.clickable { onOpenExtensions() }
+                            )
+                        }
                     }
                 }
             )

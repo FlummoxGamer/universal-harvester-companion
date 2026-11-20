@@ -53,6 +53,8 @@ import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
 import app.harvester.companion.browser.BrowserViewModel
 import app.harvester.companion.settings.SettingsActivity
+import app.harvester.companion.settings.addons.BUILTIN_INTERNAL_EXTENSION_IDS
+import app.harvester.companion.settings.addons.ExtensionsActivity
 import app.harvester.companion.settings.addons.ScriptsActivity
 import app.harvester.companion.settings.appearance.CustomizeHomeActivity
 import app.harvester.companion.settings.tools.ToolsActivity
@@ -117,6 +119,9 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                     val canGoForward = selectedTab?.content?.canGoForward == true
                     val isBookmarked by browserViewModel.isBookmarked.collectAsState()
                     val zoomPercent by browserViewModel.pageZoomPercent.collectAsState()
+                    val activeExtensionsCount = browserState.extensions.values.count { ext ->
+                        ext.enabled && !ext.isBuiltIn && ext.id !in BUILTIN_INTERNAL_EXTENSION_IDS
+                    }
 
                     Box(
                         modifier = Modifier.fillMaxWidth(),
@@ -161,6 +166,10 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                                             dismissAllowingStateLoss()
                                             context.startActivity(Intent(context, CustomizeHomeActivity::class.java))
                                         },
+                                        onExtensions = {
+                                            dismissAllowingStateLoss()
+                                            context.startActivity(Intent(context, ExtensionsActivity::class.java))
+                                        },
                                         onScripts = {
                                             dismissAllowingStateLoss()
                                             context.startActivity(Intent(context, ScriptsActivity::class.java))
@@ -178,6 +187,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                                         isDesktopMode = isDesktopMode,
                                         isBookmarked = isBookmarked,
                                         zoomPercent = zoomPercent,
+                                        activeExtensionsCount = activeExtensionsCount,
                                         onBack = {
                                             dismissAllowingStateLoss()
                                             selectedTab?.let { components.useCases.sessionUseCases.goBack(it.id) }
@@ -234,6 +244,10 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                                             dismissAllowingStateLoss()
                                             browserViewModel.openAddToHomeDialog()
                                         },
+                                        onExtensions = {
+                                            dismissAllowingStateLoss()
+                                            browserViewModel.openExtensionsSheet()
+                                        },
                                         onScripts = {
                                             dismissAllowingStateLoss()
                                             browserViewModel.openScriptsSheet()
@@ -267,6 +281,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
         onCaptureTools: () -> Unit,
         onSettings: () -> Unit,
         onCustomizeHome: () -> Unit,
+        onExtensions: () -> Unit,
         onScripts: () -> Unit,
         onQuit: () -> Unit
     ) {
@@ -309,6 +324,11 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                         onClick = onCustomizeHome
                     )
                     CompactMenuItem(
+                        iconRes = R.drawable.fx_ic_extensions_24,
+                        label = "Extensions",
+                        onClick = onExtensions
+                    )
+                    CompactMenuItem(
                         iconRes = R.drawable.fx_ic_scripts_24,
                         label = "User Scripts",
                         onClick = onScripts
@@ -341,6 +361,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
         isDesktopMode: Boolean,
         isBookmarked: Boolean,
         zoomPercent: Int,
+        activeExtensionsCount: Int,
         onBack: () -> Unit,
         onForward: () -> Unit,
         onReload: () -> Unit,
@@ -352,6 +373,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
         onZoomClick: () -> Unit,
         onZoomStep: (Int) -> Unit,
         onAddToHome: () -> Unit,
+        onExtensions: () -> Unit,
         onScripts: () -> Unit,
         onCaptureTools: () -> Unit,
         onDownloads: () -> Unit,
@@ -465,6 +487,11 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                 color = MaterialTheme.colorScheme.surface,
                 modifier = Modifier.fillMaxWidth()
             ) {
+                val extensionsLabel = if (activeExtensionsCount > 0) {
+                    "Extensions ($activeExtensionsCount)"
+                } else {
+                    "Extensions"
+                }
                 if (isLandscape) {
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.weight(1f)) {
@@ -476,6 +503,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                             )
                             CompactMenuItem(R.drawable.fx_ic_search_24, "Find in Page", onClick = onFindInPage)
                             CompactMenuItem(R.drawable.uh_ic_plus_24, "Add to Home", onClick = onAddToHome)
+                            CompactMenuItem(R.drawable.fx_ic_extensions_24, extensionsLabel, onClick = onExtensions)
                         }
                         Column(modifier = Modifier.weight(1f)) {
                             CompactMenuItem(R.drawable.ic_code, "Page Scripts", onClick = onScripts)
@@ -495,6 +523,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                         )
                         CompactMenuItem(R.drawable.fx_ic_search_24, "Find in Page", onClick = onFindInPage)
                         CompactMenuItem(R.drawable.uh_ic_plus_24, "Add to Home Screen", onClick = onAddToHome)
+                        CompactMenuItem(R.drawable.fx_ic_extensions_24, extensionsLabel, onClick = onExtensions)
                         CompactMenuItem(R.drawable.ic_code, "Page Scripts", onClick = onScripts)
                         CompactMenuItem(R.drawable.ic_tools, "Session Capture Tools", onClick = onCaptureTools)
 

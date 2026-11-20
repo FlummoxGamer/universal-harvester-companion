@@ -86,6 +86,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private val _showAddToHomeDialog = MutableStateFlow(false)
     val showAddToHomeDialog: StateFlow<Boolean> = _showAddToHomeDialog
 
+    private val _showExtensionsSheet = MutableStateFlow(false)
+    val showExtensionsSheet: StateFlow<Boolean> = _showExtensionsSheet
+
     private var suggestJob: Job? = null
     private var lastBookmarkUrl: String = ""
 
@@ -306,6 +309,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun openAddToHomeDialog() { _showAddToHomeDialog.value = true }
     fun closeAddToHomeDialog() { _showAddToHomeDialog.value = false }
+
+    fun openExtensionsSheet() { _showExtensionsSheet.value = true }
+    fun closeExtensionsSheet() { _showExtensionsSheet.value = false }
 
     fun addToUhHomeGrid(url: String, title: String): Boolean {
         if (url.isBlank() || url == "about:blank") return false
