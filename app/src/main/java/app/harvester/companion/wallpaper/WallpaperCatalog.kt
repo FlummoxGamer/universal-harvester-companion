@@ -18,7 +18,6 @@ object WallpaperCatalog {
             "$REPO_CDN_BASE/motion/motion_4.mp4",
             "$REPO_CDN_BASE/motion/motion_5.mp4",
             "$REPO_CDN_BASE/motion/motion_6.mp4",
-            "$REPO_CDN_BASE/motion/motion_7.mp4",
             "$REPO_CDN_BASE/motion/motion_8.mp4",
             "$REPO_CDN_BASE/motion/motion_9.mp4",
             "$REPO_CDN_BASE/motion/motion_10.mp4",
