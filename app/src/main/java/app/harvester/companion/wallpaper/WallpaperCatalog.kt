@@ -10,10 +10,9 @@ import kotlin.math.roundToInt
 object WallpaperCatalog {
 
     private const val REPO_CDN_BASE =
-        "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@dev/wallpapers"
+        "https://cdn.jsdelivr.net/gh/FlummoxGamer/universal-harvester-companion@wallpaper"
 
     val categorizedWallpapers: Map<String, List<String>> = linkedMapOf(
-        // Verified existing assets in /wallpapers/motion/ (removed broken 404 motion_2 & motion_3)
         "Motion" to listOf(
             "$REPO_CDN_BASE/motion/motion_1.mp4",
             "$REPO_CDN_BASE/motion/motion_4.mp4",
