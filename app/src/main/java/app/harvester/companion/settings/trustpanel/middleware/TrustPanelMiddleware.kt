@@ -2,6 +2,16 @@ package app.harvester.companion.settings.trustpanel.middleware
 
 import androidx.activity.result.ActivityResultLauncher
 import androidx.core.net.toUri
+import app.harvester.companion.components.PermissionStorage
+import app.harvester.companion.settings.toggle
+import app.harvester.companion.settings.trustpanel.store.AutoplayValue
+import app.harvester.companion.settings.trustpanel.store.TrustPanelAction
+import app.harvester.companion.settings.trustpanel.store.TrustPanelState
+import app.harvester.companion.settings.trustpanel.store.WebsitePermission
+import app.harvester.companion.settings.trustpanel.store.WebsitePermissionsState
+import app.harvester.companion.trackingprotection.TrackerBuckets
+import app.harvester.companion.trackingprotection.TrackingProtectionCategory
+import app.harvester.companion.utils.SitePermissionRules
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -15,16 +25,6 @@ import mozilla.components.lib.publicsuffixlist.PublicSuffixList
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.Store
 import mozilla.components.support.ktx.kotlin.getOrigin
-import app.harvester.companion.components.PermissionStorage
-import app.harvester.companion.settings.trustpanel.store.AutoplayValue
-import app.harvester.companion.settings.trustpanel.store.TrustPanelAction
-import app.harvester.companion.settings.trustpanel.store.TrustPanelState
-import app.harvester.companion.settings.trustpanel.store.WebsitePermission
-import app.harvester.companion.settings.trustpanel.store.WebsitePermissionsState
-import app.harvester.companion.trackingprotection.TrackerBuckets
-import app.harvester.companion.trackingprotection.TrackingProtectionCategory
-import app.harvester.companion.utils.SitePermissionRules
-import app.harvester.companion.settings.toggle
 
 class TrustPanelMiddleware(
     private val engine: Engine,
@@ -87,14 +87,21 @@ class TrustPanelMiddleware(
     }
 
     private fun requestClearSiteDataDialog(currentState: TrustPanelState, store: Store<TrustPanelState, TrustPanelAction>) = scope.launch {
-        val host = currentState.sessionState?.content?.url?.toUri()?.host.orEmpty()
-        val domain = publicSuffixList.getPublicSuffixPlusOne(host).await()
-        domain?.let { store.dispatch(TrustPanelAction.UpdateBaseDomain(it)) }
+        val host = (currentState.sessionState?.content?.url ?: currentState.websiteInfoState.websiteUrl).toUri().host.orEmpty()
+        if (host.isBlank()) return@launch
+        val domain = try { publicSuffixList.getPublicSuffixPlusOne(host).await() } catch (_: Exception) { host }
+        store.dispatch(TrustPanelAction.UpdateBaseDomain(domain ?: host))
     }
 
     private fun clearSiteData(currentState: TrustPanelState) = scope.launch {
-        currentState.baseDomain?.let {
-            engine.clearData(host = it, data = Engine.BrowsingData.select(Engine.BrowsingData.AUTH_SESSIONS, Engine.BrowsingData.ALL_SITE_DATA))
+        val targetHost = currentState.baseDomain?.takeIf { it.isNotBlank() }
+            ?: currentState.websiteInfoState.websiteUrl.toUri().host.orEmpty()
+        if (targetHost.isNotBlank()) {
+            engine.clearData(
+                host = targetHost,
+                data = Engine.BrowsingData.select(Engine.BrowsingData.AUTH_SESSIONS, Engine.BrowsingData.ALL_SITE_DATA)
+            )
+            currentState.sessionState?.let { sessionUseCases.reload.invoke(it.id) }
         }
         onDismiss()
     }
@@ -104,13 +111,18 @@ class TrustPanelMiddleware(
             requestPermissionsLauncher.launch(permission.deviceFeature.androidPermissionsList)
             return@launch
         }
-        if (currentState.sitePermissions == null) {
-            store.dispatch(TrustPanelAction.Navigate.ManagePhoneFeature(permission.deviceFeature))
-            return@launch
-        }
         currentState.sessionState?.let { session ->
-            val updatedSitePermissions = currentState.sitePermissions.toggle(permission.deviceFeature)
-            permissionStorage.updateSitePermissions(sitePermissions = updatedSitePermissions, private = session.content.private)
+            val existing = currentState.sitePermissions
+            val updatedSitePermissions = if (existing == null) {
+                val origin = session.content.url.getOrigin() ?: return@launch
+                val created = rules.getSitePermissionsCustomSettingsRules().toSitePermissions(origin).toggle(permission.deviceFeature)
+                permissionStorage.add(sitePermissions = created, private = session.content.private)
+                created
+            } else {
+                val updated = existing.toggle(permission.deviceFeature)
+                permissionStorage.updateSitePermissions(sitePermissions = updated, private = session.content.private)
+                updated
+            }
             store.dispatch(TrustPanelAction.UpdateSitePermissions(updatedSitePermissions))
             store.dispatch(TrustPanelAction.WebsitePermissionAction.TogglePermission(permission.deviceFeature))
             sessionUseCases.reload.invoke(session.id)
@@ -122,7 +134,7 @@ class TrustPanelMiddleware(
         currentState.sessionState?.let { session ->
             val updatedSitePermissions: SitePermissions
             if (currentState.sitePermissions == null) {
-                val origin = requireNotNull(session.content.url.getOrigin())
+                val origin = session.content.url.getOrigin() ?: return@launch
                 updatedSitePermissions = rules.getSitePermissionsCustomSettingsRules().toSitePermissions(origin).updateAutoplayPermissions(autoplayValue)
                 permissionStorage.add(sitePermissions = updatedSitePermissions, private = session.content.private)
             } else {

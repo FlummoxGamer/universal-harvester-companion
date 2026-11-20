@@ -8,23 +8,19 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.ui.zIndex
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindowProvider
-import androidx.compose.ui.platform.LocalView
-import androidx.compose.runtime.SideEffect
-import android.graphics.drawable.ColorDrawable
-import android.graphics.Color
-import androidx.compose.material3.Surface
-import androidx.compose.ui.graphics.Color as ComposeColor
-import app.harvester.companion.UHLog
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.fragment.app.FragmentContainerView
 import androidx.navigation.NavController
+import androidx.navigation.NavOptions
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.fragment.NavHostFragment
+import app.harvester.companion.browser.BrowserFragment
 import app.harvester.companion.browser.BrowserViewModel
 import app.harvester.companion.browser.toolbar.UhGlobalToolbar
 import app.harvester.companion.theme.UHTheme
@@ -32,7 +28,7 @@ import app.harvester.companion.theme.UHTheme
 class HomeActivity : AppCompatActivity() {
 
     private val browserViewModel: BrowserViewModel by viewModels()
-    private lateinit var navController: NavController
+    private var navControllerState by mutableStateOf<NavController?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
@@ -42,7 +38,19 @@ class HomeActivity : AppCompatActivity() {
         window.navigationBarColor = android.graphics.Color.TRANSPARENT
 
         setContent {
-            UHTheme {
+            val controller = navControllerState
+            val backStackEntry = controller?.currentBackStackEntryAsState()?.value
+            val currentDestId = backStackEntry?.destination?.id
+            val isEditing by browserViewModel.isEditing.collectAsState()
+            val wallpaperState by WallpaperStore.wallpaperFlow(this).collectAsState()
+            val isOnHome = (currentDestId == R.id.homeFragment || currentDestId == null) && !isEditing
+            val lightStatusOverride = if (isOnHome) wallpaperState.isTopDark?.let { !it } else null
+            val lightNavOverride = if (isOnHome) wallpaperState.isBottomDark?.let { !it } else null
+
+            UHTheme(
+                lightStatusBarOverride = lightStatusOverride,
+                lightNavigationBarOverride = lightNavOverride
+            ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     AndroidView(
                         factory = { context ->
@@ -51,85 +59,125 @@ class HomeActivity : AppCompatActivity() {
                             }
                         },
                         modifier = Modifier.fillMaxSize(),
-                        update = { view ->
-                            if (supportFragmentManager.findFragmentById(R.id.nav_host_fragment) == null) {
-                                val navHostFragment = NavHostFragment.create(R.navigation.nav_graph)
-                                supportFragmentManager.beginTransaction()
-                                    .replace(R.id.nav_host_fragment, navHostFragment)
-                                    .setPrimaryNavigationFragment(navHostFragment)
-                                    .commitNow()
-                                navController = navHostFragment.navController
-                                handleIntent(intent)
+                        update = {
+                            try {
+                                val existing = supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as? NavHostFragment
+                                val host = if (existing == null) {
+                                    val created = NavHostFragment.create(R.navigation.nav_graph)
+                                    supportFragmentManager.beginTransaction()
+                                        .replace(R.id.nav_host_fragment, created)
+                                        .setPrimaryNavigationFragment(created)
+                                        .commitNow()
+                                    created
+                                } else {
+                                    existing
+                                }
+                                val navCtrl = host.navController
+                                if (navControllerState !== navCtrl) {
+                                    navControllerState = navCtrl
+                                    handleIntent(intent, navCtrl)
+                                }
+                            } catch (e: Exception) {
+                                UHLog.throwable("ui_error", "Failed to initialize NavHostFragment/NavController", e)
                             }
                         }
                     )
 
-if (::navController.isInitialized) {
-    UHLog.d("ui_debug", "NavController ready. Showing Address Bar Dialog.")
-    Dialog(
-        onDismissRequest = { },
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false,
-            dismissOnBackPress = false,
-            dismissOnClickOutside = false
-        )
-    ) {
-        val dialogWindowProvider = LocalView.current.parent as? DialogWindowProvider
-        if (dialogWindowProvider == null) {
-            UHLog.e("ui_error", "Address Bar failed: DialogWindowProvider is null. UI will be invisible.")
-        } else {
-            SideEffect {
-                dialogWindowProvider.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-                dialogWindowProvider.window?.setDimAmount(0f)
-            }
-        }
-        Surface(color = ComposeColor.Transparent, modifier = Modifier.fillMaxSize()) {
-            UhGlobalToolbar(
-                viewModel = browserViewModel,
-                navController = navController,
-                onDismiss = { browserViewModel.exitEditMode() },
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-    }
-} else {
-    UHLog.e("ui_error", "Address Bar failed: NavController not initialized yet.")
-}
+                    if (controller != null) {
+                        UhGlobalToolbar(
+                            viewModel = browserViewModel,
+                            navController = controller,
+                            onDismiss = { browserViewModel.exitEditMode() },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
+        }
+
+        android.os.Looper.myQueue().addIdleHandler {
+            try {
+                (application as? UHApp)?.components?.engine
+            } catch (_: Exception) {}
+            false
         }
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
+                val controller = navControllerState
                 if (browserViewModel.isEditing.value) {
                     browserViewModel.exitEditMode()
-                } else if (::navController.isInitialized && navController.currentDestination?.id == R.id.browserFragment) {
-                    val currentFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment)?.childFragmentManager?.primaryNavigationFragment
-                    if (currentFragment is app.harvester.companion.browser.BrowserFragment) {
-                        if (!currentFragment.onBackPressed()) {
-                            navController.popBackStack()
-                        }
-                    } else {
-                        navController.popBackStack()
-                    }
-                } else {
-                    isEnabled = false
-                    onBackPressedDispatcher.onBackPressed()
-                    isEnabled = true
+                    return
                 }
+                if (browserViewModel.showFindInPage.value) {
+                    browserViewModel.closeFindInPage()
+                    return
+                }
+                val navHost = supportFragmentManager.findFragmentById(R.id.nav_host_fragment)
+                val activeBrowser = navHost?.childFragmentManager?.fragments?.firstOrNull { it is BrowserFragment && it.isVisible } as? BrowserFragment
+                if (activeBrowser != null) {
+                    if (activeBrowser.onBackPressed()) {
+                        return
+                    }
+                    if (controller != null && controller.currentDestination?.id == R.id.browserFragment) {
+                        controller.popBackStack()
+                        return
+                    }
+                }
+                if (controller != null && controller.currentDestination?.id != R.id.homeFragment) {
+                    if (controller.popBackStack()) {
+                        return
+                    }
+                }
+                isEnabled = false
+                onBackPressedDispatcher.onBackPressed()
+                isEnabled = true
             }
         })
     }
 
-    private fun handleIntent(intent: Intent?) {
-        val url = intent?.data?.toString() ?: return
-        if (url.startsWith("http")) {
-            if (::navController.isInitialized && navController.currentDestination?.id == R.id.homeFragment) {
-                val bundle = Bundle().apply { putString("url", url) }
-                navController.navigate(R.id.action_homeFragment_to_browserFragment, bundle)
+    fun navigateFromMenu(destinationId: Int) {
+        window?.decorView?.post {
+            val controller = navControllerState
+                ?: (supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as? NavHostFragment)?.navController
+                ?: return@post
+            try {
+                if (controller.currentDestination?.id == destinationId) return@post
+                val options = NavOptions.Builder()
+                    .setLaunchSingleTop(true)
+                    .build()
+                controller.navigate(destinationId, null, options)
+            } catch (e: Exception) {
+                UHLog.throwable("ui_error", "Menu navigation failed for destination $destinationId", e)
             }
         }
+    }
+
+    private fun handleIntent(intent: Intent?, controller: NavController? = navControllerState) {
+        val url = intent?.data?.toString() ?: return
+        if (!url.startsWith("http")) {
+            UHLog.w("ui_warn", "Ignored non-http intent URL: $url")
+            return
+        }
+        if (controller == null) {
+            UHLog.w("ui_warn", "Cannot handle intent URL before NavController is ready: $url")
+            return
+        }
+        try {
+            if (controller.currentDestination?.id == R.id.homeFragment) {
+                val bundle = Bundle().apply { putString("url", url) }
+                controller.navigate(R.id.action_homeFragment_to_browserFragment, bundle)
+            } else {
+                (application as? UHApp)?.components?.useCases?.sessionUseCases?.loadUrl(url)
+            }
+        } catch (e: Exception) {
+            UHLog.throwable("ui_error", "Failed to navigate for intent URL: $url", e)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        (application as? UHApp)?.components?.resumePendingNetworkDownloads()
     }
 
     override fun onNewIntent(intent: Intent) {

@@ -15,7 +15,16 @@ class UhSearchStore(
 private fun reduce(state: UhSearchState, action: UhSearchAction): UhSearchState {
     return when (action) {
         is UhSearchAction.UpdateQuery -> state.copy(query = action.query)
-        is UhSearchAction.UpdateResults -> state.copy(items = action.items, clipboardUrl = action.clipboardUrl)
-        is UhSearchAction.ClearQuery -> state.copy(query = "", items = emptyList(), clipboardUrl = null)
+        is UhSearchAction.UpdateResults -> state.copy(
+            items = action.items,
+            clipboardUrl = action.clipboardUrl,
+            currentTab = action.currentTab
+        )
+        is UhSearchAction.ClearQuery -> state.copy(
+            query = "",
+            items = emptyList(),
+            clipboardUrl = null,
+            currentTab = null
+        )
     }
 }

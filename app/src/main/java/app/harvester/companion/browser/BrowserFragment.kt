@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
@@ -14,8 +15,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import app.harvester.companion.R
+import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
+import app.harvester.companion.core.downloads.DownloadLocationResolver
 import app.harvester.companion.databinding.FragmentBrowserBinding
 import kotlinx.coroutines.launch
 import mozilla.components.browser.state.selector.selectedTab
@@ -32,6 +35,10 @@ import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 
 class BrowserFragment : Fragment() {
 
+    companion object {
+        private const val KEY_HAS_LOADED_INITIAL_URL = "has_loaded_initial_url"
+    }
+
     private var _binding: FragmentBrowserBinding? = null
     private val binding get() = _binding!!
     private val sessionFeature = ViewBoundFeatureWrapper<SessionFeature>()
@@ -39,13 +46,36 @@ class BrowserFragment : Fragment() {
     private val appLinksFeature = ViewBoundFeatureWrapper<AppLinksFeature>()
     private val promptsFeature = ViewBoundFeatureWrapper<PromptFeature>()
     private val sitePermissionsFeature = ViewBoundFeatureWrapper<SitePermissionsFeature>()
-    
+    private val windowFeature = ViewBoundFeatureWrapper<mozilla.components.feature.tabs.WindowFeature>()
+
     private val viewModel: BrowserViewModel by activityViewModels()
     private var initialUrl: String? = null
+    private var hasLoadedInitialUrl = false
+
+    private val downloadsFeature = ViewBoundFeatureWrapper<mozilla.components.feature.downloads.DownloadsFeature>()
+    private var downloadDialog: androidx.appcompat.app.AlertDialog? = null
+    private var pendingStoragePermissionAction: ((Boolean) -> Unit)? = null
+
+    private val storagePermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
+            val allGranted = results.values.all { it }
+            if (!allGranted) {
+                UHLog.w("download_warn", "Storage permission denied when starting download.")
+            }
+            val callback = pendingStoragePermissionAction
+            pendingStoragePermissionAction = null
+            callback?.invoke(allGranted)
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         initialUrl = arguments?.getString("url")
+        hasLoadedInitialUrl = savedInstanceState?.getBoolean(KEY_HAS_LOADED_INITIAL_URL, false) ?: false
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(KEY_HAS_LOADED_INITIAL_URL, hasLoadedInitialUrl)
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -53,16 +83,13 @@ class BrowserFragment : Fragment() {
         return binding.root
     }
 
-    private val downloadsFeature = ViewBoundFeatureWrapper<mozilla.components.feature.downloads.DownloadsFeature>()
-    private var downloadDialog: androidx.appcompat.app.AlertDialog? = null
-
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         val context = requireContext()
         val components = (context.applicationContext as UHApp).components
 
         val downloadFileUtils = mozilla.components.support.utils.DefaultDownloadFileUtils(context.applicationContext) {
-            android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).path
+            DownloadLocationResolver.resolveTargetDirectory(context.applicationContext)
         }
 
         val downloadFeature = mozilla.components.feature.downloads.DownloadsFeature(
@@ -85,7 +112,9 @@ class BrowserFragment : Fragment() {
                 positiveButtonBackgroundColor = R.color.accent,
                 positiveButtonTextColor = R.color.bg,
             ),
-            onDownloadStartedListener = { downloadId ->
+            onDownloadStartedListener = { _ ->
+                dismissRenameDialog()
+                dismissDownloadDialogs()
                 components.appStore.dispatch(app.harvester.companion.components.appstate.AppAction.SnackbarAction.ShowSnackbar("Download started"))
             },
             onNeedToRequestPermissions = { permissions ->
@@ -96,32 +125,60 @@ class BrowserFragment : Fragment() {
                 dismissDownloadDialogs()
             },
             customFirstPartyDownloadDialog = { currentDownloadState, fileNameIfAlreadyDownloaded, positiveAction, negativeAction, openFileAction ->
-                if (canShowDownloadDialog()) {
-                    if (fileNameIfAlreadyDownloaded.value != null) {
-                        downloadDialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
-                            .setTitle(R.string.mozac_feature_downloads_again_dialog_title_with_unknown_size)
-                            .setMessage(getString(R.string.mozac_feature_downloads_already_exists_dialog_title, fileNameIfAlreadyDownloaded.value))
-                            .setPositiveButton(R.string.mozac_feature_downloads_open_existing_file) { dialog, _ ->
-                                openFileAction.value.invoke()
-                                dialog.dismiss()
-                            }
-                            .setNegativeButton(R.string.mozac_feature_downloads_dialog_download_again) { dialog, _ ->
-                                positiveAction.value.invoke(currentDownloadState.value)
-                                dialog.dismiss()
-                            }
-                            .setNeutralButton(R.string.mozac_feature_downloads_dialog_cancel) { dialog, _ ->
-                                negativeAction.value.invoke()
-                                dialog.dismiss()
-                            }
-                            .show()
-                    } else {
-                        showRenameDownloadDialog(
-                            fileName = currentDownloadState.value.fileName ?: "download",
-                            currentDownloadState = currentDownloadState,
-                            positiveAction = positiveAction,
-                            negativeAction = negativeAction,
-                        )
+                val resolvedDirectory = DownloadLocationResolver.resolveTargetDirectory(context.applicationContext)
+                val normalizedState = currentDownloadState.value.copy(directoryPath = resolvedDirectory)
+                val proceedWithDialogOrStart = {
+                    if (canShowDownloadDialog()) {
+                        if (fileNameIfAlreadyDownloaded.value != null) {
+                            downloadDialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+                                .setTitle(R.string.mozac_feature_downloads_again_dialog_title_with_unknown_size)
+                                .setMessage(getString(R.string.mozac_feature_downloads_already_exists_dialog_title, fileNameIfAlreadyDownloaded.value))
+                                .setPositiveButton(R.string.mozac_feature_downloads_open_existing_file) { dialog, _ ->
+                                    dialog.dismiss()
+                                    downloadDialog = null
+                                    openFileAction.value.invoke()
+                                }
+                                .setNegativeButton(R.string.mozac_feature_downloads_dialog_download_again) { dialog, _ ->
+                                    dialog.dismiss()
+                                    downloadDialog = null
+                                    positiveAction.value.invoke(normalizedState)
+                                }
+                                .setNeutralButton(R.string.mozac_feature_downloads_dialog_cancel) { dialog, _ ->
+                                    dialog.dismiss()
+                                    downloadDialog = null
+                                    negativeAction.value.invoke()
+                                }
+                                .setOnDismissListener { downloadDialog = null }
+                                .show()
+                        } else if (!SettingsPrefs.getBool(context, SettingsPrefs.K_ASK_DL, true)) {
+                            dismissRenameDialog()
+                            dismissDownloadDialogs()
+                            positiveAction.value.invoke(normalizedState)
+                        } else {
+                            showRenameDownloadDialog(
+                                fileName = normalizedState.fileName ?: "download",
+                                resolvedDirectory = resolvedDirectory,
+                                currentDownloadState = currentDownloadState,
+                                positiveAction = positiveAction,
+                                negativeAction = negativeAction,
+                            )
+                        }
                     }
+                }
+
+                val missingPermissions = DownloadLocationResolver.missingPermissionsForDownload(context)
+                if (missingPermissions.isNotEmpty()) {
+                    pendingStoragePermissionAction = { granted ->
+                        if (granted) {
+                            proceedWithDialogOrStart()
+                        } else {
+                            UHLog.w("download_warn", "Download cancelled or restricted because storage permission was not granted.")
+                            negativeAction.value.invoke()
+                        }
+                    }
+                    storagePermissionLauncher.launch(missingPermissions)
+                } else {
+                    proceedWithDialogOrStart()
                 }
             },
             customThirdPartyDownloadDialog = { downloaderApps, onAppSelected, negativeActionCallback ->
@@ -136,6 +193,7 @@ class BrowserFragment : Fragment() {
                 }
             },
             fileHasNotEnoughStorageDialog = { filename ->
+                UHLog.w("download_warn", "Insufficient storage space for download: ${filename.value}")
                 com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
                     .setTitle(R.string.download_file_has_not_enough_storage_dialog_title)
                     .setMessage(getString(R.string.download_file_has_not_enough_storage_dialog_message, filename.value))
@@ -147,26 +205,73 @@ class BrowserFragment : Fragment() {
 
         downloadsFeature.set(downloadFeature, owner = this, view = view)
 
-        val initStart = System.currentTimeMillis()
         val engineView = components.engine.createView(context, null)
         binding.swipeRefresh.addView(engineView.asView())
-        UHLog.d("perf", "Browser engine view created: ${System.currentTimeMillis() - initStart}ms")
 
         setupFeatures(components, engineView)
 
-        if (initialUrl != null) {
-            UHLog.d("web_debug", "Loading initial URL: $initialUrl")
-            components.useCases.sessionUseCases.loadUrl(initialUrl!!)
-        } else {
-            UHLog.w("web_debug", "BrowserFragment created without an initial URL.")
+        if (!hasLoadedInitialUrl) {
+            hasLoadedInitialUrl = true
+            if (!initialUrl.isNullOrBlank()) {
+                components.useCases.sessionUseCases.loadUrl(initialUrl!!)
+            } else if (components.store.state.selectedTab == null) {
+                UHLog.w("web_warn", "BrowserFragment created without an initial URL or selected tab.")
+            }
         }
 
         setupLogging(components)
         ViewCompat.setOnApplyWindowInsetsListener(binding.browserLayout) { v, insets ->
-            val top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
-            val bottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
-            v.setPadding(0, top, 0, bottom)
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.statusBars() or
+                    WindowInsetsCompat.Type.displayCutout() or
+                    WindowInsetsCompat.Type.navigationBars()
+            )
+            val density = v.resources.displayMetrics.density
+            val isLandscape = v.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            val toolbarClearancePx = ((if (isLandscape) 52f else 62f) * density).toInt()
+            val isBottom = viewModel.isBarBottom.value
+            val topPadding = bars.top + if (!isBottom) toolbarClearancePx else 0
+            val bottomPadding = bars.bottom + if (isBottom) toolbarClearancePx else 0
+            v.setPadding(bars.left, topPadding, bars.right, bottomPadding)
             insets
+        }
+        ViewCompat.requestApplyInsets(binding.browserLayout)
+
+        val backCallback = object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (viewModel.isEditing.value) {
+                    viewModel.exitEditMode()
+                    return
+                }
+                if (viewModel.showFindInPage.value) {
+                    viewModel.closeFindInPage(components.store.state.selectedTabId)
+                    return
+                }
+                if (viewModel.showZoomBar.value) {
+                    viewModel.closeZoomBar()
+                    return
+                }
+                if (onBackPressed()) {
+                    return
+                }
+                isEnabled = false
+                val nav = try { androidx.navigation.fragment.NavHostFragment.findNavController(this@BrowserFragment) } catch (_: Exception) { null }
+                if (nav != null && nav.currentDestination?.id == R.id.browserFragment) {
+                    nav.popBackStack()
+                } else {
+                    requireActivity().onBackPressedDispatcher.onBackPressed()
+                }
+                isEnabled = true
+            }
+        }
+        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backCallback)
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.isBarBottom.collect {
+                    ViewCompat.requestApplyInsets(binding.browserLayout)
+                }
+            }
         }
     }
 
@@ -178,6 +283,15 @@ class BrowserFragment : Fragment() {
                 components.useCases.sessionUseCases.goForward,
                 engineView,
                 null
+            ),
+            owner = this,
+            view = binding.root
+        )
+
+        windowFeature.set(
+            feature = mozilla.components.feature.tabs.WindowFeature(
+                store = components.store,
+                tabsUseCases = components.useCases.tabsUseCases
             ),
             owner = this,
             view = binding.root
@@ -248,11 +362,10 @@ class BrowserFragment : Fragment() {
             view = binding.root
         )
 
-        val sitePermissionsStorage = mozilla.components.feature.sitepermissions.OnDiskSitePermissionsStorage(requireContext())
         sitePermissionsFeature.set(
             feature = SitePermissionsFeature(
                 context = requireContext(),
-                storage = sitePermissionsStorage,
+                storage = components.geckoSitePermissionsStorage,
                 sessionId = null,
                 fragmentManager = parentFragmentManager,
                 onNeedToRequestPermissions = { requestPermissions(it, 2) },
@@ -281,13 +394,10 @@ class BrowserFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 components.store.stateFlow.collect { state ->
-                    state.selectedTab?.content?.let { content ->
-                        if (content.url != "about:blank" && content.url.isNotBlank()) {
-                            UHLog.netNav("GET", content.url, null, false, false)
-                        }
-                        if (content.loading && content.progress == 100) {
-                             UHLog.d("web", "Page loaded: ${content.url}")
-                        }
+                    val content = state.selectedTab?.content ?: return@collect
+                    viewModel.refreshBookmarkState(content.url)
+                    if (content.url.isBlank() && content.loading) {
+                        UHLog.w("web_warn", "Selected tab is loading a blank URL.")
                     }
                 }
             }
@@ -295,13 +405,103 @@ class BrowserFragment : Fragment() {
     }
 
     fun onBackPressed(): Boolean {
+        if (!isAdded || isDetached || context == null) return false
         val components = (requireContext().applicationContext as UHApp).components
+        if (sessionFeature.onBackPressed()) {
+            return true
+        }
         val state = components.store.state.selectedTab
         if (state != null && state.content.canGoBack) {
-            components.useCases.sessionUseCases.goBack.invoke()
+            components.useCases.sessionUseCases.goBack.invoke(state.id)
+            return true
+        }
+        val parentId = state?.parentId
+        if (parentId != null && components.store.state.tabs.any { it.id == parentId }) {
+            components.useCases.tabsUseCases.removeTab(state.id, selectParentIfExists = true)
             return true
         }
         return false
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val preview = app.harvester.companion.browser.tabs.TabPreviewCache.getLastActiveBitmap()
+        if (preview != null && !preview.isRecycled && _binding != null) {
+            binding.tabPreviewOverlay.setImageBitmap(preview)
+            binding.tabPreviewOverlay.visibility = View.VISIBLE
+            binding.tabPreviewOverlay.alpha = 1f
+            binding.tabPreviewOverlay.postDelayed({
+                if (_binding != null) {
+                    binding.tabPreviewOverlay.animate()
+                        .alpha(0f)
+                        .setDuration(250)
+                        .withEndAction {
+                            if (_binding != null) {
+                                binding.tabPreviewOverlay.visibility = View.GONE
+                                binding.tabPreviewOverlay.alpha = 1f
+                            }
+                        }
+                        .start()
+                }
+            }, 450)
+        }
+    }
+
+    override fun onPause() {
+        captureCurrentTabPreview()
+        super.onPause()
+    }
+
+    private fun captureCurrentTabPreview(onComplete: ((android.graphics.Bitmap?) -> Unit)? = null) {
+        if (!isAdded || _binding == null) {
+            onComplete?.invoke(null)
+            return
+        }
+        val currentTab = (requireContext().applicationContext as? UHApp)?.components?.store?.state?.selectedTab ?: return
+        val engineView = if (binding.swipeRefresh.childCount > 0) binding.swipeRefresh.getChildAt(0) else null
+        if (engineView == null) {
+            onComplete?.invoke(null)
+            return
+        }
+        val surfaceView = findSurfaceView(engineView)
+        if (surfaceView != null && surfaceView.width > 0 && surfaceView.height > 0) {
+            try {
+                val bitmap = android.graphics.Bitmap.createBitmap(surfaceView.width, surfaceView.height, android.graphics.Bitmap.Config.ARGB_8888)
+                android.view.PixelCopy.request(surfaceView, bitmap, { result ->
+                    if (result == android.view.PixelCopy.SUCCESS) {
+                        app.harvester.companion.browser.tabs.TabPreviewCache.put(currentTab.id, bitmap)
+                        onComplete?.invoke(bitmap)
+                    } else {
+                        onComplete?.invoke(null)
+                    }
+                }, android.os.Handler(android.os.Looper.getMainLooper()))
+                return
+            } catch (e: Exception) {
+                UHLog.w("preview_warn", "Surface PixelCopy failed: ${e.message}")
+            }
+        }
+        try {
+            if (engineView.width > 0 && engineView.height > 0) {
+                val bmp = android.graphics.Bitmap.createBitmap(engineView.width, engineView.height, android.graphics.Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(bmp)
+                engineView.draw(canvas)
+                app.harvester.companion.browser.tabs.TabPreviewCache.put(currentTab.id, bmp)
+                onComplete?.invoke(bmp)
+                return
+            }
+        } catch (_: Exception) {}
+        onComplete?.invoke(null)
+    }
+
+    private fun findSurfaceView(view: View): android.view.SurfaceView? {
+        if (view is android.view.SurfaceView) return view
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                val found = findSurfaceView(view.getChildAt(i))
+                if (found != null) return found
+            }
+        }
+        return null
     }
 
     override fun onStart() {
@@ -325,42 +525,68 @@ class BrowserFragment : Fragment() {
     }
 
     private fun canShowDownloadDialog(): Boolean {
-        if (!isAdded || view == null || viewLifecycleOwner.lifecycle.currentState == androidx.lifecycle.Lifecycle.State.DESTROYED) return false
+        if (!isAdded || isDetached || host == null || view == null) return false
+        val viewLifecycle = try { viewLifecycleOwner.lifecycle.currentState } catch (_: IllegalStateException) { return false }
+        if (viewLifecycle == androidx.lifecycle.Lifecycle.State.DESTROYED) return false
         return try {
             val isRenameFragmentShowing = childFragmentManager.findFragmentByTag(app.harvester.companion.downloads.RenameAndChangeLocationDialogFragment.RENAME_AND_CHANGE_LOCATION_DIALOG_TAG) != null
             downloadDialog == null && !isRenameFragmentShowing
-        } catch (e: IllegalStateException) {
+        } catch (_: IllegalStateException) {
             false
         }
     }
 
     private fun dismissRenameDialog() {
-        val renameDialog = childFragmentManager.findFragmentByTag(app.harvester.companion.downloads.RenameAndChangeLocationDialogFragment.RENAME_AND_CHANGE_LOCATION_DIALOG_TAG) as? app.harvester.companion.downloads.RenameAndChangeLocationDialogFragment
-        renameDialog?.dismissAllowingStateLoss()
+        if (!isAdded || isDetached || host == null) return
+        try {
+            val renameDialog = childFragmentManager.findFragmentByTag(app.harvester.companion.downloads.RenameAndChangeLocationDialogFragment.RENAME_AND_CHANGE_LOCATION_DIALOG_TAG) as? app.harvester.companion.downloads.RenameAndChangeLocationDialogFragment
+            renameDialog?.dismissAllowingStateLoss()
+        } catch (e: IllegalStateException) {
+            UHLog.w("download_warn", "Skipped rename dialog dismiss: ${e.message}")
+        }
     }
 
     private fun dismissDownloadDialogs() {
-        downloadDialog?.dismiss()
+        try {
+            downloadDialog?.dismiss()
+        } catch (_: Exception) {
+        } finally {
+            downloadDialog = null
+        }
     }
 
     private fun showRenameDownloadDialog(
         fileName: String,
+        resolvedDirectory: String,
         currentDownloadState: mozilla.components.feature.downloads.CurrentDownloadState,
         positiveAction: mozilla.components.feature.downloads.PositiveActionCallback,
         negativeAction: mozilla.components.feature.downloads.NegativeActionCallback,
     ) {
-        val existingFragment = childFragmentManager.findFragmentByTag(app.harvester.companion.downloads.RenameAndChangeLocationDialogFragment.RENAME_AND_CHANGE_LOCATION_DIALOG_TAG)
-        if (existingFragment == null && isAdded && !childFragmentManager.isStateSaved) {
+        if (!isAdded || isDetached || host == null) return
+        val existingFragment = try {
+            childFragmentManager.findFragmentByTag(app.harvester.companion.downloads.RenameAndChangeLocationDialogFragment.RENAME_AND_CHANGE_LOCATION_DIALOG_TAG)
+        } catch (_: IllegalStateException) {
+            return
+        }
+        val appCtx = requireContext().applicationContext
+        if (existingFragment == null && !childFragmentManager.isStateSaved) {
             val renameDialog = app.harvester.companion.downloads.RenameAndChangeLocationDialogFragment.newInstance(
                 fileName = fileName,
-                directoryPath = currentDownloadState.value.directoryPath,
+                directoryPath = resolvedDirectory,
                 contentSize = currentDownloadState.value.contentLength ?: 0,
             )
-            renameDialog.onConfirmSave = { newFileName, directoryPath ->
-                val downloadState = currentDownloadState.value.copy(fileName = newFileName, directoryPath = directoryPath)
+            renameDialog.onConfirmSave = { newFileName, directoryPath, rememberAsDefault ->
+                dismissRenameDialog()
+                dismissDownloadDialogs()
+                val finalDir = directoryPath.ifBlank { DownloadLocationResolver.resolveTargetDirectory(appCtx) }
+                if (rememberAsDefault && finalDir.isNotBlank()) {
+                    SettingsPrefs.setString(appCtx, "custom_download_uri", finalDir)
+                }
+                val downloadState = currentDownloadState.value.copy(fileName = newFileName, directoryPath = finalDir)
                 positiveAction.value.invoke(downloadState)
             }
             renameDialog.onCancel = {
+                dismissRenameDialog()
                 negativeAction.value.invoke()
             }
             renameDialog.show(childFragmentManager, app.harvester.companion.downloads.RenameAndChangeLocationDialogFragment.RENAME_AND_CHANGE_LOCATION_DIALOG_TAG)

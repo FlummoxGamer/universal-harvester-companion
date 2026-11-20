@@ -5,8 +5,8 @@ import androidx.navigation.NavController
 import kotlinx.coroutines.CoroutineScope
 import mozilla.components.lib.state.Middleware
 import mozilla.components.support.utils.DefaultDownloadFileUtils
-import mozilla.components.support.utils.DownloadFileUtils
 import app.harvester.companion.UHApp
+import app.harvester.companion.core.downloads.DownloadLocationResolver
 import app.harvester.companion.core.downloads.UhDefaultFileSizeFormatter
 import app.harvester.companion.core.downloads.UhDownloadEstimator
 import app.harvester.companion.data.downloads.UhDownloadUIAction
@@ -26,20 +26,22 @@ object UhDownloadUIMiddlewareProvider {
     internal fun provideMiddleware(
         coroutineScope: CoroutineScope,
         applicationContext: Context,
-        navController: NavController,
+        navControllerProvider: () -> NavController?,
     ): List<Middleware<UhDownloadUIState, UhDownloadUIAction>> {
         val components = (applicationContext as UHApp).components
         val downloadFileUtils = DefaultDownloadFileUtils(applicationContext) {
-            android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).path
+            DownloadLocationResolver.resolveTargetDirectory(applicationContext)
         }
 
         return listOf(
             UhDownloadUIMapperMiddleware(
                 browserStore = components.store,
+                waitingForNetworkIdsFlow = components.waitingForNetworkIds,
                 fileItemDescriptionProvider = UhDefaultFileItemDescriptionProvider(
                     context = applicationContext,
                     fileSizeFormatter = UhDefaultFileSizeFormatter(applicationContext),
                     downloadEstimator = UhDownloadEstimator(DefaultDateTimeProvider()),
+                    isWaitingForNetwork = { id -> id in components.waitingForNetworkIds.value },
                 ),
                 scope = coroutineScope,
             ),
@@ -47,7 +49,7 @@ object UhDownloadUIMiddlewareProvider {
             UhDownloadDeleteMiddleware(
                 undoDelay = 4000L,
                 removeDownloadUseCase = components.useCases.downloadsUseCases.removeDownload,
-                deleteBehaviorProvider = { 
+                deleteBehaviorProvider = {
                     when (app.harvester.companion.SettingsPrefs.getString(applicationContext, app.harvester.companion.SettingsPrefs.K_DELETE_BEHAVIOR, "ask")) {
                         "device" -> UhDeleteDownloadBehavior.DELETE_FROM_DEVICE
                         "history" -> UhDeleteDownloadBehavior.DELETE_FROM_HISTORY
@@ -56,8 +58,9 @@ object UhDownloadUIMiddlewareProvider {
                 }
             ),
             UhDownloadsServiceCommunicationMiddleware(applicationContext),
-            UhDownloadNavigationMiddleware(navController),
+            UhDownloadNavigationMiddleware(navControllerProvider),
             UhDownloadUIRenameMiddleware(
+                applicationContext = applicationContext,
                 browserStore = components.store,
                 scope = coroutineScope,
                 downloadFileUtils = downloadFileUtils,

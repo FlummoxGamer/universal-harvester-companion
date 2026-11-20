@@ -1,17 +1,19 @@
 package app.harvester.companion.components
 
+import android.app.DownloadManager
 import android.content.Context
+import android.content.Intent
 import android.content.res.Configuration
-import android.os.Environment
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import app.harvester.companion.BuildConfig
 import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.ThemePrefs
+import app.harvester.companion.UHLog
 import app.harvester.companion.browser.storage.sync.GlobalPlacesDependencyProvider
 import app.harvester.companion.browser.storage.sync.PlacesBookmarksStorage
 import app.harvester.companion.browser.storage.sync.PlacesHistoryStorage
-import app.harvester.companion.browser.storage.sync.PlacesHistoryStorageWorker
+import app.harvester.companion.core.downloads.DownloadLocationResolver
 import app.harvester.companion.core.downloads.UhDownloadMiddleware
 import app.harvester.companion.core.downloads.UhDownloadService
 import app.harvester.companion.data.downloads.UhDownloadStorage
@@ -21,8 +23,10 @@ import app.harvester.companion.service.nimbus.NimbusAppInfo
 import mozilla.components.browser.engine.gecko.GeckoEngine
 import mozilla.components.browser.engine.gecko.fetch.GeckoViewFetchClient
 import mozilla.components.browser.state.action.BrowserAction
+import mozilla.components.browser.state.action.DownloadAction
 import mozilla.components.browser.state.engine.EngineMiddleware
 import mozilla.components.browser.state.state.BrowserState
+import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.DefaultSettings
 import mozilla.components.concept.engine.Engine
@@ -117,21 +121,52 @@ class Components(val context: Context) {
 
     val downloadFileUtils: DownloadFileUtils by lazy {
         DefaultDownloadFileUtils(context.applicationContext) {
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).path
+            DownloadLocationResolver.resolveTargetDirectory(context.applicationContext)
         }
     }
 
     val downloadStorage: UhDownloadStorage by lazy { UhDownloadStorage(context.applicationContext) }
 
+    private val networkResumeLock = Any()
+    private val pendingNetworkResumeIds = mutableSetOf<String>()
+    private val deferredNetworkResumeIds = mutableSetOf<String>()
+    val waitingForNetworkIds = kotlinx.coroutines.flow.MutableStateFlow<Set<String>>(emptySet())
+
+    fun isNetworkAvailable(): Boolean {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager ?: return true
+        val network = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(network) ?: return false
+        return caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    fun markWaitingForNetwork(downloadId: String) {
+        synchronized(networkResumeLock) {
+            pendingNetworkResumeIds.add(downloadId)
+            waitingForNetworkIds.value = waitingForNetworkIds.value + downloadId
+        }
+    }
+
+    fun clearWaitingForNetwork(downloadId: String) {
+        synchronized(networkResumeLock) {
+            pendingNetworkResumeIds.remove(downloadId)
+            deferredNetworkResumeIds.remove(downloadId)
+            waitingForNetworkIds.value = waitingForNetworkIds.value - downloadId
+        }
+    }
+
     val downloadMiddleware: UhDownloadMiddleware by lazy {
         UhDownloadMiddleware(
             applicationContext = context.applicationContext,
             downloadServiceClass = UhDownloadService::class.java,
-            deleteFileFromStorage = { 
-                app.harvester.companion.SettingsPrefs.getString(context, app.harvester.companion.SettingsPrefs.K_DELETE_BEHAVIOR, "ask") == "device"
+            deleteFileFromStorage = {
+                SettingsPrefs.getString(context, SettingsPrefs.K_DELETE_BEHAVIOR, "ask") == "device"
             },
             downloadFileUtils = downloadFileUtils,
-            downloadStorage = downloadStorage
+            downloadStorage = downloadStorage,
+            isNetworkAvailableProvider = { isNetworkAvailable() },
+            isWaitingForNetworkProvider = { id -> id in waitingForNetworkIds.value },
+            onMarkedWaitingForNetwork = { id -> markWaitingForNetwork(id) },
+            onClearedWaitingForNetwork = { id -> clearWaitingForNetwork(id) },
         )
     }
 
@@ -140,20 +175,114 @@ class Components(val context: Context) {
         val browserStore = BrowserStore(
             middleware = middlewareList + EngineMiddleware.create(engine, trimMemoryAutomatically = false)
         )
-        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        app.harvester.companion.GeckoWebExtensionBridge.init(context.applicationContext, runtime, this)
+        app.harvester.companion.settings.addons.UBlockOriginManager.init(context.applicationContext, runtime)
+        registerNetworkResumeCallback(browserStore)
+        browserStore
+    }
+
+    private fun registerNetworkResumeCallback(browserStore: BrowserStore) {
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+        if (connectivityManager == null) {
+            UHLog.w("download_warn", "ConnectivityManager unavailable; network download auto-resume disabled.")
+            return
+        }
         try {
             connectivityManager.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+                override fun onLost(network: android.net.Network) {
+                    if (isNetworkAvailable()) return
+                    val activeDownloads = browserStore.state.downloads.values.filter {
+                        it.status == DownloadState.Status.DOWNLOADING ||
+                            it.status == DownloadState.Status.INITIATED
+                    }
+                    if (activeDownloads.isNotEmpty()) {
+                        activeDownloads.forEach { dl ->
+                            markWaitingForNetwork(dl.id)
+                            val pauseIntent = Intent(mozilla.components.feature.downloads.AbstractFetchDownloadService.ACTION_PAUSE).apply {
+                                setPackage(context.packageName)
+                                putExtra("downloadId", dl.id)
+                                putExtra(DownloadManager.EXTRA_DOWNLOAD_ID, dl.id)
+                                putExtra("INTENT_EXTRA_DOWNLOAD_ID", dl.id)
+                            }
+                            context.sendBroadcast(pauseIntent)
+                            browserStore.dispatch(DownloadAction.UpdateDownloadAction(dl.copy(status = DownloadState.Status.PAUSED)))
+                        }
+                        UHLog.w("download_warn", "Network lost; paused ${activeDownloads.size} download(s) in Waiting for Network state.")
+                    }
+                }
+
                 override fun onAvailable(network: android.net.Network) {
-                    browserStore.state.downloads.values.filter { it.status == mozilla.components.browser.state.state.content.DownloadState.Status.FAILED }.forEach { download ->
-                        val intent = android.content.Intent(context, UhDownloadService::class.java)
-                        intent.putExtra(android.app.DownloadManager.EXTRA_DOWNLOAD_ID, download.id)
-                        intent.action = mozilla.components.feature.downloads.AbstractFetchDownloadService.ACTION_TRY_AGAIN
-                        ContextCompat.startForegroundService(context, intent)
+                    val trackedIds = synchronized(networkResumeLock) {
+                        val copy = (pendingNetworkResumeIds + deferredNetworkResumeIds + waitingForNetworkIds.value).toSet()
+                        pendingNetworkResumeIds.clear()
+                        copy
+                    }
+                    val candidates = browserStore.state.downloads.values.filter { dl ->
+                        dl.id in trackedIds &&
+                            dl.status != DownloadState.Status.COMPLETED &&
+                            dl.status != DownloadState.Status.CANCELLED
+                    }
+                    if (candidates.isNotEmpty()) {
+                        attemptResumeDownloads(browserStore, candidates)
                     }
                 }
             })
-        } catch (e: Exception) {}
-        browserStore
+        } catch (e: Exception) {
+            UHLog.throwable("download_error", "Failed to register network callback for download auto-resume", e)
+        }
+    }
+
+    fun resumePendingNetworkDownloads() {
+        if (!isNetworkAvailable()) return
+        val ids = synchronized(networkResumeLock) {
+            val combined = (deferredNetworkResumeIds + waitingForNetworkIds.value).toSet()
+            if (combined.isEmpty()) return
+            deferredNetworkResumeIds.clear()
+            combined
+        }
+        val candidates = store.state.downloads.values.filter {
+            it.id in ids && (it.status == DownloadState.Status.PAUSED || it.status == DownloadState.Status.FAILED || it.status == DownloadState.Status.INITIATED)
+        }
+        if (candidates.isNotEmpty()) {
+            attemptResumeDownloads(store, candidates)
+        }
+    }
+
+    private fun attemptResumeDownloads(browserStore: BrowserStore, downloads: List<DownloadState>) {
+        downloads.forEach { download ->
+            try {
+                val resumeAction = if (download.status == DownloadState.Status.FAILED && download.currentBytesCopied == 0L) {
+                    mozilla.components.feature.downloads.AbstractFetchDownloadService.ACTION_TRY_AGAIN
+                } else {
+                    mozilla.components.feature.downloads.AbstractFetchDownloadService.ACTION_RESUME
+                }
+
+                val broadcast = Intent(resumeAction).apply {
+                    setPackage(context.packageName)
+                    putExtra("downloadId", download.id)
+                    putExtra(DownloadManager.EXTRA_DOWNLOAD_ID, download.id)
+                    putExtra("INTENT_EXTRA_DOWNLOAD_ID", download.id)
+                }
+                context.sendBroadcast(broadcast)
+
+                val resumedState = download.copy(status = DownloadState.Status.DOWNLOADING)
+                browserStore.dispatch(DownloadAction.UpdateDownloadAction(resumedState))
+
+                val serviceIntent = Intent(context, UhDownloadService::class.java).apply {
+                    action = resumeAction
+                    putExtra("downloadId", download.id)
+                    putExtra(DownloadManager.EXTRA_DOWNLOAD_ID, download.id)
+                    putExtra("INTENT_EXTRA_DOWNLOAD_ID", download.id)
+                }
+                ContextCompat.startForegroundService(context, serviceIntent)
+                clearWaitingForNetwork(download.id)
+            } catch (e: Exception) {
+                synchronized(networkResumeLock) {
+                    deferredNetworkResumeIds.add(download.id)
+                }
+                UHLog.w("download_warn", "Deferred network resume for download ${download.id} until app is foregrounded: ${e.message}")
+            }
+        }
     }
 
     val useCases: UseCases by lazy { UseCases(store, engine, downloadFileUtils) }
@@ -166,7 +295,7 @@ class Components(val context: Context) {
             downloadDelegate = mozilla.components.browser.engine.gecko.util.EngineDownloadDelegate(
                 context = context.applicationContext,
                 downloadLocation = {
-                    android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).path
+                    DownloadLocationResolver.resolveTargetDirectory(context.applicationContext)
                 }
             ),
             preferredColorScheme = buildPreferredColorScheme(),

@@ -52,7 +52,7 @@ class UpdateReceiver : BroadcastReceiver() {
         val n = NotificationCompat.Builder(context, chId)
             .setSmallIcon(R.drawable.ic_downloads)
             .setContentTitle("Update Ready")
-            .setContentText("Tap to install Universal Harvester")
+            .setContentText("Tap to install UH")
             .setContentIntent(pi)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)

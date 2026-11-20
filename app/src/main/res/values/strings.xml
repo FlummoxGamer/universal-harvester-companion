@@ -1,9 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Universal Harvester</string>
-    <string name="settings_title">Settings</string>
-    <string name="url_hint">Enter URL</string>
-    <string name="menu_capture">Capture Now</string>
+    <string name="app_name">UH</string>
+    <string name="ui_brand_name">UH</string>
+    <string name="tabs_tray_title">Tabs</string>
+    <string name="tabs_tray_normal">Tabs</string>
+    <string name="tabs_tray_private">Private</string>
+    <string name="tabs_tray_new_tab">New Tab</string>
+    <string name="tabs_tray_close_all">Close all tabs</string>
+    <string name="tabs_tray_close_all_private">Close all private tabs</string>
+    <string name="tabs_tray_select_tabs">Select tabs</string>
+    <string name="tabs_tray_close_selected">Close selected</string>
+    <string name="tabs_tray_share_selected">Share selected</string>
+    <string name="tabs_tray_done">Done</string>
     <string name="menu_auto">Auto Hunt</string>
     <string name="menu_probe">Auto Probe</string>
     <string name="menu_clear">Clear All State</string>
@@ -118,4 +126,12 @@
         <item quantity="one">%d tracker blocked on this site.</item>
         <item quantity="other">%d trackers blocked on this site.</item>
     </plurals>
+    <string name="download_item_waiting_for_network_description">%1$s / %2$s • waiting for network</string>
+    <string name="download_item_waiting_for_network_unknown_size">%1$s • waiting for network</string>
+    <string name="download_waiting_for_network_status">Waiting for network…</string>
+    <string name="download_remember_folder_checkbox">Remember as default download folder</string>
+    <string name="download_save_in_label">Save to</string>
+    <string name="download_change_folder">Change</string>
+    <string name="download_select_all_description">Select all downloads</string>
+    <string name="download_delete_selected_description">Delete selected downloads</string>
 </resources>

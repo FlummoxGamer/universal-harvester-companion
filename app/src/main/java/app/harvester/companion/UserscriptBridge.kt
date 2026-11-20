@@ -294,7 +294,7 @@ fun saveBlob(filename: String, mime: String, base64Data: String, pageUrl: String
             val n = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 android.app.Notification.Builder(ctx, chId)
             else @Suppress("DEPRECATION") android.app.Notification.Builder(ctx)
-            n.setContentTitle(title.ifBlank { "Harvester" })
+            n.setContentTitle(title.ifBlank { "UH" })
             n.setContentText(text)
             n.setSmallIcon(android.R.drawable.ic_dialog_info)
             nm.notify(System.currentTimeMillis().toInt(), n.build())

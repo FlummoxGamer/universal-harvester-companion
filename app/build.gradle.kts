@@ -12,8 +12,8 @@ android {
     applicationId = "app.harvester.companion"
     minSdk = 29
     targetSdk = 36
-    versionCode = 181
-    versionName = "2.4.111"
+    versionCode = 193
+    versionName = "2.4.123"
 
     ksp {
         arg("room.schemaLocation", "$projectDir/schemas")
@@ -26,19 +26,23 @@ android {
     buildConfigField("String", "AMO_SERVER_URL", "\"https://services.addons.mozilla.org\"")
 }
 
-    flavorDimensions += "version"
-    productFlavors {
-        create("stable") {
-            dimension = "version"
-            applicationIdSuffix = ""
-            versionNameSuffix = ""
-            resValue("string", "app_name", "UH")
-        }
-        create("dev") {
-            dimension = "version"
-            applicationIdSuffix = ".dev"
-            versionNameSuffix = "-dev"
-            resValue("string", "app_name", "UH Dev")
+    val isGitHubCi = System.getenv("GITHUB_ACTIONS") == "true"
+
+    if (isGitHubCi) {
+        flavorDimensions += "version"
+        productFlavors {
+            create("stable") {
+                dimension = "version"
+                applicationIdSuffix = ""
+                versionNameSuffix = ""
+                resValue("string", "app_name", "UH")
+            }
+            create("dev") {
+                dimension = "version"
+                applicationIdSuffix = ".dev"
+                versionNameSuffix = "-dev"
+                resValue("string", "app_name", "UH Dev")
+            }
         }
     }
 
@@ -58,12 +62,14 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("arm64-v8a", "armeabi-v7a")
-            isUniversalApk = false
+    if (isGitHubCi) {
+        splits {
+            abi {
+                isEnable = true
+                reset()
+                include("arm64-v8a", "armeabi-v7a")
+                isUniversalApk = false
+            }
         }
     }
 
@@ -85,11 +91,17 @@ android {
     signingConfigs {
         create("shared") {
             val ks = file("../uh-debug.jks")
-            if (ks.exists()) {
+            val localKs = file("${rootDir}/debug.keystore")
+            if (ks.exists() && ks.length() > 0) {
                 storeFile = ks
                 storePassword = "uhdebug123"
                 keyAlias = "uhdebug"
                 keyPassword = "uhdebug123"
+            } else if (localKs.exists() && localKs.length() > 0) {
+                storeFile = localKs
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
             }
         }
     }
@@ -110,7 +122,6 @@ android {
 }
 
 kotlin {
-    jvmToolchain(17)
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }

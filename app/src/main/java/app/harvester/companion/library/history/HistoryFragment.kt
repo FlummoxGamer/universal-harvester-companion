@@ -5,43 +5,51 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.os.bundleOf
 import androidx.fragment.app.Fragment
 import androidx.fragment.compose.content
+import androidx.navigation.NavOptions
+import androidx.navigation.fragment.findNavController
 import app.harvester.companion.R
 import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
+import app.harvester.companion.settings.components.UhSettingsScaffold
 import app.harvester.companion.theme.UHTheme
 import app.harvester.companion.utils.SearchHistoryUtils
 import java.text.SimpleDateFormat
@@ -60,18 +68,47 @@ class HistoryFragment : Fragment() {
         savedInstanceState: Bundle?
     ): View = content {
         UHTheme {
-            HistoryScreen()
+            HistoryScreen(
+                onNavigateBack = {
+                    try {
+                        if (!findNavController().popBackStack()) {
+                            activity?.onBackPressedDispatcher?.onBackPressed()
+                        }
+                    } catch (e: Exception) {
+                        UHLog.throwable("ui_error", "Failed navigating back from HistoryFragment", e)
+                        activity?.onBackPressedDispatcher?.onBackPressed()
+                    }
+                },
+                onOpenUrl = { url ->
+                    val components = (requireContext().applicationContext as UHApp).components
+                    components.useCases.sessionUseCases.loadUrl(url)
+                    try {
+                        val navController = findNavController()
+                        if (!navController.popBackStack(R.id.browserFragment, false)) {
+                            val options = NavOptions.Builder()
+                                .setPopUpTo(R.id.historyFragment, true)
+                                .build()
+                            navController.navigate(R.id.browserFragment, bundleOf("url" to url), options)
+                        }
+                    } catch (e: Exception) {
+                        UHLog.throwable("ui_error", "Failed navigating from History to browser for $url", e)
+                    }
+                }
+            )
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HistoryScreen() {
+fun HistoryScreen(
+    onNavigateBack: () -> Unit,
+    onOpenUrl: (String) -> Unit
+) {
     val context = LocalContext.current
     val components = (context.applicationContext as UHApp).components
     var historyItems by remember { mutableStateOf<List<VisitInfo>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+    var showClearDialog by remember { mutableStateOf(false) }
     val dateFormat = remember { SimpleDateFormat("MMM dd, HH:mm", Locale.US) }
     val coroutineScope = rememberCoroutineScope()
 
@@ -89,74 +126,84 @@ fun HistoryScreen() {
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("History", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = { (context as? androidx.activity.ComponentActivity)?.onBackPressedDispatcher?.onBackPressed() }) {
-                        Icon(painterResource(R.drawable.ic_back), contentDescription = "Back")
+    if (showClearDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearDialog = false },
+            title = { Text("Clear history?") },
+            text = { Text("All browsing history entries will be removed from this device.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showClearDialog = false
+                    coroutineScope.launch {
+                        try {
+                            components.placesHistoryStorage.deleteEverything()
+                            historyItems = emptyList()
+                        } catch (e: Exception) {
+                            UHLog.throwable("history", "Failed to clear history", e)
+                        }
                     }
-                },
-                actions = {
-                    IconButton(onClick = { 
-                        androidx.appcompat.app.AlertDialog.Builder(context)
-                            .setTitle("Clear history?")
-                            .setPositiveButton("Clear") { _, _ ->
-                                coroutineScope.launch {
-                                    try {
-                                        components.placesHistoryStorage.deleteEverything()
-                                        historyItems = emptyList()
-                                    } catch (e: Exception) {
-                                        UHLog.throwable("history", "Failed to clear history", e)
-                                    }
-                                }
-                            }
-                            .setNegativeButton("Cancel", null)
-                            .show()
-                    }) {
-                        Icon(painterResource(R.drawable.ic_delete), contentDescription = "Clear History")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
-            )
-        }
-    ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding).background(MaterialTheme.colorScheme.background)) {
-if (isLoading) {
-    key("loading") { CircularProgressIndicator(modifier = Modifier.align(Alignment.Center)) }
-} else if (historyItems.isEmpty()) {
-    key("empty") {
-        Text(
-            text = "No history yet",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.align(Alignment.Center)
+                }) {
+                    Text("Clear", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearDialog = false }) {
+                    Text("Cancel")
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         )
     }
-} else {
-    key("list") {
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
-            items(
-                items = historyItems,
-                key = { item -> "${item.visitTime}_${item.url}" }
-            ) { item ->
-                HistoryItemRow(
-                    item = item,
-                    dateFormat = dateFormat,
-                    onClick = {
-                        val intent = android.content.Intent(context, app.harvester.companion.HomeActivity::class.java).apply {
-                            data = android.net.Uri.parse(item.url)
-                            addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
+
+    UhSettingsScaffold(
+        title = "History",
+        onBack = onNavigateBack,
+        scrollable = false,
+        actions = {
+            if (historyItems.isNotEmpty()) {
+                IconButton(onClick = { showClearDialog = true }) {
+                    Icon(
+                        painter = painterResource(R.drawable.fx_ic_delete_24),
+                        contentDescription = "Clear History",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+        }
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (isLoading) {
+                key("loading") { CircularProgressIndicator(modifier = Modifier.align(Alignment.Center)) }
+            } else if (historyItems.isEmpty()) {
+                key("empty") {
+                    Text(
+                        text = "No history yet",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
+            } else {
+                key("list") {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        items(
+                            items = historyItems,
+                            key = { item -> "${item.visitTime}_${item.url}" }
+                        ) { item ->
+                            HistoryItemRow(
+                                item = item,
+                                dateFormat = dateFormat,
+                                onClick = { onOpenUrl(item.url) }
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
                         }
-                        context.startActivity(intent)
                     }
-                )
+                }
             }
         }
     }
-}
-}
-}
 }
 
 @Composable
@@ -168,12 +215,15 @@ fun HistoryItemRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 14.dp)
     ) {
         Text(
-            text = item.title ?: item.url,
+            text = item.title?.ifBlank { item.url } ?: item.url,
             color = MaterialTheme.colorScheme.onSurface,
-            fontSize = 16.sp,
+            fontSize = 15.sp,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
@@ -188,7 +238,7 @@ fun HistoryItemRow(
         Text(
             text = dateFormat.format(Date(item.visitTime)),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 10.sp,
+            fontSize = 11.sp,
             modifier = Modifier.padding(top = 4.dp)
         )
     }

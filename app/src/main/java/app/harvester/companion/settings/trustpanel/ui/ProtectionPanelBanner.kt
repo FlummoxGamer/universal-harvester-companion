@@ -56,7 +56,7 @@ private fun protectionPanelBannerContent(
     numberOfTrackersBlocked: Int,
 ): ProtectionPanelBannerContent {
     val defaultBackground = MaterialTheme.colorScheme.surfaceVariant
-    val appName = "UH"
+    val appName = app.harvester.companion.UHBrand.NAME
     val protectedTitle = stringResource(id = R.string.protection_panel_banner_protected_title, appName)
     return when {
         !isSecured ->

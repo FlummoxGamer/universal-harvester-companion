@@ -41,11 +41,13 @@ fun UHSearchOverlay(
                 iconState = if (selectedTab?.content?.url?.startsWith("https") == true) 1 else 0,
                 isWallpaperActive = false,
                 editText = editText,
-                onEditTextChanged = { 
+                progress = 0,
+                isLoading = false,
+                onEditTextChanged = {
                     viewModel.onTextChanged(it)
                     searchViewModel.onQueryChanged(it, isBarBottom)
                 },
-                onSubmit = { 
+                onSubmit = {
                     val target = viewModel.normalize(it)
                     if (target.isNotBlank()) {
                         components.useCases.sessionUseCases.loadUrl(target)
@@ -53,7 +55,7 @@ fun UHSearchOverlay(
                     }
                 },
                 onEditStart = { },
-                onClear = { 
+                onClear = {
                     viewModel.onTextChanged("")
                     searchViewModel.clearQuery(isBarBottom)
                 },
@@ -72,6 +74,10 @@ fun UHSearchOverlay(
                 components.useCases.sessionUseCases.loadUrl(target)
                 viewModel.exitEditMode()
             }
+        },
+        onFillUrl = { url ->
+            viewModel.onTextChanged(url)
+            searchViewModel.onQueryChanged(url, isBarBottom)
         }
     )
 }
