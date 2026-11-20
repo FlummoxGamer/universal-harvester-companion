@@ -1,10 +1,32 @@
 package app.harvester.companion
 
 import android.content.Context
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 object SettingsPrefs {
     private const val NAME = "uh_settings"
-    private fun p(ctx: Context) = ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+    private fun p(ctx: Context) = ctx.applicationContext.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+
+    private val _addressBarBottomFlow = MutableStateFlow<Boolean?>(null)
+    private val _customDownloadUriFlow = MutableStateFlow<String?>(null)
+
+    fun addressBarBottomFlow(ctx: Context): StateFlow<Boolean> {
+        if (_addressBarBottomFlow.value == null) {
+            _addressBarBottomFlow.value = getInt(ctx, K_ADDRESS_BAR_POSITION, 1) == 1
+        }
+        @Suppress("UNCHECKED_CAST")
+        return _addressBarBottomFlow.asStateFlow() as StateFlow<Boolean>
+    }
+
+    fun customDownloadUriFlow(ctx: Context): StateFlow<String> {
+        if (_customDownloadUriFlow.value == null) {
+            _customDownloadUriFlow.value = getString(ctx, "custom_download_uri", "")
+        }
+        @Suppress("UNCHECKED_CAST")
+        return _customDownloadUriFlow.asStateFlow() as StateFlow<String>
+    }
 
     fun getBool(ctx: Context, key: String, def: Boolean = false): Boolean =
         p(ctx).getBoolean(key, def)
@@ -12,12 +34,21 @@ object SettingsPrefs {
         p(ctx).edit().putBoolean(key, v).apply()
 
     fun getInt(ctx: Context, key: String, def: Int = 0): Int = p(ctx).getInt(key, def)
-    fun setInt(ctx: Context, key: String, v: Int) = p(ctx).edit().putInt(key, v).apply()
+    fun setInt(ctx: Context, key: String, v: Int) {
+        p(ctx).edit().putInt(key, v).apply()
+        if (key == K_ADDRESS_BAR_POSITION) {
+            _addressBarBottomFlow.value = (v == 1)
+        }
+    }
 
     fun getString(ctx: Context, key: String, def: String = ""): String =
         p(ctx).getString(key, def) ?: def
-    fun setString(ctx: Context, key: String, v: String) =
+    fun setString(ctx: Context, key: String, v: String) {
         p(ctx).edit().putString(key, v).apply()
+        if (key == "custom_download_uri") {
+            _customDownloadUriFlow.value = v
+        }
+    }
 
  
     const val K_ENHANCE_DARK = "enhance_dark"
@@ -53,4 +84,10 @@ object SettingsPrefs {
     const val K_SEARCH_AUTOCOMPLETE = "search_autocomplete"
     const val K_SEARCH_REMOTE = "search_remote"
     const val K_SHOW_FULL_URL = "show_full_url"
+
+    const val K_TAB_SLEEP_SECONDS = "tab_sleep_seconds"
+    const val K_TAB_CONFIRM_SWIPE = "tab_confirm_swipe"
+    const val K_TAB_AUTO_COLLAPSE_GROUPS = "tab_auto_collapse_groups"
+    const val K_UBLOCK_ENABLED = "ublock_enabled"
+    const val K_UBLOCK_AUTO_UPDATE = "ublock_auto_update"
 }

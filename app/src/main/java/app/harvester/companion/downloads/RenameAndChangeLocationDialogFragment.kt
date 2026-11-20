@@ -4,31 +4,41 @@ import android.app.Dialog
 import android.content.ActivityNotFoundException
 import android.content.DialogInterface
 import android.content.Intent
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
-import android.os.Environment
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.unit.dp
 import androidx.fragment.app.DialogFragment
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import mozilla.components.support.base.log.logger.Logger
-import mozilla.components.support.ktx.util.PromptAbuserDetector
-import mozilla.components.support.utils.OnEnterAnimationCompleteListener
 import app.harvester.companion.R
 import app.harvester.companion.UHApp
+import app.harvester.companion.UHLog
+import app.harvester.companion.core.downloads.DownloadLocationResolver
 import app.harvester.companion.settings.downloads.DefaultAndroidFileUtils
 import app.harvester.companion.settings.downloads.DefaultDownloadLocationFormatter
-import app.harvester.companion.settings.downloads.MissingUriPermission
 import app.harvester.companion.theme.UHTheme
+import mozilla.components.support.ktx.util.PromptAbuserDetector
+import mozilla.components.support.utils.OnEnterAnimationCompleteListener
 
 class RenameAndChangeLocationDialogFragment : DialogFragment(), OnEnterAnimationCompleteListener {
-    private val logger = Logger("RenameAndChangeLocationDialogFragment")
     private val safeArguments get() = requireNotNull(arguments)
     private val promptAbuserDetector = PromptAbuserDetector(TIME_SHOWN_OFFSET_MILLIS)
 
@@ -37,9 +47,10 @@ class RenameAndChangeLocationDialogFragment : DialogFragment(), OnEnterAnimation
     internal val contentSize: Long get() = safeArguments.getLong(KEY_CONTENT_SIZE, 0)
 
     private var dialogState by mutableStateOf(RenameAndChangeLocationDialogState(fileName = "", directoryPath = ""))
+    private var isActionHandled = false
     private lateinit var downloadLocationFormatter: DefaultDownloadLocationFormatter
 
-    var onConfirmSave: (String, String) -> Unit = { _, _ -> }
+    var onConfirmSave: (String, String, Boolean) -> Unit = { _, _, _ -> }
     var onCancel: () -> Unit = {}
 
     internal var directoryLauncher: ActivityResultLauncher<Uri?> =
@@ -47,16 +58,28 @@ class RenameAndChangeLocationDialogFragment : DialogFragment(), OnEnterAnimation
             val safeUri = uri ?: return@registerForActivityResult
             val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             try {
-                context?.contentResolver?.takePersistableUriPermission(safeUri, flags)
+                context?.applicationContext?.contentResolver?.takePersistableUriPermission(safeUri, flags)
                 dialogState = dialogState.copy(directoryPath = safeUri.toString())
             } catch (e: SecurityException) {
-                logger.error("Failed to take persistable URI permission.", e)
+                UHLog.throwable("download_error", "Failed to take persistable URI permission in download prompt", e)
+                dialogState = dialogState.copy(directoryPath = safeUri.toString())
             }
         }
 
     override fun onStart() {
         super.onStart()
-        dialog?.window?.apply { clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM) }
+        dialog?.window?.apply {
+            clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
+            setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            setBackgroundDrawableResource(android.R.color.transparent)
+            val isLandscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+            val maxDp = if (isLandscape) 420f else 348f
+            val widthRatio = if (isLandscape) 0.72f else 0.90f
+            val widthPx = (resources.displayMetrics.widthPixels * widthRatio)
+                .toInt()
+                .coerceAtMost((maxDp * resources.displayMetrics.density).toInt())
+            setLayout(widthPx, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
     }
 
     override fun onResume() {
@@ -70,50 +93,100 @@ class RenameAndChangeLocationDialogFragment : DialogFragment(), OnEnterAnimation
 
     override fun onCancel(dialog: DialogInterface) {
         super.onCancel(dialog)
-        onCancel()
+        if (!isActionHandled) {
+            isActionHandled = true
+            onCancel()
+        }
     }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
-        downloadLocationFormatter = DefaultDownloadLocationFormatter(DefaultAndroidFileUtils(requireContext()))
-        dialogState = RenameAndChangeLocationDialogState(fileName = fileName, directoryPath = directoryPath)
+        val ctx = requireContext()
+        downloadLocationFormatter = DefaultDownloadLocationFormatter(DefaultAndroidFileUtils(ctx))
+        val initialDir = directoryPath.ifBlank { DownloadLocationResolver.resolveTargetDirectory(ctx) }
+        dialogState = RenameAndChangeLocationDialogState(
+            fileName = fileName,
+            directoryPath = initialDir,
+            rememberAsDefault = false,
+        )
         promptAbuserDetector.start()
 
-        val composeView = ComposeView(requireContext()).apply {
+        return Dialog(ctx).apply {
+            setCanceledOnTouchOutside(true)
+        }
+    }
+
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?,
+    ): View {
+        val ctx = requireContext()
+        return ComposeView(ctx).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 UHTheme {
+                    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
                     val friendlyPath = try {
                         downloadLocationFormatter.getFriendlyPath(dialogState.directoryPath)
-                    } catch (e: MissingUriPermission) {
-                        val defaultLocation = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).path
-                        downloadLocationFormatter.getFriendlyPath(defaultLocation)
+                    } catch (_: Exception) {
+                        if (dialogState.directoryPath.startsWith("content://")) {
+                            val seg = Uri.parse(dialogState.directoryPath).lastPathSegment?.substringAfterLast(':')
+                            if (!seg.isNullOrBlank()) seg else "Selected folder"
+                        } else {
+                            dialogState.directoryPath.substringAfterLast('/').ifBlank { "Downloads" }
+                        }
                     }
 
-                    RenameAndChangeLocationDialogContent(
-                        dialogState = dialogState,
-                        friendlyPath = friendlyPath,
-                        title = buildDialogTitle(),
-                        onFileNameChange = { newFileName -> dialogState = dialogState.copy(fileName = newFileName) },
-                        onDirectorySelect = {
-                            try {
-                                directoryLauncher.launch(null)
-                            } catch (e: ActivityNotFoundException) {
-                                Toast.makeText(requireContext(), R.string.preferences_downloads_no_folder_picker_available, Toast.LENGTH_LONG).show()
-                            }
-                        },
-                        onConfirm = {
-                            onConfirmSave(dialogState.fileName, dialogState.directoryPath)
-                            dismiss()
-                        },
-                        onCancel = {
-                            onCancel()
-                            dismiss()
-                        },
-                    )
+                    Surface(
+                        shape = RoundedCornerShape(22.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 6.dp,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .widthIn(max = if (isLandscape) 420.dp else 348.dp)
+                    ) {
+                        RenameAndChangeLocationDialogContent(
+                            dialogState = dialogState,
+                            friendlyPath = friendlyPath,
+                            title = buildDialogTitle(),
+                            onFileNameChange = { newFileName -> dialogState = dialogState.copy(fileName = newFileName) },
+                            onRememberChange = { remember -> dialogState = dialogState.copy(rememberAsDefault = remember) },
+                            onDirectorySelect = {
+                                try {
+                                    directoryLauncher.launch(null)
+                                } catch (e: ActivityNotFoundException) {
+                                    UHLog.throwable("download_error", "No folder picker available", e)
+                                    Toast.makeText(
+                                        ctx,
+                                        R.string.preferences_downloads_no_folder_picker_available,
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            },
+                            onConfirm = {
+                                if (isActionHandled) return@RenameAndChangeLocationDialogContent
+                                isActionHandled = true
+                                val finalName = dialogState.fileName
+                                val finalDir = dialogState.directoryPath
+                                val rememberDefault = dialogState.rememberAsDefault
+                                onConfirmSave(finalName, finalDir, rememberDefault)
+                                try {
+                                    dismissAllowingStateLoss()
+                                } catch (_: Exception) {}
+                            },
+                            onCancel = {
+                                if (isActionHandled) return@RenameAndChangeLocationDialogContent
+                                isActionHandled = true
+                                onCancel()
+                                try {
+                                    dismissAllowingStateLoss()
+                                } catch (_: Exception) {}
+                            },
+                        )
+                    }
                 }
             }
         }
-
-        return MaterialAlertDialogBuilder(requireContext()).setView(composeView).create()
     }
 
     private fun buildDialogTitle(): String {

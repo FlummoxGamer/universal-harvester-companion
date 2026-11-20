@@ -17,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -36,86 +37,108 @@ fun UhSearchListItem(
     when (item) {
         is Model.CurrentTab -> {
             val context = LocalContext.current
-            Row(
+            androidx.compose.material3.Surface(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
                 modifier = Modifier
                     .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 6.dp)
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
                     .clickable { onSubmit(item.url) }
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-             ) {
-                if (item.icon != null) {
-                    AsyncImage(
-                        model = item.icon,
-                        contentDescription = null,
-                        modifier = Modifier.size(32.dp)
-                    )
-                } else {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_globe),
-                        contentDescription = null,
-                        modifier = Modifier.size(32.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                
-                Column(
+            ) {
+                Row(
                     modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 12.dp)
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = item.title,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 16.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = item.url,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                IconButton(onClick = {
-                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, item.url)
+                    if (item.icon != null) {
+                        AsyncImage(
+                            model = item.icon,
+                            contentDescription = null,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    } else {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_globe),
+                            contentDescription = null,
+                            modifier = Modifier.size(32.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                    context.startActivity(Intent.createChooser(shareIntent, "Share"))
-                }) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.uh_ic_share_24),
-                        contentDescription = "Share",
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 12.dp)
+                    ) {
+                        Text(
+                            text = item.title,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 15.sp,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = item.url,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    IconButton(onClick = {
+                        try {
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, item.url)
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Share"))
+                        } catch (e: Exception) {
+                            app.harvester.companion.UHLog.throwable("ui_error", "Failed sharing current tab URL", e)
+                        }
+                    }) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.uh_ic_share_24),
+                            contentDescription = "Share",
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    IconButton(onClick = {
+                        try {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                            if (clipboard == null) {
+                                app.harvester.companion.UHLog.w("ui_warn", "ClipboardManager unavailable when copying URL.")
+                            } else {
+                                clipboard.setPrimaryClip(ClipData.newPlainText("URL", item.url))
+                            }
+                        } catch (e: Exception) {
+                            app.harvester.companion.UHLog.throwable("ui_error", "Failed copying URL to clipboard", e)
+                        }
+                    }) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.uh_ic_copy_24),
+                            contentDescription = "Copy",
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    IconButton(onClick = { onEditUrl(item.url) }) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_edit),
+                            contentDescription = "Edit",
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
-
-        IconButton(onClick = {
-            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            clipboard.setPrimaryClip(ClipData.newPlainText("URL", item.url))
-        }) {
-            Icon(
-                painter = painterResource(id = R.drawable.uh_ic_copy_24),
-                contentDescription = "Copy",
-                modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            }
         }
-
-        IconButton(onClick = { onEditUrl(item.url) }) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_edit),
-                contentDescription = "Edit",
-                modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-    }
         is Model.Header -> {
             Text(
                 text = item.title,
@@ -135,8 +158,8 @@ fun UhSearchListItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val iconRes = when (item.type) {
-                    SuggestionType.SEARCH -> R.drawable.ic_search
-                    SuggestionType.TRENDING -> R.drawable.ic_menu_translate
+                    SuggestionType.SEARCH -> R.drawable.fx_ic_search_24
+                    SuggestionType.TRENDING -> R.drawable.uh_ic_trending_24
                     SuggestionType.HISTORY -> R.drawable.ic_history
                 }
                 Icon(

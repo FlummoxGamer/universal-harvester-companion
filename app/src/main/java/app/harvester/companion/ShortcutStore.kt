@@ -44,6 +44,7 @@ object ShortcutStore {
 
     fun clear(ctx: Context) {
         ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit().clear().apply()
+        app.harvester.companion.home.ShortcutIconCache.clearAll(ctx)
     }
 
     fun save(ctx: Context, list: List<Shortcut>) {
@@ -80,6 +81,7 @@ object ShortcutStore {
         val current = list(ctx)
         current.removeAll { it.url == url }
         save(ctx, current)
+        app.harvester.companion.home.ShortcutIconCache.invalidate(ctx, url)
     }
 
     fun iconUrlFor(targetUrl: String): String {
@@ -88,7 +90,7 @@ object ShortcutStore {
         } catch (_: Exception) { null }
         if (host.isNullOrBlank()) return ""
         val clean = host.removePrefix("www.")
-        return "https://www.google.com/s2/favicons?domain=$clean&sz=128&v=${app.harvester.companion.BuildConfig.VERSION_CODE}"
+        return "https://www.google.com/s2/favicons?domain=$clean&sz=128"
     }
 
     private fun defaultList(): MutableList<Shortcut> = mutableListOf(

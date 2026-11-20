@@ -1,6 +1,10 @@
 package app.harvester.companion
 
 import android.content.Context
+import java.util.Locale
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -23,52 +27,71 @@ object SearchEnginePrefs {
         val host: String,
         val searchUrl: String,
         val suggestionsUrl: String?,
+        val trendingUrl: String?,
         val iconUrl: String,
         val isCustom: Boolean
     )
 
-    private fun prefs(ctx: Context) = ctx.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+    private val _activeEngineFlow = MutableStateFlow<Entry?>(null)
+
+    private fun prefs(ctx: Context) = ctx.applicationContext.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 
     fun getEngine(ctx: Context): String =
         prefs(ctx).getString(KEY_ENGINE, ENGINE_BRAVE) ?: ENGINE_BRAVE
 
     fun setEngine(ctx: Context, id: String) {
         prefs(ctx).edit().putString(KEY_ENGINE, id).apply()
+        _activeEngineFlow.value = currentEntry(ctx)
+    }
+
+    fun activeEngineFlow(ctx: Context): StateFlow<Entry> {
+        if (_activeEngineFlow.value == null) {
+            _activeEngineFlow.value = currentEntry(ctx)
+        }
+        @Suppress("UNCHECKED_CAST")
+        return _activeEngineFlow.asStateFlow() as StateFlow<Entry>
     }
 
     private fun ddgIcon(host: String) = "https://icons.duckduckgo.com/ip3/$host.ico"
 
     fun all(ctx: Context): List<Entry> {
         val out = mutableListOf<Entry>()
+        val geo = Locale.getDefault().country.ifBlank { "US" }
 
         out.add(Entry(ENGINE_BRAVE, "Brave", "search.brave.com",
             "https://search.brave.com/search?q=%s",
             "https://search.brave.com/api/suggest?q=%s",
+            null,
             ddgIcon("search.brave.com"), false))
 
         out.add(Entry(ENGINE_GOOGLE, "Google", "google.com",
             "https://www.google.com/search?q=%s",
             "https://suggestqueries.google.com/complete/search?client=firefox&q=%s",
+            "https://trends.google.com/trending/rss?geo=$geo",
             ddgIcon("google.com"), false))
 
         out.add(Entry(ENGINE_BING, "Bing", "bing.com",
             "https://www.bing.com/search?q=%s",
             "https://api.bing.com/osjson.aspx?query=%s",
+            "https://www.bing.com/hp/api/v1/trendingnow?format=json",
             ddgIcon("bing.com"), false))
 
         out.add(Entry(ENGINE_YAHOO, "Yahoo", "yahoo.com",
             "https://search.yahoo.com/search?p=%s",
+            null,
             null,
             ddgIcon("yahoo.com"), false))
 
         out.add(Entry(ENGINE_DUCKDUCKGO, "DuckDuckGo", "duckduckgo.com",
             "https://duckduckgo.com/?q=%s",
             "https://duckduckgo.com/ac/?type=list&q=%s",
+            null,
             ddgIcon("duckduckgo.com"), false))
 
         out.add(Entry(ENGINE_YANDEX, "Yandex", "yandex.com",
             "https://yandex.com/search/?text=%s",
             "https://suggest.yandex.com/suggest-ff.cgi?part=%s",
+            null,
             ddgIcon("yandex.com"), false))
 
         out.addAll(listCustom(ctx))
@@ -90,13 +113,17 @@ object SearchEnginePrefs {
                         host = host,
                         searchUrl = o.getString("searchUrl"),
                         suggestionsUrl = null,
+                        trendingUrl = null,
                         iconUrl = ddgIcon(host),
                         isCustom = true
                     )
                 )
             }
             out
-        } catch (_: Exception) { emptyList() }
+        } catch (e: Exception) {
+            UHLog.w("search_warn", "Failed parsing custom search engines: ${e.message}")
+            emptyList()
+        }
     }
 
     fun currentEntry(ctx: Context): Entry {
@@ -107,10 +134,19 @@ object SearchEnginePrefs {
 
     fun addCustom(ctx: Context, name: String, url: String): Boolean {
         val trimmed = url.trim()
-        if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) return false
+        if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+            UHLog.w("search_warn", "Rejected custom search engine without http/https scheme.")
+            return false
+        }
 
-        val host = try { java.net.URI(trimmed).host ?: return false } catch (_: Exception) { return false }
-        if (host.isBlank() || !host.contains(".")) return false
+        val host = try { java.net.URI(trimmed).host ?: return false } catch (e: Exception) {
+            UHLog.w("search_warn", "Invalid custom search engine URI: ${e.message}")
+            return false
+        }
+        if (host.isBlank() || !host.contains(".")) {
+            UHLog.w("search_warn", "Rejected custom search engine with invalid host: $host")
+            return false
+        }
 
         val searchUrl = if (trimmed.contains("%s")) {
             trimmed
@@ -123,15 +159,45 @@ object SearchEnginePrefs {
         val id = "custom_" + System.currentTimeMillis()
         val current = listCustom(ctx).toMutableList()
         current.add(
-            Entry(id, finalName, host, searchUrl, null, ddgIcon(host), true)
+            Entry(id, finalName, host, searchUrl, null, null, ddgIcon(host), true)
         )
         saveCustom(ctx, current)
+        _activeEngineFlow.value = currentEntry(ctx)
+        return true
+    }
+
+    fun updateCustom(ctx: Context, id: String, name: String, url: String): Boolean {
+        val trimmed = url.trim()
+        if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) return false
+        val host = try { java.net.URI(trimmed).host ?: return false } catch (_: Exception) { return false }
+        if (host.isBlank() || !host.contains(".")) return false
+
+        val searchUrl = if (trimmed.contains("%s")) {
+            trimmed
+        } else {
+            val base = trimmed.trimEnd('/')
+            if (base.contains("?")) "$base&q=%s" else "$base?q=%s"
+        }
+
+        val finalName = name.trim().ifBlank { shortNameFromHost(host) }
+        val updated = listCustom(ctx).map { entry ->
+            if (entry.id == id) {
+                Entry(id, finalName, host, searchUrl, null, null, ddgIcon(host), true)
+            } else entry
+        }
+        saveCustom(ctx, updated)
+        _activeEngineFlow.value = currentEntry(ctx)
         return true
     }
 
     fun deleteCustom(ctx: Context, id: String) {
         val remaining = listCustom(ctx).filter { it.id != id }
         saveCustom(ctx, remaining)
+        if (getEngine(ctx) == id) {
+            setEngine(ctx, ENGINE_BRAVE)
+        } else {
+            _activeEngineFlow.value = currentEntry(ctx)
+        }
     }
 
     private fun saveCustom(ctx: Context, list: List<Entry>) {

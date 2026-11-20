@@ -62,10 +62,8 @@ class UHApp : Application(), coil.ImageLoaderFactory {
             LeakCanarySetup.setup(this)
         }
 
-        try {
-            startService(Intent(this, SessionService::class.java))
-        } catch (_: Exception) {}
-    
+        app.harvester.companion.core.lifecycle.AppSleepManager.init(this, components)
+
         UHLog.d("perf", "App onCreate: ${System.currentTimeMillis() - start}ms")
     }
 

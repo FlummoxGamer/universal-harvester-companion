@@ -84,6 +84,7 @@ data class UhFileItem(
         data object Initiated : Status
         data class Downloading(@param:FloatRange(from = 0.0, to = 1.0) val progress: Float?) : Status
         data class Paused(@param:FloatRange(from = 0.0, to = 1.0) val progress: Float?) : Status
+        data class WaitingForNetwork(@param:FloatRange(from = 0.0, to = 1.0) val progress: Float?) : Status
         data object Cancelled : Status
         data object Failed : Status
         data object Completed : Status

@@ -17,9 +17,10 @@ import mozilla.components.feature.downloads.AbstractFetchDownloadService.Compani
 import mozilla.components.feature.downloads.AbstractFetchDownloadService.Companion.ACTION_PAUSE
 import mozilla.components.feature.downloads.AbstractFetchDownloadService.Companion.ACTION_RESUME
 import mozilla.components.feature.downloads.AbstractFetchDownloadService.Companion.ACTION_TRY_AGAIN
+import app.harvester.companion.R
+import app.harvester.companion.UHApp
 import app.harvester.companion.utils.truncateMiddle
 import mozilla.components.support.utils.DownloadFileUtils
-import app.harvester.companion.R
 
 internal object UhDownloadNotification {
 
@@ -37,7 +38,7 @@ internal object UhDownloadNotification {
     ): Notification {
         val allDownloadsHaveFinished = notifications.all { it.status != DownloadState.Status.DOWNLOADING }
         val icon = if (allDownloadsHaveFinished) R.drawable.ic_uh_download_complete else R.drawable.ic_uh_download_ongoing
-        
+
         val summaryList = getSummaryList(context, fileSizeFormatter, notifications)
         val summaryLine1 = summaryList.firstOrNull() ?: ""
         val summaryLine2 = if (summaryList.size > 1) summaryList[1] else ""
@@ -90,11 +91,21 @@ internal object UhDownloadNotification {
         notificationAccentColor: Int,
     ): Notification {
         val fileName = downloadState.fileName?.truncateMiddle(MAX_FILENAME_LENGTH).orEmpty()
+        val waitingForNetwork = (context.applicationContext as? UHApp)
+            ?.components
+            ?.waitingForNetworkIds
+            ?.value
+            ?.contains(downloadState.id) == true
+        val statusText = if (waitingForNetwork) {
+            context.getString(R.string.download_waiting_for_network_status)
+        } else {
+            context.getString(R.string.mozac_feature_downloads_paused_notification_text)
+        }
 
         return NotificationCompat.Builder(context, ensureChannelExists(context))
             .setSmallIcon(R.drawable.ic_uh_file_download)
             .setContentTitle(fileName)
-            .setContentText(context.getString(R.string.mozac_feature_downloads_paused_notification_text))
+            .setContentText(statusText)
             .setColor(ContextCompat.getColor(context, notificationAccentColor))
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setOngoing(true)
@@ -113,23 +124,25 @@ internal object UhDownloadNotification {
         createdTime: Long,
         notificationAccentColor: Int,
         downloadFileUtils: DownloadFileUtils,
-        contentIntent: PendingIntent,
+        contentIntent: PendingIntent?,
     ): Notification {
         val fileName = downloadState.fileName?.truncateMiddle(MAX_FILENAME_LENGTH).orEmpty()
 
-        return NotificationCompat.Builder(context, ensureChannelExists(context))
+        val builder = NotificationCompat.Builder(context, ensureChannelExists(context))
             .setSmallIcon(R.drawable.ic_uh_download_complete)
             .setContentTitle(fileName)
             .setWhen(createdTime)
             .setOnlyAlertOnce(true)
             .setContentText(context.getString(R.string.mozac_feature_downloads_completed_notification_text2))
             .setColor(ContextCompat.getColor(context, notificationAccentColor))
-            .setContentIntent(contentIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setAutoCancel(true)
             .setDeleteIntent(createDismissPendingIntent(context, downloadState.id))
             .setGroup(NOTIFICATION_GROUP_KEY)
-            .build()
+        if (contentIntent != null) {
+            builder.setContentIntent(contentIntent)
+        }
+        return builder.build()
     }
 
     fun createDownloadFailedNotification(
@@ -184,6 +197,8 @@ internal object UhDownloadNotification {
     private fun getAction(context: Context, action: String, downloadStateId: String): PendingIntent {
         val intent = Intent(action)
         intent.setPackage(context.applicationContext.packageName)
+        intent.putExtra("downloadId", downloadStateId)
+        intent.putExtra(android.app.DownloadManager.EXTRA_DOWNLOAD_ID, downloadStateId)
         intent.putExtra("INTENT_EXTRA_DOWNLOAD_ID", downloadStateId)
         return PendingIntent.getBroadcast(
             context.applicationContext,
@@ -198,8 +213,11 @@ internal object UhDownloadNotification {
     }
 }
 
-private fun DownloadState.getPercent(): Int? = progress?.let { progress ->
-    (UhDownloadNotification.PERCENTAGE_MULTIPLIER * progress).toInt()
+private fun DownloadState.getPercent(): Int? {
+    val total = contentLength?.takeIf { it > 0L } ?: return progress?.let { (UhDownloadNotification.PERCENTAGE_MULTIPLIER * it).toInt() }
+    return ((currentBytesCopied.toDouble() / total.toDouble()) * UhDownloadNotification.PERCENTAGE_MULTIPLIER)
+        .toInt()
+        .coerceIn(0, 100)
 }
 
 internal fun DownloadState.getProgress(fileSizeFormatter: UhFileSizeFormatter): String {
@@ -216,11 +234,16 @@ internal fun DownloadState.getStatusDescription(
     context: Context,
     fileSizeFormatter: UhFileSizeFormatter,
 ): String {
+    val waitingForNetwork = (context.applicationContext as? UHApp)
+        ?.components
+        ?.waitingForNetworkIds
+        ?.value
+        ?.contains(this.id) == true
     return when (this.status) {
         DownloadState.Status.DOWNLOADING -> getProgress(fileSizeFormatter)
-        DownloadState.Status.PAUSED -> "Paused"
+        DownloadState.Status.PAUSED -> if (waitingForNetwork) "Waiting for network" else "Paused"
         DownloadState.Status.COMPLETED -> "Complete"
-        DownloadState.Status.FAILED -> "Failed"
+        DownloadState.Status.FAILED -> if (waitingForNetwork) "Waiting for network" else "Failed"
         DownloadState.Status.CANCELLED, DownloadState.Status.INITIATED -> ""
     }
 }

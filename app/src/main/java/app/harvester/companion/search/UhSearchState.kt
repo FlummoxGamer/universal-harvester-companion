@@ -7,5 +7,6 @@ data class UhSearchState(
     val query: String = "",
     val items: List<UhSearchListItem> = emptyList(),
     val clipboardUrl: String? = null,
+    val currentTab: UhSearchListItem.CurrentTab? = null,
     val isLoading: Boolean = false
 ) : State

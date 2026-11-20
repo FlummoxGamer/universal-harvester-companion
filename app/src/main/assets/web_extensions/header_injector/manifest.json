@@ -1,7 +1,7 @@
 {
     "manifest_version": 2,
     "name": "Header Injector",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "browser_specific_settings": {
         "gecko": {
             "id": "header-injector@harvester.app"
@@ -13,6 +13,8 @@
     "permissions": [
         "webRequest",
         "webRequestBlocking",
+        "nativeMessaging",
+        "geckoViewAddons",
         "<all_urls>"
     ]
 }

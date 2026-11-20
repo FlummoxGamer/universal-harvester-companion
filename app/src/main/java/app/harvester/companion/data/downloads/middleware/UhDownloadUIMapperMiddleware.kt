@@ -3,7 +3,9 @@ package app.harvester.companion.data.downloads.middleware
 import androidx.annotation.FloatRange
 import java.time.Instant
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import mozilla.components.browser.state.action.DownloadAction
@@ -21,6 +23,7 @@ import app.harvester.companion.data.downloads.TimeCategory
 
 class UhDownloadUIMapperMiddleware(
     private val browserStore: BrowserStore,
+    private val waitingForNetworkIdsFlow: StateFlow<Set<String>>,
     private val fileItemDescriptionProvider: UhFileItemDescriptionProvider,
     private val scope: CoroutineScope,
     private val dateTimeProvider: DateTimeProvider = DefaultDateTimeProvider(),
@@ -43,35 +46,48 @@ class UhDownloadUIMapperMiddleware(
 
     private fun update(store: Store<UhDownloadUIState, UhDownloadUIAction>) {
         scope.launch {
-            browserStore.flow()
-                .distinctUntilChangedBy { it.downloads }
-                .map { it.downloads.toFileItemsList() }
-                .collect { store.dispatch(UhDownloadUIAction.UpdateFileItems(it)) }
+            combine(
+                browserStore.flow().map { it.downloads }.distinctUntilChanged(),
+                waitingForNetworkIdsFlow,
+            ) { downloads, waitingIds ->
+                downloads.toFileItemsList(waitingIds)
+            }.collect { store.dispatch(UhDownloadUIAction.UpdateFileItems(it)) }
         }
     }
 
-    private suspend fun Map<String, DownloadState>.toFileItemsList(): List<UhFileItem> =
+    private suspend fun Map<String, DownloadState>.toFileItemsList(waitingIds: Set<String>): List<UhFileItem> =
         values
             .filter { isDisplayableItem(it.status) }
             .sortedByDescending { it.createdTime }
             .distinctBy { Triple(it.fileName, it.status, it.directoryPath) }
-            .map { it.toFileItem() }
+            .map { it.toFileItem(it.id in waitingIds) }
 
     private fun isDisplayableItem(status: DownloadState.Status) = status != DownloadState.Status.CANCELLED
 
-    private suspend fun DownloadState.toFileItem() =
-        UhFileItem(
+    private suspend fun DownloadState.toFileItem(isWaitingForNetwork: Boolean): UhFileItem {
+        val mappedStatus = if (
+            isWaitingForNetwork &&
+            (status == DownloadState.Status.PAUSED ||
+                status == DownloadState.Status.FAILED ||
+                status == DownloadState.Status.INITIATED)
+        ) {
+            UhFileItem.Status.WaitingForNetwork(progress = progress)
+        } else {
+            status.toFileItemStatus(progress = progress)
+        }
+        return UhFileItem(
             id = id,
             url = url,
             fileName = fileName,
             filePath = filePath,
             directoryPath = directoryPath,
-            displayedShortUrl = try { android.net.Uri.parse(url).host ?: "" } catch (e: Exception) { "" },
+            displayedShortUrl = try { android.net.Uri.parse(url).host ?: "" } catch (_: Exception) { "" },
             contentType = contentType,
-            status = status.toFileItemStatus(progress = progress),
+            status = mappedStatus,
             timeCategory = categorizeGroup(epochMillis = createdTime, status = status),
             description = fileItemDescriptionProvider.getDescription(downloadState = this),
         )
+    }
 
     private fun DownloadState.Status.toFileItemStatus(
         @FloatRange(from = 0.0, to = 1.0) progress: Float?

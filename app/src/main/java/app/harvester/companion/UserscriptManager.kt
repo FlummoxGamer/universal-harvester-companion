@@ -2,21 +2,25 @@ package app.harvester.companion
 
 import android.content.Context
 import android.net.Uri
-import org.mozilla.geckoview.GeckoSession
+import android.util.Base64
+import app.harvester.companion.core.network.UhHttpClient
+import okhttp3.Request
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.ZipInputStream
 
 object UserscriptManager {
 
     private var cachedScripts: List<Script>? = null
-    private val wrapperCache = mutableMapOf<String, String>()
+    private val wrapperCache = ConcurrentHashMap<String, String>()
+    private val hookCache = ConcurrentHashMap<String, String>()
 
     fun invalidateCache() {
         cachedScripts = null
-        synchronized(wrapperCache) { wrapperCache.clear() }
+        wrapperCache.clear()
     }
-
-    private val hookCache = mutableMapOf<String, String>()
 
     data class Script(
         val name: String,
@@ -48,7 +52,9 @@ object UserscriptManager {
             ?.filter { it.isFile && it.extension.equals("js", true) }
             ?.mapNotNull { f ->
                 try { parse(f.nameWithoutExtension, f.readText(), f.length()) } catch (_: Exception) { null }
-            } ?: emptyList()
+            }
+            ?.sortedBy { it.displayName.lowercase() }
+            ?: emptyList()
         cachedScripts = list
         return list
     }
@@ -59,6 +65,17 @@ object UserscriptManager {
         return try { parse(name, f.readText(), f.length()) } catch (_: Exception) { null }
     }
 
+    fun matchingScripts(ctx: Context, url: String): List<Script> {
+        if (isBadUrl(url)) return emptyList()
+        return loadScripts(ctx).filter { s ->
+            matchesPatterns(s.patterns, url) && !matchesPatterns(s.excludes, url)
+        }
+    }
+
+    fun matchingEnabledCount(ctx: Context, url: String): Int {
+        return matchingScripts(ctx, url).count { UserscriptStore.isEnabled(ctx, it.name) }
+    }
+
     fun parse(name: String, body: String, fileSize: Long = 0L): Script {
         var displayName = name
         var namespace = ""
@@ -67,7 +84,7 @@ object UserscriptManager {
         var author = ""
         var homepage = ""
         var icon = ""
-        var runAt = "document-start"
+        var runAt = "document-end"
         var noFrames = false
         val patterns = mutableListOf<String>()
         val excludes = mutableListOf<String>()
@@ -90,7 +107,7 @@ object UserscriptManager {
                 t.startsWith("// @homepageURL") -> homepage = t.substringAfter("@homepageURL").trim()
                 t.startsWith("// @homepage") -> if (homepage.isEmpty()) homepage = t.substringAfter("@homepage").trim()
                 t.startsWith("// @icon") -> icon = t.substringAfter("@icon").trim()
-                t.startsWith("// @run-at") -> runAt = t.substringAfter("@run-at").trim()
+                t.startsWith("// @run-at") -> runAt = normalizeRunAt(t.substringAfter("@run-at").trim())
                 t.startsWith("// @match") -> patterns.add(t.substringAfter("@match").trim())
                 t.startsWith("// @include") -> patterns.add(t.substringAfter("@include").trim())
                 t.startsWith("// @exclude-match") -> excludes.add(t.substringAfter("@exclude-match").trim())
@@ -110,14 +127,36 @@ object UserscriptManager {
 
         val usesSystemjs = body.contains("System.register")
 
-return Script(
-    name = name, displayName = displayName, namespace = namespace,
-    description = description, version = version, author = author,
-    homepage = homepage, icon = icon, patterns = patterns, excludes = excludes,
-    grants = grants, connects = connects, requires = requires, resources = resources,
-    runAt = runAt, body = body, usesSystemjs = usesSystemjs, noFrames = noFrames,
-    fileSize = fileSize, iconUrl = icon
-)
+        return Script(
+            name = name,
+            displayName = displayName,
+            namespace = namespace,
+            description = description,
+            version = version,
+            author = author,
+            homepage = homepage,
+            icon = icon,
+            patterns = patterns,
+            excludes = excludes,
+            grants = grants,
+            connects = connects,
+            requires = requires,
+            resources = resources,
+            runAt = runAt,
+            body = body,
+            usesSystemjs = usesSystemjs,
+            noFrames = noFrames,
+            fileSize = fileSize,
+            iconUrl = icon
+        )
+    }
+
+    private fun normalizeRunAt(raw: String): String = when (raw.lowercase()) {
+        "document-start" -> "document-start"
+        "document-body" -> "document-body"
+        "document-end" -> "document-end"
+        "document-idle", "context-menu" -> "document-idle"
+        else -> "document-end"
     }
 
     fun install(ctx: Context, name: String, body: String): Boolean {
@@ -127,12 +166,15 @@ return Script(
             val safe = name.replace(Regex("""[^a-zA-Z0-9_\-]"""), "_").take(80)
             File(dir, "$safe.js").writeText(body)
             try {
-                val parsed = parse(name, body)
+                val parsed = parse(safe, body)
                 cacheRequires(ctx, parsed)
+                prefetchResources(ctx, parsed)
             } catch (_: Exception) {}
             UserscriptStore.markDirty(ctx)
             true
-        } catch (_: Exception) { false }
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun requiresDir(ctx: Context, scriptName: String): File {
@@ -151,20 +193,17 @@ return Script(
                     val body = decodeDataUrl(url) ?: continue
                     target.writeText(body)
                 } else {
-                    val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-                    conn.connectTimeout = 20000
-                    conn.readTimeout = 20000
-                    conn.connect()
-                    if (conn.responseCode in 200..299) {
-                        conn.inputStream.use { input ->
-                            target.outputStream().use { input.copyTo(it) }
+                    val req = Request.Builder().url(url).header("User-Agent", UhHttpClient.DEFAULT_USER_AGENT).build()
+                    UhHttpClient.client.newCall(req).execute().use { resp ->
+                        if (resp.isSuccessful && resp.body != null) {
+                            resp.body!!.byteStream().use { input ->
+                                target.outputStream().use { input.copyTo(it) }
+                            }
                         }
                     }
-                    conn.disconnect()
                 }
-                UHLog.d("userscript", "require cached ${script.name}[$idx] ${target.length()}B")
             } catch (e: Exception) {
-                UHLog.throwable("userscript", "require fetch failed idx=$idx url=$url", e)
+                UHLog.w("userscript", "require fetch failed idx=$idx url=$url: ${e.message}")
             }
             idx++
         }
@@ -177,11 +216,13 @@ return Script(
             val meta = url.substring(5, comma)
             val data = url.substring(comma + 1)
             if (meta.contains("base64", ignoreCase = true)) {
-                String(android.util.Base64.decode(data, android.util.Base64.DEFAULT), Charsets.UTF_8)
+                String(Base64.decode(data, Base64.DEFAULT), Charsets.UTF_8)
             } else {
                 java.net.URLDecoder.decode(data, "UTF-8")
             }
-        } catch (_: Exception) { null }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun loadCachedRequires(ctx: Context, script: Script): String {
@@ -201,27 +242,26 @@ return Script(
 
     fun installFromText(ctx: Context, body: String): Boolean {
         val parsed = parse("script_" + System.currentTimeMillis(), body)
-        return install(ctx, parsed.name, body)
+        return install(ctx, parsed.displayName.ifBlank { parsed.name }, body)
     }
 
-fun installFromUrl(ctx: Context, url: String, callback: (Boolean) -> Unit) {
-    Thread {
-        try {
-            val client = okhttp3.OkHttpClient.Builder().followRedirects(true).connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS).build()
-            val req = okhttp3.Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
-            client.newCall(req).execute().use { resp ->
-                if (resp.isSuccessful) {
-                    val body = resp.body?.string() ?: ""
-                    val parsed = parse("script_" + System.currentTimeMillis(), body)
-                    callback(install(ctx, parsed.name, body))
-                } else callback(false)
+    fun installFromUrl(ctx: Context, url: String, callback: (Boolean) -> Unit) {
+        Thread {
+            try {
+                val req = Request.Builder().url(url).header("User-Agent", UhHttpClient.DEFAULT_USER_AGENT).build()
+                UhHttpClient.client.newCall(req).execute().use { resp ->
+                    if (resp.isSuccessful) {
+                        val body = resp.body?.string() ?: ""
+                        val parsed = parse("script_" + System.currentTimeMillis(), body)
+                        callback(install(ctx, parsed.displayName.ifBlank { parsed.name }, body))
+                    } else callback(false)
+                }
+            } catch (e: Exception) {
+                UHLog.throwable("userscript", "install url failed", e)
+                callback(false)
             }
-        } catch (e: Exception) {
-            UHLog.throwable("userscript", "install url failed", e)
-            callback(false)
-        }
-    }.start()
-}
+        }.start()
+    }
 
     fun installFromUri(ctx: Context, uri: Uri): Boolean {
         return try {
@@ -232,7 +272,7 @@ fun installFromUrl(ctx: Context, url: String, callback: (Boolean) -> Unit) {
             } else {
                 val text = String(bytes, Charsets.UTF_8)
                 val parsed = parse("script_" + System.currentTimeMillis(), text)
-                install(ctx, parsed.name, text)
+                install(ctx, parsed.displayName.ifBlank { parsed.name }, text)
             }
         } catch (e: Exception) {
             UHLog.throwable("userscript", "install uri failed", e)
@@ -261,7 +301,9 @@ fun installFromUrl(ctx: Context, url: String, callback: (Boolean) -> Unit) {
                 val parsed = parse(nn, bb)
                 install(ctx, parsed.name, bb)
             } else false
-        } catch (_: Exception) { false }
+        } catch (_: Exception) {
+            false
+        }
     }
 
     fun uninstall(ctx: Context, name: String): Boolean {
@@ -271,7 +313,9 @@ fun installFromUrl(ctx: Context, url: String, callback: (Boolean) -> Unit) {
                 UserscriptStore.forget(ctx, name)
                 MenuCommandStore.clearScript(name)
             }
-        } catch (_: Exception) { false }
+        } catch (_: Exception) {
+            false
+        }
     }
 
     fun saveEdited(ctx: Context, name: String, body: String): Boolean {
@@ -282,44 +326,98 @@ fun installFromUrl(ctx: Context, url: String, callback: (Boolean) -> Unit) {
 
     private fun getAllGmData(ctx: Context): String {
         val prefs = ctx.getSharedPreferences("uh_gm", Context.MODE_PRIVATE)
-        val root = org.json.JSONObject()
+        val root = JSONObject()
         for ((k, v) in prefs.all) {
             val parts = k.split("::", limit = 2)
             if (parts.size == 2) {
                 val script = parts[0]
                 val key = parts[1]
-                if (!root.has(script)) root.put(script, org.json.JSONObject())
+                if (!root.has(script)) root.put(script, JSONObject())
                 root.getJSONObject(script).put(key, v?.toString() ?: "")
             }
         }
         return root.toString()
     }
 
+    private fun getResourceDataJson(ctx: Context, scripts: List<Script>): String {
+        val root = JSONObject()
+        for (s in scripts) {
+            if (s.resources.isEmpty()) continue
+            val sObj = JSONObject()
+            for ((resName, _) in s.resources) {
+                val txt = ResourceStore.getText(ctx, s.name, resName)
+                val url = ResourceStore.getUrl(ctx, s.name, resName)
+                val entry = JSONObject()
+                if (txt != null) entry.put("text", txt)
+                if (url != null) entry.put("url", url)
+                sObj.put(resName, entry)
+            }
+            root.put(s.name, sObj)
+        }
+        return root.toString()
+    }
+
+    fun buildGeckoScriptPayload(ctx: Context, url: String, isTopFrame: Boolean): JSONObject {
+        val out = JSONObject()
+        if (isBadUrl(url)) return out
+
+        val matched = matchingScripts(ctx, url).filter {
+            UserscriptStore.isEnabled(ctx, it.name) && (!it.noFrames || isTopFrame)
+        }
+
+        val bootSb = StringBuilder()
+        bootSb.append("window.__uh_gm_data = ").append(getAllGmData(ctx)).append(";\n")
+        bootSb.append("window.__uh_res_data = ").append(getResourceDataJson(ctx, matched)).append(";\n")
+        bootSb.append(BRIDGE_BOOT).append("\n")
+
+        if (isTopFrame) {
+            val enabledHooks = SessionRecorder.ALL_CATEGORIES.filter { SessionRecorder.isEnabled(it) }
+            for (hook in enabledHooks) {
+                val body = loadHook(ctx, hook)
+                if (body.isNotBlank()) bootSb.append(body).append("\n")
+            }
+        }
+        out.put("bootPayload", bootSb.toString())
+
+        val packets = JSONArray()
+        for (script in matched) {
+            val wrapped = buildWrapper(ctx, script)
+            if (wrapped.isNotBlank()) {
+                packets.put(
+                    JSONObject().apply {
+                        put("name", script.name)
+                        put("runAt", script.runAt)
+                        put("code", wrapped)
+                    }
+                )
+            }
+        }
+        out.put("packets", packets)
+        return out
+    }
+
     fun buildInjectionScript(ctx: Context, url: String): String {
         if (isBadUrl(url)) return ""
         val sb = StringBuilder()
-        
+        val matched = matchingScripts(ctx, url).filter { UserscriptStore.isEnabled(ctx, it.name) }
+
         sb.append("window.__uh_gm_data = ").append(getAllGmData(ctx)).append(";\n")
+        sb.append("window.__uh_res_data = ").append(getResourceDataJson(ctx, matched)).append(";\n")
         sb.append(BRIDGE_BOOT).append("\n")
-        
+
         val enabled = SessionRecorder.ALL_CATEGORIES.filter { SessionRecorder.isEnabled(it) }
         for (hook in enabled) {
             val body = loadHook(ctx, hook)
             if (body.isNotBlank()) sb.append(body).append("\n")
         }
-        
-        val scripts = loadScripts(ctx)
-        for (script in scripts) {
-            if (!UserscriptStore.isEnabled(ctx, script.name)) continue
-            if (!matchesPatterns(script.patterns, url)) continue
-            if (matchesPatterns(script.excludes, url)) continue
+
+        for (script in matched) {
             val wrapped = buildWrapper(ctx, script)
             if (wrapped.isNotBlank()) {
                 sb.append(wrapped).append("\n")
-                UHLog.d("userscript", "queued ${script.name} (${script.runAt}) for $url")
             }
         }
-        
+
         return sb.toString()
     }
 
@@ -327,6 +425,7 @@ fun installFromUrl(ctx: Context, url: String, callback: (Boolean) -> Unit) {
         if (url.isBlank() || url == "about:blank") return true
         if (url.startsWith("chrome-error://")) return true
         if (url.startsWith("chrome://")) return true
+        if (url.startsWith("moz-extension://")) return true
         if (url.startsWith("data:")) return true
         if (url.startsWith("blob:")) return true
         if (url.startsWith("javascript:")) return true
@@ -334,9 +433,9 @@ fun installFromUrl(ctx: Context, url: String, callback: (Boolean) -> Unit) {
     }
 
     private fun loadAsset(ctx: Context, path: String): String {
-        synchronized(hookCache) { hookCache[path]?.let { return it } }
+        hookCache[path]?.let { return it }
         val body = try { ctx.assets.open(path).bufferedReader().use { it.readText() } } catch (_: Exception) { "" }
-        if (body.isNotBlank()) synchronized(hookCache) { hookCache[path] = body }
+        if (body.isNotBlank()) hookCache[path] = body
         return body
     }
 
@@ -356,37 +455,49 @@ fun installFromUrl(ctx: Context, url: String, callback: (Boolean) -> Unit) {
   if (window.__uh_bridge_ready) return;
   window.__uh_bridge_ready = true;
 
-window.unsafeWindow = window;
-window.__uh_xhr = window.__uh_xhr || {};
-window.__uh_vcl = window.__uh_vcl || {};
-window.__uh_menu = window.__uh_menu || {};
+  window.unsafeWindow = window;
+  window.__uh_xhr = window.__uh_xhr || {};
+  window.__uh_vcl = window.__uh_vcl || {};
+  window.__uh_menu = window.__uh_menu || {};
+  window.__uh_gm_data = window.__uh_gm_data || {};
+  window.__uh_res_data = window.__uh_res_data || {};
 
-window.addEventListener('message', function(event) {
-  if (event.source !== window || !event.data) return;
-  if (event.data.type === 'UH_NATIVE_RESPONSE') {
-    var id = event.data.id;
-    var response = event.data.response;
-    var d = window.__uh_xhr[id];
-    if (d) {
-      delete window.__uh_xhr[id];
-      if (d.onload) {
+  window.addEventListener('message', function(event) {
+    if (event.source !== window || !event.data) return;
+    if (event.data.type === 'UH_NATIVE_RESPONSE') {
+      var id = event.data.id;
+      var response = event.data.response;
+      var d = window.__uh_xhr[id];
+      if (d) {
+        delete window.__uh_xhr[id];
         try {
-          var json = JSON.parse(response);
+          var json = typeof response === 'string' ? JSON.parse(response) : response;
+          if (!json || json.error) {
+            if (d.onerror) d.onerror({ readyState: 4, status: 0, error: (json && json.error) || 'Network error' });
+            return;
+          }
           var respData = json.responseText;
-          if (d.responseType === 'json') try { respData = JSON.parse(json.responseText); } catch(e){}
-          d.onload({
-            readyState: 4,
-            status: json.status,
-            statusText: String(json.status),
-            responseText: json.responseText,
-            response: respData,
-            responseHeaders: json.responseHeaders
-          });
-        } catch(e) {}
+          if (d.responseType === 'json') {
+            try { respData = JSON.parse(json.responseText); } catch(e){}
+          }
+          if (d.onload) {
+            d.onload({
+              readyState: 4,
+              status: json.status || 200,
+              statusText: String(json.status || 200),
+              responseText: json.responseText || '',
+              response: respData,
+              responseHeaders: json.responseHeaders || '',
+              finalUrl: json.finalUrl || d.url
+            });
+          }
+        } catch(e) {
+          if (d.onerror) try { d.onerror({ readyState: 4, status: 0, error: String(e) }); } catch(_){}
+        }
       }
     }
-  }
-});
+  });
+
   if (!document.currentScript) {
     try {
       var dummyScript = document.createElement('script');
@@ -398,7 +509,7 @@ window.addEventListener('message', function(event) {
         },
         configurable: true
       });
-    } catch(e) { }
+    } catch(e) {}
   }
 
   window.__uh_gm = function(scriptName) {
@@ -412,13 +523,17 @@ window.addEventListener('message', function(event) {
           return JSON.parse(v);
         } catch(e) { return d; }
       },
-      GM_setValue: function(k, v) { 
-        window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'GM_setValue', script: sn, key: String(k), value: JSON.stringify(v) } }, '*'); 
+      GM_setValue: function(k, v) {
+        var jsonV = JSON.stringify(v);
+        window.__uh_gm_data[sn] = window.__uh_gm_data[sn] || {};
+        window.__uh_gm_data[sn][String(k)] = jsonV;
+        window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'GM_setValue', script: sn, key: String(k), value: jsonV } }, '*');
       },
-      GM_deleteValue: function(k) { 
-        window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'GM_deleteValue', script: sn, key: String(k) } }, '*'); 
+      GM_deleteValue: function(k) {
+        if (window.__uh_gm_data[sn]) delete window.__uh_gm_data[sn][String(k)];
+        window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'GM_deleteValue', script: sn, key: String(k) } }, '*');
       },
-      GM_listValues: function() { 
+      GM_listValues: function() {
         try { return Object.keys(window.__uh_gm_data[sn] || {}); } catch(e) { return []; }
       },
       GM_addValueChangeListener: function(k, cb) {
@@ -432,46 +547,46 @@ window.addEventListener('message', function(event) {
       GM_xmlhttpRequest: function(d) {
         var id = 'xhr_' + Math.random().toString(36).slice(2);
         window.__uh_xhr[id] = d;
-        window.postMessage({ type: 'UH_NATIVE_CALL', payload: { 
-          type: 'GM_xmlhttpRequest', id: id, method: d.method || 'GET', url: d.url, 
+        window.postMessage({ type: 'UH_NATIVE_CALL', payload: {
+          type: 'GM_xmlhttpRequest', id: id, method: d.method || 'GET', url: d.url,
           headers: d.headers ? JSON.stringify(d.headers) : '', data: d.data != null ? String(d.data) : '',
-          timeout: d.timeout || 0 
+          responseType: d.responseType || 'text', timeout: d.timeout || 0
         }}, '*');
-        return { abort: function(){} };
+        return { abort: function(){ delete window.__uh_xhr[id]; } };
       },
       GM_download: function(d) {
         if (typeof d === 'string') d = { url: d };
         var url = d.url;
         var name = d.name || ('download_' + Date.now() + '.bin');
-        if (url.startsWith('blob:')) {
-            var blob = window.__uh_blobs && window.__uh_blobs[url];
-            if (blob) {
-                var reader = new FileReader();
-                reader.onload = function() {
-                    var b64 = reader.result.split(',')[1];
-                    window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'SAVE_BLOB', filename: name, mime: blob.type || 'application/octet-stream', base64: b64 } }, '*');
-                };
-                reader.readAsDataURL(blob);
-                return;
-            }
-        }
-        if (url.startsWith('data:')) {
-            var parts = url.split(',');
-            var meta = parts[0];
-            var data = parts[1];
-            var mimeMatch = meta.match(/data:([^;]+)/);
-            var mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
-            var isBase64 = meta.indexOf('base64') !== -1;
-            window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'SAVE_BLOB', filename: name, mime: mime, base64: isBase64 ? data : btoa(data) } }, '*');
+        if (url && url.startsWith('blob:')) {
+          var blob = window.__uh_blobs && window.__uh_blobs[url];
+          if (blob) {
+            var reader = new FileReader();
+            reader.onload = function() {
+              var b64 = reader.result.split(',')[1];
+              window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'SAVE_BLOB', filename: name, mime: blob.type || 'application/octet-stream', base64: b64 } }, '*');
+            };
+            reader.readAsDataURL(blob);
             return;
+          }
+        }
+        if (url && url.startsWith('data:')) {
+          var parts = url.split(',');
+          var meta = parts[0];
+          var data = parts[1];
+          var mimeMatch = meta.match(/data:([^;]+)/);
+          var mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+          var isBase64 = meta.indexOf('base64') !== -1;
+          window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'SAVE_BLOB', filename: name, mime: mime, base64: isBase64 ? data : btoa(data) } }, '*');
+          return;
         }
         window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'GM_download', script: sn, url: url, name: name } }, '*');
       },
       GM_openInTab: function(url, opts) {
         window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'GM_openInTab', script: sn, url: String(url) } }, '*');
       },
-      GM_setClipboard: function(t) { 
-        window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'GM_setClipboard', text: String(t) } }, '*'); 
+      GM_setClipboard: function(t) {
+        window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'GM_setClipboard', text: String(t) } }, '*');
       },
       GM_notification: function(d) {
         var title = typeof d === 'string' ? d : (d.title || '');
@@ -510,8 +625,12 @@ window.addEventListener('message', function(event) {
         set: function(details, cb) { if(cb) cb(); return Promise.resolve(); },
         delete: function(details, cb) { if(cb) cb(); return Promise.resolve(); }
       },
-      GM_getResourceText: function(name) { return null; },
-      GM_getResourceURL: function(name) { return null; },
+      GM_getResourceText: function(name) {
+        try { return (window.__uh_res_data[sn] && window.__uh_res_data[sn][name] && window.__uh_res_data[sn][name].text) || null; } catch(e) { return null; }
+      },
+      GM_getResourceURL: function(name) {
+        try { return (window.__uh_res_data[sn] && window.__uh_res_data[sn][name] && window.__uh_res_data[sn][name].url) || null; } catch(e) { return null; }
+      },
       GM_log: function(m) { window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'GM_log', message: String(m) } }, '*'); }
     };
     var async = {
@@ -543,37 +662,6 @@ window.addEventListener('message', function(event) {
     return { wrap: wrap, async: async };
   };
 
-window.__uh_xhr_progress = function(id, loaded, total) {
-  var d = window.__uh_xhr[id];
-  if (!d) return;
-  if (d.onprogress) try { d.onprogress({ readyState: 3, loaded: loaded, total: total, lengthComputable: total > 0 }); } catch(e) {}
-};
-
-window.__uh_xhr_done = function(id, status, responseText, responseHeaders, finalUrl) {
-    var d = window.__uh_xhr[id];
-    if (!d) return;
-    delete window.__uh_xhr[id];
-    var resp = responseText;
-    if (d.responseType === 'json') try { resp = JSON.parse(responseText); } catch(e) {}
-    if (d.onload) try { d.onload({
-      readyState: 4, status: status, statusText: String(status),
-      responseText: responseText, response: resp,
-      responseHeaders: responseHeaders, finalUrl: finalUrl
-    }); } catch(e) {}
-  };
-
-  window.__uh_xhr_error = function(id, error) {
-    var d = window.__uh_xhr[id];
-    if (!d) return;
-    delete window.__uh_xhr[id];
-    if (d.onerror) try { d.onerror({ error: error, readyState: 4, status: 0 }); } catch(e) {}
-  };
-
-  window.__uh_fire_vcl = function(id, key, oldV, newV, remote) {
-    var cb = window.__uh_vcl[id];
-    if (cb) try { cb(key, oldV, newV, remote); } catch(e) {}
-  };
-
   window.__uh_runMenuCommand = function(id) {
     var fn = window.__uh_menu[id];
     if (fn) try { fn(); } catch(e) {}
@@ -583,89 +671,65 @@ window.__uh_xhr_done = function(id, status, responseText, responseHeaders, final
     window.System.__uh_resolve_patched = true;
     var origResolve = window.System.resolve;
     if (origResolve) {
-        window.System.resolve = function(id, parentUrl) {
-            if (id && (id.startsWith('./') || id.startsWith('../'))) {
-                var regs = window.__uh_sys_regs || {};
-                if (regs[id]) {
-                    return 'uh-blob://' + id;
-                }
-            }
-            try { return origResolve.apply(this, arguments); } 
-            catch(e) { return id; }
-        };
+      window.System.resolve = function(id, parentUrl) {
+        if (id && (id.startsWith('./') || id.startsWith('../'))) {
+          var regs = window.__uh_sys_regs || {};
+          if (regs[id]) return 'uh-blob://' + id;
+        }
+        try { return origResolve.apply(this, arguments); }
+        catch(e) { return id; }
+      };
     }
-}
-
-if (!window.__uh_blob_hooked) {
-    window.__uh_blob_hooked = true;
-      window.__uh_blobs = {};
-      var origCreate = URL.createObjectURL;
-      URL.createObjectURL = function(obj) {
-          var url = origCreate.call(URL, obj);
-          if (obj instanceof Blob) window.__uh_blobs[url] = obj;
-          return url;
-      };
-      var origRevoke = URL.revokeObjectURL;
-      URL.revokeObjectURL = function(url) {
-          delete window.__uh_blobs[url];
-          return origRevoke.call(URL, url);
-      };
-      var origClick = HTMLAnchorElement.prototype.click;
-      HTMLAnchorElement.prototype.click = function() {
-          var href = this.href;
-          var name = this.download || ('download_' + Date.now() + '.bin');
-          if (href && href.startsWith('blob:')) {
-              var blob = window.__uh_blobs[href];
-              if (blob) {
-                  var reader = new FileReader();
-                  reader.onload = function() {
-                      var b64 = reader.result.split(',')[1];
-                      window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'SAVE_BLOB', filename: name, mime: blob.type || 'application/octet-stream', base64: b64 } }, '*');
-                  };
-                  reader.readAsDataURL(blob);
-                  return;
-              }
-          }
-          if (href && href.startsWith('data:')) {
-              var parts = href.split(',');
-              var meta = parts[0];
-              var data = parts[1];
-              var mimeMatch = meta.match(/data:([^;]+)/);
-              var mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
-              var isBase64 = meta.indexOf('base64') !== -1;
-              window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'SAVE_BLOB', filename: name, mime: mime, base64: isBase64 ? data : btoa(data) } }, '*');
-              return;
-          }
-          return origClick.apply(this, arguments);
-      };
   }
 
-  var __lastOverlayState = false;
-  document.addEventListener('touchstart', function(e) {
-      var isFab = false;
-      var path = e.composedPath ? e.composedPath() : [];
-      for (var i=0; i<path.length; i++) {
-          var el = path[i];
-          if (el.classList && (el.classList.contains('uh-fab') || el.classList.contains('fab') || el.id === 'uh-fab' || el.getAttribute('data-uh-fab') !== null)) {
-              isFab = true; break;
-          }
+  if (!window.__uh_blob_hooked) {
+    window.__uh_blob_hooked = true;
+    window.__uh_blobs = {};
+    var origCreate = URL.createObjectURL;
+    URL.createObjectURL = function(obj) {
+      var url = origCreate.call(URL, obj);
+      if (obj instanceof Blob) window.__uh_blobs[url] = obj;
+      return url;
+    };
+    var origRevoke = URL.revokeObjectURL;
+    URL.revokeObjectURL = function(url) {
+      delete window.__uh_blobs[url];
+      return origRevoke.call(URL, url);
+    };
+    var origClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function() {
+      var href = this.href;
+      var name = this.download || ('download_' + Date.now() + '.bin');
+      if (href && href.startsWith('blob:')) {
+        var blob = window.__uh_blobs[href];
+        if (blob) {
+          var reader = new FileReader();
+          reader.onload = function() {
+            var b64 = reader.result.split(',')[1];
+            window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'SAVE_BLOB', filename: name, mime: blob.type || 'application/octet-stream', base64: b64 } }, '*');
+          };
+          reader.readAsDataURL(blob);
+          return;
+        }
       }
-      if (isFab !== __lastOverlayState) {
-          __lastOverlayState = isFab;
-          window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'OVERLAY_STATE', active: isFab } }, '*');
+      if (href && href.startsWith('data:')) {
+        var parts = href.split(',');
+        var meta = parts[0];
+        var data = parts[1];
+        var mimeMatch = meta.match(/data:([^;]+)/);
+        var mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+        var isBase64 = meta.indexOf('base64') !== -1;
+        window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'SAVE_BLOB', filename: name, mime: mime, base64: isBase64 ? data : btoa(data) } }, '*');
+        return;
       }
-  }, {passive: true, capture: true});
-  document.addEventListener('touchend', function() {
-      if (__lastOverlayState) { __lastOverlayState = false; window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'OVERLAY_STATE', active: false } }, '*'); }
-  }, {passive: true, capture: true});
-  document.addEventListener('touchcancel', function() {
-      if (__lastOverlayState) { __lastOverlayState = false; window.postMessage({ type: 'UH_NATIVE_CALL', payload: { type: 'OVERLAY_STATE', active: false } }, '*'); }
-  }, {passive: true, capture: true});
+      return origClick.apply(this, arguments);
+    };
+  }
 })();
 """
 
     private fun buildWrapper(ctx: Context, script: Script): String {
-        synchronized(wrapperCache) { wrapperCache[script.name]?.let { return it } }
+        wrapperCache[script.name]?.let { return it }
         val patsJson = script.patterns.joinToString(",") {
             "\"" + it.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
         }
@@ -711,58 +775,20 @@ if (!window.__uh_blob_hooked) {
             append("var GM_getResourceURL=__bundle.wrap.GM_getResourceURL;\n")
             append("var GM_log=__bundle.wrap.GM_log;\n")
             append("var unsafeWindow=window;\n")
-            append("var GM_info={script:__s,scriptHandler:'Violentmonkey',version:'2.49.0',platform:{browserName:'Chrome',browserVersion:'153',os:'Android',osVersion:'10',arch:'arm64'}};\n")
+            append("var GM_info={script:__s,scriptHandler:'Violentmonkey',version:'2.49.0',platform:{browserName:'Firefox',browserVersion:'154',os:'Android',osVersion:'14',arch:'arm64'}};\n")
             append("var GM=__bundle.async;try{GM.info=GM_info;}catch(e){}\n")
-            append("try{\n")
-            append("window.GM_getValue=GM_getValue;window.GM_setValue=GM_setValue;\n")
-            append("window.GM_deleteValue=GM_deleteValue;window.GM_listValues=GM_listValues;\n")
-            append("window.GM_addValueChangeListener=GM_addValueChangeListener;\n")
-            append("window.GM_removeValueChangeListener=GM_removeValueChangeListener;\n")
-            append("window.GM_xmlhttpRequest=GM_xmlhttpRequest;window.GM_download=GM_download;\n")
-            append("window.GM_openInTab=GM_openInTab;window.GM_setClipboard=GM_setClipboard;\n")
-            append("window.GM_notification=GM_notification;\n")
-            append("window.GM_registerMenuCommand=GM_registerMenuCommand;\n")
-            append("window.GM_unregisterMenuCommand=GM_unregisterMenuCommand;\n")
-            append("window.GM_addStyle=GM_addStyle;window.GM_addElement=GM_addElement;\n")
-            append("window.GM_cookie=GM_cookie;\n")
-            append("window.GM_getResourceText=GM_getResourceText;\n")
-            append("window.GM_getResourceURL=GM_getResourceURL;\n")
-            append("window.GM_log=GM_log;window.GM=GM;window.GM_info=GM_info;window.unsafeWindow=window;\n")
-            append("}catch(e){}\n")
-            append("try{\n")
-            append("var __sys;\n")
-            append("Object.defineProperty(window,'System',{configurable:true,get:function(){return __sys;},set:function(v){\n")
-            append("__sys=v;\n")
-            append("try{\n")
-            append("if(v&&v.register&&!v.__uh_patched){\n")
-            append("v.__uh_patched=true;\n")
-            append("var __orig=v.register;\n")
-            append("v.register=function(name,deps,fn){\n")
-            append("if(typeof name!=='string'){fn=deps;deps=name;name='__anon_'+Math.random().toString(36).slice(2);}\n")
-            append("try{window.__uh_sys_regs=window.__uh_sys_regs||{};window.__uh_sys_regs[name]=true;}catch(e){}\n")
-            append("return __orig.call(this,name,deps,fn);\n")
-            append("};\n")
-            append("}\n")
-            append("}catch(e){}\n")
-            append("}});\n")
-            append("}catch(e){}\n")
             append("try{\n")
         }
 
         val postamble = buildString {
             append("}catch(e){try{window.postMessage({type:'UH_NATIVE_CALL',payload:{type:'REPORT',url:u,kind:'userscript_err',detail:String((e&&e.message)||e)}},'*');}catch(_){}}\n")
-            append("if(typeof System!=='undefined'&&System.import){\n")
-            append("setTimeout(function(){try{var names=Object.keys(window.__uh_sys_regs||{});\n")
-            append("for(var k=0;k<names.length;k++){(function(n){try{System.import(n).catch(function(e){try{window.postMessage({type:'UH_NATIVE_CALL',payload:{type:'REPORT',url:location.href,kind:'sys_import_err_'+n,detail:String((e&&e.message)||e)}},'*');}catch(_){}});}catch(e){}})(names[k]);}\n")
-            append("}catch(e){}},50);\n")
-            append("}\n")
-            append("}catch(e){try{window.postMessage({type:'UH_NATIVE_CALL',payload:{type:'REPORT',url:location.href,kind:'wrapper_err',detail:String((e&&e.message)||e)}},'*');}catch(_){}}\n")
+            append("}catch(e){}\n")
             append("})();\n")
         }
 
         val requirePrelude = loadCachedRequires(ctx, script)
         val result = preamble + "\n" + requirePrelude + "\n" + script.body + "\n" + postamble
-        synchronized(wrapperCache) { wrapperCache[script.name] = result }
+        wrapperCache[script.name] = result
         return result
     }
 

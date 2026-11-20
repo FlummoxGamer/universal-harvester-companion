@@ -2,11 +2,13 @@ package app.harvester.companion.home
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import app.harvester.companion.Shortcut
 import app.harvester.companion.ShortcutStore
 import app.harvester.companion.WallpaperStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val context = application.applicationContext
@@ -14,20 +16,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _shortcuts = MutableStateFlow(ShortcutStore.list(context))
     val shortcuts: StateFlow<List<Shortcut>> = _shortcuts
 
-    private val _wallpaperPath = MutableStateFlow(WallpaperStore.getCurrentWallpaper(context))
-    val wallpaperPath: StateFlow<String?> = _wallpaperPath
+    private val _wallpaperState = MutableStateFlow(WallpaperStore.wallpaperFlow(context).value)
+    val wallpaperState: StateFlow<WallpaperStore.WallpaperState> = _wallpaperState
 
-    private val _isVideo = MutableStateFlow(WallpaperStore.isCurrentVideo(context))
-    val isVideo: StateFlow<Boolean> = _isVideo
-
-    private val _textColor = MutableStateFlow(WallpaperStore.getTextColor(context))
-    val textColor: StateFlow<Int> = _textColor
+    init {
+        viewModelScope.launch {
+            WallpaperStore.wallpaperFlow(context).collect { wp ->
+                _wallpaperState.value = wp
+            }
+        }
+    }
 
     fun refresh() {
         _shortcuts.value = ShortcutStore.list(context)
-        _wallpaperPath.value = WallpaperStore.getCurrentWallpaper(context)
-        _isVideo.value = WallpaperStore.isCurrentVideo(context)
-        _textColor.value = WallpaperStore.getTextColor(context)
+        _wallpaperState.value = WallpaperStore.wallpaperFlow(context).value
     }
 
     fun moveShortcut(from: Int, to: Int) {

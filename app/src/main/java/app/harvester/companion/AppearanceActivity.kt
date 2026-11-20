@@ -35,7 +35,12 @@ class AppearanceActivity : AppCompatActivity() {
         }
 
         findViewById<android.view.View>(R.id.appearanceWallpaper).setOnClickListener {
-            startActivity(android.content.Intent(this, CustomizeHomeActivity::class.java))
+            startActivity(
+                android.content.Intent(
+                    this,
+                    app.harvester.companion.settings.appearance.CustomizeHomeActivity::class.java
+                )
+            )
         }
         findViewById<android.view.View>(R.id.appearanceAddressBar).setOnClickListener {
             startActivity(android.content.Intent(this, CustomizeAddressBarActivity::class.java))

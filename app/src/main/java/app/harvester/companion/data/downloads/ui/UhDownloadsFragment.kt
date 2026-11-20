@@ -1,5 +1,6 @@
 package app.harvester.companion.data.downloads.ui
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -12,6 +13,8 @@ import androidx.navigation.fragment.findNavController
 import mozilla.components.lib.state.helpers.StoreProvider.Companion.fragmentStore
 import mozilla.components.support.utils.DefaultDownloadFileUtils
 import app.harvester.companion.R
+import app.harvester.companion.UHLog
+import app.harvester.companion.core.downloads.DownloadLocationResolver
 import app.harvester.companion.data.downloads.UhDownloadUIState
 import app.harvester.companion.data.downloads.UhDownloadUIStore
 import app.harvester.companion.data.downloads.UhFileItem
@@ -23,9 +26,18 @@ class UhDownloadsFragment : Fragment() {
         UhDownloadUIStore(
             initialState = it,
             middleware = UhDownloadUIMiddlewareProvider.provideMiddleware(
-                coroutineScope = viewLifecycleOwner.lifecycleScope,
+                coroutineScope = lifecycleScope,
                 applicationContext = requireContext().applicationContext,
-                navController = findNavController(),
+                navControllerProvider = {
+                    if (isAdded) {
+                        try {
+                            findNavController()
+                        } catch (e: Exception) {
+                            UHLog.w("ui_warn", "NavController unavailable in UhDownloadsFragment: ${e.message}")
+                            null
+                        }
+                    } else null
+                },
             ),
         )
     }
@@ -38,24 +50,58 @@ class UhDownloadsFragment : Fragment() {
         UhDownloadScreen(
             downloadsStore = downloadStore,
             onItemClick = { openItem(it) },
-            onSettingsClick = { findNavController().navigate(app.harvester.companion.R.id.action_downloadsFragment_to_settingsFragment) },
-            onBackClick = { findNavController().popBackStack() }
+            onSettingsClick = {
+                try {
+                    if (isAdded) {
+                        findNavController().navigate(R.id.action_downloadsFragment_to_settingsFragment)
+                    }
+                } catch (e: Exception) {
+                    UHLog.throwable("ui_error", "Failed navigating to download settings", e)
+                }
+            },
+            onBackClick = {
+                try {
+                    if (isAdded && !findNavController().popBackStack()) {
+                        activity?.onBackPressedDispatcher?.onBackPressed()
+                    }
+                } catch (e: Exception) {
+                    UHLog.throwable("ui_error", "Failed navigating back from downloads", e)
+                }
+            }
         )
     }
 
     private fun openItem(item: UhFileItem) {
-        context?.let {
-            val fileUtils = DefaultDownloadFileUtils(requireContext()) {
-                android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).path
+        val ctx = context ?: return
+        if (item.directoryPath.startsWith("content://")) {
+            val safUri = DownloadLocationResolver.findSafFileUri(ctx, item.directoryPath, item.fileName)
+            if (safUri != null) {
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(safUri, item.contentType ?: "*/*")
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    ctx.startActivity(Intent.createChooser(intent, item.fileName ?: "Open file"))
+                    return
+                } catch (e: Exception) {
+                    UHLog.throwable("download_error", "Failed opening SAF download item ${item.fileName}", e)
+                }
+            } else {
+                UHLog.w("download_warn", "Could not locate SAF download item: ${item.fileName}")
             }
-            val canOpenFile = fileUtils.openFile(
-                fileName = item.fileName,
-                directoryPath = item.directoryPath,
-                contentType = item.contentType,
-            )
-            if (!canOpenFile) {
-                Toast.makeText(it, "Cannot open this file", Toast.LENGTH_SHORT).show()
-            }
+        }
+
+        val fileUtils = DefaultDownloadFileUtils(ctx) {
+            DownloadLocationResolver.resolveTargetDirectory(ctx.applicationContext)
+        }
+        val canOpenFile = fileUtils.openFile(
+            fileName = item.fileName,
+            directoryPath = item.directoryPath,
+            contentType = item.contentType,
+        )
+        if (!canOpenFile) {
+            UHLog.w("download_warn", "Unable to open downloaded file: ${item.fileName}")
+            Toast.makeText(ctx, "Cannot open this file", Toast.LENGTH_SHORT).show()
         }
     }
 }

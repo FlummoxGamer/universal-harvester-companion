@@ -11,12 +11,16 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.Store
 import mozilla.components.support.utils.DownloadFileUtils
+import android.content.Context
+import app.harvester.companion.UHLog
+import app.harvester.companion.core.downloads.DownloadLocationResolver
 import app.harvester.companion.data.downloads.UhDownloadUIAction
 import app.harvester.companion.data.downloads.UhDownloadUIState
 import app.harvester.companion.data.downloads.UhFileItem
 import app.harvester.companion.data.downloads.UhRenameFileError
 
 class UhDownloadUIRenameMiddleware(
+    private val applicationContext: Context,
     private val browserStore: BrowserStore,
     private val scope: CoroutineScope,
     private val downloadFileUtils: DownloadFileUtils,
@@ -73,17 +77,22 @@ class UhDownloadUIRenameMiddleware(
                 return@launch
             }
 
-            val attemptFileRename = downloadFileUtils.renameFile(
-                directoryPath = download.directoryPath,
-                oldName = download.fileName,
-                newName = newNameTrimmed,
-            )
+            val attemptFileRename = if (download.directoryPath.startsWith("content://")) {
+                DownloadLocationResolver.renameSafFile(applicationContext, download.directoryPath, download.fileName, newNameTrimmed)
+            } else {
+                downloadFileUtils.renameFile(
+                    directoryPath = download.directoryPath,
+                    oldName = download.fileName,
+                    newName = newNameTrimmed,
+                )
+            }
 
             if (!attemptFileRename) {
+                UHLog.w("download_warn", "Rename failed for ${download.fileName} -> $newNameTrimmed")
                 dispatchAction(uiStore, UhDownloadUIAction.RenameFileFailed(UhRenameFileError.CannotRename))
                 return@launch
             } else {
-                uiStore.dispatch(UhDownloadUIAction.RenameFileDismissed)
+                dispatchAction(uiStore, UhDownloadUIAction.RenameFileDismissed)
             }
 
             withContext(mainDispatcher) {
@@ -98,7 +107,12 @@ class UhDownloadUIRenameMiddleware(
         currentName: String,
         newName: String,
     ): UhRenameFileError? {
-        if (downloadFileUtils.fileExists(directoryPath, newName)) {
+        val exists = if (directoryPath.startsWith("content://")) {
+            DownloadLocationResolver.safFileExists(applicationContext, directoryPath, newName)
+        } else {
+            downloadFileUtils.fileExists(directoryPath, newName)
+        }
+        if (exists) {
             return if (newName.equals(currentName, ignoreCase = true)) {
                 UhRenameFileError.CaseOnlyNameChange(newName)
             } else {
