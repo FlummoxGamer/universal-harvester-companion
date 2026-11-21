@@ -258,7 +258,6 @@ fun UhDownloadScreen(
                                     when (item) {
                                         is UhHeaderItem -> "header_${item.timeCategory.name}"
                                         is UhFileItem -> "file_${item.id}"
-                                        else -> item.hashCode().toString()
                                     }
                                 }
                             ) { item ->

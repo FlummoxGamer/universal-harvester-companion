@@ -271,13 +271,12 @@ object WallpaperStore {
         onProgress: ((Float) -> Unit)? = null,
     ): String? {
         return try {
-            val isTrimmed = startSec != null && durationSec != null && durationSec >= 0.5f
             val destFile: File
             val fineClipBounds: VideoClipBounds?
 
-            if (isTrimmed) {
-                val sMs = (startSec!! * 1000f).toLong().coerceAtLeast(0L)
-                val eMs = ((startSec + durationSec!!) * 1000f).toLong().coerceAtLeast(sMs + 500L)
+            if (startSec != null && durationSec != null && durationSec >= 0.5f) {
+                val sMs = (startSec * 1000f).toLong().coerceAtLeast(0L)
+                val eMs = ((startSec + durationSec) * 1000f).toLong().coerceAtLeast(sMs + 500L)
                 val trimmed = WallpaperMediaProcessor.importLocalVideoTrimmedLossless(
                     ctx = ctx,
                     uri = uri,
@@ -643,7 +642,7 @@ object WallpaperStore {
             clipBounds = activeClipBounds,
         )
 
-        computeAndPersistLuminanceAsync(appCtx, path!!, isVideo, textColor, safeDim)
+        computeAndPersistLuminanceAsync(appCtx, path, isVideo, textColor, safeDim)
     }
 
     private fun computeAndPersistLuminanceAsync(

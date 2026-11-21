@@ -42,7 +42,9 @@ class TabsTrayDialogFragment : BottomSheetDialogFragment() {
         return BottomSheetDialog(requireContext(), theme).apply {
             window?.let { w ->
                 WindowCompat.setDecorFitsSystemWindows(w, false)
+                @Suppress("DEPRECATION")
                 w.statusBarColor = Color.TRANSPARENT
+                @Suppress("DEPRECATION")
                 w.navigationBarColor = Color.TRANSPARENT
                 w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             }

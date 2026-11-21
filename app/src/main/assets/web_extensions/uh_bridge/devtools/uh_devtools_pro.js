@@ -85,12 +85,20 @@
         } catch (_e) {}
     }
 
+    function getShadowOrRoot() {
+        try {
+            if (window.eruda && window.eruda._shadowRoot) return window.eruda._shadowRoot;
+        } catch (_e) {}
+        const host = document.getElementById("eruda");
+        if (!host) return null;
+        return host.shadowRoot || host;
+    }
+
     // -------------------------------------------------------------------------
-    // Box-Model Touch Element Picker (Integrated into Elements + Top Bar)
+    // Box-Model Touch Element Picker (Integrated into UH Header + Elements)
     // -------------------------------------------------------------------------
     let boxOverlay = null;
     let pickingActive = false;
-    let lastPickedEl = null;
 
     function removeBoxOverlay() {
         if (boxOverlay) {
@@ -162,13 +170,17 @@
         }
         const rect = el.getBoundingClientRect();
         const sel = buildCssSelector(el);
+        const bgCard = isDarkTheme ? "#171B21" : "#FFFFFF";
+        const borderCol = isDarkTheme ? "#2A3138" : "#CBD5E1";
+        const textMain = isDarkTheme ? "#E6E9EE" : "#0F172A";
+        const bgBtn = isDarkTheme ? "#0A0F1A" : "#F1F5F9";
         strip.style.cssText =
-            "display:flex;align-items:center;gap:6px;padding:6px 10px;background:#171B21;" +
-            "border-bottom:1px solid #2A3138;font-family:monospace;font-size:11px;color:#E6E9EE;flex-wrap:wrap;";
+            `position:relative;z-index:10;display:flex;align-items:center;gap:6px;padding:6px 10px;background:${bgCard};` +
+            `border-bottom:1px solid ${borderCol};font-family:monospace;font-size:11px;color:${textMain};flex-wrap:wrap;`;
         strip.innerHTML =
-            `<span style="color:#7DD3FC;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(sel)} (${Math.round(rect.width)}×${Math.round(rect.height)})</span>` +
-            `<button id="__uh_pk_sel" style="padding:3px 7px;border:1px solid #2A3138;border-radius:5px;background:#0A0F1A;color:#E6E9EE;font-size:10px;cursor:pointer;">Copy Selector</button>` +
-            `<button id="__uh_pk_html" style="padding:3px 7px;border:1px solid #2A3138;border-radius:5px;background:#0A0F1A;color:#E6E9EE;font-size:10px;cursor:pointer;">Copy HTML</button>` +
+            `<span style="color:#457B9D;font-weight:700;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(sel)} (${Math.round(rect.width)}×${Math.round(rect.height)})</span>` +
+            `<button id="__uh_pk_sel" style="padding:3px 7px;border:1px solid ${borderCol};border-radius:5px;background:${bgBtn};color:${textMain};font-size:10px;cursor:pointer;">Copy Selector</button>` +
+            `<button id="__uh_pk_html" style="padding:3px 7px;border:1px solid ${borderCol};border-radius:5px;background:${bgBtn};color:${textMain};font-size:10px;cursor:pointer;">Copy HTML</button>` +
             `<button id="__uh_pk_clr" style="padding:3px 7px;border:none;border-radius:5px;background:transparent;color:#8A96A8;font-size:10px;cursor:pointer;">Clear</button>`;
 
         const bSel = strip.querySelector("#__uh_pk_sel");
@@ -177,7 +189,6 @@
         if (bHtml) bHtml.onclick = () => copyText(el.outerHTML);
         const bClr = strip.querySelector("#__uh_pk_clr");
         if (bClr) bClr.onclick = () => {
-            lastPickedEl = null;
             removeBoxOverlay();
             strip.remove();
         };
@@ -194,7 +205,6 @@
         const banner = document.getElementById("__uh_pick_banner");
         if (banner) banner.remove();
 
-        lastPickedEl = target;
         drawBoxHighlight(target);
         if (window.eruda) {
             window.eruda.show();
@@ -230,16 +240,31 @@
         document.addEventListener("click", onPickElementTap, true);
     }
 
+    function closeDevToolsPanel() {
+        pickingActive = false;
+        document.removeEventListener("click", onPickElementTap, true);
+        const banner = document.getElementById("__uh_pick_banner");
+        if (banner) banner.remove();
+        removeBoxOverlay();
+        if (window.eruda) {
+            try { window.eruda.hide(); } catch (_e) {}
+        }
+        devToolsVisible = false;
+        notifyNativeState(false);
+    }
+
     // -------------------------------------------------------------------------
-    // Tab 2: Network (Early + Live Fetch/XHR + PerformanceResourceTiming Assets)
+    // Tab: Network (Proper Eruda v3 Tool with visible $el.show() / $el.hide())
     // -------------------------------------------------------------------------
     function createNetworkTool() {
+        let $container = null;
         let rootEl = null;
         let filterText = "";
         let filterKind = "all";
         let selectedId = null;
         let detailSubTab = "response";
         let clearedAtTs = 0;
+        let isShown = false;
 
         function getCombinedEntries() {
             const live = earlyNetLog.slice();
@@ -250,7 +275,6 @@
                 for (let i = perf.length - 1; i >= 0; i--) {
                     const p = perf[i];
                     if (!p || !p.name || p.startTime < clearedAtTs) continue;
-                    // Avoid duplicating requests already captured in earlyNetLog
                     if ((p.initiatorType === "fetch" || p.initiatorType === "xmlhttprequest") && liveUrls.has(p.name)) {
                         continue;
                     }
@@ -280,7 +304,7 @@
         }
 
         function render() {
-            if (!rootEl) return;
+            if (!rootEl || !isShown) return;
             const bgMain = isDarkTheme ? "#0A0F1A" : "#F8FAFC";
             const bgCard = isDarkTheme ? "#171B21" : "#FFFFFF";
             const borderCol = isDarkTheme ? "#2A3138" : "#E2E8F0";
@@ -297,7 +321,7 @@
             });
 
             const sel = filtered.find((x) => x.id === selectedId) || null;
-            const rows = filtered.slice(0, 120).map((e) => {
+            const rows = filtered.slice(0, 140).map((e) => {
                 const statusColor = e.status >= 200 && e.status < 300
                     ? "#4ADE80"
                     : (e.status >= 400 || e.status < 0 ? "#F87171" : "#FBBF24");
@@ -306,19 +330,19 @@
                 const tag = e.kind === "asset" ? (e.initiator || "asset").toUpperCase() : e.method;
                 const isSelected = e.id === selectedId;
                 return `
-                    <div data-id="${escapeHtml(e.id)}" class="uh-net-row" style="padding:7px 10px;border-bottom:1px solid ${borderCol};cursor:pointer;background:${isSelected ? "rgba(69,123,157,0.18)" : "transparent"};">
+                    <div data-id="${escapeHtml(e.id)}" class="uh-net-row" style="padding:8px 10px;border-bottom:1px solid ${borderCol};cursor:pointer;background:${isSelected ? "rgba(69,123,157,0.22)" : "transparent"};">
                         <div style="display:flex;align-items:center;gap:6px;font-family:monospace;font-size:11px;">
                             <span style="color:${statusColor};font-weight:700;min-width:28px;">${e.status || "..."}</span>
-                            <span style="color:#7DD3FC;font-weight:600;font-size:10px;min-width:34px;">${escapeHtml(tag)}</span>
+                            <span style="color:#457B9D;font-weight:700;font-size:10px;min-width:36px;">${escapeHtml(tag)}</span>
                             <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${textMain};">${escapeHtml(shortUrl)}</span>
                             <span style="color:${textSub};font-size:10px;">${formatBytes(e.sizeBytes)}</span>
-                            <span style="color:${textSub};font-size:10px;min-width:38px;text-align:right;">${e.durationMs}ms</span>
+                            <span style="color:${textSub};font-size:10px;min-width:40px;text-align:right;">${e.durationMs}ms</span>
                         </div>
                         <div style="margin-top:4px;height:2.5px;background:${bgCard};border-radius:2px;overflow:hidden;">
                             <div style="width:${barW}%;height:100%;background:${statusColor};"></div>
                         </div>
                     </div>`;
-            }).join("") || `<div style="padding:24px;text-align:center;color:${textSub};font-size:12px;">No matching requests captured yet.</div>`;
+            }).join("") || `<div style="padding:28px 16px;text-align:center;color:${textSub};font-size:12px;">No matching requests captured yet. Interact with or reload the page to inspect traffic.</div>`;
 
             let detailHtml = "";
             if (sel) {
@@ -352,7 +376,7 @@
                             <button id="uh-net-replay" style="padding:5px 9px;border:1px solid ${borderCol};border-radius:6px;background:${bgMain};color:${textMain};cursor:pointer;font-size:11px;">Replay</button>
                             <button id="uh-net-close-det" style="margin-left:auto;padding:5px 8px;border:none;background:transparent;color:${textSub};cursor:pointer;font-weight:700;">✕</button>
                         </div>
-                        <div style="font-family:monospace;color:#7DD3FC;word-break:break-all;margin-bottom:5px;font-size:10.5px;">${escapeHtml(sel.url)}</div>
+                        <div style="font-family:monospace;color:#457B9D;word-break:break-all;margin-bottom:5px;font-size:10.5px;">${escapeHtml(sel.url)}</div>
                         <div style="color:${textSub};margin-bottom:6px;font-size:10.5px;">${escapeHtml(sel.method)} · ${sel.status || "..."} · ${escapeHtml(sel.contentType || "resource")} · ${formatBytes(sel.sizeBytes)} · ${sel.durationMs}ms</div>
                         ${bodySection}
                     </div>`;
@@ -360,21 +384,23 @@
 
             const chip = (id, label) => {
                 const active = filterKind === id;
-                return `<button data-kind="${id}" class="uh-net-chip" style="padding:4px 8px;border-radius:6px;border:1px solid ${active ? "#457B9D" : borderCol};background:${active ? "#457B9D" : bgMain};color:${active ? "#fff" : textSub};font-size:10.5px;font-weight:600;cursor:pointer;">${label}</button>`;
+                return `<button data-kind="${id}" class="uh-net-chip" style="padding:4px 9px;border-radius:6px;border:1px solid ${active ? "#457B9D" : borderCol};background:${active ? "#457B9D" : bgMain};color:${active ? "#fff" : textSub};font-size:10.5px;font-weight:600;cursor:pointer;">${label}</button>`;
             };
 
             rootEl.innerHTML = `
-                <div style="font-family:system-ui,-apple-system,sans-serif;color:${textMain};background:${bgMain};min-height:100%;">
-                    <div style="display:flex;gap:6px;padding:8px 10px;background:${bgCard};border-bottom:1px solid ${borderCol};align-items:center;flex-wrap:wrap;">
-                        <input id="uh-net-filter" placeholder="Filter URL…" value="${escapeHtml(filterText)}" style="flex:1;min-width:120px;padding:6px 8px;border-radius:6px;border:1px solid ${borderCol};background:${bgMain};color:${textMain};font-size:12px;" />
-                        <span style="font-size:10.5px;color:${textSub};">${filtered.length} req</span>
-                        <button id="uh-net-clear" style="padding:5px 8px;border:1px solid ${borderCol};border-radius:6px;background:${bgMain};color:#F87171;font-size:11px;font-weight:600;cursor:pointer;">Clear</button>
-                    </div>
-                    <div style="display:flex;gap:5px;padding:6px 10px;background:${bgCard};border-bottom:1px solid ${borderCol};overflow-x:auto;">
-                        ${chip("all", "All")}
-                        ${chip("api", "Fetch / XHR")}
-                        ${chip("assets", "Assets")}
-                        ${chip("err", "Errors")}
+                <div style="font-family:system-ui,-apple-system,sans-serif;color:${textMain};background:${bgMain};min-height:100%;box-sizing:border-box;padding-bottom:16px;">
+                    <div style="position:sticky;top:0;z-index:5;background:${bgCard};">
+                        <div style="display:flex;gap:6px;padding:8px 10px;border-bottom:1px solid ${borderCol};align-items:center;">
+                            <input id="uh-net-filter" placeholder="Filter URL…" value="${escapeHtml(filterText)}" style="flex:1;min-width:110px;padding:6px 8px;border-radius:6px;border:1px solid ${borderCol};background:${bgMain};color:${textMain};font-size:12px;" />
+                            <span style="font-size:10.5px;color:${textSub};">${filtered.length} req</span>
+                            <button id="uh-net-clear" style="padding:5px 8px;border:1px solid ${borderCol};border-radius:6px;background:${bgMain};color:#F87171;font-size:11px;font-weight:600;cursor:pointer;">Clear</button>
+                        </div>
+                        <div style="display:flex;gap:5px;padding:6px 10px;border-bottom:1px solid ${borderCol};overflow-x:auto;">
+                            ${chip("all", "All")}
+                            ${chip("api", "Fetch / XHR")}
+                            ${chip("assets", "Assets")}
+                            ${chip("err", "Errors")}
+                        </div>
                     </div>
                     <div>${rows}</div>
                     ${detailHtml}
@@ -425,26 +451,80 @@
             if (closeDet) closeDet.onclick = () => { selectedId = null; render(); };
         }
 
+        const ToolBase = window.eruda && window.eruda.Tool;
+        if (ToolBase) {
+            return new (ToolBase.extend({
+                name: "Network",
+                init($el) {
+                    this.callSuper(ToolBase, "init", arguments);
+                    $container = $el;
+                    rootEl = $el[0];
+                    if (rootEl) {
+                        rootEl.style.overflowY = "auto";
+                        rootEl.style.webkitOverflowScrolling = "touch";
+                    }
+                    netListeners.push(render);
+                },
+                show() {
+                    this.callSuper(ToolBase, "show", arguments);
+                    isShown = true;
+                    if (rootEl) rootEl.style.display = "block";
+                    render();
+                    return this;
+                },
+                hide() {
+                    isShown = false;
+                    this.callSuper(ToolBase, "hide", arguments);
+                    if (rootEl) rootEl.style.display = "none";
+                    return this;
+                },
+                destroy() {
+                    isShown = false;
+                    const idx = netListeners.indexOf(render);
+                    if (idx >= 0) netListeners.splice(idx, 1);
+                    this.callSuper(ToolBase, "destroy", arguments);
+                }
+            }))();
+        }
+
         return {
             name: "Network",
             init($el) {
+                $container = $el;
                 rootEl = $el[0];
+                if (rootEl) {
+                    rootEl.style.overflowY = "auto";
+                    rootEl.style.webkitOverflowScrolling = "touch";
+                }
                 netListeners.push(render);
-                render();
             },
-            show() { render(); },
-            hide() {},
+            show() {
+                isShown = true;
+                if ($container && $container.show) $container.show();
+                if (rootEl) rootEl.style.display = "block";
+                render();
+                return this;
+            },
+            hide() {
+                isShown = false;
+                if ($container && $container.hide) $container.hide();
+                if (rootEl) rootEl.style.display = "none";
+                return this;
+            },
             destroy() {
+                isShown = false;
                 const idx = netListeners.indexOf(render);
                 if (idx >= 0) netListeners.splice(idx, 1);
+                if ($container && $container.remove) $container.remove();
             }
         };
     }
 
     // -------------------------------------------------------------------------
-    // Tab 5: Performance & Page Info (FPS, Vitals, Outlines, Page Source)
+    // Tab: Performance & Page Info (Proper Eruda v3 Tool)
     // -------------------------------------------------------------------------
     function createPerformanceTool() {
+        let $container = null;
         let rootEl = null;
         let fps = 60;
         let frames = 0;
@@ -452,6 +532,7 @@
         let rafId = 0;
         let outlinesOn = false;
         let showSource = false;
+        let isShown = false;
 
         function tick(now) {
             frames++;
@@ -462,7 +543,11 @@
                 const el = rootEl && rootEl.querySelector("#uh-fps-val");
                 if (el) el.textContent = fps + " FPS";
             }
-            rafId = requestAnimationFrame(tick);
+            if (isShown) {
+                rafId = requestAnimationFrame(tick);
+            } else {
+                rafId = 0;
+            }
         }
 
         function toggleOutlines() {
@@ -482,7 +567,7 @@
         }
 
         function render() {
-            if (!rootEl) return;
+            if (!rootEl || !isShown) return;
             const bgMain = isDarkTheme ? "#0A0F1A" : "#F8FAFC";
             const bgCard = isDarkTheme ? "#171B21" : "#FFFFFF";
             const borderCol = isDarkTheme ? "#2A3138" : "#E2E8F0";
@@ -505,7 +590,7 @@
                 : "";
 
             rootEl.innerHTML = `
-                <div style="padding:12px;font-family:system-ui,-apple-system,sans-serif;color:${textMain};background:${bgMain};min-height:100%;font-size:12px;">
+                <div style="padding:12px;font-family:system-ui,-apple-system,sans-serif;color:${textMain};background:${bgMain};min-height:100%;box-sizing:border-box;font-size:12px;">
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
                         <div style="background:${bgCard};border:1px solid ${borderCol};padding:10px;border-radius:10px;">
                             <div style="color:${textSub};font-size:10px;">Live Frame Rate</div>
@@ -513,7 +598,7 @@
                         </div>
                         <div style="background:${bgCard};border:1px solid ${borderCol};padding:10px;border-radius:10px;">
                             <div style="color:${textSub};font-size:10px;">DOM Nodes</div>
-                            <div style="font-size:18px;font-weight:700;color:#7DD3FC;">${nodeCount}</div>
+                            <div style="font-size:18px;font-weight:700;color:#457B9D;">${nodeCount}</div>
                         </div>
                         <div style="background:${bgCard};border:1px solid ${borderCol};padding:10px;border-radius:10px;">
                             <div style="color:${textSub};font-size:10px;">TTFB / FCP</div>
@@ -544,33 +629,100 @@
             if (cBtn) cBtn.onclick = () => copyText(document.documentElement.outerHTML);
         }
 
+        const ToolBase = window.eruda && window.eruda.Tool;
+        if (ToolBase) {
+            return new (ToolBase.extend({
+                name: "Performance",
+                init($el) {
+                    this.callSuper(ToolBase, "init", arguments);
+                    $container = $el;
+                    rootEl = $el[0];
+                    if (rootEl) {
+                        rootEl.style.overflowY = "auto";
+                        rootEl.style.webkitOverflowScrolling = "touch";
+                    }
+                },
+                show() {
+                    this.callSuper(ToolBase, "show", arguments);
+                    isShown = true;
+                    if (rootEl) rootEl.style.display = "block";
+                    render();
+                    if (!rafId) {
+                        lastTs = performance.now();
+                        frames = 0;
+                        rafId = requestAnimationFrame(tick);
+                    }
+                    return this;
+                },
+                hide() {
+                    isShown = false;
+                    if (rafId) {
+                        cancelAnimationFrame(rafId);
+                        rafId = 0;
+                    }
+                    this.callSuper(ToolBase, "hide", arguments);
+                    if (rootEl) rootEl.style.display = "none";
+                    return this;
+                },
+                destroy() {
+                    isShown = false;
+                    if (rafId) {
+                        cancelAnimationFrame(rafId);
+                        rafId = 0;
+                    }
+                    const st = document.getElementById("__uh_outline_css");
+                    if (st) st.remove();
+                    this.callSuper(ToolBase, "destroy", arguments);
+                }
+            }))();
+        }
+
         return {
             name: "Performance",
             init($el) {
+                $container = $el;
                 rootEl = $el[0];
-                render();
-                rafId = requestAnimationFrame(tick);
+                if (rootEl) {
+                    rootEl.style.overflowY = "auto";
+                    rootEl.style.webkitOverflowScrolling = "touch";
+                }
             },
-            show() { render(); },
-            hide() {},
+            show() {
+                isShown = true;
+                if ($container && $container.show) $container.show();
+                if (rootEl) rootEl.style.display = "block";
+                render();
+                if (!rafId) {
+                    lastTs = performance.now();
+                    frames = 0;
+                    rafId = requestAnimationFrame(tick);
+                }
+                return this;
+            },
+            hide() {
+                isShown = false;
+                if (rafId) {
+                    cancelAnimationFrame(rafId);
+                    rafId = 0;
+                }
+                if ($container && $container.hide) $container.hide();
+                if (rootEl) rootEl.style.display = "none";
+                return this;
+            },
             destroy() {
+                isShown = false;
                 if (rafId) cancelAnimationFrame(rafId);
                 const st = document.getElementById("__uh_outline_css");
                 if (st) st.remove();
+                if ($container && $container.remove) $container.remove();
             }
         };
     }
 
     // -------------------------------------------------------------------------
-    // UH Branding, Floating Button Removal, Tab Order & Top Controls
+    // UH Top Header Bar (Title + Pick Element + Prominent Close Button)
     // -------------------------------------------------------------------------
-    function getShadowOrRoot() {
-        const host = document.getElementById("eruda");
-        if (!host) return null;
-        return host.shadowRoot || host;
-    }
-
-    function applyUhBrandingAndControls() {
+    function applyUhBrandingAndHeader() {
         try {
             if (window.eruda && window.eruda._entryBtn) {
                 window.eruda._entryBtn.hide();
@@ -583,75 +735,136 @@
         const root = getShadowOrRoot();
         if (!root) return;
 
-        // Permanently suppress floating entry button + Eruda settings gear + apply UH accent
-        if (!root.querySelector("#__uh_dt_brand_style")) {
-            const st = document.createElement("style");
+        const hdrBg = isDarkTheme ? "#0F141C" : "#F1F5F9";
+        const hdrBorder = isDarkTheme ? "#2A3138" : "#CBD5E1";
+        const hdrText = isDarkTheme ? "#E6E9EE" : "#0F172A";
+        const btnBg = isDarkTheme ? "#1C232E" : "#FFFFFF";
+
+        let st = root.querySelector("#__uh_dt_brand_style");
+        if (!st) {
+            st = document.createElement("style");
             st.id = "__uh_dt_brand_style";
-            st.textContent = `
-                .eruda-entry-btn, .luna-tab-slider-bar { display: none !important; visibility: hidden !important; pointer-events: none !important; }
-                .eruda-icon-settings, .eruda-settings { display: none !important; }
-                .eruda-nav-bar-container { padding-right: 76px !important; }
-                .eruda-nav-bar-item.eruda-active { color: #457B9D !important; border-bottom-color: #457B9D !important; }
-                .eruda-bottom-bar { background: #457B9D !important; }
-                #__uh_dt_actions {
-                    position: absolute; right: 6px; top: 0; height: 40px;
-                    display: flex; align-items: center; gap: 4px; z-index: 20;
-                }
-                .uh-dt-hdr-btn {
-                    border: none; background: transparent; color: #8A96A8;
-                    font: 700 12px/1 system-ui, sans-serif; padding: 6px 8px;
-                    border-radius: 6px; cursor: pointer;
-                }
-                .uh-dt-hdr-btn:active { background: rgba(69, 123, 157, 0.22); color: #E6E9EE; }
-            `;
             root.appendChild(st);
         }
+        st.textContent = `
+            .eruda-entry-btn { display: none !important; visibility: hidden !important; pointer-events: none !important; }
+            .eruda-dev-tools {
+                padding-top: 78px !important;
+                border-top: 1.5px solid #457B9D !important;
+            }
+            .eruda-dev-tools .eruda-nav-bar,
+            .eruda-dev-tools .luna-tab {
+                top: 38px !important;
+            }
+            .eruda-dev-tools .eruda-resizer {
+                top: 0 !important;
+                height: 6px !important;
+                z-index: 200 !important;
+            }
+            .luna-tab-slider { background: #457B9D !important; }
+            .luna-tab-item.luna-tab-selected { color: #457B9D !important; font-weight: 700 !important; }
+            #__uh_dt_topbar {
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 38px;
+                z-index: 160;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 0 10px 0 12px;
+                background: ${hdrBg};
+                border-bottom: 1px solid ${hdrBorder};
+                box-sizing: border-box;
+                font-family: system-ui, -apple-system, sans-serif;
+            }
+            #__uh_dt_topbar .uh-dt-title {
+                display: flex;
+                align-items: center;
+                gap: 7px;
+                color: ${hdrText};
+                font-size: 12.5px;
+                font-weight: 700;
+                letter-spacing: 0.2px;
+            }
+            #__uh_dt_topbar .uh-dt-dot {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background: #457B9D;
+                display: inline-block;
+            }
+            #__uh_dt_topbar .uh-dt-controls {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+            #__uh_dt_topbar .uh-dt-btn {
+                border: 1px solid ${hdrBorder};
+                background: ${btnBg};
+                color: ${hdrText};
+                font: 600 11px/1 system-ui, -apple-system, sans-serif;
+                padding: 5px 10px;
+                border-radius: 7px;
+                cursor: pointer;
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+            }
+            #__uh_dt_topbar .uh-dt-close {
+                border: 1px solid ${hdrBorder};
+                background: ${btnBg};
+                color: ${hdrText};
+                font: 700 13px/1 system-ui, -apple-system, sans-serif;
+                width: 28px;
+                height: 26px;
+                border-radius: 7px;
+                cursor: pointer;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+            }
+        `;
 
-        // Rename "Resources" -> "Storage" cleanly and keep tabs crisp
-        const navItems = root.querySelectorAll(".eruda-nav-bar-item");
-        navItems.forEach((item) => {
-            const txt = (item.textContent || "").trim().toLowerCase();
-            if (txt === "resources") item.textContent = "Storage";
-            else if (txt === "console") item.textContent = "Console";
-            else if (txt === "elements") item.textContent = "Elements";
-            else if (txt === "network") item.textContent = "Network";
-            else if (txt === "performance") item.textContent = "Performance";
+        // Rename "Resources" -> "Storage" and capitalize clean UH labels in luna-tab
+        const tabItems = root.querySelectorAll(".luna-tab-item");
+        tabItems.forEach((item) => {
+            const raw = (item.textContent || "").trim().toLowerCase();
+            if (raw === "resources") item.textContent = "Storage";
+            else if (raw === "console") item.textContent = "Console";
+            else if (raw === "elements") item.textContent = "Elements";
+            else if (raw === "network") item.textContent = "Network";
+            else if (raw === "performance") item.textContent = "Performance";
         });
 
-        // Add sleek right-side Pick Element + Close buttons to the DevTools header bar
-        const navContainer = root.querySelector(".eruda-nav-bar-container");
-        if (navContainer && !root.querySelector("#__uh_dt_actions")) {
-            const actions = document.createElement("div");
-            actions.id = "__uh_dt_actions";
+        // Mount dedicated UH DevTools header bar inside .eruda-dev-tools
+        const devToolsEl = root.querySelector(".eruda-dev-tools");
+        if (devToolsEl && !devToolsEl.querySelector("#__uh_dt_topbar")) {
+            const bar = document.createElement("div");
+            bar.id = "__uh_dt_topbar";
+            bar.innerHTML = `
+                <div class="uh-dt-title">
+                    <span class="uh-dt-dot"></span>
+                    <span>UH DevTools</span>
+                </div>
+                <div class="uh-dt-controls">
+                    <button id="__uh_dt_pick" class="uh-dt-btn" title="Pick Element">◎ Pick</button>
+                    <button id="__uh_dt_close" class="uh-dt-close" title="Close UH DevTools">✕</button>
+                </div>`;
+            devToolsEl.insertBefore(bar, devToolsEl.firstChild);
 
-            const pickBtn = document.createElement("button");
-            pickBtn.className = "uh-dt-hdr-btn";
-            pickBtn.title = "Pick Element";
-            pickBtn.textContent = "◎";
-            pickBtn.style.color = "#7DD3FC";
-            pickBtn.onclick = () => startElementPicking();
-
-            const closeBtn = document.createElement("button");
-            closeBtn.className = "uh-dt-hdr-btn";
-            closeBtn.title = "Close UH DevTools";
-            closeBtn.textContent = "✕";
-            closeBtn.onclick = () => {
-                if (window.eruda) window.eruda.hide();
-                devToolsVisible = false;
-                removeBoxOverlay();
-                notifyNativeState(false);
-            };
-
-            actions.appendChild(pickBtn);
-            actions.appendChild(closeBtn);
-            navContainer.appendChild(actions);
+            const pickBtn = bar.querySelector("#__uh_dt_pick");
+            if (pickBtn) pickBtn.onclick = () => startElementPicking();
+            const closeBtn = bar.querySelector("#__uh_dt_close");
+            if (closeBtn) closeBtn.onclick = () => closeDevToolsPanel();
         }
     }
 
     function bootUhDevTools(darkTheme) {
         isDarkTheme = darkTheme !== false;
         if (initialized && window.eruda) {
-            applyUhBrandingAndControls();
+            applyUhBrandingAndHeader();
             return;
         }
         if (!window.eruda) return;
@@ -661,18 +874,21 @@
             autoScale: true,
             tool: ["console", "elements", "resources"],
             defaults: {
-                displaySize: 55,
-                transparency: 0.98,
+                displaySize: 58,
+                transparency: 0.99,
                 theme: isDarkTheme ? "Dark" : "Light"
             }
         });
 
+        // Add our properly subclassed Network & Performance tools
         try { window.eruda.add(createNetworkTool()); } catch (_e) {}
         try { window.eruda.add(createPerformanceTool()); } catch (_e) {}
 
-        // Immediately hide floating entry button and apply UH branding
-        applyUhBrandingAndControls();
-        setTimeout(applyUhBrandingAndControls, 80);
+        // Completely remove the Eruda Settings tab so zero blank tabs exist
+        try { window.eruda.remove("settings"); } catch (_e) {}
+
+        applyUhBrandingAndHeader();
+        setTimeout(applyUhBrandingAndHeader, 80);
 
         initialized = true;
     }
@@ -681,15 +897,13 @@
         bootUhDevTools(darkTheme !== false);
         if (!window.eruda) return false;
         if (devToolsVisible) {
-            window.eruda.hide();
-            devToolsVisible = false;
-            removeBoxOverlay();
+            closeDevToolsPanel();
         } else {
             window.eruda.show();
             devToolsVisible = true;
-            applyUhBrandingAndControls();
+            applyUhBrandingAndHeader();
+            notifyNativeState(true);
         }
-        notifyNativeState(devToolsVisible);
         return devToolsVisible;
     };
 })();

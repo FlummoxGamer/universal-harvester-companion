@@ -217,9 +217,9 @@ fun BrowserExtensionsSheet(
                             (!isPrivateTab || entry.allowedInPrivateBrowsing) &&
                             action != null &&
                             action.enabled != false
-                        if (canRunAction) {
+                        if (canRunAction && action != null) {
                             onDismiss()
-                            action?.onClick?.invoke()
+                            action.onClick()
                         } else {
                             selectedDetailId = entry.id
                         }
@@ -496,7 +496,7 @@ private fun BrowserExtensionUnifiedRow(
                 val subtitle = when {
                     !entry.enabled -> "Disabled · Tap for settings"
                     isPrivateTab && !entry.allowedInPrivateBrowsing -> "Blocked in Private Browsing · Tap to allow"
-                    hasPopupAction -> action?.title?.takeIf {
+                    hasPopupAction && action != null -> action.title?.takeIf {
                         it.isNotBlank() && !it.equals(entry.name, ignoreCase = true)
                     } ?: "Tap to open popup"
                     !entry.meta?.optionsPageUrl.isNullOrBlank() -> "Active · Tap for settings"
@@ -612,10 +612,12 @@ private fun ExtensionDetailPage(
                     overflow = TextOverflow.Ellipsis
                 )
                 val sub = buildString {
-                    if (!meta?.version.isNullOrBlank()) append("v${meta?.version}")
-                    if (!meta?.creatorName.isNullOrBlank()) {
+                    val ver = meta?.version
+                    if (!ver.isNullOrBlank()) append("v$ver")
+                    val creator = meta?.creatorName
+                    if (!creator.isNullOrBlank()) {
                         if (isNotEmpty()) append(" · ")
-                        append(meta?.creatorName)
+                        append(creator)
                     }
                 }.ifBlank { entry.id }
                 Text(
@@ -628,9 +630,10 @@ private fun ExtensionDetailPage(
             }
         }
 
-        if (!meta?.description.isNullOrBlank()) {
+        val desc = meta?.description
+        if (!desc.isNullOrBlank()) {
             Text(
-                text = meta!!.description,
+                text = desc,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp,
                 lineHeight = 18.sp

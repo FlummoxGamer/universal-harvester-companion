@@ -54,7 +54,10 @@ object GeckoWebExtensionBridge {
     val devToolsVisible: StateFlow<Boolean> = _devToolsVisible.asStateFlow()
 
     @Volatile
-    var onFastTranslateCompleted: ((success: Boolean, count: Int, durationMs: Long, fromLang: String, toLang: String, pageUrl: String) -> Unit)? = null
+    var onFastTranslateProgress: ((done: Int, total: Int, applied: Int) -> Unit)? = null
+
+    @Volatile
+    var onFastTranslateCompleted: ((success: Boolean, count: Int, durationMs: Long, fromLang: String, toLang: String, pageUrl: String, error: String?) -> Unit)? = null
 
     @Volatile
     var onImageTranslateCompleted: ((imageCount: Int, overlayCount: Int, pageUrl: String) -> Unit)? = null
@@ -274,15 +277,27 @@ object GeckoWebExtensionBridge {
                                 texts.add(arr.optString(i, ""))
                             }
                         }
-                        val translated = FastTranslatorClient.translateBatch(texts, fromLang, toLang)
+                        val batchRes = FastTranslatorClient.translateBatchDetailed(texts, fromLang, toLang)
                         val outArr = JSONArray()
-                        for (t in translated) outArr.put(t)
+                        for (t in batchRes.translations) outArr.put(t)
                         result.complete(JSONObject().apply {
-                            put("ok", true)
+                            put("ok", batchRes.error == null)
                             put("translations", outArr)
+                            put("translatedCount", batchRes.translatedCount)
+                            if (batchRes.error != null) put("error", batchRes.error)
                         })
                     }
                     result
+                }
+
+                "FAST_TRANSLATE_PROGRESS" -> {
+                    val done = json.optInt("done", 0)
+                    val total = json.optInt("total", 0)
+                    val applied = json.optInt("applied", 0)
+                    mainHandler.post {
+                        onFastTranslateProgress?.invoke(done, total, applied)
+                    }
+                    GeckoResult.fromValue(true)
                 }
 
                 "FAST_TRANSLATE_DONE" -> {
@@ -292,8 +307,9 @@ object GeckoWebExtensionBridge {
                     val fromLang = json.optString("fromLang", "auto")
                     val toLang = json.optString("toLang", "en")
                     val pageUrl = json.optString("pageUrl", "")
+                    val error = json.optString("error", "").ifBlank { null }
                     mainHandler.post {
-                        onFastTranslateCompleted?.invoke(success, count, durationMs, fromLang, toLang, pageUrl)
+                        onFastTranslateCompleted?.invoke(success, count, durationMs, fromLang, toLang, pageUrl, error)
                     }
                     GeckoResult.fromValue(true)
                 }

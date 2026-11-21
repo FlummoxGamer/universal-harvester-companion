@@ -3,6 +3,11 @@ package app.harvester.companion.browser.toolbar
 import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,12 +26,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -58,6 +66,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -78,7 +87,9 @@ import app.harvester.companion.browser.menu.ExtensionPopupSheet
 import app.harvester.companion.browser.menu.MainMenuDialogFragment
 import app.harvester.companion.browser.menu.ScriptsSheet
 import app.harvester.companion.browser.search.UHSearchEnginePicker
+import app.harvester.companion.browser.translate.TranslatePillPhase
 import app.harvester.companion.browser.translate.TranslateSheet
+import app.harvester.companion.browser.translate.UhTranslationManager
 import app.harvester.companion.browser.webapp.InstallWebAppDialog
 import app.harvester.companion.search.UhSearchViewModel
 import app.harvester.companion.search.ui.UhSearchScreen
@@ -119,6 +130,7 @@ fun UhGlobalToolbar(
     val showSavePdfSheet by viewModel.showSavePdfSheet.collectAsState()
     val pendingExternalAppPrompt by viewModel.pendingExternalAppPrompt.collectAsState()
     val pendingExtensionPrompt by UhExtensionManager.pendingPrompt.collectAsState()
+    val translateState by UhTranslationManager.state.collectAsState()
 
     val lifecycleOwner = LocalLifecycleOwner.current
     var isHostResumed by remember(lifecycleOwner) {
@@ -142,6 +154,10 @@ fun UhGlobalToolbar(
     val currentDestinationId = backStackEntry?.destination?.id
     val isHome = currentDestinationId == R.id.homeFragment || currentDestinationId == null
     val isBrowser = currentDestinationId == R.id.browserFragment
+
+    LaunchedEffect(selectedTab?.id, selectedTab?.translationsState) {
+        UhTranslationManager.syncFromGeckoTabState(selectedTab?.id, selectedTab?.translationsState)
+    }
 
     LaunchedEffect(isEditing, searchEngine.id) {
         if (isEditing) {
@@ -304,7 +320,19 @@ fun UhGlobalToolbar(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = if (isBarBottom) Alignment.BottomCenter else Alignment.TopCenter
             ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    if (isBrowser && isBarBottom && !showFindInPage && !showZoomBar) {
+                        TranslateStatusPill(
+                            state = translateState,
+                            fromBottom = true,
+                            onRestoreOriginal = { UhTranslationManager.restoreActiveTab() },
+                            onRetryOffline = { UhTranslationManager.retryOfflineActiveTab() },
+                            onDismiss = { UhTranslationManager.dismissPill() },
+                        )
+                    }
                     if (isBrowser && showFindInPage && isBarBottom) {
                         FindInPageBar(
                             query = findQuery,
@@ -380,6 +408,15 @@ fun UhGlobalToolbar(
                             zoomPercent = zoomPercent,
                             onChange = { viewModel.setPageZoom(it) },
                             onDone = { viewModel.closeZoomBar() }
+                        )
+                    }
+                    if (isBrowser && !isBarBottom && !showFindInPage && !showZoomBar) {
+                        TranslateStatusPill(
+                            state = translateState,
+                            fromBottom = false,
+                            onRestoreOriginal = { UhTranslationManager.restoreActiveTab() },
+                            onRetryOffline = { UhTranslationManager.retryOfflineActiveTab() },
+                            onDismiss = { UhTranslationManager.dismissPill() },
                         )
                     }
                 }
@@ -953,5 +990,128 @@ private fun ZoomStepPill(label: String, onClick: () -> Unit) {
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold
         )
+    }
+}
+
+@Composable
+private fun TranslateStatusPill(
+    state: UhTranslationManager.State,
+    fromBottom: Boolean,
+    onRestoreOriginal: () -> Unit,
+    onRetryOffline: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val visible = state.pillPhase != TranslatePillPhase.HIDDEN && state.pillMessage.isNotBlank()
+    val isWorking = state.pillPhase == TranslatePillPhase.TRANSLATING_ONLINE ||
+        state.pillPhase == TranslatePillPhase.DOWNLOADING_MODEL ||
+        state.pillPhase == TranslatePillPhase.TRANSLATING_OFFLINE ||
+        state.pillPhase == TranslatePillPhase.TRANSLATING_IMAGES
+    val isError = state.pillPhase == TranslatePillPhase.ERROR
+
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn() + slideInVertically { if (fromBottom) it / 2 else -it / 2 },
+        exit = fadeOut() + slideOutVertically { if (fromBottom) it / 2 else -it / 2 },
+    ) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            tonalElevation = 6.dp,
+            shadowElevation = 8.dp,
+            modifier = Modifier
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .widthIn(max = 360.dp)
+                .border(
+                    width = 1.dp,
+                    color = if (isError) {
+                        MaterialTheme.colorScheme.error.copy(alpha = 0.35f)
+                    } else {
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)
+                    },
+                    shape = RoundedCornerShape(24.dp)
+                )
+        ) {
+            Row(
+                modifier = Modifier.padding(start = 12.dp, end = 6.dp, top = 7.dp, bottom = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (isWorking) {
+                    if (state.pillProgress > 0.05f && state.pillProgress < 0.99f) {
+                        CircularProgressIndicator(
+                            progress = { state.pillProgress },
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.2.dp,
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                        )
+                    } else {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.2.dp,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                } else {
+                    Icon(
+                        painter = painterResource(id = R.drawable.uh_ic_translate_24),
+                        contentDescription = null,
+                        tint = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                Text(
+                    text = state.pillMessage,
+                    color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+
+                if (state.pillPhase == TranslatePillPhase.COMPLETED && state.pillCanRestore) {
+                    Text(
+                        text = "Original",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+                            .clickable(onClick = onRestoreOriginal)
+                            .padding(horizontal = 9.dp, vertical = 3.dp)
+                    )
+                } else if (isError && state.pillCanRetryOffline) {
+                    Text(
+                        text = "Offline",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+                            .clickable(onClick = onRetryOffline)
+                            .padding(horizontal = 9.dp, vertical = 3.dp)
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onDismiss),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.fx_ic_close_24),
+                        contentDescription = "Dismiss",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+        }
     }
 }

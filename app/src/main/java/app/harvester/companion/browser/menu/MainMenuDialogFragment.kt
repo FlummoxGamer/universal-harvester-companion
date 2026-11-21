@@ -59,7 +59,6 @@ import app.harvester.companion.browser.BrowserViewModel
 import app.harvester.companion.browser.translate.UhTranslationManager
 import app.harvester.companion.browser.webapp.WebAppStore
 import app.harvester.companion.settings.SettingsActivity
-import app.harvester.companion.settings.addons.BUILTIN_INTERNAL_EXTENSION_IDS
 import app.harvester.companion.settings.addons.ExtensionsActivity
 import app.harvester.companion.settings.addons.ScriptsActivity
 import app.harvester.companion.settings.appearance.CustomizeHomeActivity
@@ -127,27 +126,14 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                     val isLoading = selectedTab?.content?.loading == true
                     val isPwaInstallable = WebAppStore.isPwaInstallable(selectedTab?.content?.webAppManifest)
 
-                    val trState by UhTranslationManager.state.collectAsState()
                     val isFastTranslated = UhTranslationManager.isFastTranslatedForTab(selectedTab?.id, currentUrl)
-                    val isGeckoTranslated = selectedTab?.translationsState?.isTranslated == true
-                    val activeTransPair = selectedTab?.translationsState?.translationEngineState?.requestedTranslationPair
-                    val translateBadge = when {
-                        isFastTranslated && !trState.fastTranslatedTo.isNullOrBlank() ->
-                            trState.fastTranslatedTo!!.uppercase().take(3)
-                        isGeckoTranslated && activeTransPair?.toLanguage != null ->
-                            activeTransPair.toLanguage!!.uppercase().take(3)
-                        isGeckoTranslated || isFastTranslated -> "ON"
-                        else -> null
-                    }
+                    val isTranslated = selectedTab?.translationsState?.isTranslated == true || isFastTranslated
 
                     val isBookmarked by browserViewModel.isBookmarked.collectAsState()
                     val zoomPercent by browserViewModel.pageZoomPercent.collectAsState()
                     val devToolsActiveTabIds by browserViewModel.devToolsActiveTabIds.collectAsState()
                     val isDevToolsActive = selectedTab?.id != null && selectedTab.id in devToolsActiveTabIds
                     val isCaptureActive = SessionRecorder.isActive()
-                    val activeExtensionsCount = browserState.extensions.values.count { ext ->
-                        ext.enabled && !ext.isBuiltIn && ext.id !in BUILTIN_INTERNAL_EXTENSION_IDS
-                    }
 
                     Box(
                         modifier = Modifier.fillMaxWidth(),
@@ -180,7 +166,6 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                                 if (isHome) {
                                     HomeMenuState(
                                         isCaptureActive = isCaptureActive,
-                                        activeExtensionsCount = activeExtensionsCount,
                                         onHistory = { navigateSafe(R.id.historyFragment) },
                                         onDownloads = { navigateSafe(R.id.downloadsFragment) },
                                         onBookmarks = { navigateSafe(R.id.bookmarksFragment) },
@@ -221,11 +206,10 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                                         isDesktopMode = isDesktopMode,
                                         isBookmarked = isBookmarked,
                                         isPwaInstallable = isPwaInstallable,
-                                        translateBadge = translateBadge,
+                                        isTranslated = isTranslated,
                                         isDevToolsActive = isDevToolsActive,
                                         isCaptureActive = isCaptureActive,
                                         zoomPercent = zoomPercent,
-                                        activeExtensionsCount = activeExtensionsCount,
                                         onBack = {
                                             dismissAllowingStateLoss()
                                             selectedTab?.let { components.useCases.sessionUseCases.goBack(it.id) }
@@ -341,7 +325,6 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
     @Composable
     private fun HomeMenuState(
         isCaptureActive: Boolean,
-        activeExtensionsCount: Int,
         onHistory: () -> Unit,
         onDownloads: () -> Unit,
         onBookmarks: () -> Unit,
@@ -353,8 +336,6 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
         onScripts: () -> Unit,
         onQuit: () -> Unit
     ) {
-        val extensionsBadge = if (activeExtensionsCount > 0) activeExtensionsCount.toString() else null
-
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -386,7 +367,6 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                     CompactGridTile(
                         iconRes = R.drawable.fx_ic_extensions_24,
                         label = "Extensions",
-                        badgeText = extensionsBadge,
                         modifier = Modifier.weight(1f),
                         onClick = onExtensions
                     )
@@ -400,8 +380,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                         iconRes = R.drawable.ic_tools,
                         label = "Capture",
                         isActive = isCaptureActive,
-                        badgeText = if (isCaptureActive) "REC" else null,
-                        badgeIsError = isCaptureActive,
+                        isErrorTint = isCaptureActive,
                         modifier = Modifier.weight(1f),
                         onClick = onCaptureTools
                     )
@@ -450,11 +429,10 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
         isDesktopMode: Boolean,
         isBookmarked: Boolean,
         isPwaInstallable: Boolean,
-        translateBadge: String?,
+        isTranslated: Boolean,
         isDevToolsActive: Boolean,
         isCaptureActive: Boolean,
         zoomPercent: Int,
-        activeExtensionsCount: Int,
         onBack: () -> Unit,
         onForward: () -> Unit,
         onReloadOrStop: () -> Unit,
@@ -481,7 +459,6 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
     ) {
         val desktopIconRes = if (isDesktopMode) R.drawable.uh_ic_device_mobile_24 else R.drawable.uh_ic_device_desktop_24
         val desktopLabel = if (isDesktopMode) "Mobile" else "Desktop"
-        val extensionsBadge = if (activeExtensionsCount > 0) activeExtensionsCount.toString() else null
 
         Column(
             modifier = Modifier.fillMaxWidth(),
@@ -573,7 +550,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                 onNewPrivateTab = onNewPrivateTab
             )
 
-            // Row 3: Compact 4×2 Action Grid (all page + power tools at thumb reach)
+            // Row 3: Compact 4×2 Action Grid (clean icons, zero overlay badges, subtle tint for active states)
             Surface(
                 shape = RoundedCornerShape(18.dp),
                 color = MaterialTheme.colorScheme.surface,
@@ -592,8 +569,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                         CompactGridTile(
                             iconRes = R.drawable.uh_ic_translate_24,
                             label = "Translate",
-                            isActive = translateBadge != null,
-                            badgeText = translateBadge,
+                            isActive = isTranslated,
                             modifier = Modifier.weight(1f),
                             onClick = onTranslate
                         )
@@ -614,7 +590,6 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                             iconRes = R.drawable.uh_ic_plus_24,
                             label = "Add to Home",
                             isActive = isPwaInstallable,
-                            badgeText = if (isPwaInstallable) "Web App" else null,
                             modifier = Modifier.weight(1f),
                             onClick = onAddToHome
                         )
@@ -632,7 +607,6 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                         CompactGridTile(
                             iconRes = R.drawable.fx_ic_extensions_24,
                             label = "Extensions",
-                            badgeText = extensionsBadge,
                             modifier = Modifier.weight(1f),
                             onClick = onExtensions
                         )
@@ -646,7 +620,6 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                             iconRes = R.drawable.uh_ic_devtools_24,
                             label = "DevTools",
                             isActive = isDevToolsActive,
-                            badgeText = if (isDevToolsActive) "ON" else null,
                             modifier = Modifier.weight(1f),
                             onClick = onDevTools
                         )
@@ -654,8 +627,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                             iconRes = R.drawable.ic_tools,
                             label = "Capture",
                             isActive = isCaptureActive,
-                            badgeText = if (isCaptureActive) "REC" else null,
-                            badgeIsError = isCaptureActive,
+                            isErrorTint = isCaptureActive,
                             modifier = Modifier.weight(1f),
                             onClick = onCaptureTools
                         )
@@ -827,78 +799,56 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
         iconRes: Int,
         label: String,
         isActive: Boolean = false,
-        badgeText: String? = null,
-        badgeIsError: Boolean = false,
+        isErrorTint: Boolean = false,
         modifier: Modifier = Modifier,
         onClick: () -> Unit,
     ) {
         val iconTint = when {
-            badgeIsError -> MaterialTheme.colorScheme.error
+            isErrorTint -> MaterialTheme.colorScheme.error
             isActive -> MaterialTheme.colorScheme.primary
             else -> MaterialTheme.colorScheme.onSurface
         }
         val iconBg = when {
-            badgeIsError -> MaterialTheme.colorScheme.error.copy(alpha = 0.14f)
+            isErrorTint -> MaterialTheme.colorScheme.error.copy(alpha = 0.14f)
             isActive -> MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
             else -> MaterialTheme.colorScheme.surfaceContainerHigh
         }
 
-        Box(
+        Column(
             modifier = modifier
                 .clip(RoundedCornerShape(12.dp))
                 .clickable(onClick = onClick)
                 .padding(vertical = 7.dp, horizontal = 2.dp),
-            contentAlignment = Alignment.Center
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(iconBg),
+                contentAlignment = Alignment.Center
             ) {
-                Box(contentAlignment = Alignment.TopEnd) {
-                    Box(
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clip(CircleShape)
-                            .background(iconBg),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            painter = painterResource(id = iconRes),
-                            contentDescription = label,
-                            tint = iconTint,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    if (!badgeText.isNullOrBlank()) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(
-                                    if (badgeIsError) MaterialTheme.colorScheme.error
-                                    else MaterialTheme.colorScheme.primary
-                                )
-                                .padding(horizontal = 4.dp, vertical = 1.dp)
-                        ) {
-                            Text(
-                                text = badgeText,
-                                color = Color.White,
-                                fontSize = 8.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1
-                            )
-                        }
-                    }
-                }
-                Text(
-                    text = label,
-                    color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    fontSize = 11.sp,
-                    fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center
+                Icon(
+                    painter = painterResource(id = iconRes),
+                    contentDescription = label,
+                    tint = iconTint,
+                    modifier = Modifier.size(18.dp)
                 )
             }
+            Text(
+                text = label,
+                color = when {
+                    isErrorTint -> MaterialTheme.colorScheme.error
+                    isActive -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.onSurface
+                },
+                fontSize = 11.sp,
+                fontWeight = if (isActive || isErrorTint) FontWeight.SemiBold else FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center
+            )
         }
     }
 

@@ -15,9 +15,13 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import okhttp3.FormBody
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import java.net.URLEncoder
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
 
 data class TranslatedImageBlock(
@@ -29,75 +33,145 @@ data class TranslatedImageBlock(
     val translatedText: String,
 )
 
+data class TranslateBatchResult(
+    val translations: List<String>,
+    val translatedCount: Int,
+    val failedCount: Int,
+    val error: String? = null,
+)
+
 /**
- * High-speed parallel translator & ML Kit OCR image translator.
- * Batches DOM text segments into compact chunks executed concurrently over OkHttp
- * (completing typical pages in 200-450ms with zero page redirects or CAPTCHAs).
+ * High-speed parallel HTTP POST translator & ML Kit OCR image translator.
+ * Uses HTTP POST FormBody (immune to URL-length 414 errors across CJK/Indic/Arabic),
+ * in-batch string deduplication, bounded LRU cache, and HTTP/2 connection pooling.
  */
 object FastTranslatorClient {
 
-    private const val CHUNK_SEPARATOR = "\n[[[UH_SEG_BREAK]]]\n"
-    private const val MAX_CHUNK_CHARS = 1800
-    private const val MAX_ITEMS_PER_CHUNK = 24
-    private const val MAX_CONCURRENT_BATCHES = 6
+    private const val CHUNK_SEPARATOR = "\n§731§\n"
+    private val CHUNK_SPLIT_REGEX = Regex("\\s*§\\s*731\\s*§\\s*")
+    private const val MAX_CHUNK_CHARS = 950
+    private const val MAX_ITEMS_PER_CHUNK = 14
+    private const val MAX_CONCURRENT_BATCHES = 8
+    private const val MAX_CACHE_ENTRIES = 2000
+
+    private val fastHttpClient: OkHttpClient by lazy {
+        UhHttpClient.client.newBuilder()
+            .connectTimeout(6, TimeUnit.SECONDS)
+            .readTimeout(8, TimeUnit.SECONDS)
+            .writeTimeout(6, TimeUnit.SECONDS)
+            .build()
+    }
+
+    private val cacheLock = Any()
+    private val translationCache = object : LinkedHashMap<String, String>(256, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean {
+            return size > MAX_CACHE_ENTRIES
+        }
+    }
+
+    private fun getCached(key: String): String? = synchronized(cacheLock) {
+        translationCache[key]
+    }
+
+    private fun putCached(key: String, value: String) = synchronized(cacheLock) {
+        translationCache[key] = value
+    }
 
     suspend fun translateBatch(
         texts: List<String>,
         fromLang: String,
         toLang: String,
-    ): List<String> = withContext(Dispatchers.IO) {
-        if (texts.isEmpty()) return@withContext emptyList()
+    ): List<String> = translateBatchDetailed(texts, fromLang, toLang).translations
+
+    suspend fun translateBatchDetailed(
+        texts: List<String>,
+        fromLang: String,
+        toLang: String,
+    ): TranslateBatchResult = withContext(Dispatchers.IO) {
+        if (texts.isEmpty()) {
+            return@withContext TranslateBatchResult(emptyList(), 0, 0, null)
+        }
         val sl = fromLang.trim().ifBlank { "auto" }
         val tl = toLang.trim().ifBlank { "en" }
-        if (sl != "auto" && sl.equals(tl, ignoreCase = true)) return@withContext texts
+        if (sl != "auto" && sl.equals(tl, ignoreCase = true)) {
+            return@withContext TranslateBatchResult(texts, 0, 0, null)
+        }
 
-        // Pack strings into balanced chunks to maximize parallelism and minimize HTTP roundtrips
-        val chunks = mutableListOf<List<Pair<Int, String>>>()
-        var current = mutableListOf<Pair<Int, String>>()
-        var currentChars = 0
+        val results = texts.toMutableList()
+        val translatedCount = AtomicInteger(0)
+        val failedCount = AtomicInteger(0)
 
+        // Deduplicate identical trimmed strings and resolve LRU cache hits in 0ms
+        val uncachedMap = LinkedHashMap<String, MutableList<Int>>()
         texts.forEachIndexed { idx, raw ->
             val trimmed = raw.trim()
             if (trimmed.isEmpty()) return@forEachIndexed
-            val projected = currentChars + trimmed.length + CHUNK_SEPARATOR.length
+            val cacheKey = "$sl|$tl|$trimmed"
+            val cached = getCached(cacheKey)
+            if (cached != null) {
+                results[idx] = preserveWhitespace(raw, cached)
+                translatedCount.incrementAndGet()
+            } else {
+                uncachedMap.getOrPut(trimmed) { mutableListOf() }.add(idx)
+            }
+        }
+
+        if (uncachedMap.isEmpty()) {
+            return@withContext TranslateBatchResult(results, translatedCount.get(), 0, null)
+        }
+
+        val uniqueItems = uncachedMap.keys.toList()
+        val chunks = mutableListOf<List<String>>()
+        var current = mutableListOf<String>()
+        var currentChars = 0
+
+        for (item in uniqueItems) {
+            val projected = currentChars + item.length + CHUNK_SEPARATOR.length
             if (current.isNotEmpty() && (projected > MAX_CHUNK_CHARS || current.size >= MAX_ITEMS_PER_CHUNK)) {
                 chunks.add(current)
                 current = mutableListOf()
                 currentChars = 0
             }
-            current.add(idx to raw)
-            currentChars += trimmed.length + CHUNK_SEPARATOR.length
+            current.add(item)
+            currentChars += item.length + CHUNK_SEPARATOR.length
         }
         if (current.isNotEmpty()) {
             chunks.add(current)
         }
 
-        val results = texts.toMutableList()
+        val translatedUnique = HashMap<String, String>(uniqueItems.size)
+        val mapLock = Any()
 
-        // Execute chunks in bounded concurrent waves
         for (wave in chunks.chunked(MAX_CONCURRENT_BATCHES)) {
             coroutineScope {
                 wave.map { chunk ->
                     async(Dispatchers.IO) {
-                        val translated = translateChunk(chunk.map { it.second }, sl, tl)
+                        val translated = translateChunk(chunk, sl, tl)
                         if (translated.size == chunk.size) {
-                            chunk.forEachIndexed { localIdx, (origIdx, origText) ->
-                                val tr = translated[localIdx]
-                                if (tr.isNotBlank()) {
-                                    // Preserve original leading/trailing whitespace so inline DOM spacing stays intact
-                                    val leading = origText.takeWhile { it.isWhitespace() }
-                                    val trailing = origText.takeLastWhile { it.isWhitespace() }
-                                    results[origIdx] = leading + tr.trim() + trailing
+                            chunk.forEachIndexed { localIdx, origTrimmed ->
+                                val tr = translated[localIdx].trim()
+                                if (tr.isNotEmpty()) {
+                                    putCached("$sl|$tl|$origTrimmed", tr)
+                                    synchronized(mapLock) { translatedUnique[origTrimmed] = tr }
+                                } else {
+                                    failedCount.incrementAndGet()
                                 }
                             }
                         } else {
-                            // Safe individual fallback if delimiter was altered by model
-                            chunk.forEach { (origIdx, origText) ->
-                                val single = translateSingle(origText.trim(), sl, tl)
-                                if (!single.isNullOrBlank()) {
-                                    val leading = origText.takeWhile { it.isWhitespace() }
-                                    val trailing = origText.takeLastWhile { it.isWhitespace() }
-                                    results[origIdx] = leading + single.trim() + trailing
+                            // Bounded parallel individual fallback (max 4 concurrent) instead of slow sequential loop
+                            for (subWave in chunk.chunked(4)) {
+                                coroutineScope {
+                                    subWave.map { origTrimmed ->
+                                        async(Dispatchers.IO) {
+                                            val single = translateSingle(origTrimmed, sl, tl)?.trim()
+                                            if (!single.isNullOrEmpty()) {
+                                                putCached("$sl|$tl|$origTrimmed", single)
+                                                synchronized(mapLock) { translatedUnique[origTrimmed] = single }
+                                            } else {
+                                                failedCount.incrementAndGet()
+                                            }
+                                        }
+                                    }.awaitAll()
                                 }
                             }
                         }
@@ -106,7 +180,29 @@ object FastTranslatorClient {
             }
         }
 
-        results
+        // Map unique translations back to every original DOM node index
+        for ((origTrimmed, indices) in uncachedMap) {
+            val tr = translatedUnique[origTrimmed] ?: continue
+            for (idx in indices) {
+                results[idx] = preserveWhitespace(texts[idx], tr)
+                translatedCount.incrementAndGet()
+            }
+        }
+
+        val trCount = translatedCount.get()
+        val errCount = failedCount.get()
+        val errorMsg = if (trCount == 0 && errCount > 0) {
+            "Could not reach translation service."
+        } else {
+            null
+        }
+        TranslateBatchResult(results, trCount, errCount, errorMsg)
+    }
+
+    private fun preserveWhitespace(original: String, translated: String): String {
+        val leading = original.takeWhile { it.isWhitespace() }
+        val trailing = original.takeLastWhile { it.isWhitespace() }
+        return leading + translated.trim() + trailing
     }
 
     suspend fun translateImageWithMlKit(
@@ -188,7 +284,7 @@ object FastTranslatorClient {
                     .url(imageUrl)
                     .header("User-Agent", UhHttpClient.DEFAULT_USER_AGENT)
                     .build()
-                UhHttpClient.client.newCall(req).execute().use { resp ->
+                fastHttpClient.newCall(req).execute().use { resp ->
                     if (!resp.isSuccessful) return null
                     val bytes = resp.body?.bytes() ?: return null
                     if (bytes.isEmpty() || bytes.size > 6 * 1024 * 1024) return null
@@ -203,41 +299,45 @@ object FastTranslatorClient {
 
     private fun translateChunk(items: List<String>, sl: String, tl: String): List<String> {
         if (items.size == 1) {
-            val single = translateSingle(items[0].trim(), sl, tl)
+            val single = translateSingle(items[0], sl, tl)
             return if (single != null) listOf(single) else emptyList()
         }
-        val joined = items.joinToString(CHUNK_SEPARATOR) { it.trim() }
+        val joined = items.joinToString(CHUNK_SEPARATOR)
         val translatedJoined = translateSingle(joined, sl, tl) ?: return emptyList()
-        val parts = translatedJoined.split(Regex("\\s*\\[\\[\\[\\s*UH_SEG_BREAK\\s*]]]\\s*"))
+        val parts = translatedJoined.split(CHUNK_SPLIT_REGEX)
         return if (parts.size == items.size) parts else emptyList()
     }
 
     private fun translateSingle(text: String, sl: String, tl: String): String? {
         if (text.isBlank()) return text
-        val encodedQ = try {
-            URLEncoder.encode(text, "UTF-8")
-        } catch (_: Exception) {
-            return null
-        }
+        val encSl = try { URLEncoder.encode(sl, "UTF-8") } catch (_: Exception) { sl }
+        val encTl = try { URLEncoder.encode(tl, "UTF-8") } catch (_: Exception) { tl }
 
-        // Primary fast endpoint: translate.googleapis.com JSON API (no HTML redirect, no CAPTCHA)
-        val primaryUrl = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=$sl&tl=$tl&dt=t&q=$encodedQ"
-        val primary = executeTranslateRequest(primaryUrl)
+        // Primary fast endpoint via HTTP POST FormBody (no URL length limit across CJK/Indic/Arabic)
+        val primaryUrl = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=$encSl&tl=$encTl&dt=t"
+        val primary = executePrimaryPost(primaryUrl, text)
         if (primary != null) return primary
 
-        // Secondary fallback mirror
-        val fallbackUrl = "https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=$sl&tl=$tl&q=$encodedQ"
-        return executeFallbackRequest(fallbackUrl)
+        // Secondary fallback mirror via HTTP POST FormBody
+        val fallbackUrl = "https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=$encSl&tl=$encTl"
+        return executeFallbackPost(fallbackUrl, text)
     }
 
-    private fun executeTranslateRequest(url: String): String? {
+    private fun executePrimaryPost(url: String, text: String): String? {
         return try {
+            val formBody = FormBody.Builder()
+                .add("q", text)
+                .build()
             val req = Request.Builder()
                 .url(url)
+                .post(formBody)
                 .header("User-Agent", UhHttpClient.DEFAULT_USER_AGENT)
                 .build()
-            UhHttpClient.client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return null
+            fastHttpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    UHLog.w("translate_fast", "Primary translate HTTP ${resp.code}")
+                    return null
+                }
                 val body = resp.body?.string().orEmpty()
                 if (body.isBlank()) return null
                 val root = JSONArray(body)
@@ -258,13 +358,17 @@ object FastTranslatorClient {
         }
     }
 
-    private fun executeFallbackRequest(url: String): String? {
+    private fun executeFallbackPost(url: String, text: String): String? {
         return try {
+            val formBody = FormBody.Builder()
+                .add("q", text)
+                .build()
             val req = Request.Builder()
                 .url(url)
+                .post(formBody)
                 .header("User-Agent", UhHttpClient.DEFAULT_USER_AGENT)
                 .build()
-            UhHttpClient.client.newCall(req).execute().use { resp ->
+            fastHttpClient.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return null
                 val body = resp.body?.string().orEmpty()
                 if (body.isBlank()) return null

@@ -23,7 +23,6 @@ object WebViewEngine {
         view.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = !incognito
-            databaseEnabled = !incognito
             allowFileAccess = false
             allowContentAccess = false
             mediaPlaybackRequiresUserGesture = false

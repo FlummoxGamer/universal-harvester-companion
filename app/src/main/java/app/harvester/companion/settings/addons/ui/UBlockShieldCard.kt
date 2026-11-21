@@ -44,7 +44,8 @@ fun UBlockOriginShieldCard(
     onOpenOptions: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val canOpenDashboard = state.isInstalled && !state.optionsPageUrl.isNullOrBlank() && onOpenOptions != null
+    val optionsUrl = state.optionsPageUrl
+    val canOpenDashboard = state.isInstalled && !optionsUrl.isNullOrBlank() && onOpenOptions != null
 
     Surface(
         shape = RoundedCornerShape(14.dp),
@@ -53,9 +54,9 @@ fun UBlockOriginShieldCard(
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .then(
-                if (canOpenDashboard) {
+                if (canOpenDashboard && optionsUrl != null && onOpenOptions != null) {
                     Modifier.clickable {
-                        state.optionsPageUrl?.let { onOpenOptions?.invoke(it) }
+                        onOpenOptions(optionsUrl)
                     }
                 } else {
                     Modifier
@@ -175,9 +176,9 @@ fun UBlockOriginShieldCard(
                 }
             }
 
-            if (canOpenDashboard) {
+            if (canOpenDashboard && optionsUrl != null && onOpenOptions != null) {
                 IconButton(
-                    onClick = { state.optionsPageUrl?.let { onOpenOptions?.invoke(it) } },
+                    onClick = { onOpenOptions(optionsUrl) },
                     modifier = Modifier.size(30.dp)
                 ) {
                     Icon(

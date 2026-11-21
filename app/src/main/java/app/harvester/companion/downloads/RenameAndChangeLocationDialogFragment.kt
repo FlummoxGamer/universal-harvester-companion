@@ -70,6 +70,7 @@ class RenameAndChangeLocationDialogFragment : DialogFragment(), OnEnterAnimation
         super.onStart()
         dialog?.window?.apply {
             clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
+            @Suppress("DEPRECATION")
             setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
             setBackgroundDrawableResource(android.R.color.transparent)
             val isLandscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE

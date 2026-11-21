@@ -270,6 +270,7 @@ object AppSleepManager : Application.ActivityLifecycleCallbacks, ComponentCallba
         }
     }
 
+    @Suppress("DEPRECATION")
     override fun onTrimMemory(level: Int) {
         if (!initialized.get()) return
         when (level) {
@@ -304,6 +305,8 @@ object AppSleepManager : Application.ActivityLifecycleCallbacks, ComponentCallba
         }
     }
 
+    @Deprecated("Deprecated in Java")
+    @Suppress("DEPRECATION")
     override fun onLowMemory() {
         onTrimMemory(ComponentCallbacks2.TRIM_MEMORY_COMPLETE)
     }

@@ -177,6 +177,7 @@ fun TranslateSheet(
                         },
                         onTranslate = {
                             UhTranslationManager.translateActiveTab(selectedFromCode, selectedToCode)
+                            onDismiss()
                         },
                         onShowOriginal = {
                             UhTranslationManager.restoreActiveTab()
@@ -187,6 +188,7 @@ fun TranslateSheet(
                             } else {
                                 UhTranslationManager.translateVisibleImages(selectedFromCode, selectedToCode)
                             }
+                            onDismiss()
                         },
                         onOpenSettings = { currentPage = TranslateSheetPage.Settings },
                         onOpenModels = { currentPage = TranslateSheetPage.Models },

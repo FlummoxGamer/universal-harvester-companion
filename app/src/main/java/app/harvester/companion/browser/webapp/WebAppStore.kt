@@ -228,8 +228,9 @@ object WebAppStore {
             .ifBlank { "Web App" }
             .take(36)
 
-        val startUrl = if (isPwa && !manifest?.startUrl.isNullOrBlank()) {
-            resolveUrl(pageUrl, manifest!!.startUrl) ?: pageUrl
+        val manifestStartUrl = manifest?.startUrl
+        val startUrl = if (isPwa && !manifestStartUrl.isNullOrBlank()) {
+            resolveUrl(pageUrl, manifestStartUrl) ?: pageUrl
         } else {
             pageUrl
         }

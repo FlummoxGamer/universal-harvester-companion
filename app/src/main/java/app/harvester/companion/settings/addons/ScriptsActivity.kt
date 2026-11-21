@@ -1,5 +1,7 @@
 package app.harvester.companion.settings.addons
 
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
@@ -68,9 +70,10 @@ class ScriptsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.statusBarColor = Color.TRANSPARENT
-        window.navigationBarColor = Color.TRANSPARENT
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+        )
 
         setContent {
             UHTheme {

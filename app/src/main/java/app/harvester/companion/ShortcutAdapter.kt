@@ -229,7 +229,7 @@ class ShortcutAdapter(
             queue.add(Pair(w - 1, h - 1))
 
             while (queue.isNotEmpty()) {
-                val (x, y) = queue.poll()
+                val (x, y) = queue.poll() ?: continue
                 if (x < 0 || x >= w || y < 0 || y >= h || visited[x][y]) continue
                 visited[x][y] = true
 

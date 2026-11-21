@@ -1,5 +1,7 @@
 package app.harvester.companion.settings.appearance
 
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
@@ -119,9 +121,10 @@ class WallpaperPreviewActivity : AppCompatActivity() {
     @OptIn(ExperimentalFoundationApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.statusBarColor = AndroidColor.TRANSPARENT
-        window.navigationBarColor = AndroidColor.TRANSPARENT
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+        )
 
         val initialPath = intent.getStringExtra("imagePath")
         val initialUrl = intent.getStringExtra("imageUrl")

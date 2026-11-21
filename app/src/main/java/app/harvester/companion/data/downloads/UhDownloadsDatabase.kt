@@ -35,7 +35,7 @@ internal abstract class UhDownloadsDatabase : RoomDatabase() {
                 UhMigrations.migration_4_5,
                 UhMigrations.migration_5_6,
             )
-            .fallbackToDestructiveMigration()
+            .fallbackToDestructiveMigration(dropAllTables = true)
             .build()
             .also { instance = it }
         }

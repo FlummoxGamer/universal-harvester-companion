@@ -1,5 +1,7 @@
 package app.harvester.companion.settings.video
 
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.compose.setContent
@@ -21,9 +23,10 @@ class VideoOptionsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.statusBarColor = Color.TRANSPARENT
-        window.navigationBarColor = Color.TRANSPARENT
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+        )
 
         setContent {
             UHTheme {

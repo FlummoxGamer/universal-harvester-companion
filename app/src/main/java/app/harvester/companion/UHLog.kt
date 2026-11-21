@@ -66,8 +66,7 @@ object UHLog {
         val lastPause = prefs.getLong(KEY_LAST_PAUSE, 0L)
         val now = System.currentTimeMillis()
 
-        val resume = prevActive && prevId != null && (now - lastPause) < 60000L
-        sessionId = if (resume) prevId!! else newSessionId(now)
+        sessionId = if (prevActive && prevId != null && (now - lastPause) < 60000L) prevId else newSessionId(now)
         
         prefs.edit()
             .putString(KEY_SESSION_ID, sessionId)
