@@ -1,7 +1,7 @@
 {
     "manifest_version": 2,
     "name": "UH Bridge",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "browser_specific_settings": {
         "gecko": {
             "id": "uh-bridge@harvester.app"
@@ -25,5 +25,13 @@
         "<all_urls>",
         "tabs"
     ],
-    "web_accessible_resources": ["inject.js"]
+    "web_accessible_resources": [
+        "inject.js",
+        "devtools/eruda.min.js",
+        "devtools/eruda-dom.min.js",
+        "devtools/eruda-timing.min.js",
+        "devtools/eruda-code.min.js",
+        "devtools/eruda-features.min.js",
+        "devtools/uh_devtools_pro.js"
+    ]
 }

@@ -8,7 +8,8 @@ function ensureNativePort() {
         nativePort = api.runtime.connectNative("uhApp");
         nativePort.onMessage.addListener((msg) => {
             if (!msg || !msg.action) return;
-            api.tabs.query({ active: true }).then((tabs) => {
+            const query = msg.action === "APPLY_GLOBAL_ZOOM" ? {} : { active: true };
+            api.tabs.query(query).then((tabs) => {
                 if (!tabs || !tabs.length) return;
                 for (const t of tabs) {
                     api.tabs.sendMessage(t.id, msg).catch(() => {});

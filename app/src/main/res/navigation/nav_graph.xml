@@ -39,6 +39,11 @@
         android:name="app.harvester.companion.library.history.HistoryFragment"
         android:label="History" />
 
+    <fragment
+        android:id="@+id/bookmarksFragment"
+        android:name="app.harvester.companion.library.bookmarks.BookmarksFragment"
+        android:label="Bookmarks" />
+
     <action
         android:id="@+id/action_global_downloadsFragment"
         app:destination="@id/downloadsFragment" />

@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,17 +22,19 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -50,6 +53,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -60,7 +64,6 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import app.harvester.companion.R
 import app.harvester.companion.SessionRecorder
-import app.harvester.companion.ShortcutStore
 import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
 import app.harvester.companion.UserscriptManager
@@ -71,13 +74,18 @@ import app.harvester.companion.browser.menu.ExtensionPopupSheet
 import app.harvester.companion.browser.menu.MainMenuDialogFragment
 import app.harvester.companion.browser.menu.ScriptsSheet
 import app.harvester.companion.browser.search.UHSearchEnginePicker
+import app.harvester.companion.browser.translate.TranslateSheet
+import app.harvester.companion.browser.webapp.InstallWebAppDialog
 import app.harvester.companion.search.UhSearchViewModel
 import app.harvester.companion.search.ui.UhSearchScreen
 import app.harvester.companion.settings.addons.UhExtensionManager
 import app.harvester.companion.settings.addons.ui.ExtensionPermissionPromptSheet
 import app.harvester.companion.settings.trustpanel.TrustPanelFragment
 import mozilla.components.browser.state.selector.selectedTab
+import java.net.URI
+import kotlin.math.roundToInt
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UhGlobalToolbar(
     viewModel: BrowserViewModel,
@@ -95,12 +103,16 @@ fun UhGlobalToolbar(
     val findQuery by viewModel.findQuery.collectAsState()
     val findCurrent by viewModel.findCurrent.collectAsState()
     val findTotal by viewModel.findTotal.collectAsState()
+    val findMatchCase by viewModel.findMatchCase.collectAsState()
+    val findWholeWord by viewModel.findWholeWord.collectAsState()
     val showZoomBar by viewModel.showZoomBar.collectAsState()
     val zoomPercent by viewModel.pageZoomPercent.collectAsState()
     val showScriptsSheet by viewModel.showScriptsSheet.collectAsState()
     val showCaptureQuickSheet by viewModel.showCaptureQuickSheet.collectAsState()
     val showAddToHomeDialog by viewModel.showAddToHomeDialog.collectAsState()
     val showExtensionsSheet by viewModel.showExtensionsSheet.collectAsState()
+    val showTranslateSheet by viewModel.showTranslateSheet.collectAsState()
+    val showSavePdfSheet by viewModel.showSavePdfSheet.collectAsState()
     val pendingExtensionPrompt by UhExtensionManager.pendingPrompt.collectAsState()
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -141,6 +153,13 @@ fun UhGlobalToolbar(
     val pageProgress = if (isBrowser) (selectedTab?.content?.progress ?: 0) else 0
     val isPageLoading = isBrowser && (selectedTab?.content?.loading == true)
     val isDesktopMode = isBrowser && (selectedTab?.content?.desktopMode == true)
+    val currentHost = remember(displayUrl) {
+        try {
+            URI(displayUrl).host?.removePrefix("www.").orEmpty()
+        } catch (_: Exception) {
+            ""
+        }
+    }
     val scriptMatchCount = remember(displayUrl, showScriptsSheet) {
         if (isBrowser && displayUrl.isNotBlank() && displayUrl != "about:blank") {
             UserscriptManager.matchingEnabledCount(context, displayUrl)
@@ -286,7 +305,11 @@ fun UhGlobalToolbar(
                             query = findQuery,
                             current = findCurrent,
                             total = findTotal,
+                            matchCase = findMatchCase,
+                            wholeWord = findWholeWord,
                             onQueryChange = { viewModel.runFindInPage(it, true, selectedTab?.id) },
+                            onToggleMatchCase = { viewModel.toggleFindMatchCase(selectedTab?.id) },
+                            onToggleWholeWord = { viewModel.toggleFindWholeWord(selectedTab?.id) },
                             onPrev = { viewModel.runFindInPage(findQuery, false, selectedTab?.id) },
                             onNext = { viewModel.runFindInPage(findQuery, true, selectedTab?.id) },
                             onClose = { viewModel.closeFindInPage(selectedTab?.id) },
@@ -337,7 +360,11 @@ fun UhGlobalToolbar(
                             query = findQuery,
                             current = findCurrent,
                             total = findTotal,
+                            matchCase = findMatchCase,
+                            wholeWord = findWholeWord,
                             onQueryChange = { viewModel.runFindInPage(it, true, selectedTab?.id) },
+                            onToggleMatchCase = { viewModel.toggleFindMatchCase(selectedTab?.id) },
+                            onToggleWholeWord = { viewModel.toggleFindWholeWord(selectedTab?.id) },
                             onPrev = { viewModel.runFindInPage(findQuery, false, selectedTab?.id) },
                             onNext = { viewModel.runFindInPage(findQuery, true, selectedTab?.id) },
                             onClose = { viewModel.closeFindInPage(selectedTab?.id) }
@@ -376,52 +403,38 @@ fun UhGlobalToolbar(
         )
     }
 
-    if (showAddToHomeDialog) {
-        var customTitle by remember(displayUrl, pageTitle) {
-            mutableStateOf(pageTitle.ifBlank { ShortcutStore.shortNameFor(displayUrl) })
-        }
-        AlertDialog(
-            onDismissRequest = { viewModel.closeAddToHomeDialog() },
-            title = { Text("Add to Home Screen", color = MaterialTheme.colorScheme.onSurface) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
-                        value = customTitle,
-                        onValueChange = { customTitle = it },
-                        label = { Text("Label") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Button(
-                        onClick = {
-                            viewModel.addToUhHomeGrid(displayUrl, customTitle)
-                            viewModel.closeAddToHomeDialog()
-                        },
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Add to UH Home Grid")
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            viewModel.pinToAndroidHomeScreen(context, displayUrl, customTitle)
-                            viewModel.closeAddToHomeDialog()
-                        },
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Pin to Android Launcher")
-                    }
-                }
+    if (showTranslateSheet) {
+        TranslateSheet(
+            tabTranslationsState = selectedTab?.translationsState,
+            currentHost = currentHost,
+            onDismiss = { viewModel.closeTranslateSheet() }
+        )
+    }
+
+    if (showAddToHomeDialog && displayUrl.isNotBlank() && displayUrl != "about:blank") {
+        InstallWebAppDialog(
+            url = displayUrl,
+            pageTitle = pageTitle,
+            tabIcon = selectedTab?.content?.icon,
+            manifest = selectedTab?.content?.webAppManifest,
+            onAddToUhHomeGrid = { customTitle ->
+                viewModel.addToUhHomeGrid(displayUrl, customTitle)
             },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { viewModel.closeAddToHomeDialog() }) {
-                    Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+            onDismiss = { viewModel.closeAddToHomeDialog() }
+        )
+    }
+
+    if (showSavePdfSheet) {
+        SavePdfPrintSheet(
+            onSavePdf = {
+                viewModel.closeSavePdfSheet()
+                viewModel.saveCurrentPageAsPdf(context, pageTitle.ifBlank { currentHost })
             },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = RoundedCornerShape(20.dp)
+            onPrint = {
+                viewModel.closeSavePdfSheet()
+                viewModel.printCurrentPage(context)
+            },
+            onDismiss = { viewModel.closeSavePdfSheet() }
         )
     }
 
@@ -455,12 +468,118 @@ fun UhGlobalToolbar(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SavePdfPrintSheet(
+    onSavePdf: () -> Unit,
+    onPrint: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp)
+                .padding(bottom = 24.dp)
+                .navigationBarsPadding(),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = "Save or Print Page",
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onSavePdf)
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.fx_ic_downloads_24),
+                            contentDescription = "Save as PDF",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(21.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Save Page as PDF",
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Exports a full PDF document directly to Downloads",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onPrint)
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.uh_ic_print_24),
+                            contentDescription = "Print Page",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(21.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Print Page",
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Opens system print preview and printer options",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun FindInPageBar(
     query: String,
     current: Int,
     total: Int,
+    matchCase: Boolean,
+    wholeWord: Boolean,
     onQueryChange: (String) -> Unit,
+    onToggleMatchCase: () -> Unit,
+    onToggleWholeWord: () -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
     onClose: () -> Unit,
@@ -472,73 +591,168 @@ private fun FindInPageBar(
     }
     BackHandler { onClose() }
 
+    val noMatches = query.isNotBlank() && total == 0
+
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 4.dp,
-        modifier = modifier.fillMaxWidth()
+        tonalElevation = 6.dp,
+        shadowElevation = 6.dp,
+        shape = RoundedCornerShape(18.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 10.dp, vertical = 6.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.surface)
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                BasicTextField(
-                    value = query,
-                    onValueChange = onQueryChange,
-                    singleLine = true,
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                    textStyle = TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp),
+                Row(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(focusRequester),
-                    decorationBox = { inner ->
-                        if (query.isEmpty()) {
-                            Text("Find in page", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                        .weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.fx_ic_search_24),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    BasicTextField(
+                        value = query,
+                        onValueChange = onQueryChange,
+                        singleLine = true,
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        textStyle = TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { onNext() }),
+                        modifier = Modifier
+                            .weight(1f)
+                            .focusRequester(focusRequester),
+                        decorationBox = { inner ->
+                            if (query.isEmpty()) {
+                                Text(
+                                    text = "Find in page",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 14.sp
+                                )
+                            }
+                            inner()
                         }
-                        inner()
+                    )
+                    if (query.isNotEmpty()) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            painter = painterResource(id = R.drawable.fx_ic_close_24),
+                            contentDescription = "Clear",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .size(16.dp)
+                                .clickable { onQueryChange("") }
+                        )
                     }
-                )
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (noMatches) MaterialTheme.colorScheme.error.copy(alpha = 0.16f)
+                            else MaterialTheme.colorScheme.surface
+                        )
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (query.isBlank()) "0/0" else "$current/$total",
+                        color = if (noMatches) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                IconButton(onClick = onPrev, enabled = total > 0, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.uh_ic_back_24),
+                        contentDescription = "Previous",
+                        tint = if (total > 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                        modifier = Modifier.size(17.dp)
+                    )
+                }
+                IconButton(onClick = onNext, enabled = total > 0, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.uh_ic_forward_24),
+                        contentDescription = "Next",
+                        tint = if (total > 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                        modifier = Modifier.size(17.dp)
+                    )
+                }
+                IconButton(onClick = onClose, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.fx_ic_close_24),
+                        contentDescription = "Close Find",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(17.dp)
+                    )
+                }
             }
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = if (query.isBlank()) "0/0" else "$current/$total",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium
-            )
-            IconButton(onClick = onPrev, modifier = Modifier.size(34.dp)) {
-                Icon(
-                    painter = painterResource(id = R.drawable.uh_ic_back_24),
-                    contentDescription = "Previous",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(18.dp)
+
+            // Filter chips row (Match Case + Whole Word)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FindToggleChip(
+                    label = "Aa  Match case",
+                    selected = matchCase,
+                    onClick = onToggleMatchCase
                 )
-            }
-            IconButton(onClick = onNext, modifier = Modifier.size(34.dp)) {
-                Icon(
-                    painter = painterResource(id = R.drawable.uh_ic_forward_24),
-                    contentDescription = "Next",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-            IconButton(onClick = onClose, modifier = Modifier.size(34.dp)) {
-                Icon(
-                    painter = painterResource(id = R.drawable.fx_ic_close_24),
-                    contentDescription = "Close Find",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(18.dp)
+                FindToggleChip(
+                    label = "W  Whole word",
+                    selected = wholeWord,
+                    onClick = onToggleWholeWord
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun FindToggleChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val bg = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surface
+    val border = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)
+    val fg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(bg)
+            .border(1.dp, border, RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 9.dp, vertical = 4.dp)
+    ) {
+        Text(
+            text = label,
+            color = fg,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 
@@ -548,42 +762,136 @@ private fun ZoomAdjustBar(
     onChange: (Int) -> Unit,
     onDone: () -> Unit
 ) {
+    val presets = listOf(75, 100, 125, 150, 200)
+
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 4.dp,
-        modifier = Modifier.fillMaxWidth()
+        tonalElevation = 6.dp,
+        shadowElevation = 6.dp,
+        shape = RoundedCornerShape(18.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 10.dp, vertical = 6.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text(
-                text = "$zoomPercent%",
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Slider(
-                value = zoomPercent.toFloat(),
-                onValueChange = { onChange((it / 5f).toInt() * 5) },
-                valueRange = 50f..200f,
-                modifier = Modifier.weight(1f)
-            )
-            Text(
-                text = "Reset",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable { onChange(100) }
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-            )
-            TextButton(onClick = onDone) {
-                Text("Done", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.uh_ic_zoom_24),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Global Page Zoom",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
+                )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        text = "$zoomPercent%",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                if (zoomPercent != 100) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Reset",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onChange(100) }
+                            .padding(horizontal = 7.dp, vertical = 4.dp)
+                    )
+                }
+                TextButton(onClick = onDone) {
+                    Text("Done", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ZoomStepPill("−") { onChange((zoomPercent - 10).coerceIn(50, 300)) }
+                Slider(
+                    value = zoomPercent.toFloat(),
+                    onValueChange = { raw ->
+                        val snapped = ((raw / 5f).roundToInt() * 5).coerceIn(50, 300)
+                        if (snapped != zoomPercent) onChange(snapped)
+                    },
+                    valueRange = 50f..300f,
+                    modifier = Modifier.weight(1f)
+                )
+                ZoomStepPill("+") { onChange((zoomPercent + 10).coerceIn(50, 300)) }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                presets.forEach { preset ->
+                    val active = zoomPercent == preset
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                if (active) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.surface
+                            )
+                            .clickable { onChange(preset) }
+                            .padding(vertical = 5.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "$preset%",
+                            color = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun ZoomStepPill(label: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(30.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold
+        )
     }
 }

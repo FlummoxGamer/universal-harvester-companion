@@ -169,7 +169,7 @@ fun UHAddressBar(
                     .padding(start = 6.dp, end = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Scripts Button with live match badge / capture indicator
+                // Userscripts Button (clean icon without overlapping numeric badge)
                 Box(
                     modifier = Modifier
                         .size(34.dp)
@@ -182,37 +182,14 @@ fun UHAddressBar(
                 ) {
                     Icon(
                         painter = painterResource(id = R.drawable.ic_code),
-                        contentDescription = "Scripts",
-                        tint = if (scriptMatchCount > 0 || isCaptureActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        contentDescription = "Userscripts",
+                        tint = if (scriptMatchCount > 0 || isCaptureActive) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
                         modifier = Modifier.size(20.dp)
                     )
-                    if (scriptMatchCount > 0) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .offset(x = (-1).dp, y = 2.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary)
-                                .padding(horizontal = 4.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = scriptMatchCount.coerceAtMost(9).toString(),
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    } else if (isCaptureActive) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .offset(x = (-3).dp, y = 4.dp)
-                                .size(7.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF4ADE80))
-                        )
-                    }
                 }
 
                 // Security Shield or Search Engine selector

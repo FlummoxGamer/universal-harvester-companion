@@ -221,6 +221,11 @@ class Components(val context: Context) {
             store = browserStore,
         )
         app.harvester.companion.settings.addons.UBlockOriginManager.init(context.applicationContext, engine)
+        app.harvester.companion.browser.translate.UhTranslationManager.init(
+            context = context.applicationContext,
+            engine = engine,
+            store = browserStore,
+        )
         registerNetworkResumeCallback(browserStore)
         browserStore
     }
@@ -332,7 +337,6 @@ class Components(val context: Context) {
     val useCases: UseCases by lazy { UseCases(store, engine, downloadFileUtils) }
 
     private fun buildDefaultSettings(): DefaultSettings {
-        val textScale = SettingsPrefs.getInt(context, SettingsPrefs.K_TEXT_SCALE, 100)
         return DefaultSettings(
             remoteDebuggingEnabled = false,
             testingModeEnabled = false,
@@ -343,8 +347,8 @@ class Components(val context: Context) {
                 }
             ),
             preferredColorScheme = buildPreferredColorScheme(),
-            automaticFontSizeAdjustment = textScale != 100,
-            fontInflationEnabled = textScale != 100,
+            automaticFontSizeAdjustment = false,
+            fontInflationEnabled = false,
             suspendMediaWhenInactive = false,
             forceUserScalableContent = true,
             loginAutofillEnabled = false,

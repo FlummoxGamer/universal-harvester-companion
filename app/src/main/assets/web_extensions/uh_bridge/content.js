@@ -6,6 +6,7 @@ const isTopFrame = (function () {
 
 const pendingPackets = [];
 let injectReady = false;
+let devToolsScriptsLoaded = false;
 
 function dispatchRunPacket(packet) {
     if (!packet) return;
@@ -42,6 +43,39 @@ function dispatchRunPacket(packet) {
     }
 }
 
+function loadPageScript(relPath) {
+    return new Promise((resolve) => {
+        try {
+            const s = document.createElement("script");
+            s.src = api.runtime.getURL(relPath);
+            s.onload = () => { s.remove(); resolve(true); };
+            s.onerror = () => { s.remove(); resolve(false); };
+            (document.head || document.documentElement).appendChild(s);
+        } catch (_e) {
+            resolve(false);
+        }
+    });
+}
+
+async function ensureAndToggleDevTools(darkTheme) {
+    if (!isTopFrame) return;
+    if (!devToolsScriptsLoaded) {
+        const files = [
+            "devtools/eruda.min.js",
+            "devtools/eruda-dom.min.js",
+            "devtools/eruda-timing.min.js",
+            "devtools/eruda-code.min.js",
+            "devtools/eruda-features.min.js",
+            "devtools/uh_devtools_pro.js"
+        ];
+        for (const f of files) {
+            await loadPageScript(f);
+        }
+        devToolsScriptsLoaded = true;
+    }
+    window.postMessage({ type: "UH_TOGGLE_DEVTOOLS", darkTheme: darkTheme !== false }, "*");
+}
+
 window.addEventListener("message", (event) => {
     if (!event.data) return;
     if (event.data.type === "UH_INJECT_READY") {
@@ -52,6 +86,9 @@ window.addEventListener("message", (event) => {
             isTop: isTopFrame
         }).then((response) => {
             if (!response) return;
+            if (isTopFrame && typeof response.globalZoomPercent === "number" && response.globalZoomPercent !== 100) {
+                window.postMessage({ type: "UH_APPLY_GLOBAL_ZOOM", percent: response.globalZoomPercent }, "*");
+            }
             if (response.bootPayload) {
                 window.postMessage({ type: "UH_BOOT_DATA", bootPayload: response.bootPayload }, "*");
             }
@@ -97,8 +134,10 @@ api.runtime.onMessage.addListener((msg) => {
                 for (const p of response.packets) dispatchRunPacket(p);
             }
         }).catch(() => {});
-    } else if (msg.action === "TRANSLATE_PAGE") {
-        window.postMessage({ type: "UH_TRANSLATE_PAGE", targetLang: msg.targetLang || "en" }, "*");
+    } else if (msg.action === "TOGGLE_DEVTOOLS") {
+        ensureAndToggleDevTools(msg.darkTheme !== false);
+    } else if (msg.action === "APPLY_GLOBAL_ZOOM" && isTopFrame) {
+        window.postMessage({ type: "UH_APPLY_GLOBAL_ZOOM", percent: msg.percent || 100 }, "*");
     }
 });
 

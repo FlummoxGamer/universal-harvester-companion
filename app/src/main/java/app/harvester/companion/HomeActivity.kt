@@ -113,6 +113,10 @@ class HomeActivity : AppCompatActivity() {
                     browserViewModel.closeFindInPage()
                     return
                 }
+                if (browserViewModel.showZoomBar.value) {
+                    browserViewModel.closeZoomBar()
+                    return
+                }
                 val navHost = supportFragmentManager.findFragmentById(R.id.nav_host_fragment)
                 val activeBrowser = navHost?.childFragmentManager?.fragments?.firstOrNull { it is BrowserFragment && it.isVisible } as? BrowserFragment
                 if (activeBrowser != null) {

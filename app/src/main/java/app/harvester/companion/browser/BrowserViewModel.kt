@@ -1,28 +1,31 @@
 package app.harvester.companion.browser
 
 import android.app.Application
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
-import androidx.core.content.pm.ShortcutInfoCompat
-import androidx.core.content.pm.ShortcutManagerCompat
-import androidx.core.graphics.drawable.IconCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import app.harvester.companion.HomeActivity
-import app.harvester.companion.R
+import app.harvester.companion.GeckoWebExtensionBridge
 import app.harvester.companion.SearchEnginePrefs
 import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.Shortcut
 import app.harvester.companion.ShortcutStore
 import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
+import app.harvester.companion.browser.browsingmode.BrowsingMode
 import app.harvester.companion.browser.search.SearchSuggestionClient
+import app.harvester.companion.browser.tools.PdfPrintHelper
 import app.harvester.companion.components.appstate.AppAction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import mozilla.appservices.places.BookmarkRoot
@@ -63,9 +66,15 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private val _findTotal = MutableStateFlow(0)
     val findTotal: StateFlow<Int> = _findTotal
 
-    // Page zoom state
+    private val _findMatchCase = MutableStateFlow(false)
+    val findMatchCase: StateFlow<Boolean> = _findMatchCase.asStateFlow()
+
+    private val _findWholeWord = MutableStateFlow(false)
+    val findWholeWord: StateFlow<Boolean> = _findWholeWord.asStateFlow()
+
+    // Global Page Zoom state (50% - 300%, applied smoothly via CSS zoom across all tabs)
     private val _pageZoomPercent = MutableStateFlow(
-        SettingsPrefs.getInt(context, SettingsPrefs.K_TEXT_SCALE, 100).coerceIn(50, 200)
+        SettingsPrefs.getInt(context, SettingsPrefs.K_TEXT_SCALE, 100).coerceIn(50, 300)
     )
     val pageZoomPercent: StateFlow<Int> = _pageZoomPercent
 
@@ -75,6 +84,10 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     // Bookmark state for current URL
     private val _isBookmarked = MutableStateFlow(false)
     val isBookmarked: StateFlow<Boolean> = _isBookmarked
+
+    // DevTools active tabs tracking
+    private val _devToolsActiveTabIds = MutableStateFlow<Set<String>>(emptySet())
+    val devToolsActiveTabIds: StateFlow<Set<String>> = _devToolsActiveTabIds.asStateFlow()
 
     // Overlay sheets & dialogs
     private val _showScriptsSheet = MutableStateFlow(false)
@@ -88,6 +101,12 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     private val _showExtensionsSheet = MutableStateFlow(false)
     val showExtensionsSheet: StateFlow<Boolean> = _showExtensionsSheet
+
+    private val _showTranslateSheet = MutableStateFlow(false)
+    val showTranslateSheet: StateFlow<Boolean> = _showTranslateSheet.asStateFlow()
+
+    private val _showSavePdfSheet = MutableStateFlow(false)
+    val showSavePdfSheet: StateFlow<Boolean> = _showSavePdfSheet.asStateFlow()
 
     private var suggestJob: Job? = null
     private var lastBookmarkUrl: String = ""
@@ -194,6 +213,22 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         geckoSessionForTab(tabId)?.finder?.clear()
     }
 
+    fun toggleFindMatchCase(tabId: String? = null) {
+        _findMatchCase.value = !_findMatchCase.value
+        val q = _findQuery.value
+        if (q.isNotBlank()) {
+            runFindInPage(q, forward = true, tabId = tabId)
+        }
+    }
+
+    fun toggleFindWholeWord(tabId: String? = null) {
+        _findWholeWord.value = !_findWholeWord.value
+        val q = _findQuery.value
+        if (q.isNotBlank()) {
+            runFindInPage(q, forward = true, tabId = tabId)
+        }
+    }
+
     fun runFindInPage(query: String, forward: Boolean = true, tabId: String? = null) {
         _findQuery.value = query
         val session = geckoSessionForTab(tabId) ?: return
@@ -203,9 +238,16 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             _findTotal.value = 0
             return
         }
-        val flags = if (forward) GeckoSession.FINDER_FIND_FORWARD else GeckoSession.FINDER_FIND_BACKWARDS
+        var flags = if (forward) GeckoSession.FINDER_FIND_FORWARD else GeckoSession.FINDER_FIND_BACKWARDS
+        if (_findMatchCase.value) {
+            flags = flags or GeckoSession.FINDER_FIND_MATCH_CASE
+        }
+        if (_findWholeWord.value) {
+            flags = flags or GeckoSession.FINDER_FIND_WHOLE_WORD
+        }
         try {
-            session.finder.displayFlags = GeckoSession.FINDER_DISPLAY_HIGHLIGHT_ALL
+            session.finder.displayFlags =
+                GeckoSession.FINDER_DISPLAY_HIGHLIGHT_ALL or GeckoSession.FINDER_DISPLAY_DIM_PAGE
             session.finder.find(query, flags).accept({ res ->
                 if (res != null) {
                     _findCurrent.value = if (res.total > 0) res.current else 0
@@ -218,7 +260,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         } catch (_: Exception) {}
     }
 
-    // ---- Page Zoom ----
+    // ---- Global Full-Page Zoom (50% - 300%) ----
 
     fun openZoomBar() {
         _showFindInPage.value = false
@@ -230,21 +272,93 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun setPageZoom(percent: Int) {
-        val clamped = percent.coerceIn(50, 200)
+        val clamped = percent.coerceIn(50, 300)
         _pageZoomPercent.value = clamped
         SettingsPrefs.setInt(context, SettingsPrefs.K_TEXT_SCALE, clamped)
-        val factor = clamped / 100f
         try {
-            components.engine.settings.fontSizeFactor = factor
-            components.engine.settings.fontInflationEnabled = clamped != 100
+            components.engine.settings.forceUserScalableContent = true
+            components.engine.settings.fontInflationEnabled = false
+            components.engine.settings.automaticFontSizeAdjustment = false
         } catch (_: Exception) {}
-        try {
-            val activeSession = components.store.state.selectedTab?.engineState?.engineSession
-            if (activeSession != null) {
-                activeSession.settings.fontSizeFactor = factor
-                activeSession.settings.fontInflationEnabled = clamped != 100
+        // Broadcast live CSS full-page zoom to all open tabs immediately via uh_bridge
+        GeckoWebExtensionBridge.applyGlobalZoom(clamped)
+    }
+
+    // ---- DevTools ----
+
+    fun toggleDevTools(tabId: String?, darkTheme: Boolean = true) {
+        GeckoWebExtensionBridge.toggleDevTools(darkTheme)
+        if (!tabId.isNullOrBlank()) {
+            _devToolsActiveTabIds.update { set ->
+                if (tabId in set) set - tabId else set + tabId
             }
-        } catch (_: Exception) {}
+        }
+    }
+
+    // ---- Save PDF / Print / Copy / Open in External App / New Private Tab ----
+
+    fun saveCurrentPageAsPdf(activityContext: Context, title: String) {
+        PdfPrintHelper.saveSessionAsPdf(activityContext, geckoSessionForTab(null), title)
+    }
+
+    fun printCurrentPage(activityContext: Context) {
+        PdfPrintHelper.printSession(activityContext, geckoSessionForTab(null))
+    }
+
+    fun copyLink(url: String) {
+        if (url.isBlank() || url == "about:blank") return
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        cm?.setPrimaryClip(ClipData.newPlainText("URL", url))
+        Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
+    }
+
+    fun openInExternalApp(activityContext: Context, url: String) {
+        if (url.isBlank() || url == "about:blank") return
+        try {
+            val viewIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                addCategory(Intent.CATEGORY_BROWSABLE)
+            }
+            val pm = activityContext.packageManager
+            val resolved = pm.queryIntentActivities(viewIntent, 0)
+                .filter { it.activityInfo.packageName != activityContext.packageName }
+
+            if (resolved.isEmpty()) {
+                Toast.makeText(activityContext, "No external app found for this link", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            if (resolved.size == 1) {
+                val target = resolved.first().activityInfo
+                val direct = Intent(viewIntent).apply {
+                    setClassName(target.packageName, target.name)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                activityContext.startActivity(direct)
+            } else {
+                val targets = resolved.map { ri ->
+                    Intent(viewIntent).apply {
+                        setClassName(ri.activityInfo.packageName, ri.activityInfo.name)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                }
+                val chooser = Intent.createChooser(targets.first(), "Open in app").apply {
+                    if (targets.size > 1) {
+                        putExtra(Intent.EXTRA_INITIAL_INTENTS, targets.drop(1).toTypedArray())
+                    }
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                activityContext.startActivity(chooser)
+            }
+        } catch (e: Exception) {
+            UHLog.w("external_app", "Failed opening URL in external app: ${e.message}")
+            Toast.makeText(activityContext, "Could not open in external app", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun openNewPrivateTab() {
+        browsingModeManager.mode = BrowsingMode.Private
+        components.useCases.tabsUseCases.addTab("about:blank", selectTab = true, private = true)
+        enterEditMode("")
     }
 
     // ---- Bookmarks ----
@@ -299,7 +413,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // ---- Sheets & Add to Home ----
+    // ---- Overlay Sheets ----
 
     fun openScriptsSheet() { _showScriptsSheet.value = true }
     fun closeScriptsSheet() { _showScriptsSheet.value = false }
@@ -312,6 +426,12 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun openExtensionsSheet() { _showExtensionsSheet.value = true }
     fun closeExtensionsSheet() { _showExtensionsSheet.value = false }
+
+    fun openTranslateSheet() { _showTranslateSheet.value = true }
+    fun closeTranslateSheet() { _showTranslateSheet.value = false }
+
+    fun openSavePdfSheet() { _showSavePdfSheet.value = true }
+    fun closeSavePdfSheet() { _showSavePdfSheet.value = false }
 
     fun addToUhHomeGrid(url: String, title: String): Boolean {
         if (url.isBlank() || url == "about:blank") return false
@@ -326,27 +446,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         )
         Toast.makeText(context, "Added to UH Home", Toast.LENGTH_SHORT).show()
         return true
-    }
-
-    fun pinToAndroidHomeScreen(activityContext: Context, url: String, title: String) {
-        if (url.isBlank() || url == "about:blank") return
-        if (!ShortcutManagerCompat.isRequestPinShortcutSupported(activityContext)) {
-            Toast.makeText(activityContext, "Launcher pinning unsupported; added to UH Home", Toast.LENGTH_SHORT).show()
-            addToUhHomeGrid(url, title)
-            return
-        }
-        val label = title.ifBlank { ShortcutStore.shortNameFor(url) }.take(32)
-        val launchIntent = Intent(activityContext, HomeActivity::class.java).apply {
-            action = Intent.ACTION_VIEW
-            data = android.net.Uri.parse(url)
-        }
-        val shortcutInfo = ShortcutInfoCompat.Builder(activityContext, "uh_pin_${url.hashCode()}")
-            .setShortLabel(label)
-            .setLongLabel(label)
-            .setIcon(IconCompat.createWithResource(activityContext, R.mipmap.ic_launcher))
-            .setIntent(launchIntent)
-            .build()
-        ShortcutManagerCompat.requestPinShortcut(activityContext, shortcutInfo, null)
     }
 
     private fun geckoSessionForTab(tabId: String?): GeckoSession? {

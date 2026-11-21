@@ -106,14 +106,28 @@ object GeckoWebExtensionBridge {
         } catch (_: Exception) {}
     }
 
-    fun triggerTranslatePage(targetLang: String = "en") {
+    fun toggleDevTools(darkTheme: Boolean = true) {
         val port = activeBridgePort ?: return
         try {
             port.postMessage(JSONObject().apply {
-                put("action", "TRANSLATE_PAGE")
-                put("targetLang", targetLang)
+                put("action", "TOGGLE_DEVTOOLS")
+                put("darkTheme", darkTheme)
             })
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            UHLog.w("ext", "Failed sending TOGGLE_DEVTOOLS: ${e.message}")
+        }
+    }
+
+    fun applyGlobalZoom(percent: Int) {
+        val port = activeBridgePort ?: return
+        try {
+            port.postMessage(JSONObject().apply {
+                put("action", "APPLY_GLOBAL_ZOOM")
+                put("percent", percent.coerceIn(50, 300))
+            })
+        } catch (e: Exception) {
+            UHLog.w("ext", "Failed sending APPLY_GLOBAL_ZOOM: ${e.message}")
+        }
     }
 
     private val headerMessageDelegate = object : WebExtension.MessageDelegate {
@@ -165,6 +179,10 @@ object GeckoWebExtensionBridge {
                         val url = json.optString("url")
                         val isTop = json.optBoolean("isTop", true)
                         val payload = UserscriptManager.buildGeckoScriptPayload(ctx, url, isTop)
+                        if (isTop) {
+                            val zoomPct = SettingsPrefs.getInt(ctx, SettingsPrefs.K_TEXT_SCALE, 100).coerceIn(50, 300)
+                            payload.put("globalZoomPercent", zoomPct)
+                        }
                         result.complete(payload)
                     }
                     result

@@ -45,15 +45,25 @@
         try { delete window[marker]; } catch (_e) {}
     }
 
-    function applyInPageTranslate(lang) {
+    function applyGlobalZoom(percent) {
         try {
-            const existing = document.getElementById("uh-gt-frame");
-            if (existing) existing.remove();
-            const url = window.location.href;
-            if (!url || !url.startsWith("http")) return;
-            const tl = encodeURIComponent(lang || "en");
-            const gtUrl = "https://translate.google.com/translate?sl=auto&tl=" + tl + "&u=" + encodeURIComponent(url);
-            window.location.href = gtUrl;
+            const clamped = Math.max(50, Math.min(300, Number(percent) || 100));
+            let styleEl = document.getElementById("__uh_global_zoom_style");
+            if (clamped === 100) {
+                if (styleEl) styleEl.remove();
+                if (document.documentElement) {
+                    document.documentElement.style.removeProperty("zoom");
+                }
+                return;
+            }
+            const factor = (clamped / 100).toFixed(2);
+            if (!styleEl) {
+                styleEl = document.createElement("style");
+                styleEl.id = "__uh_global_zoom_style";
+                (document.head || document.documentElement).appendChild(styleEl);
+            }
+            // Gecko 126+ natively supports standard CSS zoom across full layout, text, and images
+            styleEl.textContent = "html { zoom: " + factor + " !important; -webkit-text-size-adjust: none; }";
         } catch (_e) {}
     }
 
@@ -69,8 +79,12 @@
             if (typeof window.__uh_runMenuCommand === "function") {
                 try { window.__uh_runMenuCommand(event.data.commandId); } catch (_e) {}
             }
-        } else if (event.data.type === "UH_TRANSLATE_PAGE") {
-            applyInPageTranslate(event.data.targetLang);
+        } else if (event.data.type === "UH_TOGGLE_DEVTOOLS") {
+            if (typeof window.__uhToggleDevTools === "function") {
+                try { window.__uhToggleDevTools(event.data.darkTheme !== false); } catch (_e) {}
+            }
+        } else if (event.data.type === "UH_APPLY_GLOBAL_ZOOM") {
+            applyGlobalZoom(event.data.percent);
         }
     });
 

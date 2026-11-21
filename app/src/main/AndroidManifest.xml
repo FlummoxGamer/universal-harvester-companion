@@ -55,6 +55,15 @@
         </activity>
 
         <activity
+            android:name=".browser.webapp.WebAppActivity"
+            android:exported="true"
+            android:documentLaunchMode="intoExisting"
+            android:autoRemoveFromRecents="false"
+            android:theme="@style/Theme.UHCompanion"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
             android:name=".safemode.SafeModeActivity"
             android:exported="false"
             android:theme="@style/Theme.UHCompanion" />
