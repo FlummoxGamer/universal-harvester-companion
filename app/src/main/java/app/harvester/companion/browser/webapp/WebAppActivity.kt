@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -111,9 +112,8 @@ class WebAppActivity : AppCompatActivity() {
         currentUrlState = startUrl
         currentTitleState = appTitle
 
+        enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.statusBarColor = Color.TRANSPARENT
-        window.navigationBarColor = Color.TRANSPARENT
 
         configureTaskDescription(appTitle, stored?.iconPath, themeColorInt)
 
@@ -274,7 +274,6 @@ class WebAppActivity : AppCompatActivity() {
         )
     }
 
-    @Suppress("DEPRECATION")
     private fun configureTaskDescription(title: String, iconPath: String?, themeColor: Int?) {
         try {
             val iconBitmap = iconPath?.let { path ->
@@ -282,16 +281,21 @@ class WebAppActivity : AppCompatActivity() {
                 if (f.isFile) BitmapFactory.decodeFile(path) else null
             }
             val color = themeColor ?: Color.parseColor("#0D1117")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                val desc = if (iconBitmap != null) {
+            val desc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ActivityManager.TaskDescription.Builder()
+                    .setLabel(title)
+                    .setIcon(R.mipmap.ic_launcher)
+                    .setPrimaryColor(color)
+                    .build()
+            } else {
+                @Suppress("DEPRECATION")
+                if (iconBitmap != null) {
                     ActivityManager.TaskDescription(title, iconBitmap, color)
                 } else {
                     ActivityManager.TaskDescription(title, R.mipmap.ic_launcher, color)
                 }
-                setTaskDescription(desc)
-            } else {
-                setTaskDescription(ActivityManager.TaskDescription(title, iconBitmap, color))
             }
+            setTaskDescription(desc)
         } catch (_: Exception) {}
     }
 

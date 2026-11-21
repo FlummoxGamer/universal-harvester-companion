@@ -3,6 +3,7 @@ package app.harvester.companion.browser.toolbar
 import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,6 +25,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -49,6 +52,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -113,6 +117,7 @@ fun UhGlobalToolbar(
     val showExtensionsSheet by viewModel.showExtensionsSheet.collectAsState()
     val showTranslateSheet by viewModel.showTranslateSheet.collectAsState()
     val showSavePdfSheet by viewModel.showSavePdfSheet.collectAsState()
+    val pendingExternalAppPrompt by viewModel.pendingExternalAppPrompt.collectAsState()
     val pendingExtensionPrompt by UhExtensionManager.pendingPrompt.collectAsState()
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -407,6 +412,8 @@ fun UhGlobalToolbar(
         TranslateSheet(
             tabTranslationsState = selectedTab?.translationsState,
             currentHost = currentHost,
+            activeTabId = selectedTab?.id,
+            activeTabUrl = displayUrl,
             onDismiss = { viewModel.closeTranslateSheet() }
         )
     }
@@ -432,9 +439,62 @@ fun UhGlobalToolbar(
             },
             onPrint = {
                 viewModel.closeSavePdfSheet()
-                viewModel.printCurrentPage(context)
+                viewModel.printCurrentPage(context, pageTitle.ifBlank { currentHost })
             },
             onDismiss = { viewModel.closeSavePdfSheet() }
+        )
+    }
+
+    pendingExternalAppPrompt?.let { prompt ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissExternalAppPrompt() },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(22.dp),
+            icon = {
+                if (prompt.appIcon != null) {
+                    Image(
+                        bitmap = prompt.appIcon.asImageBitmap(),
+                        contentDescription = prompt.appName,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                    )
+                } else {
+                    Icon(
+                        painter = painterResource(id = R.drawable.uh_ic_open_in_app_24),
+                        contentDescription = prompt.appName,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            },
+            title = {
+                Text(
+                    text = "Open in ${prompt.appName}?",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "Leave UH and open ${prompt.host} in ${prompt.appName}?",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.confirmOpenExternalApp(context) },
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Open", fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissExternalAppPrompt() }) {
+                    Text("Cancel")
+                }
+            }
         )
     }
 

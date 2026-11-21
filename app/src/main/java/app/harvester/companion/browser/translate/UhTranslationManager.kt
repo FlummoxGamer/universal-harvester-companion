@@ -1,8 +1,11 @@
 package app.harvester.companion.browser.translate
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Handler
 import android.os.Looper
+import app.harvester.companion.GeckoWebExtensionBridge
 import app.harvester.companion.UHLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,21 +29,65 @@ object UhTranslationManager {
 
     private const val PREFS_NAME = "uh_translation_prefs"
     private const val KEY_PREFERRED_TARGET_LANG = "preferred_target_lang"
+    private const val KEY_PREFER_OFFLINE = "prefer_offline_translation"
+
+    private val FALLBACK_LANGUAGES: List<Language> = listOf(
+        Language("en", "English"),
+        Language("es", "Spanish"),
+        Language("fr", "French"),
+        Language("de", "German"),
+        Language("hi", "Hindi"),
+        Language("ja", "Japanese"),
+        Language("ko", "Korean"),
+        Language("zh-CN", "Chinese (Simplified)"),
+        Language("zh-TW", "Chinese (Traditional)"),
+        Language("ar", "Arabic"),
+        Language("pt", "Portuguese"),
+        Language("ru", "Russian"),
+        Language("it", "Italian"),
+        Language("nl", "Dutch"),
+        Language("tr", "Turkish"),
+        Language("pl", "Polish"),
+        Language("id", "Indonesian"),
+        Language("vi", "Vietnamese"),
+        Language("th", "Thai"),
+        Language("uk", "Ukrainian"),
+        Language("bn", "Bengali"),
+        Language("ur", "Urdu"),
+        Language("ta", "Tamil"),
+        Language("te", "Telugu"),
+        Language("mr", "Marathi"),
+        Language("sv", "Swedish"),
+        Language("da", "Danish"),
+        Language("fi", "Finnish"),
+        Language("el", "Greek"),
+        Language("cs", "Czech"),
+        Language("ro", "Romanian"),
+    )
 
     data class State(
         val isEngineSupported: Boolean = true,
         val isLoadingLanguages: Boolean = false,
-        val fromLanguages: List<Language> = emptyList(),
-        val toLanguages: List<Language> = emptyList(),
+        val fromLanguages: List<Language> = FALLBACK_LANGUAGES,
+        val toLanguages: List<Language> = FALLBACK_LANGUAGES,
         val languageModels: List<LanguageModel> = emptyList(),
         val languageSettings: Map<String, LanguageSetting> = emptyMap(),
         val neverTranslateSites: List<String> = emptyList(),
         val currentSiteNeverTranslate: Boolean = false,
         val preferredTargetLang: String = Locale.getDefault().language.ifBlank { "en" },
+        val preferOffline: Boolean = false,
         val pairDownloadSizeBytes: Long? = null,
         val isBusy: Boolean = false,
         val statusMessage: String? = null,
         val errorMessage: String? = null,
+        val fastTranslatedTabId: String? = null,
+        val fastTranslatedUrl: String? = null,
+        val fastTranslatedFrom: String? = null,
+        val fastTranslatedTo: String? = null,
+        val lastTranslateMs: Long? = null,
+        val isTranslatingImages: Boolean = false,
+        val imageOverlayCount: Int = 0,
+        val imageOverlayTabId: String? = null,
     )
 
     private val initialized = AtomicBoolean(false)
@@ -64,20 +111,100 @@ object UhTranslationManager {
         engineRef = engine
         storeRef = store
 
-        val savedTarget = context.applicationContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_PREFERRED_TARGET_LANG, null)
+        val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val savedTarget = prefs.getString(KEY_PREFERRED_TARGET_LANG, null)
             ?.ifBlank { null }
             ?: Locale.getDefault().language.ifBlank { "en" }
+        val preferOffline = prefs.getBoolean(KEY_PREFER_OFFLINE, false)
 
-        _state.update { it.copy(preferredTargetLang = savedTarget) }
+        _state.update {
+            it.copy(
+                preferredTargetLang = savedTarget,
+                preferOffline = preferOffline,
+            )
+        }
+
+        GeckoWebExtensionBridge.onFastTranslateCompleted = { success, count, durationMs, fromLang, toLang, pageUrl ->
+            val activeTab = storeRef?.state?.selectedTab
+            if (success) {
+                _state.update {
+                    it.copy(
+                        isBusy = false,
+                        errorMessage = null,
+                        statusMessage = if (count > 0) {
+                            "Translated $count blocks in ${durationMs}ms"
+                        } else {
+                            "Page translated"
+                        },
+                        fastTranslatedTabId = activeTab?.id,
+                        fastTranslatedUrl = pageUrl.ifBlank { activeTab?.content?.url },
+                        fastTranslatedFrom = fromLang,
+                        fastTranslatedTo = toLang,
+                        lastTranslateMs = durationMs,
+                    )
+                }
+            } else {
+                _state.update {
+                    it.copy(
+                        isBusy = false,
+                        statusMessage = null,
+                        errorMessage = "Fast translation could not reach service. Try On-Device Offline mode.",
+                    )
+                }
+            }
+        }
+
+        GeckoWebExtensionBridge.onImageTranslateCompleted = { imageCount, overlayCount, _ ->
+            val activeTabId = storeRef?.state?.selectedTab?.id
+            _state.update {
+                it.copy(
+                    isTranslatingImages = false,
+                    imageOverlayCount = overlayCount,
+                    imageOverlayTabId = if (overlayCount > 0) activeTabId else null,
+                    statusMessage = when {
+                        overlayCount > 0 -> "Translated $overlayCount text block${if (overlayCount == 1) "" else "s"} across images"
+                        imageCount == 0 -> "No visible images with text found on screen"
+                        else -> "No readable text detected in visible images"
+                    },
+                    errorMessage = null,
+                )
+            }
+        }
+
         refreshEngineCapabilities()
+    }
+
+    fun isFastTranslatedForTab(tabId: String?, tabUrl: String?): Boolean {
+        val st = _state.value
+        if (tabId.isNullOrBlank() || st.fastTranslatedTabId != tabId) return false
+        if (!tabUrl.isNullOrBlank() && !st.fastTranslatedUrl.isNullOrBlank() && st.fastTranslatedUrl != tabUrl) {
+            return false
+        }
+        return true
+    }
+
+    fun setPreferOffline(preferOffline: Boolean) {
+        appContext?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            ?.edit()?.putBoolean(KEY_PREFER_OFFLINE, preferOffline)?.apply()
+        _state.update { it.copy(preferOffline = preferOffline, errorMessage = null, statusMessage = null) }
+    }
+
+    private fun isNetworkAvailable(): Boolean {
+        val ctx = appContext ?: return true
+        return try {
+            val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return true
+            val network = cm.activeNetwork ?: return false
+            val caps = cm.getNetworkCapabilities(network) ?: return false
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        } catch (_: Exception) {
+            true
+        }
     }
 
     fun refreshEngineCapabilities() {
         val engine = engineRef ?: return
         mainHandler.post {
-            _state.update { it.copy(isLoadingLanguages = true, errorMessage = null) }
+            _state.update { it.copy(isLoadingLanguages = it.fromLanguages.isEmpty(), errorMessage = null) }
             engine.isTranslationsEngineSupported(
                 onSuccess = { supported ->
                     _state.update { it.copy(isEngineSupported = supported) }
@@ -87,18 +214,12 @@ object UhTranslationManager {
                         fetchLanguageSettings(engine)
                         fetchNeverTranslateSites(engine)
                     } else {
-                        _state.update {
-                            it.copy(
-                                isLoadingLanguages = false,
-                                errorMessage = "On-device translation is not supported on this device architecture."
-                            )
-                        }
+                        _state.update { it.copy(isLoadingLanguages = false) }
                     }
                 },
                 onError = { err ->
                     UHLog.w("translate", "isTranslationsEngineSupported error: ${err.message}")
                     _state.update { it.copy(isLoadingLanguages = false) }
-                    // Still attempt fetching languages in case runtime warms up asynchronously
                     fetchSupportedLanguages(engine)
                 }
             )
@@ -121,7 +242,7 @@ object UhTranslationManager {
 
     fun fetchPairDownloadSize(fromLang: String, toLang: String) {
         val engine = engineRef ?: return
-        if (fromLang.isBlank() || toLang.isBlank() || fromLang == toLang) {
+        if (fromLang.isBlank() || fromLang == "auto" || toLang.isBlank() || fromLang == toLang) {
             _state.update { it.copy(pairDownloadSizeBytes = null) }
             return
         }
@@ -148,35 +269,69 @@ object UhTranslationManager {
     }
 
     fun translateActiveTab(fromLang: String, toLang: String) {
-        val session = storeRef?.state?.selectedTab?.engineState?.engineSession
+        val tab = storeRef?.state?.selectedTab
+        val session = tab?.engineState?.engineSession
         if (session == null) {
             _state.update { it.copy(errorMessage = "No active webpage to translate.") }
             return
         }
-        if (fromLang.isBlank() || toLang.isBlank()) {
-            _state.update { it.copy(errorMessage = "Choose both source and target languages.") }
+        val cleanFrom = fromLang.trim().ifBlank { "auto" }
+        val cleanTo = toLang.trim()
+        if (cleanTo.isBlank()) {
+            _state.update { it.copy(errorMessage = "Choose a target language.") }
             return
         }
-        if (fromLang == toLang) {
+        if (cleanFrom != "auto" && cleanFrom.equals(cleanTo, ignoreCase = true)) {
             _state.update { it.copy(errorMessage = "Source and target languages are the same.") }
             return
         }
-        setPreferredTargetLanguage(toLang)
+        setPreferredTargetLanguage(cleanTo)
+
+        val useOnlineFast = !_state.value.preferOffline && isNetworkAvailable()
+        if (useOnlineFast) {
+            _state.update {
+                it.copy(
+                    isBusy = true,
+                    statusMessage = "Translating page…",
+                    errorMessage = null,
+                )
+            }
+            val dispatched = GeckoWebExtensionBridge.triggerFastTranslate(cleanFrom, cleanTo)
+            if (dispatched) {
+                // Safety fallback timer in case page does not respond (e.g. restricted internal page)
+                mainHandler.postDelayed({
+                    if (_state.value.isBusy) {
+                        _state.update { it.copy(isBusy = false) }
+                    }
+                }, 8000L)
+                return
+            }
+        }
+
+        // Seamless fallback to GeckoView On-Device neural translation
+        val geckoFrom = if (cleanFrom == "auto") {
+            tab.translationsState.translationEngineState?.detectedLanguages?.documentLangTag
+                ?.ifBlank { null }
+                ?: _state.value.fromLanguages.firstOrNull { it.code != cleanTo }?.code
+                ?: "es"
+        } else {
+            cleanFrom
+        }
+
         _state.update {
             it.copy(
                 isBusy = true,
-                statusMessage = "Translating page on-device…",
+                statusMessage = "Translating on-device…",
                 errorMessage = null,
             )
         }
         mainHandler.post {
             try {
                 session.requestTranslate(
-                    fromLanguage = fromLang,
-                    toLanguage = toLang,
+                    fromLanguage = geckoFrom,
+                    toLanguage = cleanTo,
                     options = TranslationOptions(downloadModel = true),
                 )
-                // GeckoView updates BrowserStore tab.translationsState asynchronously; clear local busy fallback shortly
                 mainHandler.postDelayed({
                     _state.update { it.copy(isBusy = false, statusMessage = null) }
                     engineRef?.let { fetchLanguageModels(it) }
@@ -195,30 +350,88 @@ object UhTranslationManager {
     }
 
     fun restoreActiveTab() {
-        val session = storeRef?.state?.selectedTab?.engineState?.engineSession ?: return
-        _state.update { it.copy(isBusy = true, statusMessage = "Restoring original page…", errorMessage = null) }
-        mainHandler.post {
-            try {
-                session.requestTranslationRestore()
-                mainHandler.postDelayed({
-                    _state.update { it.copy(isBusy = false, statusMessage = null) }
-                }, 500L)
-            } catch (e: Exception) {
-                UHLog.w("translate", "requestTranslationRestore failed: ${e.message}")
-                _state.update { it.copy(isBusy = false, statusMessage = null, errorMessage = e.message) }
+        val tab = storeRef?.state?.selectedTab
+        val session = tab?.engineState?.engineSession
+
+        // Instant 0ms DOM restore for fast-translated pages
+        GeckoWebExtensionBridge.restoreFastTranslate()
+        _state.update {
+            it.copy(
+                fastTranslatedTabId = null,
+                fastTranslatedUrl = null,
+                fastTranslatedFrom = null,
+                fastTranslatedTo = null,
+                lastTranslateMs = null,
+                statusMessage = "Restored original page",
+                errorMessage = null,
+            )
+        }
+
+        // Also restore GeckoView on-device translation if active
+        if (session != null && tab.translationsState.isTranslated) {
+            _state.update { it.copy(isBusy = true, statusMessage = "Restoring original page…") }
+            mainHandler.post {
+                try {
+                    session.requestTranslationRestore()
+                    mainHandler.postDelayed({
+                        _state.update { it.copy(isBusy = false, statusMessage = null) }
+                    }, 400L)
+                } catch (e: Exception) {
+                    UHLog.w("translate", "requestTranslationRestore failed: ${e.message}")
+                    _state.update { it.copy(isBusy = false, statusMessage = null, errorMessage = e.message) }
+                }
             }
+        }
+    }
+
+    fun translateVisibleImages(fromLang: String, toLang: String) {
+        val cleanTo = toLang.trim().ifBlank { _state.value.preferredTargetLang.ifBlank { "en" } }
+        val cleanFrom = fromLang.trim().ifBlank { "auto" }
+        _state.update {
+            it.copy(
+                isTranslatingImages = true,
+                statusMessage = "Scanning visible images with ML Kit OCR…",
+                errorMessage = null,
+            )
+        }
+        val dispatched = GeckoWebExtensionBridge.triggerImageTranslation(cleanFrom, cleanTo)
+        if (!dispatched) {
+            _state.update {
+                it.copy(
+                    isTranslatingImages = false,
+                    statusMessage = null,
+                    errorMessage = "Image scanner not ready on this page.",
+                )
+            }
+            return
+        }
+        mainHandler.postDelayed({
+            if (_state.value.isTranslatingImages) {
+                _state.update { it.copy(isTranslatingImages = false, statusMessage = null) }
+            }
+        }, 18000L)
+    }
+
+    fun clearImageTranslations() {
+        GeckoWebExtensionBridge.clearImageTranslations()
+        _state.update {
+            it.copy(
+                isTranslatingImages = false,
+                imageOverlayCount = 0,
+                imageOverlayTabId = null,
+                statusMessage = null,
+            )
         }
     }
 
     fun setLanguageRule(languageCode: String, setting: LanguageSetting) {
         val engine = engineRef ?: return
+        if (languageCode == "auto") return
         mainHandler.post {
             engine.setLanguageSetting(
                 languageCode = languageCode,
                 languageSetting = setting,
-                onSuccess = {
-                    fetchLanguageSettings(engine)
-                },
+                onSuccess = { fetchLanguageSettings(engine) },
                 onError = { err ->
                     UHLog.w("translate", "setLanguageSetting($languageCode, $setting) failed: ${err.message}")
                     _state.update { it.copy(errorMessage = "Could not update language preference.") }
@@ -291,9 +504,7 @@ object UhTranslationManager {
                     operation = operation,
                     operationLevel = OperationLevel.LANGUAGE,
                 ),
-                onSuccess = {
-                    fetchLanguageModels(engine)
-                },
+                onSuccess = { fetchLanguageModels(engine) },
                 onError = { err ->
                     UHLog.w("translate", "manageTranslationsLanguageModel($langCode, $operation) failed: ${err.message}")
                     _state.update { it.copy(errorMessage = "Model ${operation.operation} failed. Check connection.") }
@@ -306,8 +517,12 @@ object UhTranslationManager {
     private fun fetchSupportedLanguages(engine: Engine) {
         engine.getSupportedTranslationLanguages(
             onSuccess = { support ->
-                val fromList = support.fromLanguages.orEmpty().sortedBy { it.localizedDisplayName ?: it.code }
-                val toList = support.toLanguages.orEmpty().sortedBy { it.localizedDisplayName ?: it.code }
+                val fromList = support.fromLanguages.orEmpty()
+                    .sortedBy { it.localizedDisplayName ?: it.code }
+                    .ifEmpty { FALLBACK_LANGUAGES }
+                val toList = support.toLanguages.orEmpty()
+                    .sortedBy { it.localizedDisplayName ?: it.code }
+                    .ifEmpty { FALLBACK_LANGUAGES }
                 _state.update {
                     it.copy(
                         isLoadingLanguages = false,
@@ -321,7 +536,8 @@ object UhTranslationManager {
                 _state.update {
                     it.copy(
                         isLoadingLanguages = false,
-                        errorMessage = "Could not load supported languages. Check internet connection."
+                        fromLanguages = it.fromLanguages.ifEmpty { FALLBACK_LANGUAGES },
+                        toLanguages = it.toLanguages.ifEmpty { FALLBACK_LANGUAGES },
                     )
                 }
             }

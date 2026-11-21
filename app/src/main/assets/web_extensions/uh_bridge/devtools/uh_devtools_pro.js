@@ -2,147 +2,20 @@
     if (window.__uhDevToolsProInstalled) return;
     window.__uhDevToolsProInstalled = true;
 
-    const MAX_NET_ENTRIES = 200;
-    const netLog = [];
-    let netListeners = [];
     let devToolsVisible = false;
     let initialized = false;
+    let isDarkTheme = true;
 
-    function notifyNet() {
-        for (const fn of netListeners) {
-            try { fn(); } catch (_e) {}
-        }
-    }
+    const earlyNetLog = (window.__uhEarlyNetLog = window.__uhEarlyNetLog || []);
+    const netListeners = (window.__uhNetListeners = window.__uhNetListeners || []);
 
-    // Intercept fetch & XHR early once DevTools boots for NetPro Waterfall + cURL + Replay
-    function installNetworkHooks() {
-        if (window.__uhNetProHooked) return;
-        window.__uhNetProHooked = true;
-
-        const origFetch = window.fetch;
-        if (typeof origFetch === "function") {
-            window.fetch = function (input, init) {
-                const start = performance.now();
-                const reqUrl = typeof input === "string" ? input : (input && input.url ? input.url : String(input));
-                const method = ((init && init.method) || (input && input.method) || "GET").toUpperCase();
-                const reqHeaders = {};
-                try {
-                    const hdrs = (init && init.headers) || (input && input.headers);
-                    if (hdrs instanceof Headers) {
-                        hdrs.forEach((v, k) => { reqHeaders[k] = v; });
-                    } else if (hdrs && typeof hdrs === "object") {
-                        Object.assign(reqHeaders, hdrs);
-                    }
-                } catch (_e) {}
-                const reqBody = init && typeof init.body === "string" ? init.body.slice(0, 4000) : "";
-
-                const entry = {
-                    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-                    kind: "fetch",
-                    method,
-                    url: reqUrl,
-                    status: 0,
-                    statusText: "Pending",
-                    durationMs: 0,
-                    sizeBytes: 0,
-                    contentType: "",
-                    reqHeaders,
-                    reqBody,
-                    resHeaders: {},
-                    resBody: "",
-                    startedAt: new Date().toLocaleTimeString(),
-                    error: null
-                };
-                netLog.unshift(entry);
-                if (netLog.length > MAX_NET_ENTRIES) netLog.pop();
-                notifyNet();
-
-                return origFetch.apply(this, arguments).then((resp) => {
-                    entry.status = resp.status;
-                    entry.statusText = resp.statusText || String(resp.status);
-                    entry.durationMs = Math.round(performance.now() - start);
-                    entry.contentType = resp.headers.get("content-type") || "";
-                    resp.headers.forEach((v, k) => { entry.resHeaders[k] = v; });
-                    try {
-                        resp.clone().text().then((txt) => {
-                            entry.sizeBytes = txt.length;
-                            entry.resBody = txt.slice(0, 12000);
-                            notifyNet();
-                        }).catch(() => {});
-                    } catch (_e) {}
-                    notifyNet();
-                    return resp;
-                }).catch((err) => {
-                    entry.status = -1;
-                    entry.statusText = "ERR";
-                    entry.durationMs = Math.round(performance.now() - start);
-                    entry.error = String(err && err.message ? err.message : err);
-                    notifyNet();
-                    throw err;
-                });
-            };
-        }
-
-        const origOpen = XMLHttpRequest.prototype.open;
-        const origSend = XMLHttpRequest.prototype.send;
-        const origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
-        XMLHttpRequest.prototype.open = function (method, url) {
-            this.__uhMeta = {
-                method: String(method || "GET").toUpperCase(),
-                url: String(url || ""),
-                reqHeaders: {}
-            };
-            return origOpen.apply(this, arguments);
-        };
-        XMLHttpRequest.prototype.setRequestHeader = function (k, v) {
-            if (this.__uhMeta) this.__uhMeta.reqHeaders[k] = v;
-            return origSetHeader.apply(this, arguments);
-        };
-        XMLHttpRequest.prototype.send = function (body) {
-            const meta = this.__uhMeta || { method: "GET", url: "", reqHeaders: {} };
-            const start = performance.now();
-            const entry = {
-                id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-                kind: "xhr",
-                method: meta.method,
-                url: meta.url,
-                status: 0,
-                statusText: "Pending",
-                durationMs: 0,
-                sizeBytes: 0,
-                contentType: "",
-                reqHeaders: meta.reqHeaders,
-                reqBody: typeof body === "string" ? body.slice(0, 4000) : "",
-                resHeaders: {},
-                resBody: "",
-                startedAt: new Date().toLocaleTimeString(),
-                error: null
-            };
-            netLog.unshift(entry);
-            if (netLog.length > MAX_NET_ENTRIES) netLog.pop();
-            notifyNet();
-
-            this.addEventListener("loadend", () => {
-                entry.status = this.status;
-                entry.statusText = this.statusText || String(this.status);
-                entry.durationMs = Math.round(performance.now() - start);
-                try {
-                    const rawHdrs = this.getAllResponseHeaders() || "";
-                    rawHdrs.trim().split(/[\r\n]+/).forEach((line) => {
-                        const idx = line.indexOf(":");
-                        if (idx > 0) entry.resHeaders[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
-                    });
-                    entry.contentType = entry.resHeaders["content-type"] || "";
-                    if (this.responseType === "" || this.responseType === "text") {
-                        const txt = String(this.responseText || "");
-                        entry.sizeBytes = txt.length;
-                        entry.resBody = txt.slice(0, 12000);
-                    }
-                } catch (_e) {}
-                notifyNet();
-            });
-            return origSend.apply(this, arguments);
-        };
+    function notifyNativeState(visible) {
+        try {
+            window.postMessage({
+                type: "UH_NATIVE_CALL",
+                payload: { type: "DEVTOOLS_STATE", visible: !!visible }
+            }, "*");
+        } catch (_e) {}
     }
 
     function escapeHtml(str) {
@@ -151,6 +24,14 @@
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;");
+    }
+
+    function formatBytes(bytes) {
+        const b = Number(bytes) || 0;
+        if (b <= 0) return "—";
+        if (b < 1024) return b + " B";
+        if (b < 1024 * 1024) return (b / 1024).toFixed(1) + " KB";
+        return (b / (1024 * 1024)).toFixed(2) + " MB";
     }
 
     function buildCssSelector(el) {
@@ -174,12 +55,13 @@
     }
 
     function buildCurl(entry) {
-        const parts = ["curl", "-X", entry.method, "'" + entry.url.replace(/'/g, "'\\''") + "'"];
-        for (const [k, v] of Object.entries(entry.reqHeaders || {})) {
-            parts.push("-H", "'" + k + ": " + String(v).replace(/'/g, "'\\''") + "'");
+        const parts = ["curl", "-X", entry.method || "GET", "'" + String(entry.url || "").replace(/'/g, "'\\''") + "'"];
+        const hdrs = entry.reqHeaders || {};
+        for (const k of Object.keys(hdrs)) {
+            parts.push("-H", "'" + k + ": " + String(hdrs[k]).replace(/'/g, "'\\''") + "'");
         }
         if (entry.reqBody) {
-            parts.push("--data-raw", "'" + entry.reqBody.replace(/'/g, "'\\''") + "'");
+            parts.push("--data-raw", "'" + String(entry.reqBody).replace(/'/g, "'\\''") + "'");
         }
         return parts.join(" ");
     }
@@ -203,265 +85,338 @@
         } catch (_e) {}
     }
 
-    // 1. Live Box-Model Element Inspector Plugin (Chrome/Firefox DevTools style)
-    function createInspectorTool(eruda) {
-        let overlay = null;
-        let picking = false;
-        let selectedEl = null;
-        let rootEl = null;
+    // -------------------------------------------------------------------------
+    // Box-Model Touch Element Picker (Integrated into Elements + Top Bar)
+    // -------------------------------------------------------------------------
+    let boxOverlay = null;
+    let pickingActive = false;
+    let lastPickedEl = null;
 
-        function removeOverlay() {
-            if (overlay) {
-                overlay.remove();
-                overlay = null;
-            }
+    function removeBoxOverlay() {
+        if (boxOverlay) {
+            boxOverlay.remove();
+            boxOverlay = null;
         }
+    }
 
-        function drawHighlight(el) {
-            removeOverlay();
-            if (!el || !el.getBoundingClientRect) return;
-            const rect = el.getBoundingClientRect();
-            const cs = getComputedStyle(el);
-            const mt = parseFloat(cs.marginTop) || 0;
-            const mr = parseFloat(cs.marginRight) || 0;
-            const mb = parseFloat(cs.marginBottom) || 0;
-            const ml = parseFloat(cs.marginLeft) || 0;
-            const pt = parseFloat(cs.paddingTop) || 0;
-            const pr = parseFloat(cs.paddingRight) || 0;
-            const pb = parseFloat(cs.paddingBottom) || 0;
-            const pl = parseFloat(cs.paddingLeft) || 0;
+    function drawBoxHighlight(el) {
+        removeBoxOverlay();
+        if (!el || !el.getBoundingClientRect) return;
+        const rect = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        const mt = parseFloat(cs.marginTop) || 0;
+        const mr = parseFloat(cs.marginRight) || 0;
+        const mb = parseFloat(cs.marginBottom) || 0;
+        const ml = parseFloat(cs.marginLeft) || 0;
+        const pt = parseFloat(cs.paddingTop) || 0;
+        const pr = parseFloat(cs.paddingRight) || 0;
+        const pb = parseFloat(cs.paddingBottom) || 0;
+        const pl = parseFloat(cs.paddingLeft) || 0;
 
-            overlay = document.createElement("div");
-            overlay.id = "__uh_inspector_overlay";
-            overlay.style.cssText =
-                "position:fixed;pointer-events:none;z-index:2147483645;" +
-                `left:${rect.left - ml}px;top:${rect.top - mt}px;` +
-                `width:${rect.width + ml + mr}px;height:${rect.height + mt + mb}px;` +
-                "background:rgba(246,178,107,0.35);box-sizing:border-box;";
+        boxOverlay = document.createElement("div");
+        boxOverlay.id = "__uh_inspector_overlay";
+        boxOverlay.style.cssText =
+            "position:fixed;pointer-events:none;z-index:2147483645;" +
+            `left:${rect.left - ml}px;top:${rect.top - mt}px;` +
+            `width:${rect.width + ml + mr}px;height:${rect.height + mt + mb}px;` +
+            "background:rgba(246,178,107,0.34);box-sizing:border-box;";
 
-            const borderBox = document.createElement("div");
-            borderBox.style.cssText =
-                `position:absolute;left:${ml}px;top:${mt}px;width:${rect.width}px;height:${rect.height}px;` +
-                "background:rgba(147,196,125,0.38);box-sizing:border-box;outline:1.5px solid #457B9D;";
+        const borderBox = document.createElement("div");
+        borderBox.style.cssText =
+            `position:absolute;left:${ml}px;top:${mt}px;width:${rect.width}px;height:${rect.height}px;` +
+            "background:rgba(147,196,125,0.36);box-sizing:border-box;outline:1.5px solid #457B9D;";
 
-            const contentBox = document.createElement("div");
-            contentBox.style.cssText =
-                `position:absolute;left:${pl}px;top:${pt}px;` +
-                `width:${Math.max(0, rect.width - pl - pr)}px;height:${Math.max(0, rect.height - pt - pb)}px;` +
-                "background:rgba(69,123,157,0.42);";
+        const contentBox = document.createElement("div");
+        contentBox.style.cssText =
+            `position:absolute;left:${pl}px;top:${pt}px;` +
+            `width:${Math.max(0, rect.width - pl - pr)}px;height:${Math.max(0, rect.height - pt - pb)}px;` +
+            "background:rgba(69,123,157,0.42);";
 
-            const tip = document.createElement("div");
-            tip.textContent = `${el.tagName.toLowerCase()}${el.id ? "#" + el.id : ""} · ${Math.round(rect.width)}×${Math.round(rect.height)}`;
-            tip.style.cssText =
-                "position:absolute;left:0;top:-24px;background:#0A0F1A;color:#E6E9EE;" +
-                "font:600 11px/1.2 monospace;padding:3px 7px;border-radius:6px;white-space:nowrap;" +
-                "border:1px solid #457B9D;box-shadow:0 2px 8px rgba(0,0,0,0.4);";
+        const tip = document.createElement("div");
+        tip.textContent = `${el.tagName.toLowerCase()}${el.id ? "#" + el.id : ""} · ${Math.round(rect.width)}×${Math.round(rect.height)}`;
+        tip.style.cssText =
+            "position:absolute;left:0;top:-24px;background:#0A0F1A;color:#E6E9EE;" +
+            "font:600 11px/1.2 monospace;padding:3px 7px;border-radius:6px;white-space:nowrap;" +
+            "border:1px solid #457B9D;box-shadow:0 2px 8px rgba(0,0,0,0.45);";
 
-            borderBox.appendChild(contentBox);
-            borderBox.appendChild(tip);
-            overlay.appendChild(borderBox);
-            document.documentElement.appendChild(overlay);
+        borderBox.appendChild(contentBox);
+        borderBox.appendChild(tip);
+        boxOverlay.appendChild(borderBox);
+        document.documentElement.appendChild(boxOverlay);
+    }
+
+    function updatePickedStrip(el) {
+        const root = getShadowOrRoot();
+        if (!root) return;
+        let strip = root.querySelector("#__uh_pick_strip");
+        if (!el) {
+            if (strip) strip.remove();
+            return;
         }
-
-        function onPickTap(e) {
-            if (!picking) return;
-            const target = e.target;
-            if (!target || (target.closest && target.closest("#eruda"))) return;
-            e.preventDefault();
-            e.stopPropagation();
-            picking = false;
-            document.removeEventListener("click", onPickTap, true);
-            selectedEl = target;
-            drawHighlight(target);
-            eruda.show();
-            render();
+        const elementsPanel = root.querySelector(".eruda-elements");
+        if (!elementsPanel) return;
+        if (!strip) {
+            strip = document.createElement("div");
+            strip.id = "__uh_pick_strip";
+            elementsPanel.insertBefore(strip, elementsPanel.firstChild);
         }
+        const rect = el.getBoundingClientRect();
+        const sel = buildCssSelector(el);
+        strip.style.cssText =
+            "display:flex;align-items:center;gap:6px;padding:6px 10px;background:#171B21;" +
+            "border-bottom:1px solid #2A3138;font-family:monospace;font-size:11px;color:#E6E9EE;flex-wrap:wrap;";
+        strip.innerHTML =
+            `<span style="color:#7DD3FC;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(sel)} (${Math.round(rect.width)}×${Math.round(rect.height)})</span>` +
+            `<button id="__uh_pk_sel" style="padding:3px 7px;border:1px solid #2A3138;border-radius:5px;background:#0A0F1A;color:#E6E9EE;font-size:10px;cursor:pointer;">Copy Selector</button>` +
+            `<button id="__uh_pk_html" style="padding:3px 7px;border:1px solid #2A3138;border-radius:5px;background:#0A0F1A;color:#E6E9EE;font-size:10px;cursor:pointer;">Copy HTML</button>` +
+            `<button id="__uh_pk_clr" style="padding:3px 7px;border:none;border-radius:5px;background:transparent;color:#8A96A8;font-size:10px;cursor:pointer;">Clear</button>`;
 
-        function startPicking() {
-            picking = true;
-            eruda.hide();
-            document.addEventListener("click", onPickTap, true);
-        }
-
-        function render() {
-            if (!rootEl) return;
-            const el = selectedEl;
-            if (!el) {
-                rootEl.innerHTML = `
-                    <div style="padding:14px;font-family:system-ui,sans-serif;color:#E6E9EE;">
-                        <button id="uh-pick-btn" style="width:100%;padding:12px;border:none;border-radius:10px;background:#457B9D;color:#fff;font-weight:700;font-size:13px;cursor:pointer;">
-                            Tap to Pick Any Element on Page
-                        </button>
-                        <p style="margin-top:10px;font-size:12px;color:#8A96A8;line-height:1.5;">
-                            Visual Box-Model Inspector overlays Margin (amber), Padding (green), and Content (blue) dimensions, lets you live-edit inline CSS, copy selectors, or inspect attributes.
-                        </p>
-                    </div>`;
-            } else {
-                const rect = el.getBoundingClientRect();
-                const cs = getComputedStyle(el);
-                const sel = buildCssSelector(el);
-                const attrs = Array.from(el.attributes || [])
-                    .map((a) => `<div style="font-family:monospace;font-size:11px;margin:2px 0;"><span style="color:#7DD3FC;">${escapeHtml(a.name)}</span>=<span style="color:#FDE68A;">"${escapeHtml(a.value)}"</span></div>`)
-                    .join("") || "<span style='color:#8A96A8;font-size:11px;'>None</span>";
-
-                rootEl.innerHTML = `
-                    <div style="padding:12px;font-family:system-ui,sans-serif;color:#E6E9EE;font-size:12px;">
-                        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-                            <button id="uh-pick-btn" style="flex:1;padding:9px;border:none;border-radius:8px;background:#457B9D;color:#fff;font-weight:700;cursor:pointer;">Pick Another</button>
-                            <button id="uh-copy-sel" style="padding:9px 11px;border:1px solid #2A3138;border-radius:8px;background:#171B21;color:#E6E9EE;cursor:pointer;">Copy Selector</button>
-                            <button id="uh-copy-html" style="padding:9px 11px;border:1px solid #2A3138;border-radius:8px;background:#171B21;color:#E6E9EE;cursor:pointer;">Copy HTML</button>
-                            <button id="uh-hide-el" style="padding:9px 11px;border:1px solid #2A3138;border-radius:8px;background:#171B21;color:#F87171;cursor:pointer;">Hide</button>
-                            <button id="uh-clear-ov" style="padding:9px 11px;border:1px solid #2A3138;border-radius:8px;background:#171B21;color:#8A96A8;cursor:pointer;">Clear Box</button>
-                        </div>
-                        <div style="background:#171B21;border-radius:10px;padding:10px;margin-bottom:10px;">
-                            <div style="font-family:monospace;color:#7DD3FC;word-break:break-all;margin-bottom:4px;">${escapeHtml(sel)}</div>
-                            <div style="color:#8A96A8;font-size:11px;">
-                                Size: <b style="color:#E6E9EE;">${Math.round(rect.width)}×${Math.round(rect.height)}px</b> ·
-                                Display: <b style="color:#E6E9EE;">${escapeHtml(cs.display)}</b> ·
-                                Position: <b style="color:#E6E9EE;">${escapeHtml(cs.position)}</b> ·
-                                Font: <b style="color:#E6E9EE;">${escapeHtml(cs.fontSize)}</b>
-                            </div>
-                        </div>
-                        <div style="background:#171B21;border-radius:10px;padding:10px;margin-bottom:10px;">
-                            <div style="font-weight:600;margin-bottom:6px;">Live Inline CSS</div>
-                            <textarea id="uh-style-edit" style="width:100%;min-height:54px;background:#0A0F1A;color:#E6E9EE;border:1px solid #2A3138;border-radius:8px;padding:8px;font-family:monospace;font-size:11px;box-sizing:border-box;">${escapeHtml(el.getAttribute("style") || "")}</textarea>
-                            <button id="uh-apply-css" style="margin-top:6px;padding:6px 12px;border:none;border-radius:6px;background:#457B9D;color:#fff;font-weight:600;cursor:pointer;">Apply Style</button>
-                        </div>
-                        <div style="background:#171B21;border-radius:10px;padding:10px;">
-                            <div style="font-weight:600;margin-bottom:4px;">Attributes</div>
-                            ${attrs}
-                        </div>
-                    </div>`;
-            }
-
-            const pickBtn = rootEl.querySelector("#uh-pick-btn");
-            if (pickBtn) pickBtn.onclick = startPicking;
-            const copySelBtn = rootEl.querySelector("#uh-copy-sel");
-            if (copySelBtn && el) copySelBtn.onclick = () => copyText(buildCssSelector(el));
-            const copyHtmlBtn = rootEl.querySelector("#uh-copy-html");
-            if (copyHtmlBtn && el) copyHtmlBtn.onclick = () => copyText(el.outerHTML);
-            const hideBtn = rootEl.querySelector("#uh-hide-el");
-            if (hideBtn && el) hideBtn.onclick = () => { el.style.display = "none"; removeOverlay(); };
-            const clearBtn = rootEl.querySelector("#uh-clear-ov");
-            if (clearBtn) clearBtn.onclick = removeOverlay;
-            const applyBtn = rootEl.querySelector("#uh-apply-css");
-            if (applyBtn && el) {
-                applyBtn.onclick = () => {
-                    const ta = rootEl.querySelector("#uh-style-edit");
-                    if (ta) {
-                        el.setAttribute("style", ta.value);
-                        drawHighlight(el);
-                    }
-                };
-            }
-        }
-
-        return {
-            name: "Inspector",
-            init($el) {
-                rootEl = $el[0];
-                render();
-            },
-            show() {
-                render();
-            },
-            hide() {},
-            destroy() {
-                removeOverlay();
-                document.removeEventListener("click", onPickTap, true);
-            }
+        const bSel = strip.querySelector("#__uh_pk_sel");
+        if (bSel) bSel.onclick = () => copyText(buildCssSelector(el));
+        const bHtml = strip.querySelector("#__uh_pk_html");
+        if (bHtml) bHtml.onclick = () => copyText(el.outerHTML);
+        const bClr = strip.querySelector("#__uh_pk_clr");
+        if (bClr) bClr.onclick = () => {
+            lastPickedEl = null;
+            removeBoxOverlay();
+            strip.remove();
         };
     }
 
-    // 2. Enhanced Network Pro Waterfall + Copy as cURL + Replay
-    function createNetProTool() {
+    function onPickElementTap(e) {
+        if (!pickingActive) return;
+        const target = e.target;
+        if (!target || (target.closest && target.closest("#eruda"))) return;
+        e.preventDefault();
+        e.stopPropagation();
+        pickingActive = false;
+        document.removeEventListener("click", onPickElementTap, true);
+        const banner = document.getElementById("__uh_pick_banner");
+        if (banner) banner.remove();
+
+        lastPickedEl = target;
+        drawBoxHighlight(target);
+        if (window.eruda) {
+            window.eruda.show();
+            devToolsVisible = true;
+            notifyNativeState(true);
+            try {
+                window.eruda.show("elements");
+                const elTool = window.eruda.get("elements");
+                if (elTool && typeof elTool.select === "function") {
+                    elTool.select(target);
+                }
+            } catch (_e) {}
+            setTimeout(() => updatePickedStrip(target), 60);
+        }
+    }
+
+    function startElementPicking() {
+        pickingActive = true;
+        if (window.eruda) {
+            window.eruda.hide();
+        }
+        let banner = document.getElementById("__uh_pick_banner");
+        if (!banner) {
+            banner = document.createElement("div");
+            banner.id = "__uh_pick_banner";
+            banner.textContent = "UH DevTools · Tap any element on the page to inspect";
+            banner.style.cssText =
+                "position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:2147483646;" +
+                "background:#0A0F1A;color:#E6E9EE;border:1px solid #457B9D;border-radius:999px;" +
+                "padding:7px 14px;font:600 12px/1.2 system-ui,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,0.45);pointer-events:none;";
+            document.documentElement.appendChild(banner);
+        }
+        document.addEventListener("click", onPickElementTap, true);
+    }
+
+    // -------------------------------------------------------------------------
+    // Tab 2: Network (Early + Live Fetch/XHR + PerformanceResourceTiming Assets)
+    // -------------------------------------------------------------------------
+    function createNetworkTool() {
         let rootEl = null;
         let filterText = "";
         let filterKind = "all";
         let selectedId = null;
+        let detailSubTab = "response";
+        let clearedAtTs = 0;
+
+        function getCombinedEntries() {
+            const live = earlyNetLog.slice();
+            const liveUrls = new Set(live.map((e) => e.url));
+            const assetEntries = [];
+            try {
+                const perf = performance.getEntriesByType("resource") || [];
+                for (let i = perf.length - 1; i >= 0; i--) {
+                    const p = perf[i];
+                    if (!p || !p.name || p.startTime < clearedAtTs) continue;
+                    // Avoid duplicating requests already captured in earlyNetLog
+                    if ((p.initiatorType === "fetch" || p.initiatorType === "xmlhttprequest") && liveUrls.has(p.name)) {
+                        continue;
+                    }
+                    const status = typeof p.responseStatus === "number" && p.responseStatus > 0 ? p.responseStatus : 200;
+                    const size = p.transferSize || p.encodedBodySize || p.decodedBodySize || 0;
+                    assetEntries.push({
+                        id: "perf_" + i + "_" + Math.round(p.startTime),
+                        kind: "asset",
+                        initiator: p.initiatorType || "other",
+                        method: "GET",
+                        url: p.name,
+                        status: status,
+                        statusText: status === 200 ? "OK" : String(status),
+                        durationMs: Math.max(1, Math.round(p.duration || 0)),
+                        sizeBytes: size,
+                        contentType: p.initiatorType || "resource",
+                        reqHeaders: {},
+                        reqBody: "",
+                        resHeaders: p.nextHopProtocol ? { protocol: p.nextHopProtocol } : {},
+                        resBody: "",
+                        startedAt: Math.round(p.startTime) + "ms",
+                        error: null
+                    });
+                }
+            } catch (_e) {}
+            return live.concat(assetEntries);
+        }
 
         function render() {
             if (!rootEl) return;
-            const filtered = netLog.filter((e) => {
+            const bgMain = isDarkTheme ? "#0A0F1A" : "#F8FAFC";
+            const bgCard = isDarkTheme ? "#171B21" : "#FFFFFF";
+            const borderCol = isDarkTheme ? "#2A3138" : "#E2E8F0";
+            const textMain = isDarkTheme ? "#E6E9EE" : "#0F172A";
+            const textSub = isDarkTheme ? "#8A96A8" : "#64748B";
+
+            const allEntries = getCombinedEntries();
+            const filtered = allEntries.filter((e) => {
+                if (filterKind === "api" && e.kind !== "fetch" && e.kind !== "xhr") return false;
+                if (filterKind === "assets" && e.kind !== "asset") return false;
                 if (filterKind === "err" && e.status >= 200 && e.status < 400) return false;
-                if (filterKind === "fetch" && e.kind !== "fetch") return false;
-                if (filterKind === "xhr" && e.kind !== "xhr") return false;
-                if (filterText && !e.url.toLowerCase().includes(filterText.toLowerCase())) return false;
+                if (filterText && !String(e.url || "").toLowerCase().includes(filterText.toLowerCase())) return false;
                 return true;
             });
+
             const sel = filtered.find((x) => x.id === selectedId) || null;
-            const rows = filtered.slice(0, 60).map((e) => {
-                const statusColor = e.status >= 200 && e.status < 300 ? "#4ADE80" : (e.status >= 400 || e.status < 0 ? "#F87171" : "#FBBF24");
-                const shortUrl = e.url.replace(/^https?:\/\/[^/]+/, "") || e.url;
-                const barW = Math.min(100, Math.max(6, Math.round((e.durationMs / 1000) * 100)));
+            const rows = filtered.slice(0, 120).map((e) => {
+                const statusColor = e.status >= 200 && e.status < 300
+                    ? "#4ADE80"
+                    : (e.status >= 400 || e.status < 0 ? "#F87171" : "#FBBF24");
+                const shortUrl = String(e.url || "").replace(/^https?:\/\/[^/]+/, "") || e.url;
+                const barW = Math.min(100, Math.max(4, Math.round((e.durationMs / 800) * 100)));
+                const tag = e.kind === "asset" ? (e.initiator || "asset").toUpperCase() : e.method;
+                const isSelected = e.id === selectedId;
                 return `
-                    <div data-id="${e.id}" class="uh-net-row" style="padding:8px 10px;border-bottom:1px solid #2A3138;cursor:pointer;background:${e.id === selectedId ? "#1E2329" : "transparent"};">
+                    <div data-id="${escapeHtml(e.id)}" class="uh-net-row" style="padding:7px 10px;border-bottom:1px solid ${borderCol};cursor:pointer;background:${isSelected ? "rgba(69,123,157,0.18)" : "transparent"};">
                         <div style="display:flex;align-items:center;gap:6px;font-family:monospace;font-size:11px;">
                             <span style="color:${statusColor};font-weight:700;min-width:28px;">${e.status || "..."}</span>
-                            <span style="color:#7DD3FC;font-weight:600;">${escapeHtml(e.method)}</span>
-                            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#E6E9EE;">${escapeHtml(shortUrl)}</span>
-                            <span style="color:#8A96A8;">${e.durationMs}ms</span>
+                            <span style="color:#7DD3FC;font-weight:600;font-size:10px;min-width:34px;">${escapeHtml(tag)}</span>
+                            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${textMain};">${escapeHtml(shortUrl)}</span>
+                            <span style="color:${textSub};font-size:10px;">${formatBytes(e.sizeBytes)}</span>
+                            <span style="color:${textSub};font-size:10px;min-width:38px;text-align:right;">${e.durationMs}ms</span>
                         </div>
-                        <div style="margin-top:4px;height:3px;background:#171B21;border-radius:2px;overflow:hidden;">
+                        <div style="margin-top:4px;height:2.5px;background:${bgCard};border-radius:2px;overflow:hidden;">
                             <div style="width:${barW}%;height:100%;background:${statusColor};"></div>
                         </div>
                     </div>`;
-            }).join("") || "<div style='padding:20px;text-align:center;color:#8A96A8;font-size:12px;'>No captured requests yet. Interact with the page to capture live fetch/XHR traffic.</div>";
+            }).join("") || `<div style="padding:24px;text-align:center;color:${textSub};font-size:12px;">No matching requests captured yet.</div>`;
 
             let detailHtml = "";
             if (sel) {
-                let prettyBody = sel.resBody || "(empty)";
-                try {
-                    if (sel.resBody && (sel.contentType.includes("json") || sel.resBody.trim().startsWith("{") || sel.resBody.trim().startsWith("["))) {
-                        prettyBody = JSON.stringify(JSON.parse(sel.resBody), null, 2);
-                    }
-                } catch (_e) {}
+                let bodySection = "";
+                if (detailSubTab === "headers") {
+                    const reqH = Object.entries(sel.reqHeaders || {}).map(([k, v]) => `<div><span style="color:#7DD3FC;">${escapeHtml(k)}</span>: ${escapeHtml(v)}</div>`).join("") || `<span style="color:${textSub};">None captured</span>`;
+                    const resH = Object.entries(sel.resHeaders || {}).map(([k, v]) => `<div><span style="color:#4ADE80;">${escapeHtml(k)}</span>: ${escapeHtml(v)}</div>`).join("") || `<span style="color:${textSub};">None captured</span>`;
+                    bodySection = `
+                        <div style="max-height:190px;overflow:auto;background:${bgMain};padding:8px;border-radius:8px;font-family:monospace;font-size:10.5px;line-height:1.45;">
+                            <div style="font-weight:700;color:${textSub};margin-bottom:4px;">REQUEST HEADERS</div>
+                            ${reqH}
+                            <div style="font-weight:700;color:${textSub};margin:8px 0 4px;">RESPONSE HEADERS</div>
+                            ${resH}
+                        </div>`;
+                } else {
+                    let prettyBody = sel.resBody || (sel.kind === "asset" ? "(Static page resource — tap Replay to inspect response text)" : "(empty response body)");
+                    try {
+                        if (sel.resBody && (String(sel.contentType).includes("json") || sel.resBody.trim().startsWith("{") || sel.resBody.trim().startsWith("["))) {
+                            prettyBody = JSON.stringify(JSON.parse(sel.resBody), null, 2);
+                        }
+                    } catch (_e) {}
+                    bodySection = `<pre style="margin:0;max-height:190px;overflow:auto;background:${bgMain};padding:8px;border-radius:8px;color:${textMain};font-size:10.5px;white-space:pre-wrap;word-break:break-word;">${escapeHtml(prettyBody.slice(0, 8000))}</pre>`;
+                }
+
                 detailHtml = `
-                    <div style="padding:10px;background:#171B21;border-top:2px solid #457B9D;font-size:11px;">
-                        <div style="display:flex;gap:8px;margin-bottom:8px;">
-                            <button id="uh-net-curl" style="padding:6px 10px;border:none;border-radius:6px;background:#457B9D;color:#fff;font-weight:600;cursor:pointer;">Copy cURL</button>
-                            <button id="uh-net-replay" style="padding:6px 10px;border:1px solid #2A3138;border-radius:6px;background:#0A0F1A;color:#E6E9EE;cursor:pointer;">Replay</button>
-                            <button id="uh-net-close-det" style="margin-left:auto;padding:6px 10px;border:none;background:transparent;color:#8A96A8;cursor:pointer;">Close</button>
+                    <div style="padding:10px;background:${bgCard};border-top:2px solid #457B9D;font-size:11px;">
+                        <div style="display:flex;gap:6px;margin-bottom:8px;align-items:center;flex-wrap:wrap;">
+                            <button id="uh-net-sub-res" style="padding:5px 9px;border:none;border-radius:6px;background:${detailSubTab === "response" ? "#457B9D" : bgMain};color:${detailSubTab === "response" ? "#fff" : textMain};font-weight:600;cursor:pointer;font-size:11px;">Response</button>
+                            <button id="uh-net-sub-hdr" style="padding:5px 9px;border:none;border-radius:6px;background:${detailSubTab === "headers" ? "#457B9D" : bgMain};color:${detailSubTab === "headers" ? "#fff" : textMain};font-weight:600;cursor:pointer;font-size:11px;">Headers</button>
+                            <button id="uh-net-curl" style="padding:5px 9px;border:1px solid ${borderCol};border-radius:6px;background:${bgMain};color:${textMain};font-weight:600;cursor:pointer;font-size:11px;">Copy cURL</button>
+                            <button id="uh-net-replay" style="padding:5px 9px;border:1px solid ${borderCol};border-radius:6px;background:${bgMain};color:${textMain};cursor:pointer;font-size:11px;">Replay</button>
+                            <button id="uh-net-close-det" style="margin-left:auto;padding:5px 8px;border:none;background:transparent;color:${textSub};cursor:pointer;font-weight:700;">✕</button>
                         </div>
-                        <div style="font-family:monospace;color:#7DD3FC;word-break:break-all;margin-bottom:6px;">${escapeHtml(sel.url)}</div>
-                        <div style="color:#8A96A8;margin-bottom:6px;">Type: ${escapeHtml(sel.contentType || "unknown")} · Size: ${sel.sizeBytes} B · ${sel.durationMs}ms</div>
-                        <pre style="max-height:180px;overflow:auto;background:#0A0F1A;padding:8px;border-radius:8px;color:#E6E9EE;font-size:10px;white-space:pre-wrap;word-break:break-word;">${escapeHtml(prettyBody.slice(0, 6000))}</pre>
+                        <div style="font-family:monospace;color:#7DD3FC;word-break:break-all;margin-bottom:5px;font-size:10.5px;">${escapeHtml(sel.url)}</div>
+                        <div style="color:${textSub};margin-bottom:6px;font-size:10.5px;">${escapeHtml(sel.method)} · ${sel.status || "..."} · ${escapeHtml(sel.contentType || "resource")} · ${formatBytes(sel.sizeBytes)} · ${sel.durationMs}ms</div>
+                        ${bodySection}
                     </div>`;
             }
 
+            const chip = (id, label) => {
+                const active = filterKind === id;
+                return `<button data-kind="${id}" class="uh-net-chip" style="padding:4px 8px;border-radius:6px;border:1px solid ${active ? "#457B9D" : borderCol};background:${active ? "#457B9D" : bgMain};color:${active ? "#fff" : textSub};font-size:10.5px;font-weight:600;cursor:pointer;">${label}</button>`;
+            };
+
             rootEl.innerHTML = `
-                <div style="font-family:system-ui,sans-serif;color:#E6E9EE;">
-                    <div style="display:flex;gap:6px;padding:8px 10px;background:#171B21;border-bottom:1px solid #2A3138;align-items:center;">
-                        <input id="uh-net-filter" placeholder="Filter URL…" value="${escapeHtml(filterText)}" style="flex:1;padding:6px 8px;border-radius:6px;border:1px solid #2A3138;background:#0A0F1A;color:#E6E9EE;font-size:12px;" />
-                        <select id="uh-net-kind" style="padding:6px;border-radius:6px;border:1px solid #2A3138;background:#0A0F1A;color:#E6E9EE;font-size:11px;">
-                            <option value="all" ${filterKind === "all" ? "selected" : ""}>All</option>
-                            <option value="fetch" ${filterKind === "fetch" ? "selected" : ""}>Fetch</option>
-                            <option value="xhr" ${filterKind === "xhr" ? "selected" : ""}>XHR</option>
-                            <option value="err" ${filterKind === "err" ? "selected" : ""}>Errors</option>
-                        </select>
-                        <button id="uh-net-clear" style="padding:6px 8px;border:1px solid #2A3138;border-radius:6px;background:#0A0F1A;color:#F87171;font-size:11px;cursor:pointer;">Clear</button>
+                <div style="font-family:system-ui,-apple-system,sans-serif;color:${textMain};background:${bgMain};min-height:100%;">
+                    <div style="display:flex;gap:6px;padding:8px 10px;background:${bgCard};border-bottom:1px solid ${borderCol};align-items:center;flex-wrap:wrap;">
+                        <input id="uh-net-filter" placeholder="Filter URL…" value="${escapeHtml(filterText)}" style="flex:1;min-width:120px;padding:6px 8px;border-radius:6px;border:1px solid ${borderCol};background:${bgMain};color:${textMain};font-size:12px;" />
+                        <span style="font-size:10.5px;color:${textSub};">${filtered.length} req</span>
+                        <button id="uh-net-clear" style="padding:5px 8px;border:1px solid ${borderCol};border-radius:6px;background:${bgMain};color:#F87171;font-size:11px;font-weight:600;cursor:pointer;">Clear</button>
+                    </div>
+                    <div style="display:flex;gap:5px;padding:6px 10px;background:${bgCard};border-bottom:1px solid ${borderCol};overflow-x:auto;">
+                        ${chip("all", "All")}
+                        ${chip("api", "Fetch / XHR")}
+                        ${chip("assets", "Assets")}
+                        ${chip("err", "Errors")}
                     </div>
                     <div>${rows}</div>
                     ${detailHtml}
                 </div>`;
 
             const fIn = rootEl.querySelector("#uh-net-filter");
-            if (fIn) fIn.oninput = (ev) => { filterText = ev.target.value; render(); };
-            const kSel = rootEl.querySelector("#uh-net-kind");
-            if (kSel) kSel.onchange = (ev) => { filterKind = ev.target.value; render(); };
+            if (fIn) {
+                fIn.oninput = (ev) => {
+                    filterText = ev.target.value;
+                    render();
+                    const nextInput = rootEl.querySelector("#uh-net-filter");
+                    if (nextInput) {
+                        nextInput.focus();
+                        nextInput.setSelectionRange(filterText.length, filterText.length);
+                    }
+                };
+            }
+            rootEl.querySelectorAll(".uh-net-chip").forEach((btn) => {
+                btn.onclick = () => { filterKind = btn.getAttribute("data-kind") || "all"; render(); };
+            });
             const clr = rootEl.querySelector("#uh-net-clear");
-            if (clr) clr.onclick = () => { netLog.length = 0; selectedId = null; render(); };
+            if (clr) clr.onclick = () => {
+                earlyNetLog.length = 0;
+                clearedAtTs = performance.now();
+                selectedId = null;
+                render();
+            };
             rootEl.querySelectorAll(".uh-net-row").forEach((row) => {
                 row.onclick = () => { selectedId = row.getAttribute("data-id"); render(); };
             });
+            const subRes = rootEl.querySelector("#uh-net-sub-res");
+            if (subRes) subRes.onclick = () => { detailSubTab = "response"; render(); };
+            const subHdr = rootEl.querySelector("#uh-net-sub-hdr");
+            if (subHdr) subHdr.onclick = () => { detailSubTab = "headers"; render(); };
             const curlBtn = rootEl.querySelector("#uh-net-curl");
             if (curlBtn && sel) curlBtn.onclick = () => copyText(buildCurl(sel));
             const repBtn = rootEl.querySelector("#uh-net-replay");
             if (repBtn && sel) {
                 repBtn.onclick = () => {
                     fetch(sel.url, {
-                        method: sel.method,
-                        headers: sel.reqHeaders,
+                        method: sel.method || "GET",
+                        headers: sel.reqHeaders || {},
                         body: sel.method === "GET" || sel.method === "HEAD" ? undefined : sel.reqBody
                     }).catch(() => {});
                 };
@@ -471,7 +426,7 @@
         }
 
         return {
-            name: "NetPro",
+            name: "Network",
             init($el) {
                 rootEl = $el[0];
                 netListeners.push(render);
@@ -480,13 +435,16 @@
             show() { render(); },
             hide() {},
             destroy() {
-                netListeners = netListeners.filter((x) => x !== render);
+                const idx = netListeners.indexOf(render);
+                if (idx >= 0) netListeners.splice(idx, 1);
             }
         };
     }
 
-    // 3. Web Vitals, FPS, CSS Outlines, Page Source Inspector
-    function createVitalsTool() {
+    // -------------------------------------------------------------------------
+    // Tab 5: Performance & Page Info (FPS, Vitals, Outlines, Page Source)
+    // -------------------------------------------------------------------------
+    function createPerformanceTool() {
         let rootEl = null;
         let fps = 60;
         let frames = 0;
@@ -515,7 +473,7 @@
                     st = document.createElement("style");
                     st.id = "__uh_outline_css";
                     st.textContent = "* { outline: 1px solid rgba(69, 123, 157, 0.55) !important; }";
-                    document.head.appendChild(st);
+                    (document.head || document.documentElement).appendChild(st);
                 }
             } else if (st) {
                 st.remove();
@@ -525,37 +483,55 @@
 
         function render() {
             if (!rootEl) return;
+            const bgMain = isDarkTheme ? "#0A0F1A" : "#F8FAFC";
+            const bgCard = isDarkTheme ? "#171B21" : "#FFFFFF";
+            const borderCol = isDarkTheme ? "#2A3138" : "#E2E8F0";
+            const textMain = isDarkTheme ? "#E6E9EE" : "#0F172A";
+            const textSub = isDarkTheme ? "#8A96A8" : "#64748B";
+
             const nav = performance.getEntriesByType("navigation")[0];
-            const ttfb = nav ? Math.round(nav.responseStart - nav.requestStart) : 0;
-            const domReady = nav ? Math.round(nav.domContentLoadedEventEnd) : 0;
-            const loadDone = nav ? Math.round(nav.loadEventEnd) : 0;
+            const ttfb = nav ? Math.max(0, Math.round(nav.responseStart - nav.requestStart)) : 0;
+            const domReady = nav ? Math.max(0, Math.round(nav.domContentLoadedEventEnd)) : 0;
+            const loadDone = nav ? Math.max(0, Math.round(nav.loadEventEnd)) : 0;
             const paints = performance.getEntriesByType("paint");
             const fcpObj = paints.find((p) => p.name === "first-contentful-paint");
             const fcp = fcpObj ? Math.round(fcpObj.startTime) : 0;
             const nodeCount = document.getElementsByTagName("*").length;
             const scriptCount = document.scripts ? document.scripts.length : 0;
             const imgCount = document.images ? document.images.length : 0;
+            const resCount = (performance.getEntriesByType("resource") || []).length;
             const srcHtml = showSource
-                ? `<pre style="margin-top:10px;max-height:240px;overflow:auto;background:#0A0F1A;padding:10px;border-radius:10px;color:#E6E9EE;font-size:10px;white-space:pre-wrap;word-break:break-word;">${escapeHtml(document.documentElement.outerHTML.slice(0, 25000))}</pre>`
+                ? `<pre style="margin-top:10px;max-height:240px;overflow:auto;background:${bgCard};border:1px solid ${borderCol};padding:10px;border-radius:10px;color:${textMain};font-size:10px;white-space:pre-wrap;word-break:break-word;">${escapeHtml(document.documentElement.outerHTML.slice(0, 28000))}</pre>`
                 : "";
 
             rootEl.innerHTML = `
-                <div style="padding:12px;font-family:system-ui,sans-serif;color:#E6E9EE;font-size:12px;">
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
-                        <div style="background:#171B21;padding:10px;border-radius:10px;"><div style="color:#8A96A8;font-size:10px;">Live Frame Rate</div><div id="uh-fps-val" style="font-size:18px;font-weight:700;color:#4ADE80;">${fps} FPS</div></div>
-                        <div style="background:#171B21;padding:10px;border-radius:10px;"><div style="color:#8A96A8;font-size:10px;">DOM Nodes</div><div style="font-size:18px;font-weight:700;color:#7DD3FC;">${nodeCount}</div></div>
-                        <div style="background:#171B21;padding:10px;border-radius:10px;"><div style="color:#8A96A8;font-size:10px;">TTFB / FCP</div><div style="font-size:14px;font-weight:700;">${ttfb}ms / ${fcp}ms</div></div>
-                        <div style="background:#171B21;padding:10px;border-radius:10px;"><div style="color:#8A96A8;font-size:10px;">DOM / Load</div><div style="font-size:14px;font-weight:700;">${domReady}ms / ${loadDone}ms</div></div>
+                <div style="padding:12px;font-family:system-ui,-apple-system,sans-serif;color:${textMain};background:${bgMain};min-height:100%;font-size:12px;">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+                        <div style="background:${bgCard};border:1px solid ${borderCol};padding:10px;border-radius:10px;">
+                            <div style="color:${textSub};font-size:10px;">Live Frame Rate</div>
+                            <div id="uh-fps-val" style="font-size:18px;font-weight:700;color:#4ADE80;">${fps} FPS</div>
+                        </div>
+                        <div style="background:${bgCard};border:1px solid ${borderCol};padding:10px;border-radius:10px;">
+                            <div style="color:${textSub};font-size:10px;">DOM Nodes</div>
+                            <div style="font-size:18px;font-weight:700;color:#7DD3FC;">${nodeCount}</div>
+                        </div>
+                        <div style="background:${bgCard};border:1px solid ${borderCol};padding:10px;border-radius:10px;">
+                            <div style="color:${textSub};font-size:10px;">TTFB / FCP</div>
+                            <div style="font-size:14px;font-weight:700;">${ttfb}ms / ${fcp}ms</div>
+                        </div>
+                        <div style="background:${bgCard};border:1px solid ${borderCol};padding:10px;border-radius:10px;">
+                            <div style="color:${textSub};font-size:10px;">DOM / Load</div>
+                            <div style="font-size:14px;font-weight:700;">${domReady}ms / ${loadDone}ms</div>
+                        </div>
                     </div>
-                    <div style="background:#171B21;padding:10px;border-radius:10px;margin-bottom:10px;color:#8A96A8;font-size:11px;">
-                        Viewport: <b style="color:#E6E9EE;">${window.innerWidth}×${window.innerHeight}</b> (DPR ${window.devicePixelRatio}) ·
-                        Scripts: <b style="color:#E6E9EE;">${scriptCount}</b> ·
-                        Images: <b style="color:#E6E9EE;">${imgCount}</b>
+                    <div style="background:${bgCard};border:1px solid ${borderCol};padding:10px;border-radius:10px;margin-bottom:10px;color:${textSub};font-size:11px;line-height:1.55;">
+                        <div>URL: <b style="color:${textMain};word-break:break-all;">${escapeHtml(window.location.href)}</b></div>
+                        <div>Viewport: <b style="color:${textMain};">${window.innerWidth}×${window.innerHeight}</b> (DPR ${window.devicePixelRatio}) · Resources: <b style="color:${textMain};">${resCount}</b> · Scripts: <b style="color:${textMain};">${scriptCount}</b> · Images: <b style="color:${textMain};">${imgCount}</b></div>
                     </div>
                     <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                        <button id="uh-toggle-outlines" style="padding:8px 12px;border:none;border-radius:8px;background:${outlinesOn ? "#457B9D" : "#171B21"};color:#E6E9EE;font-weight:600;cursor:pointer;">CSS Outlines: ${outlinesOn ? "ON" : "OFF"}</button>
-                        <button id="uh-toggle-source" style="padding:8px 12px;border:none;border-radius:8px;background:${showSource ? "#457B9D" : "#171B21"};color:#E6E9EE;font-weight:600;cursor:pointer;">${showSource ? "Hide Source" : "Page Source"}</button>
-                        <button id="uh-copy-source" style="padding:8px 12px;border:1px solid #2A3138;border-radius:8px;background:#0A0F1A;color:#E6E9EE;cursor:pointer;">Copy HTML</button>
+                        <button id="uh-toggle-outlines" style="padding:8px 12px;border:1px solid ${outlinesOn ? "#457B9D" : borderCol};border-radius:8px;background:${outlinesOn ? "#457B9D" : bgCard};color:${outlinesOn ? "#fff" : textMain};font-weight:600;cursor:pointer;">CSS Outlines: ${outlinesOn ? "ON" : "OFF"}</button>
+                        <button id="uh-toggle-source" style="padding:8px 12px;border:1px solid ${showSource ? "#457B9D" : borderCol};border-radius:8px;background:${showSource ? "#457B9D" : bgCard};color:${showSource ? "#fff" : textMain};font-weight:600;cursor:pointer;">${showSource ? "Hide Source" : "Page Source"}</button>
+                        <button id="uh-copy-source" style="padding:8px 12px;border:1px solid ${borderCol};border-radius:8px;background:${bgCard};color:${textMain};cursor:pointer;">Copy HTML</button>
                     </div>
                     ${srcHtml}
                 </div>`;
@@ -569,7 +545,7 @@
         }
 
         return {
-            name: "Vitals",
+            name: "Performance",
             init($el) {
                 rootEl = $el[0];
                 render();
@@ -585,39 +561,135 @@
         };
     }
 
-    function bootEruda(darkTheme) {
-        if (initialized && window.eruda) return;
+    // -------------------------------------------------------------------------
+    // UH Branding, Floating Button Removal, Tab Order & Top Controls
+    // -------------------------------------------------------------------------
+    function getShadowOrRoot() {
+        const host = document.getElementById("eruda");
+        if (!host) return null;
+        return host.shadowRoot || host;
+    }
+
+    function applyUhBrandingAndControls() {
+        try {
+            if (window.eruda && window.eruda._entryBtn) {
+                window.eruda._entryBtn.hide();
+                if (window.eruda._entryBtn._$el && window.eruda._entryBtn._$el[0]) {
+                    window.eruda._entryBtn._$el[0].style.display = "none";
+                }
+            }
+        } catch (_e) {}
+
+        const root = getShadowOrRoot();
+        if (!root) return;
+
+        // Permanently suppress floating entry button + Eruda settings gear + apply UH accent
+        if (!root.querySelector("#__uh_dt_brand_style")) {
+            const st = document.createElement("style");
+            st.id = "__uh_dt_brand_style";
+            st.textContent = `
+                .eruda-entry-btn, .luna-tab-slider-bar { display: none !important; visibility: hidden !important; pointer-events: none !important; }
+                .eruda-icon-settings, .eruda-settings { display: none !important; }
+                .eruda-nav-bar-container { padding-right: 76px !important; }
+                .eruda-nav-bar-item.eruda-active { color: #457B9D !important; border-bottom-color: #457B9D !important; }
+                .eruda-bottom-bar { background: #457B9D !important; }
+                #__uh_dt_actions {
+                    position: absolute; right: 6px; top: 0; height: 40px;
+                    display: flex; align-items: center; gap: 4px; z-index: 20;
+                }
+                .uh-dt-hdr-btn {
+                    border: none; background: transparent; color: #8A96A8;
+                    font: 700 12px/1 system-ui, sans-serif; padding: 6px 8px;
+                    border-radius: 6px; cursor: pointer;
+                }
+                .uh-dt-hdr-btn:active { background: rgba(69, 123, 157, 0.22); color: #E6E9EE; }
+            `;
+            root.appendChild(st);
+        }
+
+        // Rename "Resources" -> "Storage" cleanly and keep tabs crisp
+        const navItems = root.querySelectorAll(".eruda-nav-bar-item");
+        navItems.forEach((item) => {
+            const txt = (item.textContent || "").trim().toLowerCase();
+            if (txt === "resources") item.textContent = "Storage";
+            else if (txt === "console") item.textContent = "Console";
+            else if (txt === "elements") item.textContent = "Elements";
+            else if (txt === "network") item.textContent = "Network";
+            else if (txt === "performance") item.textContent = "Performance";
+        });
+
+        // Add sleek right-side Pick Element + Close buttons to the DevTools header bar
+        const navContainer = root.querySelector(".eruda-nav-bar-container");
+        if (navContainer && !root.querySelector("#__uh_dt_actions")) {
+            const actions = document.createElement("div");
+            actions.id = "__uh_dt_actions";
+
+            const pickBtn = document.createElement("button");
+            pickBtn.className = "uh-dt-hdr-btn";
+            pickBtn.title = "Pick Element";
+            pickBtn.textContent = "◎";
+            pickBtn.style.color = "#7DD3FC";
+            pickBtn.onclick = () => startElementPicking();
+
+            const closeBtn = document.createElement("button");
+            closeBtn.className = "uh-dt-hdr-btn";
+            closeBtn.title = "Close UH DevTools";
+            closeBtn.textContent = "✕";
+            closeBtn.onclick = () => {
+                if (window.eruda) window.eruda.hide();
+                devToolsVisible = false;
+                removeBoxOverlay();
+                notifyNativeState(false);
+            };
+
+            actions.appendChild(pickBtn);
+            actions.appendChild(closeBtn);
+            navContainer.appendChild(actions);
+        }
+    }
+
+    function bootUhDevTools(darkTheme) {
+        isDarkTheme = darkTheme !== false;
+        if (initialized && window.eruda) {
+            applyUhBrandingAndControls();
+            return;
+        }
         if (!window.eruda) return;
-        installNetworkHooks();
+
         window.eruda.init({
             useShadowDom: true,
             autoScale: true,
+            tool: ["console", "elements", "resources"],
             defaults: {
                 displaySize: 55,
                 transparency: 0.98,
-                theme: darkTheme ? "Dark" : "Light"
+                theme: isDarkTheme ? "Dark" : "Light"
             }
         });
-        try { if (window.erudaDom) window.eruda.add(window.erudaDom); } catch (_e) {}
-        try { if (window.erudaTiming) window.eruda.add(window.erudaTiming); } catch (_e) {}
-        try { if (window.erudaCode) window.eruda.add(window.erudaCode); } catch (_e) {}
-        try { if (window.erudaFeatures) window.eruda.add(window.erudaFeatures); } catch (_e) {}
-        try { window.eruda.add(createInspectorTool(window.eruda)); } catch (_e) {}
-        try { window.eruda.add(createNetProTool()); } catch (_e) {}
-        try { window.eruda.add(createVitalsTool()); } catch (_e) {}
+
+        try { window.eruda.add(createNetworkTool()); } catch (_e) {}
+        try { window.eruda.add(createPerformanceTool()); } catch (_e) {}
+
+        // Immediately hide floating entry button and apply UH branding
+        applyUhBrandingAndControls();
+        setTimeout(applyUhBrandingAndControls, 80);
+
         initialized = true;
     }
 
     window.__uhToggleDevTools = function (darkTheme) {
-        bootEruda(darkTheme !== false);
+        bootUhDevTools(darkTheme !== false);
         if (!window.eruda) return false;
         if (devToolsVisible) {
             window.eruda.hide();
             devToolsVisible = false;
+            removeBoxOverlay();
         } else {
             window.eruda.show();
             devToolsVisible = true;
+            applyUhBrandingAndControls();
         }
+        notifyNativeState(devToolsVisible);
         return devToolsVisible;
     };
 })();

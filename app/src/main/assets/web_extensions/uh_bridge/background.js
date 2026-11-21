@@ -29,6 +29,7 @@ ensureNativePort();
 
 api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!message) return false;
+    ensureNativePort();
     if (message.type === "UH_GET_SCRIPTS") {
         api.runtime.sendNativeMessage("uhApp", {
             type: "GET_SCRIPTS",

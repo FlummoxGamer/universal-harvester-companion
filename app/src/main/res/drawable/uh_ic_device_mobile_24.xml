@@ -3,11 +3,8 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
+    <!-- Modern sleek smartphone frame matching uh_ic_device_desktop_24 visual weight -->
     <path
-        android:fillColor="#00000000"
-        android:pathData="M7,3.5C7,2.67 7.67,2 8.5,2h7C16.33,2 17,2.67 17,3.5v17c0,0.83 -0.67,1.5 -1.5,1.5h-7C7.67,22 7,21.33 7,20.5v-17zM10.5,18.5h3"
-        android:strokeWidth="1.8"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
+        android:fillColor="@color/text"
+        android:pathData="M8.25,2.5H15.75C17.269,2.5 18.5,3.731 18.5,5.25V18.75C18.5,20.269 17.269,21.5 15.75,21.5H8.25C6.731,21.5 5.5,20.269 5.5,18.75V5.25C5.5,3.731 6.731,2.5 8.25,2.5ZM8.25,4.25C7.698,4.25 7.25,4.698 7.25,5.25V18.75C7.25,19.302 7.698,19.75 8.25,19.75H15.75C16.302,19.75 16.75,19.302 16.75,18.75V5.25C16.75,4.698 16.302,4.25 15.75,4.25H8.25ZM10.25,17.25H13.75C14.164,17.25 14.5,17.586 14.5,18C14.5,18.414 14.164,18.75 13.75,18.75H10.25C9.836,18.75 9.5,18.414 9.5,18C9.5,17.586 9.836,17.25 10.25,17.25Z" />
 </vector>

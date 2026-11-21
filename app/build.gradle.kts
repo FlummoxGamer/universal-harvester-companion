@@ -141,7 +141,6 @@ dependencies {
     implementation("org.mozilla.components:concept-storage:154.0.1")
     implementation("org.mozilla.components:feature-session:154.0.1")
     implementation("org.mozilla.components:concept-engine:154.0.1")
-    implementation("org.mozilla.components:feature-session:154.0.1")
     implementation("org.mozilla.components:feature-downloads:154.0.1")
     implementation("org.mozilla.components:feature-prompts:154.0.1")
     implementation("org.mozilla.components:feature-tabs:154.0.1")

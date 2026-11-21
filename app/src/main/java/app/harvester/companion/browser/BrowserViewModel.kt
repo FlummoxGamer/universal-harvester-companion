@@ -5,7 +5,13 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.net.Uri
+import android.os.Build
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -33,6 +39,16 @@ import mozilla.components.browser.engine.gecko.GeckoEngineSession
 import mozilla.components.browser.state.selector.findTab
 import mozilla.components.browser.state.selector.selectedTab
 import org.mozilla.geckoview.GeckoSession
+import java.net.URI
+
+data class ExternalAppPrompt(
+    val appName: String,
+    val packageName: String,
+    val activityName: String,
+    val appIcon: Bitmap?,
+    val targetUrl: String,
+    val host: String,
+)
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
     val context: Context = application.applicationContext
@@ -108,8 +124,22 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private val _showSavePdfSheet = MutableStateFlow(false)
     val showSavePdfSheet: StateFlow<Boolean> = _showSavePdfSheet.asStateFlow()
 
+    private val _pendingExternalAppPrompt = MutableStateFlow<ExternalAppPrompt?>(null)
+    val pendingExternalAppPrompt: StateFlow<ExternalAppPrompt?> = _pendingExternalAppPrompt.asStateFlow()
+
     private var suggestJob: Job? = null
     private var lastBookmarkUrl: String = ""
+
+    init {
+        viewModelScope.launch {
+            GeckoWebExtensionBridge.devToolsVisible.collect { visible ->
+                val tabId = components.store.state.selectedTab?.id ?: return@collect
+                _devToolsActiveTabIds.update { set ->
+                    if (visible) set + tabId else set - tabId
+                }
+            }
+        }
+    }
 
     fun enterEditMode(currentUrl: String) {
         _showFindInPage.value = false
@@ -301,8 +331,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         PdfPrintHelper.saveSessionAsPdf(activityContext, geckoSessionForTab(null), title)
     }
 
-    fun printCurrentPage(activityContext: Context) {
-        PdfPrintHelper.printSession(activityContext, geckoSessionForTab(null))
+    fun printCurrentPage(activityContext: Context, title: String = "UH Page") {
+        PdfPrintHelper.printSession(activityContext, geckoSessionForTab(null), title)
     }
 
     fun copyLink(url: String) {
@@ -319,8 +349,15 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 addCategory(Intent.CATEGORY_BROWSABLE)
             }
             val pm = activityContext.packageManager
-            val resolved = pm.queryIntentActivities(viewIntent, 0)
+            val rawResolved = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.queryIntentActivities(viewIntent, PackageManager.ResolveInfoFlags.of(0L))
+            } else {
+                @Suppress("DEPRECATION")
+                pm.queryIntentActivities(viewIntent, 0)
+            }
+            val resolved = rawResolved
                 .filter { it.activityInfo.packageName != activityContext.packageName }
+                .distinctBy { it.activityInfo.packageName }
 
             if (resolved.isEmpty()) {
                 Toast.makeText(activityContext, "No external app found for this link", Toast.LENGTH_SHORT).show()
@@ -328,12 +365,30 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             }
 
             if (resolved.size == 1) {
-                val target = resolved.first().activityInfo
-                val direct = Intent(viewIntent).apply {
-                    setClassName(target.packageName, target.name)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                val ri = resolved.first()
+                val appName = try {
+                    ri.loadLabel(pm).toString().ifBlank { ri.activityInfo.packageName }
+                } catch (_: Exception) {
+                    ri.activityInfo.packageName
                 }
-                activityContext.startActivity(direct)
+                val iconBitmap = try {
+                    drawableToBitmap(ri.loadIcon(pm))
+                } catch (_: Exception) {
+                    null
+                }
+                val host = try {
+                    URI(url).host?.removePrefix("www.").orEmpty().ifBlank { url }
+                } catch (_: Exception) {
+                    url
+                }
+                _pendingExternalAppPrompt.value = ExternalAppPrompt(
+                    appName = appName,
+                    packageName = ri.activityInfo.packageName,
+                    activityName = ri.activityInfo.name,
+                    appIcon = iconBitmap,
+                    targetUrl = url,
+                    host = host,
+                )
             } else {
                 val targets = resolved.map { ri ->
                     Intent(viewIntent).apply {
@@ -353,6 +408,40 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             UHLog.w("external_app", "Failed opening URL in external app: ${e.message}")
             Toast.makeText(activityContext, "Could not open in external app", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    fun confirmOpenExternalApp(activityContext: Context) {
+        val prompt = _pendingExternalAppPrompt.value ?: return
+        _pendingExternalAppPrompt.value = null
+        try {
+            val direct = Intent(Intent.ACTION_VIEW, Uri.parse(prompt.targetUrl)).apply {
+                addCategory(Intent.CATEGORY_BROWSABLE)
+                setClassName(prompt.packageName, prompt.activityName)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            activityContext.startActivity(direct)
+        } catch (e: Exception) {
+            UHLog.w("external_app", "Failed launching confirmed external app: ${e.message}")
+            Toast.makeText(activityContext, "Could not open ${prompt.appName}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun dismissExternalAppPrompt() {
+        _pendingExternalAppPrompt.value = null
+    }
+
+    private fun drawableToBitmap(drawable: Drawable?): Bitmap? {
+        if (drawable == null) return null
+        if (drawable is BitmapDrawable && drawable.bitmap != null) {
+            return drawable.bitmap
+        }
+        val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 96
+        val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: 96
+        val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        drawable.setBounds(0, 0, canvas.width, canvas.height)
+        drawable.draw(canvas)
+        return bmp
     }
 
     fun openNewPrivateTab() {

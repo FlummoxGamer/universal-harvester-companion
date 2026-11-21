@@ -62,10 +62,6 @@ async function ensureAndToggleDevTools(darkTheme) {
     if (!devToolsScriptsLoaded) {
         const files = [
             "devtools/eruda.min.js",
-            "devtools/eruda-dom.min.js",
-            "devtools/eruda-timing.min.js",
-            "devtools/eruda-code.min.js",
-            "devtools/eruda-features.min.js",
             "devtools/uh_devtools_pro.js"
         ];
         for (const f of files) {
@@ -116,7 +112,15 @@ window.addEventListener("message", (event) => {
                     response: response
                 }, "*");
             }
-        }).catch(() => {});
+        }).catch(() => {
+            if (event.data.payload && event.data.payload.id) {
+                window.postMessage({
+                    type: "UH_NATIVE_RESPONSE",
+                    id: event.data.payload.id,
+                    response: null
+                }, "*");
+            }
+        });
     }
 });
 
@@ -138,6 +142,22 @@ api.runtime.onMessage.addListener((msg) => {
         ensureAndToggleDevTools(msg.darkTheme !== false);
     } else if (msg.action === "APPLY_GLOBAL_ZOOM" && isTopFrame) {
         window.postMessage({ type: "UH_APPLY_GLOBAL_ZOOM", percent: msg.percent || 100 }, "*");
+    } else if (msg.action === "FAST_TRANSLATE_PAGE" && isTopFrame) {
+        window.postMessage({
+            type: "UH_FAST_TRANSLATE_START",
+            fromLang: msg.fromLang || "auto",
+            toLang: msg.toLang || "en"
+        }, "*");
+    } else if (msg.action === "FAST_TRANSLATE_RESTORE" && isTopFrame) {
+        window.postMessage({ type: "UH_FAST_TRANSLATE_RESTORE" }, "*");
+    } else if (msg.action === "TRANSLATE_IMAGES" && isTopFrame) {
+        window.postMessage({
+            type: "UH_TRANSLATE_IMAGES_START",
+            fromLang: msg.fromLang || "auto",
+            toLang: msg.toLang || "en"
+        }, "*");
+    } else if (msg.action === "CLEAR_IMAGE_TRANSLATIONS" && isTopFrame) {
+        window.postMessage({ type: "UH_CLEAR_IMAGE_TRANSLATIONS" }, "*");
     }
 });
 
