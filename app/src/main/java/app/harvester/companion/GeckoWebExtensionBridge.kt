@@ -16,6 +16,8 @@ import android.widget.Toast
 import app.harvester.companion.browser.translate.FastTranslatorClient
 import app.harvester.companion.components.Components
 import app.harvester.companion.core.network.UhHttpClient
+import app.harvester.companion.privacy.UhPrivacyController
+import app.harvester.companion.privacy.UhShieldEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -172,6 +174,20 @@ object GeckoWebExtensionBridge {
         }
     }
 
+    fun pushPrivacyRuntimeConfig(config: JSONObject) {
+        val port = activeBridgePort ?: return
+        mainHandler.post {
+            try {
+                port.postMessage(JSONObject().apply {
+                    put("action", "APPLY_PRIVACY_CONFIG")
+                    put("config", config)
+                })
+            } catch (e: Exception) {
+                UHLog.w("shield", "Failed pushing APPLY_PRIVACY_CONFIG: ${e.message}")
+            }
+        }
+    }
+
     private val headerMessageDelegate = object : WebExtension.MessageDelegate {
         override fun onMessage(
             nativeApp: String,
@@ -203,6 +219,15 @@ object GeckoWebExtensionBridge {
                     if (activeBridgePort === p) activeBridgePort = null
                 }
             })
+            val ctx = appContext
+            if (ctx != null) {
+                scope.launch {
+                    try {
+                        val cfg = UhShieldEngine.buildExtensionRuntimePayload(ctx)
+                        pushPrivacyRuntimeConfig(cfg)
+                    } catch (_: Exception) {}
+                }
+            }
         }
 
         override fun onMessage(
@@ -215,6 +240,54 @@ object GeckoWebExtensionBridge {
             val type = json.optString("type")
 
             return when (type) {
+                "GET_PRIVACY_RUNTIME" -> {
+                    val result = GeckoResult<Any>()
+                    scope.launch {
+                        val payload = UhShieldEngine.buildExtensionRuntimePayload(ctx)
+                        mainHandler.post { result.complete(payload) }
+                    }
+                    result
+                }
+
+                "GET_PAGE_PROTECT" -> {
+                    val result = GeckoResult<Any>()
+                    scope.launch {
+                        val url = json.optString("url")
+                        val selectors = UhShieldEngine.getCosmeticSelectorsForHost(url)
+                        val selArr = JSONArray()
+                        selectors.forEach { selArr.put(it) }
+                        val payload = JSONObject().apply {
+                            put("shieldLevel", UhShieldEngine.state.value.level.code)
+                            put("paused", UhShieldEngine.isSitePaused(url))
+                            put("cosmetics", selArr)
+                            put("cookieBanners", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_COOKIE_BANNERS, true))
+                            put("blockPopups", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_POPUP_BLOCK, true))
+                            put("backgroundPlay", SettingsPrefs.getBool(ctx, SettingsPrefs.K_BACKGROUND_PLAY, true))
+                            put("webrtcPolicy", SettingsPrefs.getInt(ctx, SettingsPrefs.K_ADV_WEBRTC_POLICY, 1))
+                            put("forceDarkWeb", UhPrivacyController.isForceDarkWebEffectivelyEnabled(ctx))
+                            put("enhanceDark", SettingsPrefs.getBool(ctx, SettingsPrefs.K_ENHANCE_DARK, false))
+                            put("darkBypassed", UhPrivacyController.isSiteDarkBypassed(ctx, url))
+                        }
+                        mainHandler.post { result.complete(payload) }
+                    }
+                    result
+                }
+
+                "SHIELD_BLOCKED_BATCH" -> {
+                    val entries = json.optJSONArray("entries")
+                    if (entries != null) {
+                        for (i in 0 until entries.length()) {
+                            val item = entries.optJSONObject(i) ?: continue
+                            val host = item.optString("host")
+                            val ads = item.optInt("ads", 0)
+                            val trackers = item.optInt("trackers", 0)
+                            if (ads > 0) UhShieldEngine.recordBlockedEvent(host, isTracker = false, count = ads)
+                            if (trackers > 0) UhShieldEngine.recordBlockedEvent(host, isTracker = true, count = trackers)
+                        }
+                    }
+                    GeckoResult.fromValue(true)
+                }
+
                 "GET_SCRIPTS" -> {
                     val result = GeckoResult<Any>()
                     scope.launch {

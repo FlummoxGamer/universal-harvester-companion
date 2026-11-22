@@ -20,6 +20,195 @@ function sendNativeCall(payload) {
 }
 
 // -----------------------------------------------------------------------------
+// 1B. UH Shield Cosmetics, Cookie Banner Reject, Smart Dark Web & Media Hooks
+// -----------------------------------------------------------------------------
+let pageProtectState = null;
+let cookieBannerTimer = null;
+
+function currentNormalizedHost() {
+    try {
+        return window.location.hostname.toLowerCase().replace(/^www\./, "");
+    } catch (_e) {
+        return "";
+    }
+}
+
+function applyCosmeticStyle(selectors, enabled) {
+    const id = "__uh_shield_cosmetic";
+    const existing = document.getElementById(id);
+    if (!enabled || !Array.isArray(selectors) || selectors.length === 0) {
+        if (existing) existing.remove();
+        return;
+    }
+    const chunks = [];
+    const batch = 40;
+    for (let i = 0; i < selectors.length; i += batch) {
+        const part = selectors.slice(i, i + batch).join(", ");
+        chunks.push(part + " { display: none !important; visibility: hidden !important; height: 0 !important; min-height: 0 !important; }");
+    }
+    const styleEl = existing || document.createElement("style");
+    styleEl.id = id;
+    styleEl.textContent = chunks.join("\n");
+    (document.head || document.documentElement).appendChild(styleEl);
+}
+
+function isPageAlreadyDark() {
+    try {
+        const meta = document.querySelector('meta[name="color-scheme"]');
+        if (meta && /dark/i.test(meta.content || "") && !/^light$/i.test((meta.content || "").trim())) {
+            const bg = getComputedStyle(document.body || document.documentElement).backgroundColor;
+            if (isColorDark(bg)) return true;
+        }
+        const rootBg = getComputedStyle(document.documentElement).backgroundColor;
+        if (isColorDark(rootBg)) return true;
+        if (document.body) {
+            const bodyBg = getComputedStyle(document.body).backgroundColor;
+            if (isColorDark(bodyBg)) return true;
+        }
+    } catch (_e) {}
+    return false;
+}
+
+function isColorDark(cssColor) {
+    if (!cssColor || cssColor === "transparent" || cssColor === "rgba(0, 0, 0, 0)") return false;
+    const m = cssColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?/);
+    if (!m) return false;
+    const a = m[4] !== undefined ? parseFloat(m[4]) : 1;
+    if (a < 0.35) return false;
+    const lum = (0.299 * parseInt(m[1], 10) + 0.587 * parseInt(m[2], 10) + 0.114 * parseInt(m[3], 10)) / 255;
+    return lum < 0.38;
+}
+
+function applySmartDarkMode(enabled, enhanceDark, bypassed) {
+    if (!isTopFrame) return;
+    const id = "__uh_smart_dark";
+    const existing = document.getElementById(id);
+    if (!enabled || bypassed) {
+        if (existing) existing.remove();
+        return;
+    }
+    const evaluateAndInject = () => {
+        if (isPageAlreadyDark()) {
+            const el = document.getElementById(id);
+            if (el) el.remove();
+            return;
+        }
+        const inv = enhanceDark ? "0.96" : "0.90";
+        const contrast = enhanceDark ? "1.06" : "0.96";
+        const bgHex = enhanceDark ? "#000000" : "#121318";
+        const css = [
+            "html { background-color: " + bgHex + " !important; color-scheme: dark !important; filter: invert(" + inv + ") hue-rotate(180deg) contrast(" + contrast + ") !important; }",
+            "img, video, picture, canvas, svg, [style*='background-image'], iframe { filter: invert(1) hue-rotate(180deg) !important; }",
+            "img[src$='.svg'], img[src*='logo'] { filter: invert(0.1) !important; }",
+            "video:fullscreen, video:-webkit-full-screen { filter: none !important; }"
+        ].join("\n");
+        const styleEl = document.getElementById(id) || document.createElement("style");
+        styleEl.id = id;
+        styleEl.textContent = css;
+        (document.head || document.documentElement).appendChild(styleEl);
+    };
+    if (document.body) {
+        evaluateAndInject();
+    } else {
+        evaluateAndInject();
+        document.addEventListener("DOMContentLoaded", evaluateAndInject, { once: true });
+    }
+}
+
+function runCookieBannerAutoReject() {
+    if (!isTopFrame) return;
+    const rejectSelectors = [
+        "#onetrust-reject-all-handler",
+        "button[id*='reject' i]",
+        "button[class*='reject-all' i]",
+        "button[data-testid*='reject' i]",
+        "button[aria-label*='reject all' i]",
+        "button[aria-label*='decline all' i]",
+        ".qc-cmp2-summary-buttons button[mode='secondary']",
+        "#CybotCookiebotDialogBodyButtonDecline",
+        ".fc-cta-do-not-consent",
+        "[data-gdpr-single-choice-accept='false']"
+    ];
+    for (let i = 0; i < rejectSelectors.length; i++) {
+        try {
+            const btn = document.querySelector(rejectSelectors[i]);
+            if (btn && btn.offsetParent !== null) {
+                btn.click();
+                return;
+            }
+        } catch (_e) {}
+    }
+}
+
+function injectPageRuntimeGuards(cfg) {
+    if (!isTopFrame) return;
+    try {
+        const script = document.createElement("script");
+        const bgPlay = cfg.backgroundPlay === true;
+        const blockPopups = cfg.blockPopups === true && !cfg.paused && (cfg.shieldLevel || 0) > 0;
+        const blockWebRtc = cfg.webrtcPolicy === 3;
+        const code = `(function(){
+            try {
+                if (${bgPlay} && !window.__uhBgPlayInstalled) {
+                    window.__uhBgPlayInstalled = true;
+                    Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
+                    Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
+                    window.addEventListener('visibilitychange', (e) => { e.stopImmediatePropagation(); }, true);
+                    window.addEventListener('webkitvisibilitychange', (e) => { e.stopImmediatePropagation(); }, true);
+                }
+                if (${blockWebRtc} && !window.__uhWebRtcBlocked) {
+                    window.__uhWebRtcBlocked = true;
+                    const noop = function(){ throw new Error('WebRTC disabled by UH Privacy Guard'); };
+                    window.RTCPeerConnection = noop;
+                    window.webkitRTCPeerConnection = noop;
+                    window.mozRTCPeerConnection = noop;
+                }
+                if (${blockPopups} && !window.__uhPopupGuardInstalled) {
+                    window.__uhPopupGuardInstalled = true;
+                    const origOpen = window.open;
+                    let lastUserTap = 0;
+                    const markTap = () => { lastUserTap = Date.now(); };
+                    window.addEventListener('pointerdown', markTap, true);
+                    window.addEventListener('click', markTap, true);
+                    window.addEventListener('keydown', markTap, true);
+                    window.open = function(url, target, features) {
+                        const sinceTap = Date.now() - lastUserTap;
+                        if (sinceTap > 1400) {
+                            return null;
+                        }
+                        return origOpen.apply(this, arguments);
+                    };
+                }
+            } catch(_e) {}
+        })();`;
+        script.textContent = code;
+        (document.head || document.documentElement).appendChild(script);
+        script.remove();
+    } catch (_e) {}
+}
+
+function applyPageProtectConfig(cfg) {
+    if (!cfg) return;
+    pageProtectState = cfg;
+    const shieldOn = (cfg.shieldLevel || 0) > 0 && !cfg.paused;
+    applyCosmeticStyle(cfg.cosmetics || [], shieldOn);
+    applySmartDarkMode(cfg.forceDarkWeb === true, cfg.enhanceDark === true, cfg.darkBypassed === true);
+    injectPageRuntimeGuards(cfg);
+    if (cfg.cookieBanners && !cfg.paused) {
+        if (cookieBannerTimer) clearTimeout(cookieBannerTimer);
+        cookieBannerTimer = setTimeout(runCookieBannerAutoReject, 900);
+    }
+}
+
+// Kick off protection immediately at document_start
+api.runtime.sendMessage({
+    type: "UH_GET_PAGE_PROTECT",
+    url: window.location.href
+}).then((cfg) => {
+    if (cfg) applyPageProtectConfig(cfg);
+}).catch(() => {});
+
+// -----------------------------------------------------------------------------
 // 2. Multi-Script On-Device Image OCR Translation Overlays (CSP-immune)
 // -----------------------------------------------------------------------------
 let activeImageOverlays = [];
@@ -439,6 +628,22 @@ api.runtime.onMessage.addListener((msg) => {
         runImageOcrTranslation(msg.fromLang || "auto", msg.toLang || "en");
     } else if (msg.action === "CLEAR_IMAGE_TRANSLATIONS" && isTopFrame) {
         clearImageTranslationOverlays();
+    } else if (msg.action === "APPLY_LIVE_PAGE_CONFIG" && isTopFrame) {
+        const host = currentNormalizedHost();
+        const paused = Array.isArray(msg.pausedHosts) && msg.pausedHosts.includes(host);
+        const darkBypassed = Array.isArray(msg.darkBypassHosts) && msg.darkBypassHosts.includes(host);
+        const merged = Object.assign({}, pageProtectState || {}, {
+            shieldLevel: msg.shieldLevel,
+            paused: paused,
+            cookieBanners: msg.cookieBanners,
+            blockPopups: msg.blockPopups,
+            backgroundPlay: msg.backgroundPlay,
+            webrtcPolicy: msg.webrtcPolicy,
+            forceDarkWeb: msg.forceDarkWeb,
+            enhanceDark: msg.enhanceDark,
+            darkBypassed: darkBypassed
+        });
+        applyPageProtectConfig(merged);
     }
 });
 

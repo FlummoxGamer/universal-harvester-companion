@@ -82,8 +82,9 @@ object UBlockOriginManager {
             val autoUpdate = SettingsPrefs.getBool(ctx, SettingsPrefs.K_UBLOCK_AUTO_UPDATE, true)
             val lastCheck = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getLong(KEY_LAST_CHECK, 0L)
             val dueForUpdate = autoUpdate && (System.currentTimeMillis() - lastCheck > CHECK_INTERVAL_MS)
-            if (enabled && (!isPresent || dueForUpdate)) {
-                checkAndInstallOrUpdate(force = !isPresent)
+            // Never force-download uBlock Origin; only update if user manually installed it
+            if (isPresent && enabled && dueForUpdate) {
+                checkAndInstallOrUpdate(force = false)
             }
         }
     }

@@ -1,12 +1,11 @@
 package app.harvester.companion.settings.privacy
 
-import androidx.activity.SystemBarStyle
-import androidx.activity.enableEdgeToEdge
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
-import android.widget.Toast
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -23,6 +22,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -31,11 +31,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.view.WindowCompat
 import app.harvester.companion.R
 import app.harvester.companion.SettingsPrefs
+import app.harvester.companion.privacy.ProtectionStatsPanel
+import app.harvester.companion.privacy.ShieldLevel
+import app.harvester.companion.privacy.UhPrivacyController
+import app.harvester.companion.privacy.UhShieldEngine
 import app.harvester.companion.settings.components.SettingsCategory
 import app.harvester.companion.settings.components.SettingsRow
 import app.harvester.companion.settings.components.SettingsSwitchRow
@@ -49,42 +53,100 @@ class PrivacyGuardActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            statusBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
         )
 
         setContent {
             UHTheme {
                 val context = LocalContext.current
+                val shieldState by UhShieldEngine.state.collectAsState()
+
+                var httpsMode by remember {
+                    val raw = SettingsPrefs.getInt(context, SettingsPrefs.K_PG_HTTPS_MODE, -1)
+                    val effective = if (raw >= 0) raw else if (SettingsPrefs.getBool(context, SettingsPrefs.K_PG_HTTPS, true)) 2 else 0
+                    mutableIntStateOf(effective)
+                }
                 var cookieChoice by remember {
                     mutableIntStateOf(SettingsPrefs.getInt(context, SettingsPrefs.K_PG_COOKIES, 0))
                 }
                 var redirectChoice by remember {
                     mutableIntStateOf(SettingsPrefs.getInt(context, SettingsPrefs.K_PG_REDIRECT, 1))
                 }
+
+                var showShieldDialog by remember { mutableStateOf(false) }
+                var showHttpsDialog by remember { mutableStateOf(false) }
                 var showCookieDialog by remember { mutableStateOf(false) }
                 var showRedirectDialog by remember { mutableStateOf(false) }
+                var showResetStatsDialog by remember { mutableStateOf(false) }
 
-                val cookieOptions = listOf("Don't block any cookies", "Block third-party cookies only")
-                val redirectOptions = listOf("Stop redirecting to app", "Ask before redirecting", "Always allow")
+                val shieldLevels = listOf(ShieldLevel.AGGRESSIVE, ShieldLevel.STANDARD, ShieldLevel.OFF)
+                val httpsOptions = listOf(
+                    "Off" to "Allow unencrypted HTTP connections",
+                    "Private Tabs Only" to "Upgrade connections to HTTPS in Private Browsing",
+                    "Always (HTTPS-Only)" to "Upgrade every website to HTTPS automatically",
+                )
+                val cookieOptions = listOf(
+                    "Total Cookie Protection (Recommended)" to "Isolate cookies per site to stop cross-site tracking",
+                    "Block All Third-Party Cookies" to "Only allow first-party site cookies",
+                    "Block All Cookies" to "Maximum privacy — may break logins on some sites",
+                    "Allow All Cookies" to "No cookie restrictions",
+                )
+                val redirectOptions = listOf(
+                    "Block App Redirects" to "Keep links inside UH instead of launching external apps",
+                    "Ask Before Opening App" to "Prompt before switching to an installed app",
+                    "Always Allow" to "Open supported app links automatically",
+                )
+
+                if (showShieldDialog) {
+                    ChoiceDialogWithSummary(
+                        title = "UH Shield Level",
+                        options = shieldLevels.map { it.label to it.summary },
+                        selectedIndex = shieldLevels.indexOf(shieldState.level).coerceAtLeast(0),
+                        onSelect = { idx ->
+                            val chosen = shieldLevels[idx]
+                            UhShieldEngine.setLevel(chosen)
+                            UhPrivacyController.applyAllToEngine(context)
+                            showShieldDialog = false
+                        },
+                        onDismiss = { showShieldDialog = false },
+                    )
+                }
+
+                if (showHttpsDialog) {
+                    ChoiceDialogWithSummary(
+                        title = "Always Use HTTPS",
+                        options = httpsOptions,
+                        selectedIndex = httpsMode.coerceIn(0, httpsOptions.lastIndex),
+                        onSelect = { idx ->
+                            httpsMode = idx
+                            SettingsPrefs.setInt(context, SettingsPrefs.K_PG_HTTPS_MODE, idx)
+                            SettingsPrefs.setBool(context, SettingsPrefs.K_PG_HTTPS, idx > 0)
+                            UhPrivacyController.applyAllToEngine(context)
+                            showHttpsDialog = false
+                        },
+                        onDismiss = { showHttpsDialog = false },
+                    )
+                }
 
                 if (showCookieDialog) {
-                    SingleChoiceDialog(
-                        title = "Cookie Management",
+                    ChoiceDialogWithSummary(
+                        title = "Cookie Protection",
                         options = cookieOptions,
                         selectedIndex = cookieChoice.coerceIn(0, cookieOptions.lastIndex),
                         onSelect = { idx ->
                             cookieChoice = idx
                             SettingsPrefs.setInt(context, SettingsPrefs.K_PG_COOKIES, idx)
+                            UhPrivacyController.applyAllToEngine(context)
                             showCookieDialog = false
                         },
-                        onDismiss = { showCookieDialog = false }
+                        onDismiss = { showCookieDialog = false },
                     )
                 }
 
                 if (showRedirectDialog) {
-                    SingleChoiceDialog(
-                        title = "Stop App Redirects",
+                    ChoiceDialogWithSummary(
+                        title = "App Redirects",
                         options = redirectOptions,
                         selectedIndex = redirectChoice.coerceIn(0, redirectOptions.lastIndex),
                         onSelect = { idx ->
@@ -92,88 +154,177 @@ class PrivacyGuardActivity : AppCompatActivity() {
                             SettingsPrefs.setInt(context, SettingsPrefs.K_PG_REDIRECT, idx)
                             showRedirectDialog = false
                         },
-                        onDismiss = { showRedirectDialog = false }
+                        onDismiss = { showRedirectDialog = false },
                     )
+                }
+
+                if (showResetStatsDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showResetStatsDialog = false },
+                        title = { Text("Reset Protection Stats?") },
+                        text = { Text("This clears all recorded ads blocked, trackers blocked, and time saved counters.") },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    UhShieldEngine.resetLifetimeStats()
+                                    showResetStatsDialog = false
+                                },
+                            ) {
+                                Text("Reset", color = MaterialTheme.colorScheme.error)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showResetStatsDialog = false }) {
+                                Text("Cancel")
+                            }
+                        },
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = RoundedCornerShape(20.dp),
+                    )
+                }
+
+                val enabledListsCount = shieldState.lists.count { it.enabled }
+                val activeRulesText = if (shieldState.totalCompiledRules > 0) {
+                    "$enabledListsCount active lists • ${shieldState.totalCompiledRules} rules"
+                } else {
+                    "$enabledListsCount active filter lists"
                 }
 
                 UhSettingsScaffold(
                     title = "Privacy Guard",
-                    onBack = { finish() }
+                    onBack = { finish() },
                 ) {
-                    SettingsCategory("Privacy Control")
+                    ProtectionStatsPanel(
+                        stats = shieldState.lifetimeStats,
+                        headerTitle = "Lifetime Protection",
+                        onResetClick = { showResetStatsDialog = true },
+                    )
+
+                    SettingsCategory("UH Shield (Global)")
                     UhSettingsCardGroup {
-                        SettingsSwitchRow(
-                            title = "Ads & Trackers Blocker",
-                            key = SettingsPrefs.K_PG_ADS,
-                            default = false,
+                        SettingsRow(
+                            title = "Blocking Strength",
+                            subtitle = "${shieldState.level.label} — ${shieldState.level.summary}",
                             iconRes = R.drawable.fx_ic_shield_lock_24,
-                            insideCard = true
-                        )
-                        UhSettingsDivider()
-                        SettingsSwitchRow(
-                            title = "Always Use HTTPS",
-                            key = SettingsPrefs.K_PG_HTTPS,
-                            default = false,
-                            iconRes = R.drawable.fx_ic_lock_24,
-                            insideCard = true
-                        )
-                        UhSettingsDivider()
-                        SettingsSwitchRow(
-                            title = "Remove Fingerprint",
-                            key = SettingsPrefs.K_PG_FINGERPRINT,
-                            default = false,
-                            iconRes = R.drawable.fx_ic_shield_lock_24,
-                            insideCard = true
-                        )
-                        UhSettingsDivider()
-                        SettingsSwitchRow(
-                            title = "Script Control",
-                            key = SettingsPrefs.K_PG_SCRIPT,
-                            default = false,
-                            iconRes = R.drawable.fx_ic_scripts_24,
-                            insideCard = true
+                            showChevron = true,
+                            insideCard = true,
+                            onClick = { showShieldDialog = true },
                         )
                         UhSettingsDivider()
                         SettingsRow(
-                            title = "Cookie Management",
-                            subtitle = cookieOptions.getOrElse(cookieChoice) { cookieOptions.first() },
+                            title = "Filter Lists & Customization",
+                            subtitle = activeRulesText,
+                            iconRes = R.drawable.fx_ic_scripts_24,
+                            showChevron = true,
+                            insideCard = true,
+                            onClick = {
+                                context.startActivity(Intent(context, FilterListsActivity::class.java))
+                            },
+                        )
+                    }
+
+                    SettingsCategory("Global Protections")
+                    UhSettingsCardGroup {
+                        SettingsRow(
+                            title = "Always Use HTTPS",
+                            subtitle = httpsOptions.getOrElse(httpsMode) { httpsOptions[2] }.first,
+                            iconRes = R.drawable.fx_ic_lock_24,
+                            showChevron = true,
+                            insideCard = true,
+                            onClick = { showHttpsDialog = true },
+                        )
+                        UhSettingsDivider()
+                        SettingsSwitchRow(
+                            title = "Auto-Reject Cookie Banners",
+                            subtitle = "Automatically dismiss and reject intrusive consent popups",
+                            key = SettingsPrefs.K_PG_COOKIE_BANNERS,
+                            default = true,
+                            iconRes = R.drawable.uh_ic_cookies_24,
+                            insideCard = true,
+                            onChanged = { UhPrivacyController.applyAllToEngine(context) },
+                        )
+                        UhSettingsDivider()
+                        SettingsRow(
+                            title = "Cookie Protection",
+                            subtitle = cookieOptions.getOrElse(cookieChoice) { cookieOptions.first() }.first,
                             iconRes = R.drawable.fx_ic_storage_24,
                             showChevron = true,
                             insideCard = true,
-                            onClick = { showCookieDialog = true }
+                            onClick = { showCookieDialog = true },
+                        )
+                        UhSettingsDivider()
+                        SettingsSwitchRow(
+                            title = "Anti-Fingerprinting",
+                            subtitle = "Block canvas, font, and device tracking scripts",
+                            key = SettingsPrefs.K_PG_FINGERPRINT,
+                            default = true,
+                            iconRes = R.drawable.fx_ic_shield_lock_24,
+                            insideCard = true,
+                            onChanged = { UhPrivacyController.applyAllToEngine(context) },
+                        )
+                        UhSettingsDivider()
+                        SettingsSwitchRow(
+                            title = "Strip URL Trackers",
+                            subtitle = "Remove utm, fbclid, gclid & tracking params on browse and copy",
+                            key = SettingsPrefs.K_PG_CLEAR_URLS,
+                            default = true,
+                            iconRes = R.drawable.fx_ic_link_24,
+                            insideCard = true,
+                            onChanged = { UhPrivacyController.applyAllToEngine(context) },
+                        )
+                        UhSettingsDivider()
+                        SettingsSwitchRow(
+                            title = "Popup & Ad-Tab Blocker",
+                            subtitle = "Stop unwanted popups, popunders, and redirect traps",
+                            key = SettingsPrefs.K_PG_POPUP_BLOCK,
+                            default = true,
+                            iconRes = R.drawable.fx_ic_close_24,
+                            insideCard = true,
+                            onChanged = { UhPrivacyController.applyAllToEngine(context) },
                         )
                         UhSettingsDivider()
                         SettingsRow(
-                            title = "Stop App Redirects",
-                            subtitle = redirectOptions.getOrElse(redirectChoice) { redirectOptions[1] },
+                            title = "App Redirects",
+                            subtitle = redirectOptions.getOrElse(redirectChoice) { redirectOptions[1] }.first,
                             iconRes = R.drawable.fx_ic_link_24,
                             showChevron = true,
                             insideCard = true,
-                            onClick = { showRedirectDialog = true }
+                            onClick = { showRedirectDialog = true },
                         )
                         UhSettingsDivider()
+                        SettingsSwitchRow(
+                            title = "Block JavaScript Globally",
+                            subtitle = "Hardened mode — disables scripts across all sites",
+                            key = SettingsPrefs.K_PG_SCRIPT,
+                            default = false,
+                            iconRes = R.drawable.fx_ic_scripts_24,
+                            insideCard = true,
+                            onChanged = { UhPrivacyController.applyAllToEngine(context) },
+                        )
+                    }
+
+                    SettingsCategory("Site Controls & Network")
+                    UhSettingsCardGroup {
                         SettingsRow(
                             title = "Site Settings",
+                            subtitle = "Default permissions, paused Shield sites & per-site rules",
                             iconRes = R.drawable.fx_ic_settings_24,
                             showChevron = true,
                             insideCard = true,
                             onClick = {
-                                Toast.makeText(context, "Site Settings coming soon", Toast.LENGTH_SHORT).show()
-                            }
+                                context.startActivity(Intent(context, SiteSettingsActivity::class.java))
+                            },
                         )
-                    }
-
-                    SettingsCategory("More")
-                    UhSettingsCardGroup {
+                        UhSettingsDivider()
                         SettingsRow(
-                            title = "Advanced",
-                            subtitle = "Safe Browsing, DNT, GPC & Secure DNS",
-                            iconRes = R.drawable.fx_ic_settings_24,
+                            title = "Advanced Protections",
+                            subtitle = "Safe Browsing, De-AMP, GPC, Secure DNS & WebRTC",
+                            iconRes = R.drawable.fx_ic_shield_lock_24,
                             showChevron = true,
                             insideCard = true,
                             onClick = {
                                 context.startActivity(Intent(context, AdvancedActivity::class.java))
-                            }
+                            },
                         )
                     }
 
@@ -185,9 +336,9 @@ class PrivacyGuardActivity : AppCompatActivity() {
 }
 
 @Composable
-private fun SingleChoiceDialog(
+internal fun ChoiceDialogWithSummary(
     title: String,
-    options: List<String>,
+    options: List<Pair<String, String>>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
     onDismiss: () -> Unit,
@@ -197,17 +348,31 @@ private fun SingleChoiceDialog(
         title = { Text(title, color = MaterialTheme.colorScheme.onSurface) },
         text = {
             Column {
-                options.forEachIndexed { index, label ->
+                options.forEachIndexed { index, (label, desc) ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onSelect(index) }
                             .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         RadioButton(selected = index == selectedIndex, onClick = { onSelect(index) })
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(label, color = MaterialTheme.colorScheme.onSurface, fontSize = 15.sp)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = label,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                            )
+                            if (desc.isNotBlank()) {
+                                Text(
+                                    text = desc,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 12.sp,
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -218,6 +383,6 @@ private fun SingleChoiceDialog(
             }
         },
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(20.dp),
     )
 }

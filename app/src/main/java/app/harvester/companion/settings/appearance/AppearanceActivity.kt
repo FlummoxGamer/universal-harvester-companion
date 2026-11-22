@@ -1,14 +1,15 @@
 package app.harvester.companion.settings.appearance
 
-import androidx.activity.SystemBarStyle
-import androidx.activity.enableEdgeToEdge
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
-import android.widget.Toast
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -35,10 +36,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.view.WindowCompat
 import app.harvester.companion.R
 import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.ThemePrefs
+import app.harvester.companion.privacy.UhPrivacyController
 import app.harvester.companion.settings.components.SettingsCategory
 import app.harvester.companion.settings.components.SettingsRow
 import app.harvester.companion.settings.components.SettingsSwitchRow
@@ -52,14 +53,18 @@ class AppearanceActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            statusBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
         )
 
         setContent {
             UHTheme {
                 val context = LocalContext.current
                 val themeMode by ThemePrefs.modeFlow(context).collectAsState()
+                val systemDark = isSystemInDarkTheme()
+                val isDarkActive = themeMode == ThemePrefs.MODE_DARK ||
+                    (themeMode == ThemePrefs.MODE_SYSTEM && systemDark)
+
                 var showSleepPicker by remember { mutableStateOf(false) }
                 var sleepSeconds by remember {
                     mutableIntStateOf(SettingsPrefs.getInt(context, SettingsPrefs.K_TAB_SLEEP_SECONDS, 120))
@@ -82,7 +87,7 @@ class AppearanceActivity : AppCompatActivity() {
                                                 showSleepPicker = false
                                             }
                                             .padding(vertical = 8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                                        verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         RadioButton(
                                             selected = sleepSeconds == sec,
@@ -90,7 +95,7 @@ class AppearanceActivity : AppCompatActivity() {
                                                 sleepSeconds = sec
                                                 SettingsPrefs.setInt(context, SettingsPrefs.K_TAB_SLEEP_SECONDS, sec)
                                                 showSleepPicker = false
-                                            }
+                                            },
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(label, color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
@@ -104,13 +109,13 @@ class AppearanceActivity : AppCompatActivity() {
                             }
                         },
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        shape = RoundedCornerShape(20.dp)
+                        shape = RoundedCornerShape(20.dp),
                     )
                 }
 
                 UhSettingsScaffold(
                     title = "Appearance",
-                    onBack = { finish() }
+                    onBack = { finish() },
                 ) {
                     SettingsCategory("Theme")
                     UhSettingsCardGroup {
@@ -118,41 +123,66 @@ class AppearanceActivity : AppCompatActivity() {
                             title = "Follow System",
                             subtitle = "Match your device dark or light appearance",
                             selected = themeMode == ThemePrefs.MODE_SYSTEM,
-                            onClick = { ThemePrefs.setMode(context, ThemePrefs.MODE_SYSTEM) }
+                            onClick = {
+                                ThemePrefs.setMode(context, ThemePrefs.MODE_SYSTEM)
+                                UhPrivacyController.applyAllToEngine(context)
+                            },
                         )
                         UhSettingsDivider()
                         ThemeOptionRow(
                             title = "Light",
                             selected = themeMode == ThemePrefs.MODE_LIGHT,
-                            onClick = { ThemePrefs.setMode(context, ThemePrefs.MODE_LIGHT) }
+                            onClick = {
+                                ThemePrefs.setMode(context, ThemePrefs.MODE_LIGHT)
+                                UhPrivacyController.applyAllToEngine(context)
+                            },
                         )
                         UhSettingsDivider()
                         ThemeOptionRow(
                             title = "Dark",
                             selected = themeMode == ThemePrefs.MODE_DARK,
-                            onClick = { ThemePrefs.setMode(context, ThemePrefs.MODE_DARK) }
+                            onClick = {
+                                ThemePrefs.setMode(context, ThemePrefs.MODE_DARK)
+                                UhPrivacyController.applyAllToEngine(context)
+                            },
                         )
-                        UhSettingsDivider()
-                        SettingsSwitchRow(
-                            title = "Enhance Dark Theme",
-                            subtitle = "Apply deeper contrast across dark surfaces",
-                            key = SettingsPrefs.K_ENHANCE_DARK,
-                            default = false,
-                            insideCard = true
-                        )
+
+                        // Only show Enhance Dark Theme & Force Dark Mode on Websites when Dark Mode is active
+                        AnimatedVisibility(visible = isDarkActive) {
+                            Column {
+                                UhSettingsDivider()
+                                SettingsSwitchRow(
+                                    title = "Enhance Dark Theme",
+                                    subtitle = "Apply deeper AMOLED contrast across dark surfaces",
+                                    key = SettingsPrefs.K_ENHANCE_DARK,
+                                    default = false,
+                                    insideCard = true,
+                                    onChanged = { UhPrivacyController.applyAllToEngine(context) },
+                                )
+                                UhSettingsDivider()
+                                SettingsSwitchRow(
+                                    title = "Force Dark Mode on Websites",
+                                    subtitle = "Smart dark styling for bright websites while preserving images and native dark pages",
+                                    key = SettingsPrefs.K_FORCE_DARK_SITES,
+                                    default = false,
+                                    insideCard = true,
+                                    onChanged = { UhPrivacyController.applyAllToEngine(context) },
+                                )
+                            }
+                        }
                     }
 
                     SettingsCategory("Customize")
                     UhSettingsCardGroup {
                         SettingsRow(
                             title = "Home & Wallpaper",
-                            subtitle = "Wallpapers, motion backgrounds & recents",
+                            subtitle = "Wallpapers, motion backgrounds, stats & recents",
                             iconRes = R.drawable.fx_ic_appearance_24,
                             showChevron = true,
                             insideCard = true,
                             onClick = {
                                 context.startActivity(Intent(context, CustomizeHomeActivity::class.java))
-                            }
+                            },
                         )
                         UhSettingsDivider()
                         SettingsRow(
@@ -163,7 +193,7 @@ class AppearanceActivity : AppCompatActivity() {
                             insideCard = true,
                             onClick = {
                                 context.startActivity(Intent(context, CustomizeAddressBarActivity::class.java))
-                            }
+                            },
                         )
                     }
 
@@ -182,7 +212,7 @@ class AppearanceActivity : AppCompatActivity() {
                             iconRes = R.drawable.uh_ic_tab_modern_24,
                             showChevron = true,
                             insideCard = true,
-                            onClick = { showSleepPicker = true }
+                            onClick = { showSleepPicker = true },
                         )
                         UhSettingsDivider()
                         SettingsSwitchRow(
@@ -190,7 +220,7 @@ class AppearanceActivity : AppCompatActivity() {
                             subtitle = "Ask before closing tabs by swiping",
                             key = SettingsPrefs.K_TAB_CONFIRM_SWIPE,
                             default = false,
-                            insideCard = true
+                            insideCard = true,
                         )
                         UhSettingsDivider()
                         SettingsSwitchRow(
@@ -198,7 +228,7 @@ class AppearanceActivity : AppCompatActivity() {
                             subtitle = "Collapse tab groups when opening Tabs tray",
                             key = SettingsPrefs.K_TAB_AUTO_COLLAPSE_GROUPS,
                             default = false,
-                            insideCard = true
+                            insideCard = true,
                         )
                     }
 
@@ -221,7 +251,7 @@ private fun ThemeOptionRow(
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         RadioButton(selected = selected, onClick = onClick)
         Spacer(modifier = Modifier.width(12.dp))
@@ -230,13 +260,13 @@ private fun ThemeOptionRow(
                 text = title,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontSize = 15.sp,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.Medium,
             )
             if (!subtitle.isNullOrBlank()) {
                 Text(
                     text = subtitle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp
+                    fontSize = 12.sp,
                 )
             }
         }

@@ -64,6 +64,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Intent
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.platform.LocalContext
+import app.harvester.companion.SettingsPrefs
+import app.harvester.companion.privacy.HomeProtectionStatsBar
+import app.harvester.companion.privacy.UhShieldEngine
+import app.harvester.companion.settings.privacy.PrivacyGuardActivity
 import app.harvester.companion.R
 import app.harvester.companion.Shortcut
 import app.harvester.companion.UHBrand
@@ -119,6 +126,10 @@ fun HomeScreen(
     val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(textColor.toArgb())
     val shadowColor = if (luminance > 0.5) Color.Black.copy(alpha = 0.72f) else Color.White.copy(alpha = 0.72f)
 
+    val context = LocalContext.current
+    val showHomeStats by SettingsPrefs.homeStatsEnabledFlow(context).collectAsState()
+    val shieldState by UhShieldEngine.state.collectAsState()
+
     val config = LocalConfiguration.current
     val isLandscape = config.orientation == Configuration.ORIENTATION_LANDSCAPE
 
@@ -159,12 +170,25 @@ fun HomeScreen(
                         .fillMaxHeight(),
                     contentAlignment = Alignment.Center
                 ) {
-                    UhWordmarkLockup(
-                        textColor = textColor,
-                        shadowColor = shadowColor,
-                        hasWallpaper = hasWallpaper,
-                        compact = true
-                    )
+                    if (showHomeStats) {
+                        HomeProtectionStatsBar(
+                            stats = shieldState.lifetimeStats,
+                            textColor = textColor,
+                            hasWallpaper = hasWallpaper,
+                            compact = true,
+                            onClick = {
+                                context.startActivity(Intent(context, PrivacyGuardActivity::class.java))
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        UhWordmarkLockup(
+                            textColor = textColor,
+                            shadowColor = shadowColor,
+                            hasWallpaper = hasWallpaper,
+                            compact = true
+                        )
+                    }
                 }
 
                 // Invisible Bounded Scrollable Container (zero outer background, clean clipping)
@@ -212,12 +236,27 @@ fun HomeScreen(
             ) {
                 Spacer(modifier = Modifier.weight(0.22f))
 
-                UhWordmarkLockup(
-                    textColor = textColor,
-                    shadowColor = shadowColor,
-                    hasWallpaper = hasWallpaper,
-                    compact = false
-                )
+                if (showHomeStats) {
+                    HomeProtectionStatsBar(
+                        stats = shieldState.lifetimeStats,
+                        textColor = textColor,
+                        hasWallpaper = hasWallpaper,
+                        compact = false,
+                        onClick = {
+                            context.startActivity(Intent(context, PrivacyGuardActivity::class.java))
+                        },
+                        modifier = Modifier
+                            .widthIn(max = 360.dp)
+                            .padding(horizontal = 24.dp),
+                    )
+                } else {
+                    UhWordmarkLockup(
+                        textColor = textColor,
+                        shadowColor = shadowColor,
+                        hasWallpaper = hasWallpaper,
+                        compact = false
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(24.dp))
 

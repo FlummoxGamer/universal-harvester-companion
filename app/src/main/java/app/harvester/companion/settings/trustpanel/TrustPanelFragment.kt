@@ -40,9 +40,11 @@ import androidx.fragment.compose.content
 import androidx.lifecycle.lifecycleScope
 import app.harvester.companion.UHApp
 import app.harvester.companion.components.PermissionStorage
+import app.harvester.companion.privacy.ShieldLevel
+import app.harvester.companion.privacy.UhPrivacyController
+import app.harvester.companion.privacy.UhShieldEngine
 import app.harvester.companion.settings.privacy.PrivacyGuardActivity
-import app.harvester.companion.settings.addons.ExtensionsActivity
-import app.harvester.companion.settings.addons.UBlockOriginManager
+import app.harvester.companion.settings.privacy.SiteSettingsActivity
 import app.harvester.companion.settings.trustpanel.bindings.SecurityInfoBinding
 import app.harvester.companion.settings.trustpanel.middleware.TrustPanelMiddleware
 import app.harvester.companion.settings.trustpanel.middleware.TrustPanelNavigationMiddleware
@@ -58,7 +60,6 @@ import app.harvester.companion.settings.trustpanel.ui.TrackersBlockedPanel
 import app.harvester.companion.theme.UHTheme
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import mozilla.components.browser.state.selector.findTabOrCustomTab
 import mozilla.components.lib.state.helpers.StoreProvider.Companion.fragmentStore
@@ -92,7 +93,7 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                 } else {
                     @Suppress("DEPRECATION")
                     args.getSerializable("certificate") as? X509Certificate
-                }
+                },
             ),
             sessionState = session,
             rules = components.sitePermissionRules,
@@ -110,15 +111,15 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                     permissionStorage = PermissionStorage(requireContext()),
                     requestPermissionsLauncher = requestPermissionsLauncher,
                     onDismiss = { dismissAllowingStateLoss() },
-                    scope = viewLifecycleOwner.lifecycleScope
+                    scope = viewLifecycleOwner.lifecycleScope,
                 ),
                 TrustPanelNavigationMiddleware(
                     privacySecurityPrefKey = "",
                     appStore = components.appStore,
                     tabsUseCases = components.useCases.tabsUseCases,
-                    scope = viewLifecycleOwner.lifecycleScope
-                )
-            )
+                    scope = viewLifecycleOwner.lifecycleScope,
+                ),
+            ),
         )
     }
 
@@ -147,10 +148,12 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
             var showCertDialog by remember { mutableStateOf(false) }
             var showAutoplayDialog by remember { mutableStateOf(false) }
 
-            val ublockState by UBlockOriginManager.state.collectAsState()
+            val shieldState by UhShieldEngine.state.collectAsState()
+            val hostTick by UhShieldEngine.hostStatsTick.collectAsState()
+            val darkBypassHosts by UhPrivacyController.darkBypassHosts.collectAsState()
             val trustState by store.stateFlow.collectAsState()
+
             val websiteInfoState = trustState.websiteInfoState
-            val isTrackingProtectionEnabled = trustState.isTrackingProtectionEnabled
             val websitePermissions = trustState.websitePermissionsState.values
             val trackersBlockedCount = trustState.numberOfTrackersBlocked
             val baseDomain = trustState.baseDomain
@@ -163,20 +166,22 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                             MessageDigest.getInstance("SHA-256").digest(bytes)
                                 .joinToString(":") { "%02X".format(it) }
                         } ?: "Unavailable"
-                    } catch (_: Exception) { "Unavailable" }
+                    } catch (_: Exception) {
+                        "Unavailable"
+                    }
                 }
                 AlertDialog(
                     onDismissRequest = { showCertDialog = false },
                     title = {
                         Text(
                             text = if (websiteInfoState.isSecured) "TLS Certificate" else "Connection Info",
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                     },
                     text = {
                         Column(
                             modifier = Modifier.verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             if (cert != null) {
                                 CertField("Issued To", cert.subjectX500Principal.name)
@@ -192,7 +197,7 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                                         "This connection is unencrypted HTTP."
                                     },
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 13.sp
+                                    fontSize = 13.sp,
                                 )
                             }
                         }
@@ -203,7 +208,7 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                         }
                     },
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = RoundedCornerShape(20.dp)
+                    shape = RoundedCornerShape(20.dp),
                 )
             }
 
@@ -216,14 +221,14 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                             listOf(
                                 AutoplayValue.AUTOPLAY_ALLOW_ALL to "Allow audio and video",
                                 AutoplayValue.AUTOPLAY_BLOCK_AUDIBLE to "Block audio only",
-                                AutoplayValue.AUTOPLAY_BLOCK_ALL to "Block audio and video"
+                                AutoplayValue.AUTOPLAY_BLOCK_ALL to "Block audio and video",
                             ).forEach { (value, label) ->
                                 TextButton(
                                     onClick = {
                                         showAutoplayDialog = false
                                         store.dispatch(TrustPanelAction.UpdateAutoplayValue(value))
                                     },
-                                    modifier = Modifier.fillMaxWidth()
+                                    modifier = Modifier.fillMaxWidth(),
                                 ) {
                                     Text(label, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.fillMaxWidth())
                                 }
@@ -236,7 +241,7 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                         }
                     },
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = RoundedCornerShape(20.dp)
+                    shape = RoundedCornerShape(20.dp),
                 )
             }
 
@@ -251,60 +256,82 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
 
             Box(
                 modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.BottomCenter
+                contentAlignment = Alignment.BottomCenter,
             ) {
                 Surface(
                     shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     modifier = Modifier
                         .widthIn(max = 560.dp)
-                        .fillMaxWidth()
+                        .fillMaxWidth(),
                 ) {
                     AnimatedContent(targetState = contentState, label = "TrustPanelAnimation") { route ->
                         when (route) {
                             Route.ProtectionPanel -> {
                                 val siteUrl = websiteInfoState.websiteUrl.ifBlank { url }
-                                val isUblockSitePaused = UBlockOriginManager.isSitePaused(siteUrl)
+                                val siteHost = remember(siteUrl) { UhShieldEngine.normalizeHost(siteUrl) }
+                                val siteStats = remember(siteHost, hostTick, trackersBlockedCount) {
+                                    val engineHostStats = UhShieldEngine.getHostStats(siteHost)
+                                    val mergedTrackers = maxOf(engineHostStats.trackersBlocked, trackersBlockedCount.toLong())
+                                    val mergedSaved = engineHostStats.estimatedTimeSavedMs +
+                                        ((mergedTrackers - engineHostStats.trackersBlocked).coerceAtLeast(0L) * 45L)
+                                    engineHostStats.copy(
+                                        trackersBlocked = mergedTrackers,
+                                        estimatedTimeSavedMs = mergedSaved,
+                                    )
+                                }
+                                val isShieldPausedForSite = siteHost.isNotBlank() && siteHost in shieldState.pausedHosts
+                                val showWebDarkToggle = UhPrivacyController.isForceDarkWebEffectivelyEnabled(ctx)
+                                val isWebDarkBypassed = siteHost.isNotBlank() && siteHost in darkBypassHosts
+
                                 ProtectionPanel(
                                     websiteInfoState = websiteInfoState,
-                                    icon = null,
-                                    isTrackingProtectionEnabled = isTrackingProtectionEnabled,
-                                    isGlobalTrackingProtectionEnabled = true,
-                                    isLocalPdf = false,
-                                    numberOfTrackersBlocked = trackersBlockedCount,
-                                    ublockInstalled = ublockState.isInstalled,
-                                    ublockGlobalEnabled = ublockState.isEnabled,
-                                    ublockUpdating = ublockState.isUpdating,
-                                    ublockError = ublockState.lastError,
-                                    ublockSitePaused = isUblockSitePaused,
-                                    ublockVersion = ublockState.version,
-                                    ublockBlockedCount = ublockState.totalBlockedCount,
-                                    onToggleUblockSite = {
-                                        UBlockOriginManager.toggleSitePaused(siteUrl)
-                                        store.state.sessionState?.let {
-                                            components.useCases.sessionUseCases.reload(it.id)
+                                    siteHost = siteHost,
+                                    siteStats = siteStats,
+                                    lifetimeStats = shieldState.lifetimeStats,
+                                    shieldLevel = shieldState.level,
+                                    isShieldPausedForSite = isShieldPausedForSite,
+                                    showWebDarkToggle = showWebDarkToggle,
+                                    isWebDarkEnabledForSite = !isWebDarkBypassed,
+                                    numberOfGeckoTrackersBlocked = trackersBlockedCount,
+                                    websitePermissions = websitePermissions.filter { it.isVisible },
+                                    onToggleShieldForSite = {
+                                        if (shieldState.level == ShieldLevel.OFF) {
+                                            dismissAllowingStateLoss()
+                                            ctx.startActivity(Intent(ctx, PrivacyGuardActivity::class.java))
+                                        } else {
+                                            val paused = UhShieldEngine.toggleSitePaused(siteUrl)
+                                            // Keep Gecko per-site ETP aligned with UH Shield pause state
+                                            val geckoEnabled = trustState.isTrackingProtectionEnabled
+                                            if ((paused && geckoEnabled) || (!paused && !geckoEnabled)) {
+                                                store.dispatch(TrustPanelAction.ToggleTrackingProtection)
+                                            } else {
+                                                store.state.sessionState?.let {
+                                                    components.useCases.sessionUseCases.reload(it.id)
+                                                }
+                                            }
+                                            UhPrivacyController.pushRuntimeConfigToExtension()
                                         }
                                     },
-                                    onRetryUblock = {
-                                        UBlockOriginManager.checkAndInstallOrUpdate(force = true)
+                                    onToggleWebDarkForSite = {
+                                        UhPrivacyController.toggleSiteDarkBypass(ctx, siteUrl)
                                     },
-                                    onCancelUblock = {
-                                        UBlockOriginManager.cancelUpdate()
+                                    onTrackerDetailsClick = {
+                                        if (trackersBlockedCount > 0) {
+                                            contentState = Route.TrackersPanel
+                                        }
                                     },
-                                    onOpenExtensions = {
-                                        dismissAllowingStateLoss()
-                                        ctx.startActivity(Intent(ctx, ExtensionsActivity::class.java))
-                                    },
-                                    websitePermissions = websitePermissions.filter { it.isVisible },
-                                    onTrackerBlockedMenuClick = { contentState = Route.TrackersPanel },
-                                    onTrackingProtectionToggleClick = { store.dispatch(TrustPanelAction.ToggleTrackingProtection) },
                                     onClearSiteDataMenuClick = {
                                         store.dispatch(TrustPanelAction.RequestClearSiteDataDialog)
                                         contentState = Route.ClearSiteDataDialog
                                     },
-                                    onPrivacySecuritySettingsClick = {
+                                    onPrivacyGuardClick = {
                                         dismissAllowingStateLoss()
                                         ctx.startActivity(Intent(ctx, PrivacyGuardActivity::class.java))
+                                    },
+                                    onSiteSettingsClick = {
+                                        dismissAllowingStateLoss()
+                                        ctx.startActivity(Intent(ctx, SiteSettingsActivity::class.java))
                                     },
                                     onAutoplayValueClick = { showAutoplayDialog = true },
                                     onToggleablePermissionClick = { store.dispatch(TrustPanelAction.TogglePermission(it)) },
@@ -361,10 +388,10 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                 sessionId = args.getString("sessionId") ?: "",
                 urlHost = args.getString("url")?.let { android.net.Uri.parse(it).host },
                 onSecurityInfoUpdate = { store.dispatch(it) },
-                onHostChange = { dismissAllowingStateLoss() }
+                onHostChange = { dismissAllowingStateLoss() },
             ),
             owner = viewLifecycleOwner,
-            view = view
+            view = view,
         )
     }
 
@@ -390,13 +417,13 @@ private fun CertField(label: String, value: String, mono: Boolean = false) {
             text = label,
             color = MaterialTheme.colorScheme.primary,
             fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold
+            fontWeight = FontWeight.SemiBold,
         )
         Text(
             text = value,
             color = MaterialTheme.colorScheme.onSurface,
             fontSize = 12.sp,
-            fontFamily = if (mono) FontFamily.Monospace else FontFamily.Default
+            fontFamily = if (mono) FontFamily.Monospace else FontFamily.Default,
         )
     }
 }

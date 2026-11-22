@@ -42,8 +42,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
+import app.harvester.companion.R
+import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.ShortcutStore
 import app.harvester.companion.WallpaperStore
+import app.harvester.companion.settings.components.SettingsSwitchRow
+import app.harvester.companion.settings.components.UhSettingsCardGroup
 import app.harvester.companion.settings.components.UhSettingsScaffold
 import app.harvester.companion.theme.UHTheme
 import app.harvester.companion.wallpaper.WallpaperCatalog
@@ -186,6 +190,19 @@ class CustomizeHomeActivity : AppCompatActivity() {
                     title = "Customize Home",
                     onBack = { finish() }
                 ) {
+                    UhSettingsCardGroup {
+                        SettingsSwitchRow(
+                            title = "Show Protection Stats on Home",
+                            subtitle = "Replaces the UH title on Home with live ads, trackers & time saved stats",
+                            key = SettingsPrefs.K_HOME_SHOW_STATS,
+                            default = false,
+                            iconRes = R.drawable.fx_ic_shield_lock_24,
+                            insideCard = true,
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()

@@ -1,10 +1,10 @@
 package app.harvester.companion.settings.accessibility
 
-import androidx.activity.SystemBarStyle
-import androidx.activity.enableEdgeToEdge
 import android.graphics.Color
 import android.os.Bundle
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -29,13 +29,10 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.view.WindowCompat
 import app.harvester.companion.R
 import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.settings.components.SettingsCategory
-import app.harvester.companion.settings.components.SettingsSwitchRow
 import app.harvester.companion.settings.components.UhSettingsCardGroup
-import app.harvester.companion.settings.components.UhSettingsDivider
 import app.harvester.companion.settings.components.UhSettingsScaffold
 import app.harvester.companion.theme.UHTheme
 import kotlin.math.roundToInt
@@ -45,8 +42,8 @@ class AccessibilityActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            statusBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
         )
 
         setContent {
@@ -58,21 +55,21 @@ class AccessibilityActivity : AppCompatActivity() {
 
                 UhSettingsScaffold(
                     title = "Accessibility",
-                    onBack = { finish() }
+                    onBack = { finish() },
                 ) {
                     SettingsCategory("Display & Text")
                     UhSettingsCardGroup {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 14.dp)
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     painter = painterResource(id = R.drawable.fx_ic_accessibility_24),
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(22.dp)
+                                    modifier = Modifier.size(22.dp),
                                 )
                                 Spacer(modifier = Modifier.width(14.dp))
                                 Text(
@@ -80,13 +77,13 @@ class AccessibilityActivity : AppCompatActivity() {
                                     color = MaterialTheme.colorScheme.onSurface,
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Medium,
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.weight(1f),
                                 )
                                 Text(
                                     text = "$textScale%",
                                     color = MaterialTheme.colorScheme.primary,
                                     fontSize = 14.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    fontWeight = FontWeight.SemiBold,
                                 )
                             }
                             Spacer(modifier = Modifier.height(6.dp))
@@ -97,16 +94,9 @@ class AccessibilityActivity : AppCompatActivity() {
                                     textScale = snapped
                                     SettingsPrefs.setInt(context, SettingsPrefs.K_TEXT_SCALE, snapped)
                                 },
-                                valueRange = 85f..130f
+                                valueRange = 85f..130f,
                             )
                         }
-                        UhSettingsDivider()
-                        SettingsSwitchRow(
-                            title = "Force dark mode on all sites",
-                            key = SettingsPrefs.K_FORCE_DARK_SITES,
-                            default = false,
-                            insideCard = true
-                        )
                     }
                     Spacer(modifier = Modifier.height(24.dp))
                 }

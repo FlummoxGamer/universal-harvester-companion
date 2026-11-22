@@ -164,6 +164,7 @@ dependencies {
     implementation("org.mozilla.components:feature-sitepermissions:154.0.1")
     implementation("org.mozilla.components:feature-privatemode:154.0.1")
     implementation("org.mozilla.components:feature-addons:154.0.1")
+    implementation("org.mozilla.components:feature-media:154.0.1")
     implementation("org.mozilla.components:browser-menu2:154.0.1")
     implementation("org.mozilla.components:browser-thumbnails:154.0.1")
     implementation("org.mozilla.components:browser-icons:154.0.1")

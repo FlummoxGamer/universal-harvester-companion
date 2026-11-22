@@ -30,6 +30,10 @@ class PermissionStorage(
         return permissionsStorage.getSitePermissionsPaged()
     }
 
+    suspend fun getAllSitePermissions(): List<SitePermissions> = withContext(dispatcher) {
+        permissionsStorage.all()
+    }
+
     suspend fun deleteSitePermissions(sitePermissions: SitePermissions) = withContext(dispatcher) {
         permissionsStorage.remove(sitePermissions, private = false)
     }

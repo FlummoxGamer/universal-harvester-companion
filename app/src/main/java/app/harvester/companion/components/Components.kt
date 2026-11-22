@@ -3,12 +3,10 @@ package app.harvester.companion.components
 import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
-import android.content.res.Configuration
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import app.harvester.companion.BuildConfig
 import app.harvester.companion.SettingsPrefs
-import app.harvester.companion.ThemePrefs
 import app.harvester.companion.UHLog
 import app.harvester.companion.browser.storage.sync.GlobalPlacesDependencyProvider
 import app.harvester.companion.browser.storage.sync.PlacesBookmarksStorage
@@ -18,6 +16,9 @@ import app.harvester.companion.core.downloads.UhDownloadMiddleware
 import app.harvester.companion.core.downloads.UhDownloadService
 import app.harvester.companion.data.downloads.UhDownloadStorage
 import app.harvester.companion.feature.session.HistoryDelegate
+import app.harvester.companion.media.UhMediaSessionService
+import app.harvester.companion.privacy.UhPrivacyController
+import app.harvester.companion.privacy.UhShieldEngine
 import app.harvester.companion.service.nimbus.Nimbus
 import app.harvester.companion.service.nimbus.NimbusAppInfo
 import mozilla.components.browser.engine.gecko.GeckoEngine
@@ -30,7 +31,6 @@ import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.DefaultSettings
 import mozilla.components.concept.engine.Engine
-import mozilla.components.concept.engine.mediaquery.PreferredColorScheme
 import mozilla.components.concept.fetch.Client
 import mozilla.components.feature.contextmenu.ContextMenuUseCases
 import mozilla.components.feature.downloads.DefaultFileSizeFormatter
@@ -220,15 +220,32 @@ class Components(val context: Context) {
             engine = engine,
             store = browserStore,
         )
+        // UH Shield is the built-in default blocker; uBlock Origin stays supported if installed manually
+        UhShieldEngine.init(context.applicationContext)
+        UhPrivacyController.init(context.applicationContext, engine)
         app.harvester.companion.settings.addons.UBlockOriginManager.init(context.applicationContext, engine)
         app.harvester.companion.browser.translate.UhTranslationManager.init(
             context = context.applicationContext,
             engine = engine,
             store = browserStore,
         )
+        try {
+            val mediaFeature = mozilla.components.feature.media.MediaSessionFeature(
+                applicationContext = context.applicationContext,
+                mediaServiceClass = UhMediaSessionService::class.java,
+                store = browserStore,
+            )
+            activeMediaSessionFeature = mediaFeature
+            mediaFeature.start()
+        } catch (e: Exception) {
+            UHLog.w("media", "Failed starting MediaSessionFeature: ${e.message}")
+        }
         registerNetworkResumeCallback(browserStore)
         browserStore
     }
+
+    @Volatile
+    var activeMediaSessionFeature: mozilla.components.feature.media.MediaSessionFeature? = null
 
     private fun registerNetworkResumeCallback(browserStore: BrowserStore) {
         val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
@@ -337,37 +354,17 @@ class Components(val context: Context) {
     val useCases: UseCases by lazy { UseCases(store, engine, downloadFileUtils) }
 
     private fun buildDefaultSettings(): DefaultSettings {
-        return DefaultSettings(
-            remoteDebuggingEnabled = false,
-            testingModeEnabled = false,
-            downloadDelegate = mozilla.components.browser.engine.gecko.util.EngineDownloadDelegate(
-                context = context.applicationContext,
-                downloadLocation = {
-                    DownloadLocationResolver.resolveTargetDirectory(context.applicationContext)
-                }
-            ),
-            preferredColorScheme = buildPreferredColorScheme(),
-            automaticFontSizeAdjustment = false,
-            fontInflationEnabled = false,
-            suspendMediaWhenInactive = false,
-            forceUserScalableContent = true,
-            loginAutofillEnabled = false,
-            enterpriseRootsEnabled = false,
-            globalPrivacyControlEnabled = SettingsPrefs.getBool(context, SettingsPrefs.K_ADV_GPC, false),
-            historyTrackingDelegate = historyDelegate,
-        )
-    }
-
-    private fun buildPreferredColorScheme(): PreferredColorScheme {
-        return when (ThemePrefs.getMode(context)) {
-            ThemePrefs.MODE_LIGHT -> PreferredColorScheme.Light
-            ThemePrefs.MODE_DARK -> PreferredColorScheme.Dark
-            else -> {
-                val night = (context.resources.configuration.uiMode and
-                    Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-                if (night) PreferredColorScheme.Dark else PreferredColorScheme.Light
+        val downloadDelegate = mozilla.components.browser.engine.gecko.util.EngineDownloadDelegate(
+            context = context.applicationContext,
+            downloadLocation = {
+                DownloadLocationResolver.resolveTargetDirectory(context.applicationContext)
             }
-        }
+        )
+        return UhPrivacyController.buildDefaultSettings(
+            ctx = context.applicationContext,
+            downloadDelegate = downloadDelegate,
+            historyDelegate = historyDelegate,
+        )
     }
 }
 

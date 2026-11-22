@@ -9,12 +9,17 @@ class SitePermissionRules(val context: Context) {
     val isLnaFeatureEnabled: Boolean get() = false
 
     fun getSitePermissionsCustomSettingsRules(): SitePermissionsRules {
+        val allowAutoplay = SettingsPrefs.getBool(context, SettingsPrefs.K_AUTOPLAY, false)
         return SitePermissionsRules(
             notification = getAction(PhoneFeature.NOTIFICATION),
             microphone = getAction(PhoneFeature.MICROPHONE),
             location = getAction(PhoneFeature.LOCATION),
             camera = getAction(PhoneFeature.CAMERA),
-            autoplayAudible = SitePermissionsRules.AutoplayAction.BLOCKED,
+            autoplayAudible = if (allowAutoplay) {
+                SitePermissionsRules.AutoplayAction.ALLOWED
+            } else {
+                SitePermissionsRules.AutoplayAction.BLOCKED
+            },
             autoplayInaudible = SitePermissionsRules.AutoplayAction.ALLOWED,
             persistentStorage = getAction(PhoneFeature.PERSISTENT_STORAGE),
             crossOriginStorageAccess = getAction(PhoneFeature.CROSS_ORIGIN_STORAGE_ACCESS),
@@ -25,7 +30,8 @@ class SitePermissionRules(val context: Context) {
     }
 
     fun getAutoplayUserSetting(): Int {
-        return SettingsPrefs.getInt(context, "autoplay_user_setting", 3)
+        val allowAutoplay = SettingsPrefs.getBool(context, SettingsPrefs.K_AUTOPLAY, false)
+        return if (allowAutoplay) 1 else SettingsPrefs.getInt(context, "autoplay_user_setting", 3)
     }
 
     private fun getAction(feature: PhoneFeature): SitePermissionsRules.Action {

@@ -1,7 +1,7 @@
 {
     "manifest_version": 2,
     "name": "UH Bridge",
-    "version": "2.2.0",
+    "version": "3.0.0",
     "browser_specific_settings": {
         "gecko": {
             "id": "uh-bridge@harvester.app"
@@ -23,7 +23,10 @@
         "nativeMessagingFromContent",
         "geckoViewAddons",
         "<all_urls>",
-        "tabs"
+        "tabs",
+        "webRequest",
+        "webRequestBlocking",
+        "privacy"
     ],
     "web_accessible_resources": [
         "inject.js",

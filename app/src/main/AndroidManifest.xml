@@ -12,6 +12,7 @@
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.DOWNLOAD_WITHOUT_NOTIFICATION" />
     
     <application
@@ -42,7 +43,8 @@
             android:name=".HomeActivity"
             android:exported="true"
             android:theme="@style/Theme.UHCompanion.Launch"
-            android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|uiMode"
+            android:supportsPictureInPicture="true"
             android:windowSoftInputMode="adjustResize"
             android:launchMode="singleTop">
             <intent-filter>
@@ -90,6 +92,8 @@
         <activity android:name=".settings.video.VideoOptionsActivity" android:exported="false" android:label="Video Options" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:theme="@style/Theme.UHCompanion" />
         <activity android:name=".settings.privacy.PrivacyGuardActivity" android:exported="false" android:label="Privacy Guard" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:theme="@style/Theme.UHCompanion" />
         <activity android:name=".settings.privacy.AdvancedActivity" android:exported="false" android:label="Advanced" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:theme="@style/Theme.UHCompanion" />
+        <activity android:name=".settings.privacy.FilterListsActivity" android:exported="false" android:label="Filter Lists" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:theme="@style/Theme.UHCompanion" />
+        <activity android:name=".settings.privacy.SiteSettingsActivity" android:exported="false" android:label="Site Settings" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:theme="@style/Theme.UHCompanion" />
         <activity android:name=".settings.data.ManageDataActivity" android:exported="false" android:label="Manage Data" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:theme="@style/Theme.UHCompanion" />
         <activity android:name=".settings.addons.ExtensionsActivity" android:exported="false" android:label="Extensions" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:theme="@style/Theme.UHCompanion" />
         <activity android:name=".settings.addons.ScriptsActivity" android:exported="false" android:label="Scripts" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:theme="@style/Theme.UHCompanion" />
@@ -100,6 +104,7 @@
 
         <service android:name=".SessionService" android:exported="false" android:stopWithTask="false" />
         <service android:name=".core.downloads.UhDownloadService" android:exported="false" android:foregroundServiceType="dataSync" />
+        <service android:name=".media.UhMediaSessionService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

@@ -337,9 +337,15 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun copyLink(url: String) {
         if (url.isBlank() || url == "about:blank") return
+        val cleanUrl = app.harvester.companion.privacy.UhShieldEngine.cleanTrackingUrl(
+            url = url,
+            stripTrackers = SettingsPrefs.getBool(context, SettingsPrefs.K_PG_CLEAR_URLS, true),
+            deAmp = SettingsPrefs.getBool(context, SettingsPrefs.K_ADV_DEAMP, true),
+        )
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-        cm?.setPrimaryClip(ClipData.newPlainText("URL", url))
-        Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
+        cm?.setPrimaryClip(ClipData.newPlainText("URL", cleanUrl))
+        val msg = if (cleanUrl != url) "Clean link copied (trackers stripped)" else "Link copied"
+        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
     }
 
     fun openInExternalApp(activityContext: Context, url: String) {

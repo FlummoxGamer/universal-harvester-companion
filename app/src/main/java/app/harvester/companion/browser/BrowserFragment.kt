@@ -31,7 +31,6 @@ import mozilla.components.feature.prompts.share.ShareDelegate
 import mozilla.components.feature.session.SessionFeature
 import mozilla.components.feature.session.SwipeRefreshFeature
 import mozilla.components.feature.sitepermissions.SitePermissionsFeature
-import mozilla.components.feature.sitepermissions.SitePermissionsRules
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 
 class BrowserFragment : Fragment() {
@@ -347,8 +346,20 @@ class BrowserFragment : Fragment() {
                 fragmentManager = parentFragmentManager,
                 sessionId = null,
                 loadUrlUseCase = components.useCases.sessionUseCases.loadUrl,
-                shouldPrompt = { true },
-                launchInApp = { false }
+                shouldPrompt = {
+                    app.harvester.companion.SettingsPrefs.getInt(
+                        requireContext(),
+                        app.harvester.companion.SettingsPrefs.K_PG_REDIRECT,
+                        1,
+                    ) == 1
+                },
+                launchInApp = {
+                    app.harvester.companion.SettingsPrefs.getInt(
+                        requireContext(),
+                        app.harvester.companion.SettingsPrefs.K_PG_REDIRECT,
+                        1,
+                    ) != 0
+                },
             ),
             owner = this,
             view = binding.root
@@ -369,9 +380,27 @@ class BrowserFragment : Fragment() {
                         onDismiss: () -> Unit,
                         onSuccess: () -> Unit
                     ) {
+                        val rawUrl = shareData.url.orEmpty()
+                        val cleanUrl = if (rawUrl.isNotBlank()) {
+                            app.harvester.companion.privacy.UhShieldEngine.cleanTrackingUrl(
+                                url = rawUrl,
+                                stripTrackers = app.harvester.companion.SettingsPrefs.getBool(
+                                    context,
+                                    app.harvester.companion.SettingsPrefs.K_PG_CLEAR_URLS,
+                                    true,
+                                ),
+                                deAmp = app.harvester.companion.SettingsPrefs.getBool(
+                                    context,
+                                    app.harvester.companion.SettingsPrefs.K_ADV_DEAMP,
+                                    true,
+                                ),
+                            )
+                        } else {
+                            rawUrl
+                        }
                         val intent = Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, shareData.url)
+                            putExtra(Intent.EXTRA_TEXT, cleanUrl)
                         }
                         context.startActivity(Intent.createChooser(intent, "Share"))
                         onSuccess()
@@ -399,19 +428,7 @@ class BrowserFragment : Fragment() {
                 onNeedToRequestPermissions = { sitePermissionsLauncher.launch(it) },
                 onShouldShowRequestPermissionRationale = { shouldShowRequestPermissionRationale(it) },
                 store = components.store,
-                sitePermissionsRules = SitePermissionsRules(
-                    autoplayAudible = SitePermissionsRules.AutoplayAction.BLOCKED,
-                    autoplayInaudible = SitePermissionsRules.AutoplayAction.BLOCKED,
-                    camera = SitePermissionsRules.Action.ASK_TO_ALLOW,
-                    location = SitePermissionsRules.Action.ASK_TO_ALLOW,
-                    notification = SitePermissionsRules.Action.ASK_TO_ALLOW,
-                    microphone = SitePermissionsRules.Action.ASK_TO_ALLOW,
-                    persistentStorage = SitePermissionsRules.Action.ASK_TO_ALLOW,
-                    mediaKeySystemAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
-                    crossOriginStorageAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
-                    localDeviceAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
-                    localNetworkAccess = SitePermissionsRules.Action.ASK_TO_ALLOW
-                )
+                sitePermissionsRules = components.sitePermissionRules.getSitePermissionsCustomSettingsRules(),
             ),
             owner = this,
             view = binding.root

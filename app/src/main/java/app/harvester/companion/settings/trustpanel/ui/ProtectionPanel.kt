@@ -1,9 +1,7 @@
 package app.harvester.companion.settings.trustpanel.ui
 
-import android.graphics.Bitmap
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,7 +13,11 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -23,12 +25,16 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.harvester.companion.R
 import app.harvester.companion.components.menu.compose.MenuGroup
 import app.harvester.companion.components.menu.compose.MenuItem
 import app.harvester.companion.components.menu.compose.MenuScaffold
+import app.harvester.companion.privacy.ProtectionStatsPanel
+import app.harvester.companion.privacy.ShieldLevel
+import app.harvester.companion.privacy.ShieldStatsSnapshot
 import app.harvester.companion.settings.trustpanel.store.AutoplayValue
 import app.harvester.companion.settings.trustpanel.store.WebsiteInfoState
 import app.harvester.companion.settings.trustpanel.store.WebsitePermission
@@ -36,152 +42,140 @@ import app.harvester.companion.settings.trustpanel.store.WebsitePermission
 @Composable
 internal fun ProtectionPanel(
     websiteInfoState: WebsiteInfoState,
-    icon: Bitmap?,
-    isTrackingProtectionEnabled: Boolean,
-    isGlobalTrackingProtectionEnabled: Boolean,
-    isLocalPdf: Boolean,
-    numberOfTrackersBlocked: Int,
-    ublockInstalled: Boolean = false,
-    ublockGlobalEnabled: Boolean = true,
-    ublockUpdating: Boolean = false,
-    ublockError: String? = null,
-    ublockSitePaused: Boolean = false,
-    ublockVersion: String = "",
-    ublockBlockedCount: Int = 0,
-    onToggleUblockSite: () -> Unit = {},
-    onRetryUblock: () -> Unit = {},
-    onCancelUblock: () -> Unit = {},
-    onOpenExtensions: () -> Unit = {},
+    siteHost: String,
+    siteStats: ShieldStatsSnapshot,
+    lifetimeStats: ShieldStatsSnapshot,
+    shieldLevel: ShieldLevel,
+    isShieldPausedForSite: Boolean,
+    showWebDarkToggle: Boolean,
+    isWebDarkEnabledForSite: Boolean,
+    numberOfGeckoTrackersBlocked: Int,
     websitePermissions: List<WebsitePermission>,
-    onTrackerBlockedMenuClick: () -> Unit,
-    onTrackingProtectionToggleClick: () -> Unit,
+    onToggleShieldForSite: () -> Unit,
+    onToggleWebDarkForSite: () -> Unit,
+    onTrackerDetailsClick: () -> Unit,
     onClearSiteDataMenuClick: () -> Unit,
-    onPrivacySecuritySettingsClick: () -> Unit,
+    onPrivacyGuardClick: () -> Unit,
+    onSiteSettingsClick: () -> Unit,
     onAutoplayValueClick: (AutoplayValue) -> Unit,
     onToggleablePermissionClick: (WebsitePermission.Toggleable) -> Unit,
     onViewCertificateClick: () -> Unit,
 ) {
+    var showAllTimeStats by remember { mutableStateOf(false) }
+
     MenuScaffold {
-        ProtectionPanelBanner(
-            isSecured = websiteInfoState.isSecured,
-            isTrackingProtectionEnabled = isGlobalTrackingProtectionEnabled && (isTrackingProtectionEnabled || isLocalPdf),
-            numberOfTrackersBlocked = numberOfTrackersBlocked + if (ublockInstalled && ublockGlobalEnabled && !ublockSitePaused) ublockBlockedCount else 0,
-            onClick = onTrackerBlockedMenuClick.takeIf { numberOfTrackersBlocked > 0 },
+        // Host header
+        if (siteHost.isNotBlank()) {
+            Text(
+                text = siteHost,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+        }
+
+        // Clean 3-metric Stats Panel (This Site / All Time)
+        ProtectionStatsPanel(
+            stats = if (showAllTimeStats) lifetimeStats else siteStats,
+            headerTitle = if (showAllTimeStats) "All-Time Protection" else "Blocked on This Site",
+            showScopeToggle = true,
+            isAllTimeSelected = showAllTimeStats,
+            onScopeToggle = { showAllTimeStats = it },
+            onCardClick = onTrackerDetailsClick.takeIf { numberOfGeckoTrackersBlocked > 0 },
         )
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
-        // uBlock Origin Adblocker card integrated directly into Trust Panel
+        // Per-Site UH Shield Pause Control (single authoritative switch)
         MenuGroup {
-            val ublockStatusDesc = when {
-                ublockUpdating -> "Updating uBlock Origin…"
-                !ublockError.isNullOrBlank() -> ublockError
-                !ublockInstalled -> "Not installed — tap Install"
-                !ublockGlobalEnabled -> "Disabled globally in Extensions"
-                ublockSitePaused -> "Paused for this site"
-                ublockVersion.isNotBlank() -> "Active (v$ublockVersion)"
-                else -> "Active protection"
+            val isGloballyOff = shieldLevel == ShieldLevel.OFF
+            val shieldDesc = when {
+                isGloballyOff -> "Turned off globally in Privacy Guard"
+                isShieldPausedForSite -> "Paused for this site — tap to resume"
+                else -> "Active (${shieldLevel.label}) — blocking ads & trackers"
             }
             MenuItem(
-                label = "uBlock Origin Shield",
-                description = ublockStatusDesc,
+                label = "UH Shield for This Site",
+                description = shieldDesc,
                 beforeIconPainter = painterResource(id = R.drawable.fx_ic_shield_lock_24),
-                onClick = when {
-                    ublockUpdating -> onCancelUblock
-                    !ublockInstalled || !ublockError.isNullOrBlank() -> onRetryUblock
-                    ublockGlobalEnabled -> onToggleUblockSite
-                    else -> onOpenExtensions
-                },
+                onClick = onToggleShieldForSite,
                 afterContent = {
-                    when {
-                        ublockUpdating -> {
-                            Text(
-                                text = "Cancel",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.clickable { onCancelUblock() }
-                            )
-                        }
-                        !ublockInstalled || !ublockError.isNullOrBlank() -> {
-                            Text(
-                                text = if (!ublockError.isNullOrBlank()) "Retry" else "Install",
-                                color = MaterialTheme.colorScheme.primary,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.clickable { onRetryUblock() }
-                            )
-                        }
-                        ublockGlobalEnabled -> {
-                            Switch(
-                                checked = !ublockSitePaused,
-                                onCheckedChange = { onToggleUblockSite() },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = MaterialTheme.colorScheme.background,
-                                    checkedTrackColor = MaterialTheme.colorScheme.primary
-                                )
-                            )
-                        }
-                        else -> {
-                            Text(
-                                text = "Manage",
-                                color = MaterialTheme.colorScheme.primary,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.clickable { onOpenExtensions() }
-                            )
-                        }
-                    }
-                }
-            )
-        }
-
-        MenuGroup {
-            MenuItem(
-                label = "Tracking Protection",
-                description = if (isTrackingProtectionEnabled) "On for this site" else "Off for this site",
-                beforeIconPainter = painterResource(id = R.drawable.ic_shield),
-                onClick = onTrackingProtectionToggleClick,
-                afterContent = {
-                    Switch(
-                        checked = isTrackingProtectionEnabled,
-                        onCheckedChange = { onTrackingProtectionToggleClick() },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = MaterialTheme.colorScheme.background,
-                            checkedTrackColor = MaterialTheme.colorScheme.primary
+                    if (isGloballyOff) {
+                        Text(
+                            text = "Enable",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
                         )
-                    )
-                }
+                    } else {
+                        Switch(
+                            checked = !isShieldPausedForSite,
+                            onCheckedChange = { onToggleShieldForSite() },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = MaterialTheme.colorScheme.background,
+                                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                            ),
+                        )
+                    }
+                },
             )
         }
 
+        // Optional Per-Site Force Dark Mode bypass (only visible when Dark Mode + Force Web Dark are active)
+        if (showWebDarkToggle && siteHost.isNotBlank()) {
+            MenuGroup {
+                MenuItem(
+                    label = "Dark Mode on This Site",
+                    description = if (isWebDarkEnabledForSite) "Smart dark styling active" else "Bypassed — using site's original theme",
+                    beforeIconPainter = painterResource(id = R.drawable.fx_ic_appearance_24),
+                    onClick = onToggleWebDarkForSite,
+                    afterContent = {
+                        Switch(
+                            checked = isWebDarkEnabledForSite,
+                            onCheckedChange = { onToggleWebDarkForSite() },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = MaterialTheme.colorScheme.background,
+                                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                            ),
+                        )
+                    },
+                )
+            }
+        }
+
+        // Connection Security / TLS Certificate
         MenuGroup {
             MenuItem(
-                label = if (websiteInfoState.isSecured) "Secure connection" else "Not secure",
-                description = if (websiteInfoState.isSecured) "Tap to view TLS certificate" else "Unencrypted HTTP connection",
+                label = if (websiteInfoState.isSecured) "Secure connection" else "Connection not secure",
+                description = if (websiteInfoState.isSecured) "Tap to inspect TLS certificate" else "Unencrypted HTTP connection",
                 beforeIconPainter = painterResource(
-                    id = if (websiteInfoState.isSecured) R.drawable.uh_ic_lock else R.drawable.uh_ic_lock_open
+                    id = if (websiteInfoState.isSecured) R.drawable.uh_ic_lock else R.drawable.uh_ic_lock_open,
                 ),
                 onClick = onViewCertificateClick,
             )
         }
 
-        if (!isLocalPdf) {
-            MenuGroup {
-                MenuItem(
-                    label = "Clear cookies and site data",
-                    beforeIconPainter = painterResource(id = R.drawable.fx_ic_delete_24),
-                    onClick = onClearSiteDataMenuClick,
-                )
-            }
+        // Clear Cookies & Site Data
+        MenuGroup {
+            MenuItem(
+                label = "Clear cookies & site data",
+                description = "Sign out and clear local storage for this site",
+                beforeIconPainter = painterResource(id = R.drawable.fx_ic_delete_24),
+                onClick = onClearSiteDataMenuClick,
+            )
         }
 
+        // Per-Site Permissions
         if (websitePermissions.isNotEmpty()) {
             Text(
-                text = "Permissions",
+                text = "Site Permissions",
                 color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.padding(top = 12.dp, bottom = 6.dp, start = 16.dp)
+                modifier = Modifier.padding(top = 12.dp, bottom = 6.dp, start = 16.dp),
             )
             MenuGroup {
                 websitePermissions.forEach { websitePermission ->
@@ -192,7 +186,13 @@ internal fun ProtectionPanel(
                                 AutoplayValue.AUTOPLAY_BLOCK_AUDIBLE -> "Block Audio"
                                 AutoplayValue.AUTOPLAY_BLOCK_ALL -> "Blocked"
                             }
-                            is WebsitePermission.Toggleable -> if (websitePermission.isBlockedByAndroid) "Blocked by Android" else if (websitePermission.isEnabled) "Allowed" else "Blocked"
+                            is WebsitePermission.Toggleable -> if (websitePermission.isBlockedByAndroid) {
+                                "Blocked by Android"
+                            } else if (websitePermission.isEnabled) {
+                                "Allowed"
+                            } else {
+                                "Blocked"
+                            }
                         }
                         MenuItem(
                             label = stringResource(id = websitePermission.deviceFeature.getLabelId()),
@@ -210,7 +210,7 @@ internal fun ProtectionPanel(
                                     color = MaterialTheme.colorScheme.primary,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.SemiBold,
-                                    textAlign = TextAlign.End
+                                    textAlign = TextAlign.End,
                                 )
                             },
                         )
@@ -219,25 +219,30 @@ internal fun ProtectionPanel(
             }
         }
 
+        // Footer links to Global Privacy Guard & Site Settings
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 14.dp, bottom = 24.dp, start = 16.dp, end = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "Privacy Settings",
+                text = "Privacy Guard",
                 color = MaterialTheme.colorScheme.primary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
                 textDecoration = TextDecoration.Underline,
-                modifier = Modifier.clickable { onPrivacySecuritySettingsClick() }
+                modifier = Modifier.clickable { onPrivacyGuardClick() },
             )
             Spacer(modifier = Modifier.width(12.dp))
             Text(
-                text = "Extensions",
+                text = "Site Settings",
                 color = MaterialTheme.colorScheme.primary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
                 textDecoration = TextDecoration.Underline,
-                modifier = Modifier.clickable { onOpenExtensions() }
+                modifier = Modifier.clickable { onSiteSettingsClick() },
             )
         }
     }

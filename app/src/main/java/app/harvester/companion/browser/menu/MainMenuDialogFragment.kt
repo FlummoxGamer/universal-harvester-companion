@@ -236,9 +236,23 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                                         onShare = {
                                             dismissAllowingStateLoss()
                                             if (currentUrl.isNotBlank() && currentUrl != "about:blank") {
+                                                val ctx = requireContext()
+                                                val cleanUrl = app.harvester.companion.privacy.UhShieldEngine.cleanTrackingUrl(
+                                                    url = currentUrl,
+                                                    stripTrackers = app.harvester.companion.SettingsPrefs.getBool(
+                                                        ctx,
+                                                        app.harvester.companion.SettingsPrefs.K_PG_CLEAR_URLS,
+                                                        true,
+                                                    ),
+                                                    deAmp = app.harvester.companion.SettingsPrefs.getBool(
+                                                        ctx,
+                                                        app.harvester.companion.SettingsPrefs.K_ADV_DEAMP,
+                                                        true,
+                                                    ),
+                                                )
                                                 val intent = Intent(Intent.ACTION_SEND).apply {
                                                     type = "text/plain"
-                                                    putExtra(Intent.EXTRA_TEXT, currentUrl)
+                                                    putExtra(Intent.EXTRA_TEXT, cleanUrl)
                                                 }
                                                 startActivity(Intent.createChooser(intent, "Share"))
                                             }

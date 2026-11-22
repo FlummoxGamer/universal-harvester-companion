@@ -1,11 +1,15 @@
 package app.harvester.companion
 
-import androidx.activity.SystemBarStyle
-import androidx.activity.enableEdgeToEdge
+import android.app.PictureInPictureParams
 import android.content.Intent
+import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
+import android.util.Rational
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Box
@@ -26,11 +30,14 @@ import app.harvester.companion.browser.BrowserFragment
 import app.harvester.companion.browser.BrowserViewModel
 import app.harvester.companion.browser.toolbar.UhGlobalToolbar
 import app.harvester.companion.theme.UHTheme
+import mozilla.components.browser.state.selector.selectedTab
+import mozilla.components.concept.engine.mediasession.MediaSession
 
 class HomeActivity : AppCompatActivity() {
 
     private val browserViewModel: BrowserViewModel by viewModels()
     private var navControllerState by mutableStateOf<NavController?>(null)
+    private var isInPipMode by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
@@ -86,7 +93,7 @@ class HomeActivity : AppCompatActivity() {
                         }
                     )
 
-                    if (controller != null) {
+                    if (controller != null && !isInPipMode) {
                         UhGlobalToolbar(
                             viewModel = browserViewModel,
                             navController = controller,
@@ -188,6 +195,34 @@ class HomeActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         (application as? UHApp)?.components?.resumePendingNetworkDownloads()
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        if (!SettingsPrefs.getBool(this, SettingsPrefs.K_PIP_ENABLED, true)) return
+        val controller = navControllerState
+        if (controller?.currentDestination?.id != R.id.browserFragment) return
+        val tab = (application as? UHApp)?.components?.store?.state?.selectedTab ?: return
+        val isPlayingMedia = tab.mediaSessionState?.playbackState == MediaSession.PlaybackState.PLAYING
+        if (tab.content.fullScreen || isPlayingMedia) {
+            try {
+                val params = PictureInPictureParams.Builder()
+                    .setAspectRatio(Rational(16, 9))
+                    .build()
+                enterPictureInPictureMode(params)
+            } catch (e: Exception) {
+                UHLog.w("media", "PiP entry skipped: ${e.message}")
+            }
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration,
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        isInPipMode = isInPictureInPictureMode
     }
 
     override fun onNewIntent(intent: Intent) {
