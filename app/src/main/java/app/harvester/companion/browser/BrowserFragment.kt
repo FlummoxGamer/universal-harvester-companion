@@ -383,15 +383,15 @@ class BrowserFragment : Fragment() {
                         val rawUrl = shareData.url.orEmpty()
                         val cleanUrl = if (rawUrl.isNotBlank()) {
                             app.harvester.companion.privacy.UhShieldEngine.cleanTrackingUrl(
-                                url = rawUrl,
-                                stripTrackers = app.harvester.companion.SettingsPrefs.getBool(
+                                rawUrl = rawUrl,
+                                stripTrackers = SettingsPrefs.getBool(
                                     context,
-                                    app.harvester.companion.SettingsPrefs.K_PG_CLEAR_URLS,
+                                    SettingsPrefs.K_PG_CLEAR_URLS,
                                     true,
                                 ),
-                                deAmp = app.harvester.companion.SettingsPrefs.getBool(
+                                deAmp = SettingsPrefs.getBool(
                                     context,
-                                    app.harvester.companion.SettingsPrefs.K_ADV_DEAMP,
+                                    SettingsPrefs.K_ADV_DEAMP,
                                     true,
                                 ),
                             )

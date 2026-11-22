@@ -338,7 +338,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun copyLink(url: String) {
         if (url.isBlank() || url == "about:blank") return
         val cleanUrl = app.harvester.companion.privacy.UhShieldEngine.cleanTrackingUrl(
-            url = url,
+            rawUrl = url,
             stripTrackers = SettingsPrefs.getBool(context, SettingsPrefs.K_PG_CLEAR_URLS, true),
             deAmp = SettingsPrefs.getBool(context, SettingsPrefs.K_ADV_DEAMP, true),
         )

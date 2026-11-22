@@ -17,7 +17,7 @@ import mozilla.components.concept.engine.EngineSession.SafeBrowsingPolicy
 import mozilla.components.concept.engine.EngineSession.TrackingProtectionPolicy
 import mozilla.components.concept.engine.EngineSession.TrackingProtectionPolicy.CookiePolicy
 import mozilla.components.concept.engine.EngineSession.TrackingProtectionPolicy.TrackingCategory
-import mozilla.components.concept.engine.HistoryTrackingDelegate
+import mozilla.components.concept.engine.history.HistoryTrackingDelegate
 import mozilla.components.concept.engine.mediaquery.PreferredColorScheme
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -180,8 +180,6 @@ object UhPrivacyController {
                 trackingCategories = arrayOf(TrackingCategory.NONE),
                 cookiePolicy = cookiePolicy,
                 cookiePurging = false,
-                fingerprintingProtection = false,
-                fingerprintingProtectionPrivateBrowsing = false,
             )
         }
 
@@ -198,8 +196,6 @@ object UhPrivacyController {
             cookiePurging = true,
             allowListBaselineTrackingProtection = true,
             allowListConvenienceTrackingProtection = shieldLevel != ShieldLevel.AGGRESSIVE,
-            fingerprintingProtection = antiFingerprint,
-            fingerprintingProtectionPrivateBrowsing = true,
         )
     }
 

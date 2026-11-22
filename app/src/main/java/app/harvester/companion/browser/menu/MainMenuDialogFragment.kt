@@ -53,10 +53,12 @@ import androidx.fragment.app.activityViewModels
 import app.harvester.companion.HomeActivity
 import app.harvester.companion.R
 import app.harvester.companion.SessionRecorder
+import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
 import app.harvester.companion.browser.BrowserViewModel
 import app.harvester.companion.browser.webapp.WebAppStore
+import app.harvester.companion.privacy.UhShieldEngine
 import app.harvester.companion.settings.SettingsActivity
 import app.harvester.companion.settings.addons.ExtensionsActivity
 import app.harvester.companion.settings.addons.ScriptsActivity
@@ -237,16 +239,16 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                                             dismissAllowingStateLoss()
                                             if (currentUrl.isNotBlank() && currentUrl != "about:blank") {
                                                 val ctx = requireContext()
-                                                val cleanUrl = app.harvester.companion.privacy.UhShieldEngine.cleanTrackingUrl(
-                                                    url = currentUrl,
-                                                    stripTrackers = app.harvester.companion.SettingsPrefs.getBool(
+                                                val cleanUrl = UhShieldEngine.cleanTrackingUrl(
+                                                    rawUrl = currentUrl,
+                                                    stripTrackers = SettingsPrefs.getBool(
                                                         ctx,
-                                                        app.harvester.companion.SettingsPrefs.K_PG_CLEAR_URLS,
+                                                        SettingsPrefs.K_PG_CLEAR_URLS,
                                                         true,
                                                     ),
-                                                    deAmp = app.harvester.companion.SettingsPrefs.getBool(
+                                                    deAmp = SettingsPrefs.getBool(
                                                         ctx,
-                                                        app.harvester.companion.SettingsPrefs.K_ADV_DEAMP,
+                                                        SettingsPrefs.K_ADV_DEAMP,
                                                         true,
                                                     ),
                                                 )

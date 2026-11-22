@@ -309,22 +309,28 @@ object UhShieldEngine {
 
     // Compiled in-memory O(1) matcher snapshot pushed to WebExtension & native queries
     @Volatile
-    private var compiledAdDomains: Set<String> = BOOTSTRAP_AD_DOMAINS
+    private var compiledAdDomains: Set<String> = emptySet()
     @Volatile
-    private var compiledTrackerDomains: Set<String> = BOOTSTRAP_TRACKER_DOMAINS
+    private var compiledTrackerDomains: Set<String> = emptySet()
     @Volatile
     private var compiledExceptionDomains: Set<String> = emptySet()
     @Volatile
-    private var compiledUrlPatterns: List<String> = BOOTSTRAP_URL_PATTERNS
+    private var compiledUrlPatterns: List<String> = emptyList()
     @Volatile
-    private var compiledGlobalCosmetics: List<String> = BOOTSTRAP_GLOBAL_COSMETICS
+    private var compiledGlobalCosmetics: List<String> = emptyList()
     @Volatile
-    private var compiledDomainCosmetics: Map<String, List<String>> = BOOTSTRAP_DOMAIN_COSMETICS
+    private var compiledDomainCosmetics: Map<String, List<String>> = emptyMap()
 
     fun init(ctx: Context) {
         if (!initialized.compareAndSet(false, true)) return
         val app = ctx.applicationContext
         appContext = app
+
+        compiledAdDomains = BOOTSTRAP_AD_DOMAINS
+        compiledTrackerDomains = BOOTSTRAP_TRACKER_DOMAINS
+        compiledUrlPatterns = BOOTSTRAP_URL_PATTERNS
+        compiledGlobalCosmetics = BOOTSTRAP_GLOBAL_COSMETICS
+        compiledDomainCosmetics = BOOTSTRAP_DOMAIN_COSMETICS
 
         val prefs = app.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val level = ShieldLevel.fromCode(SettingsPrefs.getInt(app, SettingsPrefs.K_PG_SHIELD_LEVEL, ShieldLevel.AGGRESSIVE.code))
