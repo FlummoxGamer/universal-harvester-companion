@@ -56,6 +56,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -77,6 +78,7 @@ import app.harvester.companion.R
 import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.utils.reorderable.ReorderableItem
 import app.harvester.companion.utils.reorderable.rememberReorderableLazyGridState
+import kotlinx.coroutines.launch
 import mozilla.components.browser.state.state.TabSessionState
 import java.net.URI
 import kotlin.math.abs
@@ -476,19 +478,9 @@ fun TabsTrayScreen(
                                             )
                                         } else {
                                             ReorderableItem(state = reorderState, key = entry.key) { isDragging ->
+                                                val dismissScope = rememberCoroutineScope()
                                                 val dismissState = rememberSwipeToDismissBoxState(
                                                     positionalThreshold = { totalDistance -> totalDistance * 0.58f },
-                                                    confirmValueChange = { value ->
-                                                        if (value != SwipeToDismissBoxValue.Settled && !isDragging) {
-                                                            if (confirmSwipeEnabled) {
-                                                                pendingCloseTabId = tab.id
-                                                                false
-                                                            } else {
-                                                                onCloseTab(tab.id)
-                                                                true
-                                                            }
-                                                        } else false
-                                                    }
                                                 )
 
                                                 // Compute drop-to-group candidate dynamically while dragging
@@ -540,6 +532,18 @@ fun TabsTrayScreen(
                                                     state = dismissState,
                                                     enableDismissFromStartToEnd = !isDragging,
                                                     enableDismissFromEndToStart = !isDragging,
+                                                    onDismiss = { value ->
+                                                        if (value != SwipeToDismissBoxValue.Settled && !isDragging) {
+                                                            if (confirmSwipeEnabled) {
+                                                                pendingCloseTabId = tab.id
+                                                                dismissScope.launch { dismissState.reset() }
+                                                            } else {
+                                                                onCloseTab(tab.id)
+                                                            }
+                                                        } else {
+                                                            dismissScope.launch { dismissState.reset() }
+                                                        }
+                                                    },
                                                     modifier = cardModifier,
                                                     backgroundContent = {
                                                         Box(

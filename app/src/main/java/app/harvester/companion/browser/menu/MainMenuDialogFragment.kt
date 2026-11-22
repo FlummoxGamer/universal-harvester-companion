@@ -56,7 +56,6 @@ import app.harvester.companion.SessionRecorder
 import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
 import app.harvester.companion.browser.BrowserViewModel
-import app.harvester.companion.browser.translate.UhTranslationManager
 import app.harvester.companion.browser.webapp.WebAppStore
 import app.harvester.companion.settings.SettingsActivity
 import app.harvester.companion.settings.addons.ExtensionsActivity
@@ -126,8 +125,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                     val isLoading = selectedTab?.content?.loading == true
                     val isPwaInstallable = WebAppStore.isPwaInstallable(selectedTab?.content?.webAppManifest)
 
-                    val isFastTranslated = UhTranslationManager.isFastTranslatedForTab(selectedTab?.id, currentUrl)
-                    val isTranslated = selectedTab?.translationsState?.isTranslated == true || isFastTranslated
+                    val isTranslated = selectedTab?.translationsState?.isTranslated == true
 
                     val isBookmarked by browserViewModel.isBookmarked.collectAsState()
                     val zoomPercent by browserViewModel.pageZoomPercent.collectAsState()

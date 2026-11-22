@@ -4,18 +4,7 @@ let nativePort = null;
 
 function reportDeliveryFailure(msg) {
     try {
-        if (msg.action === "FAST_TRANSLATE_PAGE") {
-            api.runtime.sendNativeMessage("uhApp", {
-                type: "FAST_TRANSLATE_DONE",
-                success: false,
-                count: 0,
-                durationMs: 0,
-                fromLang: msg.fromLang || "auto",
-                toLang: msg.toLang || "en",
-                pageUrl: "",
-                error: "This page cannot be translated."
-            }).catch(() => {});
-        } else if (msg.action === "TRANSLATE_IMAGES") {
+        if (msg.action === "TRANSLATE_IMAGES") {
             api.runtime.sendNativeMessage("uhApp", {
                 type: "IMAGE_TRANSLATE_DONE",
                 imageCount: 0,
@@ -61,26 +50,22 @@ function ensureNativePort() {
 
 ensureNativePort();
 
-api.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (!message) return false;
+// Return Promises directly for Firefox/GeckoView WebExtension runtime.onMessage
+api.runtime.onMessage.addListener((message) => {
+    if (!message) return undefined;
     ensureNativePort();
     if (message.type === "UH_GET_SCRIPTS") {
-        api.runtime.sendNativeMessage("uhApp", {
+        return api.runtime.sendNativeMessage("uhApp", {
             type: "GET_SCRIPTS",
             url: message.url || "",
             isTop: message.isTop !== false
-        }).then((response) => sendResponse(response))
-          .catch(() => sendResponse(null));
-        return true;
+        }).catch(() => null);
     }
     if (message.type === "UH_NATIVE_CALL") {
         const payload = Object.assign({}, message.payload || {}, {
             pageUrl: message.pageUrl || ""
         });
-        api.runtime.sendNativeMessage("uhApp", payload)
-            .then((response) => sendResponse(response))
-            .catch(() => sendResponse(null));
-        return true;
+        return api.runtime.sendNativeMessage("uhApp", payload).catch(() => null);
     }
-    return false;
+    return undefined;
 });

@@ -5,10 +5,11 @@ import androidx.activity.enableEdgeToEdge
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Bitmap
-import android.graphics.Color as AndroidColor
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
@@ -73,7 +74,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.view.WindowCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -82,9 +82,11 @@ import app.harvester.companion.R
 import app.harvester.companion.UHLog
 import app.harvester.companion.WallpaperStore
 import app.harvester.companion.theme.UHTheme
+import app.harvester.companion.wallpaper.WallpaperMediaProcessor
 import app.harvester.companion.wallpaper.WallpaperPlaybackController
 import app.harvester.companion.wallpaper.WallpaperVideoSurface
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -146,12 +148,15 @@ class TrimVideoActivity : AppCompatActivity() {
                     durationSec,
                 )
 
+                val mainHandler = remember { Handler(Looper.getMainLooper()) }
                 var frames by remember { mutableStateOf<List<Bitmap>>(emptyList()) }
                 var isPlaying by remember { mutableStateOf(true) }
                 var currentPlayheadSec by remember { mutableFloatStateOf(0f) }
                 var isProcessing by remember { mutableStateOf(false) }
-                var processingLabel by remember { mutableStateOf("Cutting lossless clip...") }
+                var processingLabel by remember { mutableStateOf("Cutting lossless clip…") }
                 var progressFraction by remember { mutableFloatStateOf(0f) }
+                var activeTrimJob by remember { mutableStateOf<Job?>(null) }
+                var activeCancelToken by remember { mutableStateOf<WallpaperMediaProcessor.TrimCancellationToken?>(null) }
                 val animatedProgress by animateFloatAsState(targetValue = progressFraction, label = "trim_progress")
 
                 val exoPlayer = remember(videoUri) {
@@ -176,7 +181,8 @@ class TrimVideoActivity : AppCompatActivity() {
                 }
 
                 // Loop playback strictly inside the selected [absStartSec..absEndSec] slice
-                LaunchedEffect(exoPlayer, absStartSec, absEndSec, isPlaying) {
+                LaunchedEffect(exoPlayer, absStartSec, absEndSec, isPlaying, isProcessing) {
+                    if (isProcessing) return@LaunchedEffect
                     while (isActive) {
                         val posSec = exoPlayer.currentPosition / 1000f
                         currentPlayheadSec = posSec
@@ -189,19 +195,32 @@ class TrimVideoActivity : AppCompatActivity() {
 
                 DisposableEffect(exoPlayer) {
                     onDispose {
+                        activeCancelToken?.cancel()
+                        activeTrimJob?.cancel()
                         exoPlayer.stop()
                         exoPlayer.release()
                     }
                 }
 
-                // Extract filmstrip frames specifically for the active 30s window (debounced while scrubbing)
-                LaunchedEffect(videoUri, windowStartSec, windowSpanSec) {
+                // Extract filmstrip frames specifically for the active 30s window; pauses immediately during export
+                LaunchedEffect(videoUri, windowStartSec, windowSpanSec, isProcessing) {
+                    if (isProcessing) return@LaunchedEffect
                     if (frames.isNotEmpty()) {
                         delay(180)
                     }
                     frames = withContext(Dispatchers.IO) {
                         extractWindowFrames(videoUri, windowStartSec, windowSpanSec)
                     }
+                }
+
+                fun cancelActiveTrim() {
+                    activeCancelToken?.cancel()
+                    activeTrimJob?.cancel()
+                    activeCancelToken = null
+                    activeTrimJob = null
+                    isProcessing = false
+                    progressFraction = 0f
+                    if (isPlaying) exoPlayer.play()
                 }
 
                 fun processAndOpenPreview(useFullShortVideo: Boolean) {
@@ -219,26 +238,49 @@ class TrimVideoActivity : AppCompatActivity() {
                     }
 
                     processingLabel = if (allowFullVerbatim) {
-                        "Saving untouched original..."
+                        "Saving untouched original…"
                     } else {
-                        "Saving lossless ${"%.1f".format(Locale.US, clipDuration ?: 0f)}s clip..."
+                        "Cutting lossless ${"%.1f".format(Locale.US, clipDuration ?: 0f)}s clip…"
                     }
                     isProcessing = true
-                    progressFraction = 0.10f
+                    progressFraction = 0.08f
                     exoPlayer.pause()
 
-                    scope.launch(Dispatchers.IO) {
+                    val cancelToken = WallpaperMediaProcessor.TrimCancellationToken()
+                    activeCancelToken = cancelToken
+
+                    activeTrimJob = scope.launch(Dispatchers.IO) {
                         try {
                             val finalPath = WallpaperStore.saveLocalVideo(
                                 ctx = this@TrimVideoActivity,
                                 uri = videoUri,
                                 startSec = startSec,
                                 durationSec = clipDuration,
-                                onProgress = { pct -> progressFraction = pct },
+                                onProgress = { pct ->
+                                    mainHandler.post {
+                                        if (!cancelToken.isCancelled) {
+                                            progressFraction = pct.coerceIn(0.08f, 1f)
+                                        }
+                                    }
+                                },
+                                onStageChanged = { stage ->
+                                    mainHandler.post {
+                                        if (!cancelToken.isCancelled) {
+                                            processingLabel = stage
+                                        }
+                                    }
+                                },
+                                cancelToken = cancelToken,
                             )
 
                             withContext(Dispatchers.Main) {
+                                activeCancelToken = null
+                                activeTrimJob = null
                                 isProcessing = false
+                                if (cancelToken.isCancelled) {
+                                    if (isPlaying) exoPlayer.play()
+                                    return@withContext
+                                }
                                 if (finalPath != null) {
                                     startActivity(
                                         Intent(this@TrimVideoActivity, WallpaperPreviewActivity::class.java).apply {
@@ -249,6 +291,7 @@ class TrimVideoActivity : AppCompatActivity() {
                                     )
                                     finish()
                                 } else {
+                                    if (isPlaying) exoPlayer.play()
                                     Toast.makeText(
                                         this@TrimVideoActivity,
                                         "Could not trim this video",
@@ -259,12 +302,17 @@ class TrimVideoActivity : AppCompatActivity() {
                         } catch (e: Exception) {
                             UHLog.e("video", "Trim import exception: ${e.message}")
                             withContext(Dispatchers.Main) {
+                                activeCancelToken = null
+                                activeTrimJob = null
                                 isProcessing = false
-                                Toast.makeText(
-                                    this@TrimVideoActivity,
-                                    "Error trimming video",
-                                    Toast.LENGTH_SHORT,
-                                ).show()
+                                if (isPlaying) exoPlayer.play()
+                                if (!cancelToken.isCancelled) {
+                                    Toast.makeText(
+                                        this@TrimVideoActivity,
+                                        "Error trimming video",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
                             }
                         }
                     }
@@ -483,6 +531,16 @@ class TrimVideoActivity : AppCompatActivity() {
                                         color = MaterialTheme.colorScheme.primary,
                                         trackColor = Color.White.copy(alpha = 0.14f),
                                     )
+                                    Spacer(modifier = Modifier.height(14.dp))
+                                    OutlinedButton(
+                                        onClick = { cancelActiveTrim() },
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.24f)),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Text("Cancel", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                    }
                                 }
                             }
                         }

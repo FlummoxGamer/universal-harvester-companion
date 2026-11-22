@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -155,8 +154,12 @@ fun UhGlobalToolbar(
     val isHome = currentDestinationId == R.id.homeFragment || currentDestinationId == null
     val isBrowser = currentDestinationId == R.id.browserFragment
 
-    LaunchedEffect(selectedTab?.id, selectedTab?.translationsState) {
-        UhTranslationManager.syncFromGeckoTabState(selectedTab?.id, selectedTab?.translationsState)
+    LaunchedEffect(selectedTab?.id, selectedTab?.content?.url, selectedTab?.translationsState) {
+        UhTranslationManager.syncFromGeckoTabState(
+            tabId = selectedTab?.id,
+            tabUrl = selectedTab?.content?.url,
+            tabState = selectedTab?.translationsState,
+        )
     }
 
     LaunchedEffect(isEditing, searchEngine.id) {
@@ -328,8 +331,10 @@ fun UhGlobalToolbar(
                         TranslateStatusPill(
                             state = translateState,
                             fromBottom = true,
+                            onAcceptOffer = { UhTranslationManager.acceptTranslateOffer() },
                             onRestoreOriginal = { UhTranslationManager.restoreActiveTab() },
-                            onRetryOffline = { UhTranslationManager.retryOfflineActiveTab() },
+                            onClearImageOverlays = { UhTranslationManager.clearImageTranslations() },
+                            onRetry = { UhTranslationManager.retryLastTranslation() },
                             onDismiss = { UhTranslationManager.dismissPill() },
                         )
                     }
@@ -414,8 +419,10 @@ fun UhGlobalToolbar(
                         TranslateStatusPill(
                             state = translateState,
                             fromBottom = false,
+                            onAcceptOffer = { UhTranslationManager.acceptTranslateOffer() },
                             onRestoreOriginal = { UhTranslationManager.restoreActiveTab() },
-                            onRetryOffline = { UhTranslationManager.retryOfflineActiveTab() },
+                            onClearImageOverlays = { UhTranslationManager.clearImageTranslations() },
+                            onRetry = { UhTranslationManager.retryLastTranslation() },
                             onDismiss = { UhTranslationManager.dismissPill() },
                         )
                     }
@@ -997,14 +1004,16 @@ private fun ZoomStepPill(label: String, onClick: () -> Unit) {
 private fun TranslateStatusPill(
     state: UhTranslationManager.State,
     fromBottom: Boolean,
+    onAcceptOffer: () -> Unit,
     onRestoreOriginal: () -> Unit,
-    onRetryOffline: () -> Unit,
+    onClearImageOverlays: () -> Unit,
+    onRetry: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val visible = state.pillPhase != TranslatePillPhase.HIDDEN && state.pillMessage.isNotBlank()
-    val isWorking = state.pillPhase == TranslatePillPhase.TRANSLATING_ONLINE ||
-        state.pillPhase == TranslatePillPhase.DOWNLOADING_MODEL ||
-        state.pillPhase == TranslatePillPhase.TRANSLATING_OFFLINE ||
+    val isOffer = state.pillPhase == TranslatePillPhase.OFFER
+    val isWorking = state.pillPhase == TranslatePillPhase.DOWNLOADING_MODEL ||
+        state.pillPhase == TranslatePillPhase.TRANSLATING ||
         state.pillPhase == TranslatePillPhase.TRANSLATING_IMAGES
     val isError = state.pillPhase == TranslatePillPhase.ERROR
 
@@ -1020,13 +1029,13 @@ private fun TranslateStatusPill(
             shadowElevation = 8.dp,
             modifier = Modifier
                 .padding(horizontal = 16.dp, vertical = 8.dp)
-                .widthIn(max = 360.dp)
+                .widthIn(max = 368.dp)
                 .border(
                     width = 1.dp,
-                    color = if (isError) {
-                        MaterialTheme.colorScheme.error.copy(alpha = 0.35f)
-                    } else {
-                        MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)
+                    color = when {
+                        isError -> MaterialTheme.colorScheme.error.copy(alpha = 0.35f)
+                        isOffer -> MaterialTheme.colorScheme.primary.copy(alpha = 0.30f)
+                        else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)
                     },
                     shape = RoundedCornerShape(24.dp)
                 )
@@ -1071,7 +1080,19 @@ private fun TranslateStatusPill(
                     modifier = Modifier.weight(1f, fill = false)
                 )
 
-                if (state.pillPhase == TranslatePillPhase.COMPLETED && state.pillCanRestore) {
+                if (isOffer) {
+                    Text(
+                        text = "Translate",
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MaterialTheme.colorScheme.primary)
+                            .clickable(onClick = onAcceptOffer)
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                } else if (state.pillPhase == TranslatePillPhase.COMPLETED && state.pillCanRestore) {
                     Text(
                         text = "Original",
                         color = MaterialTheme.colorScheme.primary,
@@ -1083,16 +1104,28 @@ private fun TranslateStatusPill(
                             .clickable(onClick = onRestoreOriginal)
                             .padding(horizontal = 9.dp, vertical = 3.dp)
                     )
-                } else if (isError && state.pillCanRetryOffline) {
+                } else if (state.pillPhase == TranslatePillPhase.COMPLETED && state.pillCanClearImages) {
                     Text(
-                        text = "Offline",
+                        text = "Clear",
                         color = MaterialTheme.colorScheme.primary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
                             .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
-                            .clickable(onClick = onRetryOffline)
+                            .clickable(onClick = onClearImageOverlays)
+                            .padding(horizontal = 9.dp, vertical = 3.dp)
+                    )
+                } else if (isError && state.pillCanRetry) {
+                    Text(
+                        text = "Retry",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+                            .clickable(onClick = onRetry)
                             .padding(horizontal = 9.dp, vertical = 3.dp)
                     )
                 }

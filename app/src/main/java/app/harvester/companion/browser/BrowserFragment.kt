@@ -2,6 +2,7 @@ package app.harvester.companion.browser
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -67,6 +68,33 @@ class BrowserFragment : Fragment() {
             callback?.invoke(allGranted)
         }
 
+    private val downloadsPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
+            val (perms, grants) = toPermissionGrantArrays(results)
+            downloadsFeature.withFeature { it.onPermissionsResult(perms, grants) }
+        }
+
+    private val promptsPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
+            val (perms, grants) = toPermissionGrantArrays(results)
+            promptsFeature.withFeature { it.onPermissionsResult(perms, grants) }
+        }
+
+    private val sitePermissionsLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
+            val (perms, grants) = toPermissionGrantArrays(results)
+            sitePermissionsFeature.withFeature { it.onPermissionsResult(perms, grants) }
+        }
+
+    private fun toPermissionGrantArrays(results: Map<String, Boolean>): Pair<Array<String>, IntArray> {
+        val entries = results.entries.toList()
+        val perms = Array(entries.size) { i -> entries[i].key }
+        val grants = IntArray(entries.size) { i ->
+            if (entries[i].value) PackageManager.PERMISSION_GRANTED else PackageManager.PERMISSION_DENIED
+        }
+        return perms to grants
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         initialUrl = arguments?.getString("url")
@@ -118,7 +146,7 @@ class BrowserFragment : Fragment() {
                 components.appStore.dispatch(app.harvester.companion.components.appstate.AppAction.SnackbarAction.ShowSnackbar("Download started"))
             },
             onNeedToRequestPermissions = { permissions ->
-                requestPermissions(permissions, 1)
+                downloadsPermissionLauncher.launch(permissions)
             },
             dismissCustomFirstPartyDownloadDialog = {
                 dismissRenameDialog()
@@ -356,7 +384,7 @@ class BrowserFragment : Fragment() {
                     AndroidPhotoPicker.singleMediaPicker({ this }) { promptsFeature.get() },
                     AndroidPhotoPicker.multipleMediaPicker({ this }) { promptsFeature.get() }
                 ),
-                onNeedToRequestPermissions = { requestPermissions(it, 1) }
+                onNeedToRequestPermissions = { promptsPermissionLauncher.launch(it) }
             ),
             owner = this,
             view = binding.root
@@ -368,7 +396,7 @@ class BrowserFragment : Fragment() {
                 storage = components.geckoSitePermissionsStorage,
                 sessionId = null,
                 fragmentManager = parentFragmentManager,
-                onNeedToRequestPermissions = { requestPermissions(it, 2) },
+                onNeedToRequestPermissions = { sitePermissionsLauncher.launch(it) },
                 onShouldShowRequestPermissionRationale = { shouldShowRequestPermissionRationale(it) },
                 store = components.store,
                 sitePermissionsRules = SitePermissionsRules(
@@ -513,15 +541,6 @@ class BrowserFragment : Fragment() {
         super.onStop()
         downloadsFeature.withFeature { it.stop() }
         dismissDownloadDialogs()
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 1) {
-            downloadsFeature.withFeature { it.onPermissionsResult(permissions, grantResults) }
-        } else if (requestCode == 2) {
-            sitePermissionsFeature.withFeature { it.onPermissionsResult(permissions, grantResults) }
-        }
     }
 
     private fun canShowDownloadDialog(): Boolean {

@@ -269,6 +269,8 @@ object WallpaperStore {
         startSec: Float? = null,
         durationSec: Float? = null,
         onProgress: ((Float) -> Unit)? = null,
+        onStageChanged: ((String) -> Unit)? = null,
+        cancelToken: WallpaperMediaProcessor.TrimCancellationToken? = null,
     ): String? {
         return try {
             val isTrimmed: Boolean
@@ -286,20 +288,31 @@ object WallpaperStore {
                     startMs = sMs,
                     endMs = eMs,
                     onProgress = onProgress,
+                    onStageChanged = onStageChanged,
+                    cancelToken = cancelToken,
                 ) ?: return null
                 destFile = trimmed.file
                 fineClipBounds = trimmed.fineClipBounds
             } else {
                 isTrimmed = false
+                onStageChanged?.invoke("Copying original video…")
                 destFile = WallpaperMediaProcessor.importLocalVideoVerbatim(
                     ctx = ctx,
                     uri = uri,
                     destDir = getWallpaperDir(ctx),
                     onProgress = onProgress,
+                    cancelToken = cancelToken,
                 ) ?: return null
                 fineClipBounds = null
             }
 
+            if (cancelToken?.isCancelled == true) {
+                destFile.delete()
+                return null
+            }
+
+            onStageChanged?.invoke("Finalizing preview…")
+            onProgress?.invoke(0.96f)
             val canonical = dedupeWallpapers(ctx, destFile, "motion_")
             setVideoClipBounds(ctx, canonical.absolutePath, fineClipBounds)
             ensureVideoPoster(
@@ -309,6 +322,7 @@ object WallpaperStore {
             )
             prependToRecentOrder(ctx, canonical.name)
             cleanOldWallpapers(ctx)
+            onProgress?.invoke(1f)
             canonical.absolutePath
         } catch (e: Exception) {
             UHLog.e("wallpaper_error", "saveLocalVideo failed: ${e.message}")
