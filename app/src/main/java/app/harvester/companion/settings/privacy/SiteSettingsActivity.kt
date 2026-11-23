@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.harvester.companion.R
 import app.harvester.companion.SettingsPrefs
+import app.harvester.companion.UHApp
 import app.harvester.companion.components.PermissionStorage
 import app.harvester.companion.privacy.UhPrivacyController
 import app.harvester.companion.privacy.UhShieldEngine
@@ -79,6 +80,8 @@ class SiteSettingsActivity : AppCompatActivity() {
 
                 val shieldState by UhShieldEngine.state.collectAsState()
                 val darkBypassHosts by UhPrivacyController.darkBypassHosts.collectAsState()
+                val httpExceptionHosts by UhShieldEngine.httpExceptionHosts.collectAsState()
+                val jsAllowAlwaysHosts by UhShieldEngine.jsAllowAlwaysHosts.collectAsState()
 
                 var savedPermissions by remember { mutableStateOf<List<SitePermissions>>(emptyList()) }
                 var searchQuery by remember { mutableStateOf("") }
@@ -122,6 +125,7 @@ class SiteSettingsActivity : AppCompatActivity() {
                         selectedIndex = currentVal,
                         onSelect = { idx ->
                             SettingsPrefs.setInt(context, prefKey, idx)
+                            (context.applicationContext as? UHApp)?.components?.sitePermissionRules?.notifyRulesChanged()
                             permRefreshTick++
                             editingFeature = null
                         },
@@ -222,6 +226,37 @@ class SiteSettingsActivity : AppCompatActivity() {
                                     host = host,
                                     subtitle = "Original light styling kept",
                                     onRemove = { UhPrivacyController.removeSiteDarkBypass(context, host) },
+                                )
+                            }
+                        }
+                    }
+
+                    if (httpExceptionHosts.isNotEmpty()) {
+                        SettingsCategory("HTTPS-Only Exceptions")
+                        UhSettingsCardGroup {
+                            httpExceptionHosts.sorted().forEachIndexed { idx, host ->
+                                if (idx > 0) UhSettingsDivider()
+                                HostExceptionRow(
+                                    host = host,
+                                    subtitle = "Allowed to load over HTTP",
+                                    onRemove = {
+                                        UhShieldEngine.removeHttpException(host)
+                                        UhPrivacyController.applyAllToEngine(context)
+                                    },
+                                )
+                            }
+                        }
+                    }
+
+                    if (jsAllowAlwaysHosts.isNotEmpty()) {
+                        SettingsCategory("Smart JavaScript Allowed Sites")
+                        UhSettingsCardGroup {
+                            jsAllowAlwaysHosts.sorted().forEachIndexed { idx, host ->
+                                if (idx > 0) UhSettingsDivider()
+                                HostExceptionRow(
+                                    host = host,
+                                    subtitle = "Third-party scripts always allowed",
+                                    onRemove = { UhShieldEngine.revokeJsAlways(host) },
                                 )
                             }
                         }

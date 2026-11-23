@@ -21,6 +21,11 @@ import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
 import app.harvester.companion.core.downloads.DownloadLocationResolver
 import app.harvester.companion.databinding.FragmentBrowserBinding
+import app.harvester.companion.privacy.UhPrivacyController
+import app.harvester.companion.privacy.UhShieldEngine
+import app.harvester.companion.theme.UHTheme
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import kotlinx.coroutines.launch
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.concept.engine.prompt.ShareData
@@ -235,6 +240,24 @@ class BrowserFragment : Fragment() {
         val engineView = components.engine.createView(context, null)
         binding.swipeRefresh.addView(engineView.asView())
 
+        // Mount modular Compose overlay for Long-Press Context Menu, Smart JS & HTTPS Fallback banners
+        val overlayComposeView = ComposeView(context).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            )
+            setContent {
+                UHTheme {
+                    BrowserOverlays(
+                        components = components,
+                        isBarBottomFlow = viewModel.isBarBottom,
+                    )
+                }
+            }
+        }
+        binding.browserLayout.addView(overlayComposeView)
+
         setupFeatures(components, engineView)
 
         if (!hasLoadedInitialUrl) {
@@ -433,14 +456,46 @@ class BrowserFragment : Fragment() {
             owner = this,
             view = binding.root
         )
+
+        // Live-apply Site Settings and Video Autoplay changes without requiring an app restart
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                components.sitePermissionRules.rulesFlow.collect { updatedRules ->
+                    sitePermissionsFeature.withFeature { feature ->
+                        feature.sitePermissionsRules = updatedRules
+                    }
+                }
+            }
+        }
     }
 
     private fun setupLogging(components: app.harvester.companion.components.Components) {
+        var lastTabId: String? = null
+        var lastNormalizedHost: String? = null
+
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 components.store.stateFlow.collect { state ->
-                    val content = state.selectedTab?.content ?: return@collect
+                    val tab = state.selectedTab ?: return@collect
+                    val content = tab.content
                     viewModel.refreshBookmarkState(content.url)
+
+                    val host = UhShieldEngine.normalizeHost(content.url)
+                    if (tab.id != lastTabId || host != lastNormalizedHost) {
+                        lastTabId = tab.id
+                        lastNormalizedHost = host
+                        UhShieldEngine.onTabNavigated(tab.id, content.url)
+                        context?.let { ctx ->
+                            UhPrivacyController.syncPerSiteEngineProtections(ctx, content.url)
+                        }
+                    }
+
+                    // Sync GeckoView native ETP blocked trackers into UH Shield live stats (delta-based)
+                    val geckoBlocked = tab.trackingProtection.blockedTrackers.size
+                    if (geckoBlocked > 0 && host.isNotBlank()) {
+                        UhShieldEngine.recordGeckoEtpTrackers(tab.id, content.url, geckoBlocked)
+                    }
+
                     if (content.url.isBlank() && content.loading) {
                         UHLog.w("web_warn", "Selected tab is loading a blank URL.")
                     }

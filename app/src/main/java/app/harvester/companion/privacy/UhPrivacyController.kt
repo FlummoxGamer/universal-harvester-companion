@@ -8,15 +8,20 @@ import app.harvester.companion.GeckoWebExtensionBridge
 import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.ThemePrefs
 import app.harvester.companion.UHLog
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import mozilla.components.concept.engine.DefaultSettings
 import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.engine.EngineSession.SafeBrowsingPolicy
 import mozilla.components.concept.engine.EngineSession.TrackingProtectionPolicy
 import mozilla.components.concept.engine.EngineSession.TrackingProtectionPolicy.CookiePolicy
 import mozilla.components.concept.engine.EngineSession.TrackingProtectionPolicy.TrackingCategory
+import mozilla.components.concept.engine.Settings
 import mozilla.components.concept.engine.history.HistoryTrackingDelegate
 import mozilla.components.concept.engine.mediaquery.PreferredColorScheme
 import java.util.concurrent.atomic.AtomicBoolean
@@ -69,12 +74,16 @@ object UhPrivacyController {
 
     private val initialized = AtomicBoolean(false)
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     @Volatile
     private var appContext: Context? = null
 
     @Volatile
     private var engineRef: Engine? = null
+
+    @Volatile
+    private var activeTabUrl: String = ""
 
     private val _darkBypassHosts = MutableStateFlow<Set<String>>(emptySet())
     val darkBypassHosts: StateFlow<Set<String>> = _darkBypassHosts.asStateFlow()
@@ -87,6 +96,11 @@ object UhPrivacyController {
         if (initialized.compareAndSet(false, true)) {
             UhShieldEngine.onCompiledRulesUpdated = {
                 pushRuntimeConfigToExtension()
+                appContext?.let { app ->
+                    if (activeTabUrl.isNotBlank()) {
+                        syncPerSiteEngineProtections(app, activeTabUrl)
+                    }
+                }
             }
         }
         applyAllToEngine(ctx)
@@ -148,7 +162,6 @@ object UhPrivacyController {
     }
 
     fun buildHttpsOnlyMode(ctx: Context): Engine.HttpsOnlyMode {
-        // Migrate legacy boolean K_PG_HTTPS cleanly if mode hasn't been written yet
         val rawMode = SettingsPrefs.getInt(ctx, SettingsPrefs.K_PG_HTTPS_MODE, -1)
         val effective = if (rawMode >= 0) {
             rawMode
@@ -228,10 +241,11 @@ object UhPrivacyController {
         val (dohMode, dohUrl) = buildDohConfig(ctx)
         val clearUrls = SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_CLEAR_URLS, true)
         val antiFingerprint = SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_FINGERPRINT, true)
-        val blockJs = SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_SCRIPT, false)
         val backgroundPlay = SettingsPrefs.getBool(ctx, SettingsPrefs.K_BACKGROUND_PLAY, true)
         val gpc = SettingsPrefs.getBool(ctx, SettingsPrefs.K_ADV_GPC, true)
 
+        // Smart JavaScript Blocking is enforced selectively at the 3rd-party script level
+        // in uh_bridge so first-party apps & video players stay functional instead of blanking out.
         return DefaultSettings(
             remoteDebuggingEnabled = false,
             testingModeEnabled = false,
@@ -243,7 +257,7 @@ object UhPrivacyController {
             forceUserScalableContent = true,
             loginAutofillEnabled = false,
             enterpriseRootsEnabled = false,
-            javascriptEnabled = !blockJs,
+            javascriptEnabled = true,
             trackingProtectionPolicy = buildTrackingProtectionPolicy(ctx),
             httpsOnlyMode = buildHttpsOnlyMode(ctx),
             globalPrivacyControlEnabled = gpc,
@@ -256,6 +270,46 @@ object UhPrivacyController {
             emailTrackerBlockingPrivateBrowsing = true,
             historyTrackingDelegate = historyDelegate,
         )
+    }
+
+    /**
+     * Synchronizes per-site engine overrides for the active tab URL:
+     * 1) Relaxes GeckoView fingerprinting protection when UH Shield is paused on this host.
+     * 2) Relaxes HTTPS-Only when the user granted a 1-tap HTTP exception for this host.
+     */
+    fun syncPerSiteEngineProtections(ctx: Context, url: String) {
+        activeTabUrl = url
+        val app = ctx.applicationContext
+        val engine = engineRef ?: return
+        val paused = url.isNotBlank() && UhShieldEngine.isSitePaused(url)
+        val httpExc = url.isNotBlank() && UhShieldEngine.isHttpException(url)
+        val baseFingerprint = SettingsPrefs.getBool(app, SettingsPrefs.K_PG_FINGERPRINT, true)
+        val targetFingerprint = baseFingerprint && !paused
+        val targetHttpsMode = if (httpExc) Engine.HttpsOnlyMode.DISABLED else buildHttpsOnlyMode(app)
+
+        mainHandler.post {
+            try {
+                val s = engine.settings
+                if (s.fingerprintingProtection != targetFingerprint) {
+                    s.fingerprintingProtection = targetFingerprint
+                }
+                if (s.httpsOnlyMode != targetHttpsMode) {
+                    s.httpsOnlyMode = targetHttpsMode
+                }
+            } catch (e: Exception) {
+                UHLog.w("privacy", "Error syncing per-site engine protections: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Grants a persistent per-site HTTP exception and immediately disables HTTPS-Only
+     * for the active navigation so an HTTP-only or broken-TLS site can load over HTTP.
+     */
+    fun allowHttpFallbackForSite(ctx: Context, urlOrHost: String) {
+        val app = ctx.applicationContext
+        UhShieldEngine.addHttpException(urlOrHost)
+        syncPerSiteEngineProtections(app, urlOrHost)
     }
 
     /**
@@ -272,25 +326,30 @@ object UhPrivacyController {
                     val (dohMode, dohUrl) = buildDohConfig(app)
                     val clearUrls = SettingsPrefs.getBool(app, SettingsPrefs.K_PG_CLEAR_URLS, true)
                     val antiFingerprint = SettingsPrefs.getBool(app, SettingsPrefs.K_PG_FINGERPRINT, true)
-                    val blockJs = SettingsPrefs.getBool(app, SettingsPrefs.K_PG_SCRIPT, false)
+                    val cookieBanners = SettingsPrefs.getBool(app, SettingsPrefs.K_PG_COOKIE_BANNERS, true)
                     val backgroundPlay = SettingsPrefs.getBool(app, SettingsPrefs.K_BACKGROUND_PLAY, true)
                     val gpc = SettingsPrefs.getBool(app, SettingsPrefs.K_ADV_GPC, true)
 
+                    val pausedActive = activeTabUrl.isNotBlank() && UhShieldEngine.isSitePaused(activeTabUrl)
+                    val httpExcActive = activeTabUrl.isNotBlank() && UhShieldEngine.isHttpException(activeTabUrl)
+
                     s.trackingProtectionPolicy = buildTrackingProtectionPolicy(app)
                     s.safeBrowsingPolicy = buildSafeBrowsingPolicy(app)
-                    s.httpsOnlyMode = buildHttpsOnlyMode(app)
+                    s.httpsOnlyMode = if (httpExcActive) Engine.HttpsOnlyMode.DISABLED else buildHttpsOnlyMode(app)
                     s.globalPrivacyControlEnabled = gpc
-                    s.fingerprintingProtection = antiFingerprint
+                    s.fingerprintingProtection = antiFingerprint && !pausedActive
                     s.fingerprintingProtectionPrivateBrowsing = true
                     s.queryParameterStripping = clearUrls
                     s.queryParameterStrippingPrivateBrowsing = clearUrls
-                    s.javascriptEnabled = !blockJs
+                    // Smart JS blocking runs selectively in uh_bridge (never deadlocks pages globally)
+                    s.javascriptEnabled = true
                     s.suspendMediaWhenInactive = !backgroundPlay
                     s.preferredColorScheme = buildPreferredColorScheme(app)
                     s.dohSettingsMode = dohMode
                     if (dohUrl.isNotBlank()) {
                         s.dohProviderUrl = dohUrl
                     }
+                    applyNativeCookieBannerModeIfSupported(s, cookieBanners)
                 } catch (e: Exception) {
                     UHLog.w("privacy", "Error applying live settings to GeckoEngine: ${e.message}")
                 }
@@ -299,13 +358,38 @@ object UhPrivacyController {
         pushRuntimeConfigToExtension()
     }
 
+    /**
+     * Enables Gecko's native Cookie Banner Handling API on GeckoView versions where it is still
+     * exposed, while staying 100% binary/compile compatible with GeckoView 154+ (where Bug 2058143
+     * retired the Gecko API and UH Shield's Shadow-DOM + CMP auto-rejector handles banners instead).
+     */
+    private fun applyNativeCookieBannerModeIfSupported(settings: Settings, enabled: Boolean) {
+        try {
+            val modeClass = Class.forName("mozilla.components.concept.engine.EngineSession\$CookieBannerHandlingMode")
+            val constants = modeClass.enumConstants ?: return
+            val targetName = if (enabled) "REJECT_OR_ACCEPT_ALL" else "DISABLED"
+            val targetValue = constants.firstOrNull { (it as? Enum<*>)?.name == targetName } ?: return
+
+            settings.javaClass.methods
+                .firstOrNull { it.name == "setCookieBannerHandlingMode" && it.parameterTypes.size == 1 }
+                ?.invoke(settings, targetValue)
+            settings.javaClass.methods
+                .firstOrNull { it.name == "setCookieBannerHandlingModePrivateBrowsing" && it.parameterTypes.size == 1 }
+                ?.invoke(settings, targetValue)
+        } catch (_: Throwable) {
+            // Expected on GeckoView 154+; content.js Shadow-DOM & CMP auto-rejector handles cookie banners
+        }
+    }
+
     fun pushRuntimeConfigToExtension() {
         val ctx = appContext ?: return
-        try {
-            val payload = UhShieldEngine.buildExtensionRuntimePayload(ctx)
-            GeckoWebExtensionBridge.pushPrivacyRuntimeConfig(payload)
-        } catch (e: Exception) {
-            UHLog.w("privacy", "Failed pushing privacy config to bridge: ${e.message}")
+        ioScope.launch {
+            try {
+                val chunks = UhShieldEngine.buildChunkedRuntimeMessages(ctx)
+                GeckoWebExtensionBridge.pushChunkedPrivacyConfig(chunks)
+            } catch (e: Exception) {
+                UHLog.w("privacy", "Failed pushing chunked privacy config to bridge: ${e.message}")
+            }
         }
     }
 }

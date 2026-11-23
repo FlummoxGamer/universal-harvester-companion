@@ -1,7 +1,7 @@
 {
     "manifest_version": 2,
     "name": "UH Bridge",
-    "version": "3.0.0",
+    "version": "4.0.0",
     "browser_specific_settings": {
         "gecko": {
             "id": "uh-bridge@harvester.app"
@@ -24,12 +24,14 @@
         "geckoViewAddons",
         "<all_urls>",
         "tabs",
+        "webNavigation",
         "webRequest",
         "webRequestBlocking",
         "privacy"
     ],
     "web_accessible_resources": [
         "inject.js",
+        "scriptlets.js",
         "devtools/eruda.min.js",
         "devtools/uh_devtools_pro.js"
     ]

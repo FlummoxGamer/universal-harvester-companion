@@ -112,6 +112,7 @@ import coil.size.Precision
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -380,32 +381,41 @@ class WallpaperPreviewActivity : AppCompatActivity() {
                                     isApplying = if (alreadyAvailableLocally) 1 else 2
 
                                     scope.launch(Dispatchers.IO) {
+                                        var applyFinished = false
                                         try {
                                             var finalPath = selectedUri
                                             if (isRemote) {
-                                                val downloaded = WallpaperStore.downloadAndPrepareWallpaper(
-                                                    ctx = context,
-                                                    rawUrl = selectedUri,
-                                                    onStageChanged = { downloading ->
-                                                        scope.launch(Dispatchers.Main) {
-                                                            if (isApplying != 0) {
-                                                                isApplying = if (downloading) 2 else 1
+                                                val downloaded = withTimeoutOrNull(60_000L) {
+                                                    WallpaperStore.downloadAndPrepareWallpaper(
+                                                        ctx = context,
+                                                        rawUrl = selectedUri,
+                                                        onStageChanged = { downloading ->
+                                                            runOnUiThread {
+                                                                if (!applyFinished && isApplying != 0) {
+                                                                    isApplying = if (downloading) 2 else 1
+                                                                }
                                                             }
-                                                        }
-                                                    },
-                                                )
+                                                        },
+                                                    )
+                                                }
                                                 if (downloaded == null) {
+                                                    WallpaperMediaCache.cancelInFlightVideo(selectedUri)
+                                                    applyFinished = true
                                                     withContext(Dispatchers.Main) {
                                                         isApplying = 0
-                                                        Toast.makeText(context, "Failed to download wallpaper", Toast.LENGTH_SHORT).show()
+                                                        Toast.makeText(
+                                                            context,
+                                                            "Timed out or failed downloading wallpaper. Tap to retry.",
+                                                            Toast.LENGTH_SHORT,
+                                                        ).show()
                                                     }
                                                     return@launch
                                                 }
                                                 finalPath = downloaded
                                             }
 
-                                            withContext(Dispatchers.Main) {
-                                                if (isApplying != 0) isApplying = 1
+                                            runOnUiThread {
+                                                if (!applyFinished && isApplying != 0) isApplying = 1
                                             }
 
                                             val resolvedIsVideo = isVideo || WallpaperStore.isVideoFileOrUrl(finalPath)
@@ -413,30 +423,34 @@ class WallpaperPreviewActivity : AppCompatActivity() {
                                                 WallpaperStore.getVideoClipBounds(context, finalPath)?.startMs ?: 0L
                                             } else 0L
 
-                                            val bitmap = if (resolvedIsVideo) {
-                                                val poster = WallpaperStore.posterFileFor(finalPath)
-                                                if (poster.exists()) {
-                                                    WallpaperStore.getSampledBitmap(poster.absolutePath, 240, 420)
+                                            // Bound thumbnail/palette extraction strictly so unusual codecs never stall Apply
+                                            val textColor = withTimeoutOrNull(4_500L) {
+                                                val bitmap = if (resolvedIsVideo) {
+                                                    val poster = WallpaperStore.posterFileFor(finalPath)
+                                                    if (poster.exists() && poster.length() > 256L) {
+                                                        WallpaperStore.getSampledBitmap(poster.absolutePath, 240, 420)
+                                                    } else {
+                                                        WallpaperStore.generateVideoThumbnail(finalPath, clipStartMs)
+                                                    }
                                                 } else {
-                                                    WallpaperStore.generateVideoThumbnail(finalPath, clipStartMs)
+                                                    WallpaperStore.getSampledBitmap(finalPath, 240, 420)
                                                 }
-                                            } else {
-                                                WallpaperStore.getSampledBitmap(finalPath, 240, 420)
-                                            }
 
-                                            val textColor = if (bitmap != null) {
-                                                val palette = Palette.from(bitmap).generate()
-                                                val rawDom = palette.getDominantColor(AndroidColor.DKGRAY)
-                                                val blended = if (appliedDim > 0.01f) {
-                                                    ColorUtils.blendARGB(rawDom, AndroidColor.BLACK, appliedDim)
-                                                } else rawDom
-                                                val lum = ColorUtils.calculateLuminance(blended)
-                                                bitmap.recycle()
-                                                if (lum > 0.5) AndroidColor.BLACK else AndroidColor.WHITE
-                                            } else {
-                                                AndroidColor.WHITE
-                                            }
+                                                if (bitmap != null) {
+                                                    val palette = Palette.from(bitmap).generate()
+                                                    val rawDom = palette.getDominantColor(AndroidColor.DKGRAY)
+                                                    val blended = if (appliedDim > 0.01f) {
+                                                        ColorUtils.blendARGB(rawDom, AndroidColor.BLACK, appliedDim)
+                                                    } else rawDom
+                                                    val lum = ColorUtils.calculateLuminance(blended)
+                                                    bitmap.recycle()
+                                                    if (lum > 0.5) AndroidColor.BLACK else AndroidColor.WHITE
+                                                } else {
+                                                    AndroidColor.WHITE
+                                                }
+                                            } ?: AndroidColor.WHITE
 
+                                            applyFinished = true
                                             withContext(Dispatchers.Main) {
                                                 val switchingWallpaper = storedState.path != finalPath
                                                 if (switchingWallpaper) {
@@ -451,9 +465,11 @@ class WallpaperPreviewActivity : AppCompatActivity() {
                                                     sourceUrl = if (isRemote) selectedUri else null,
                                                     dimAlpha = appliedDim,
                                                 )
+                                                isApplying = 0
                                                 finish()
                                             }
                                         } catch (e: Exception) {
+                                            applyFinished = true
                                             UHLog.e("wallpaper_error", "Preview apply failed: ${e.message}")
                                             withContext(Dispatchers.Main) {
                                                 isApplying = 0
@@ -1047,13 +1063,15 @@ private fun PreviewVideoLayer(
     }
 
     LaunchedEffect(item, cachedLocalFile) {
-        if (item.startsWith("http") && remoteThumbFile == null) {
-            remoteThumbFile = WallpaperMediaCache.getOrExtractMotionThumb(context, item)
-        }
         val localPath = when {
             !item.startsWith("http") -> item
             cachedLocalFile != null -> cachedLocalFile.absolutePath
             else -> null
+        }
+        // Only extract thumbnail from local file here (avoid competing remote MediaMetadataRetriever
+        // HTTP connections while ExoPlayer + prefetchVideoAsync are streaming the same MP4).
+        if (item.startsWith("http") && remoteThumbFile == null && cachedLocalFile != null) {
+            remoteThumbFile = WallpaperMediaCache.getOrExtractMotionThumb(context, item)
         }
         if (localPath != null) {
             val p = withContext(Dispatchers.IO) { WallpaperMediaProcessor.probeVideo(localPath) }

@@ -13,6 +13,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.harvester.companion.R
 import app.harvester.companion.SettingsPrefs
+import app.harvester.companion.UHApp
 import app.harvester.companion.privacy.UhPrivacyController
 import app.harvester.companion.settings.components.SettingsCategory
 import app.harvester.companion.settings.components.SettingsSwitchRow
@@ -66,6 +67,9 @@ class VideoOptionsActivity : AppCompatActivity() {
                             default = false,
                             iconRes = R.drawable.uh_ic_autoplay_24,
                             insideCard = true,
+                            onChanged = {
+                                (context.applicationContext as? UHApp)?.components?.sitePermissionRules?.notifyRulesChanged()
+                            },
                         )
                     }
                     Spacer(modifier = Modifier.height(24.dp))

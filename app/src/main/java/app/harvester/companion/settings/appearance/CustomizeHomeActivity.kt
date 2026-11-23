@@ -195,7 +195,7 @@ class CustomizeHomeActivity : AppCompatActivity() {
                             title = "Show Protection Stats on Home",
                             subtitle = "Replaces the UH title on Home with live ads, trackers & time saved stats",
                             key = SettingsPrefs.K_HOME_SHOW_STATS,
-                            default = false,
+                            default = true,
                             iconRes = R.drawable.fx_ic_shield_lock_24,
                             insideCard = true,
                         )

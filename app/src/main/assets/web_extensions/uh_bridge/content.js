@@ -20,10 +20,19 @@ function sendNativeCall(payload) {
 }
 
 // -----------------------------------------------------------------------------
-// 1B. UH Shield Cosmetics, Cookie Banner Reject, Smart Dark Web & Media Hooks
+// 1B. UH Shield v4: Cosmetics, Procedural :has-text(), Blocked Banner Collapse,
+//     Shadow-DOM Cookie Banner Auto-Reject, Scriptlets & Smart Dark Web
 // -----------------------------------------------------------------------------
 let pageProtectState = null;
-let cookieBannerTimer = null;
+let scriptletsReady = false;
+let cookieBannerObserver = null;
+let cookieBannerStopTimer = null;
+let cookieBannerRejected = false;
+let proceduralObserver = null;
+let proceduralTimer = null;
+const blockedUrls = new Set();
+const blockedPathHints = new Set();
+let collapseSweepTimer = null;
 
 function currentNormalizedHost() {
     try {
@@ -33,6 +42,41 @@ function currentNormalizedHost() {
     }
 }
 
+function dispatchScriptletConfig(cfg) {
+    if (!cfg) return;
+    try {
+        document.dispatchEvent(new CustomEvent("UH_APPLY_SCRIPTLET_CONFIG", {
+            detail: {
+                shieldLevel: cfg.shieldLevel || 0,
+                paused: cfg.paused === true,
+                blockPopups: cfg.blockPopups === true,
+                backgroundPlay: cfg.backgroundPlay === true,
+                webrtcPolicy: cfg.webrtcPolicy || 0,
+                antiFingerprint: cfg.antiFingerprint === true,
+                scriptlets: Array.isArray(cfg.scriptlets) ? cfg.scriptlets : []
+            }
+        }));
+    } catch (_e) {}
+}
+
+document.addEventListener("UH_SCRIPTLETS_READY", () => {
+    scriptletsReady = true;
+    if (pageProtectState) {
+        dispatchScriptletConfig(pageProtectState);
+    }
+});
+
+// Load CSP-safe MAIN-world scriptlets runner immediately at document_start
+(function loadScriptletsRunner() {
+    try {
+        const s = document.createElement("script");
+        s.src = api.runtime.getURL("scriptlets.js");
+        s.onload = () => s.remove();
+        s.onerror = () => s.remove();
+        (document.head || document.documentElement).appendChild(s);
+    } catch (_e) {}
+})();
+
 function applyCosmeticStyle(selectors, enabled) {
     const id = "__uh_shield_cosmetic";
     const existing = document.getElementById(id);
@@ -41,10 +85,10 @@ function applyCosmeticStyle(selectors, enabled) {
         return;
     }
     const chunks = [];
-    const batch = 40;
+    const batch = 45;
     for (let i = 0; i < selectors.length; i += batch) {
         const part = selectors.slice(i, i + batch).join(", ");
-        chunks.push(part + " { display: none !important; visibility: hidden !important; height: 0 !important; min-height: 0 !important; }");
+        chunks.push(part + " { display: none !important; visibility: hidden !important; height: 0 !important; min-height: 0 !important; max-height: 0 !important; margin: 0 !important; padding: 0 !important; border: 0 !important; overflow: hidden !important; }");
     }
     const styleEl = existing || document.createElement("style");
     styleEl.id = id;
@@ -52,6 +96,332 @@ function applyCosmeticStyle(selectors, enabled) {
     (document.head || document.documentElement).appendChild(styleEl);
 }
 
+// -----------------------------------------------------------------------------
+// Blocked Ad Element & Empty Banner Slot Collapsing
+// -----------------------------------------------------------------------------
+function collapseElement(el) {
+    if (!el || el.nodeType !== 1 || el.dataset.uhCollapsed === "1") return;
+    el.dataset.uhCollapsed = "1";
+    el.style.setProperty("display", "none", "important");
+    el.style.setProperty("visibility", "hidden", "important");
+    el.style.setProperty("width", "0", "important");
+    el.style.setProperty("height", "0", "important");
+    el.style.setProperty("min-height", "0", "important");
+    el.style.setProperty("margin", "0", "important");
+    el.style.setProperty("padding", "0", "important");
+    el.style.setProperty("border", "0", "important");
+    collapseEmptyAdAncestors(el.parentElement);
+}
+
+function looksLikeAdWrapper(el) {
+    if (!el || el === document.body || el === document.documentElement) return false;
+    const tag = el.tagName;
+    if (tag === "INS" || tag === "ASIDE") return true;
+    if (tag === "A" || tag === "PICTURE" || tag === "FIGURE") return true;
+    const idCls = ((el.id || "") + " " + (typeof el.className === "string" ? el.className : "")).toLowerCase();
+    if (
+        /(^|[\s_-])(ad|ads|advert|banner|sponsor|promo|dfp|gpt|taboola|outbrain|mgid|adsbygoogle)([\s_-]|$)/.test(idCls) ||
+        el.hasAttribute("data-ad") ||
+        el.hasAttribute("data-ad-slot") ||
+        el.hasAttribute("data-ad-unit") ||
+        el.hasAttribute("data-google-query-id")
+    ) {
+        return true;
+    }
+    return false;
+}
+
+function hasOtherVisibleContent(container) {
+    const text = (container.textContent || "").trim();
+    if (text.length > 24 && !/^(advertisement|sponsored|ad|ads|promoted)$/i.test(text)) {
+        return true;
+    }
+    for (let i = 0; i < container.children.length; i++) {
+        const ch = container.children[i];
+        if (ch.dataset && ch.dataset.uhCollapsed === "1") continue;
+        if (ch.tagName === "SCRIPT" || ch.tagName === "STYLE" || ch.tagName === "NOSCRIPT") continue;
+        try {
+            const cs = getComputedStyle(ch);
+            if (cs.display === "none" || cs.visibility === "hidden") continue;
+            const rect = ch.getBoundingClientRect();
+            if (rect.width > 4 && rect.height > 4) return true;
+        } catch (_e) {}
+    }
+    return false;
+}
+
+function collapseEmptyAdAncestors(parent) {
+    let cur = parent;
+    let depth = 0;
+    while (cur && depth < 4 && cur !== document.body && cur !== document.documentElement) {
+        if (!looksLikeAdWrapper(cur)) break;
+        if (hasOtherVisibleContent(cur)) break;
+        cur.dataset.uhCollapsed = "1";
+        cur.style.setProperty("display", "none", "important");
+        cur.style.setProperty("height", "0", "important");
+        cur.style.setProperty("min-height", "0", "important");
+        cur.style.setProperty("margin", "0", "important");
+        cur.style.setProperty("padding", "0", "important");
+        cur = cur.parentElement;
+        depth++;
+    }
+}
+
+function urlMatchesBlocked(rawAttr) {
+    if (!rawAttr || blockedUrls.size === 0) return false;
+    if (blockedUrls.has(rawAttr)) return true;
+    try {
+        const abs = new URL(rawAttr, window.location.href).href;
+        if (blockedUrls.has(abs)) return true;
+        const noHash = abs.split("#")[0];
+        if (blockedUrls.has(noHash)) return true;
+    } catch (_e) {}
+    for (const hint of blockedPathHints) {
+        if (rawAttr.includes(hint)) return true;
+    }
+    return false;
+}
+
+function runBlockedCollapseSweep() {
+    collapseSweepTimer = null;
+    if (blockedUrls.size === 0) return;
+    try {
+        const nodes = document.querySelectorAll("img, iframe, object, embed, video, source");
+        for (let i = 0; i < nodes.length; i++) {
+            const el = nodes[i];
+            if (el.dataset && el.dataset.uhCollapsed === "1") continue;
+            const src = el.currentSrc || el.src || el.getAttribute("src") || el.getAttribute("data-src") || el.getAttribute("data") || "";
+            const srcset = el.getAttribute("srcset") || "";
+            if (urlMatchesBlocked(src) || (srcset && urlMatchesBlocked(srcset.split(",")[0].trim().split(/\s+/)[0]))) {
+                const target = el.tagName === "SOURCE" && el.parentElement ? el.parentElement : el;
+                collapseElement(target);
+            }
+        }
+    } catch (_e) {}
+}
+
+function scheduleCollapseSweep() {
+    if (collapseSweepTimer) return;
+    collapseSweepTimer = setTimeout(runBlockedCollapseSweep, 40);
+}
+
+// Immediately collapse broken <img> / <iframe> whose URL was blocked by UH Shield
+document.addEventListener("error", (ev) => {
+    const el = ev && ev.target;
+    if (!el || el.nodeType !== 1) return;
+    if (el.tagName === "IMG" || el.tagName === "IFRAME" || el.tagName === "OBJECT") {
+        const src = el.currentSrc || el.src || el.getAttribute("src") || "";
+        if (urlMatchesBlocked(src)) {
+            collapseElement(el);
+        }
+    }
+}, true);
+
+// -----------------------------------------------------------------------------
+// Procedural Cosmetic Engine (:has-text / :-abp-contains / :upward)
+// -----------------------------------------------------------------------------
+function runProceduralCosmetics(rules) {
+    if (!Array.isArray(rules) || rules.length === 0) return;
+    for (let i = 0; i < rules.length; i++) {
+        const r = rules[i];
+        if (!r || !r.sel || !r.text) continue;
+        let nodes;
+        try {
+            nodes = document.querySelectorAll(r.sel);
+        } catch (_e) {
+            continue;
+        }
+        let re = null;
+        if (r.re) {
+            try { re = new RegExp(r.text, "i"); } catch (_e) { continue; }
+        }
+        const needle = r.re ? "" : r.text.toLowerCase();
+        for (let j = 0; j < nodes.length; j++) {
+            const el = nodes[j];
+            if (el.dataset && el.dataset.uhProcHidden === "1") continue;
+            const txt = (el.textContent || "").trim();
+            const matched = re ? re.test(txt) : txt.toLowerCase().includes(needle);
+            if (!matched) continue;
+            let target = el;
+            let up = r.up || 0;
+            while (up > 0 && target.parentElement && target.parentElement !== document.body) {
+                target = target.parentElement;
+                up--;
+            }
+            target.dataset.uhProcHidden = "1";
+            target.style.setProperty("display", "none", "important");
+        }
+    }
+}
+
+function setupProceduralCosmetics(rules, enabled) {
+    if (proceduralObserver) {
+        try { proceduralObserver.disconnect(); } catch (_e) {}
+        proceduralObserver = null;
+    }
+    if (!enabled || !Array.isArray(rules) || rules.length === 0) return;
+
+    const trigger = () => {
+        if (proceduralTimer) return;
+        proceduralTimer = setTimeout(() => {
+            proceduralTimer = null;
+            runProceduralCosmetics(rules);
+        }, 180);
+    };
+
+    if (document.body) {
+        runProceduralCosmetics(rules);
+    } else {
+        document.addEventListener("DOMContentLoaded", trigger, { once: true });
+    }
+
+    proceduralObserver = new MutationObserver(trigger);
+    proceduralObserver.observe(document.documentElement || document, { childList: true, subtree: true });
+}
+
+// -----------------------------------------------------------------------------
+// Upgraded Shadow-DOM + CMP Cookie Banner Auto-Rejector
+// -----------------------------------------------------------------------------
+const COOKIE_REJECT_SELECTORS = [
+    "#onetrust-reject-all-handler",
+    "#CybotCookiebotDialogBodyButtonDecline",
+    ".qc-cmp2-summary-buttons button[mode='secondary']",
+    ".fc-cta-do-not-consent",
+    "#didomi-notice-disagree-button",
+    "button.didomi-components-button[aria-label*='Disagree' i]",
+    "button[data-testid='uc-deny-all-button']",
+    "button[data-testid='reject-all']",
+    "button[data-testid*='reject' i]",
+    "button[data-cky-tag='reject-button']",
+    ".cmplz-deny",
+    ".brlbs-btn-refuse-all",
+    ".cmpboxbtnno",
+    ".osano-cm-denyAll",
+    ".klaro .cn-decline",
+    "button[id*='reject-all' i]",
+    "button[id*='rejectAll' i]",
+    "button[id*='decline-all' i]",
+    "button[class*='reject-all' i]",
+    "button[class*='decline-all' i]",
+    "button[aria-label*='reject all' i]",
+    "button[aria-label*='decline all' i]",
+    "button[aria-label*='necessary only' i]",
+    "[data-gdpr-single-choice-accept='false']"
+];
+
+const COOKIE_TEXT_REJECT_RE = /^(reject all|decline all|deny all|refuse all|only necessary|necessary only|essential only|reject non-essential|continue without accepting|do not consent)$/i;
+
+function restorePageScrollLock() {
+    try {
+        const html = document.documentElement;
+        const body = document.body;
+        if (html && getComputedStyle(html).overflow === "hidden") {
+            html.style.setProperty("overflow", "auto", "important");
+        }
+        if (body && getComputedStyle(body).overflow === "hidden") {
+            body.style.setProperty("overflow", "auto", "important");
+        }
+    } catch (_e) {}
+}
+
+function searchAndClickRejectInRoot(root, depth) {
+    if (!root || depth > 4) return false;
+    for (let i = 0; i < COOKIE_REJECT_SELECTORS.length; i++) {
+        try {
+            const btn = root.querySelector(COOKIE_REJECT_SELECTORS[i]);
+            if (btn && btn.offsetParent !== null) {
+                btn.click();
+                return true;
+            }
+        } catch (_e) {}
+    }
+
+    // Check buttons with explicit reject/decline text inside visible cookie containers
+    try {
+        const btns = root.querySelectorAll("button, a[role='button']");
+        for (let i = 0; i < btns.length && i < 120; i++) {
+            const b = btns[i];
+            if (b.offsetParent === null) continue;
+            const txt = (b.textContent || "").trim().replace(/\s+/g, " ");
+            if (txt.length >= 6 && txt.length <= 36 && COOKIE_TEXT_REJECT_RE.test(txt)) {
+                const container = b.closest("[id*='cookie' i], [class*='cookie' i], [id*='consent' i], [class*='consent' i], [id*='gdpr' i], [class*='gdpr' i], [role='dialog'], [aria-modal='true']");
+                if (container || root !== document) {
+                    b.click();
+                    return true;
+                }
+            }
+        }
+    } catch (_e) {}
+
+    // Traverse open Shadow DOM hosts (Usercentrics, Didomi, Sourcepoint, etc.)
+    try {
+        const hosts = root.querySelectorAll("#usercentrics-root, [id*='consent' i], [id*='cookie' i], [id*='cmp' i], div, aside, section");
+        let checked = 0;
+        for (let i = 0; i < hosts.length && checked < 40; i++) {
+            const h = hosts[i];
+            if (h.shadowRoot) {
+                checked++;
+                if (searchAndClickRejectInRoot(h.shadowRoot, depth + 1)) {
+                    return true;
+                }
+            }
+        }
+    } catch (_e) {}
+
+    return false;
+}
+
+function runCookieBannerAutoReject() {
+    if (!isTopFrame || cookieBannerRejected) return;
+    if (searchAndClickRejectInRoot(document, 0)) {
+        cookieBannerRejected = true;
+        if (cookieBannerObserver) {
+            try { cookieBannerObserver.disconnect(); } catch (_e) {}
+            cookieBannerObserver = null;
+        }
+        setTimeout(restorePageScrollLock, 250);
+    }
+}
+
+function startCookieBannerWatcher(enabled) {
+    if (!isTopFrame) return;
+    if (cookieBannerObserver) {
+        try { cookieBannerObserver.disconnect(); } catch (_e) {}
+        cookieBannerObserver = null;
+    }
+    if (cookieBannerStopTimer) {
+        clearTimeout(cookieBannerStopTimer);
+        cookieBannerStopTimer = null;
+    }
+    if (!enabled || cookieBannerRejected) return;
+
+    let debounce = null;
+    const kick = () => {
+        if (cookieBannerRejected || debounce) return;
+        debounce = setTimeout(() => {
+            debounce = null;
+            runCookieBannerAutoReject();
+        }, 350);
+    };
+
+    setTimeout(runCookieBannerAutoReject, 600);
+    setTimeout(runCookieBannerAutoReject, 1800);
+
+    cookieBannerObserver = new MutationObserver(kick);
+    cookieBannerObserver.observe(document.documentElement || document, { childList: true, subtree: true });
+
+    // Disconnect cleanly after 10 seconds to save battery & CPU
+    cookieBannerStopTimer = setTimeout(() => {
+        if (cookieBannerObserver) {
+            try { cookieBannerObserver.disconnect(); } catch (_e) {}
+            cookieBannerObserver = null;
+        }
+    }, 10000);
+}
+
+// -----------------------------------------------------------------------------
+// Smart Dark Web Mode
+// -----------------------------------------------------------------------------
 function isPageAlreadyDark() {
     try {
         const meta = document.querySelector('meta[name="color-scheme"]');
@@ -115,89 +485,17 @@ function applySmartDarkMode(enabled, enhanceDark, bypassed) {
     }
 }
 
-function runCookieBannerAutoReject() {
-    if (!isTopFrame) return;
-    const rejectSelectors = [
-        "#onetrust-reject-all-handler",
-        "button[id*='reject' i]",
-        "button[class*='reject-all' i]",
-        "button[data-testid*='reject' i]",
-        "button[aria-label*='reject all' i]",
-        "button[aria-label*='decline all' i]",
-        ".qc-cmp2-summary-buttons button[mode='secondary']",
-        "#CybotCookiebotDialogBodyButtonDecline",
-        ".fc-cta-do-not-consent",
-        "[data-gdpr-single-choice-accept='false']"
-    ];
-    for (let i = 0; i < rejectSelectors.length; i++) {
-        try {
-            const btn = document.querySelector(rejectSelectors[i]);
-            if (btn && btn.offsetParent !== null) {
-                btn.click();
-                return;
-            }
-        } catch (_e) {}
-    }
-}
-
-function injectPageRuntimeGuards(cfg) {
-    if (!isTopFrame) return;
-    try {
-        const script = document.createElement("script");
-        const bgPlay = cfg.backgroundPlay === true;
-        const blockPopups = cfg.blockPopups === true && !cfg.paused && (cfg.shieldLevel || 0) > 0;
-        const blockWebRtc = cfg.webrtcPolicy === 3;
-        const code = `(function(){
-            try {
-                if (${bgPlay} && !window.__uhBgPlayInstalled) {
-                    window.__uhBgPlayInstalled = true;
-                    Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
-                    Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
-                    window.addEventListener('visibilitychange', (e) => { e.stopImmediatePropagation(); }, true);
-                    window.addEventListener('webkitvisibilitychange', (e) => { e.stopImmediatePropagation(); }, true);
-                }
-                if (${blockWebRtc} && !window.__uhWebRtcBlocked) {
-                    window.__uhWebRtcBlocked = true;
-                    const noop = function(){ throw new Error('WebRTC disabled by UH Privacy Guard'); };
-                    window.RTCPeerConnection = noop;
-                    window.webkitRTCPeerConnection = noop;
-                    window.mozRTCPeerConnection = noop;
-                }
-                if (${blockPopups} && !window.__uhPopupGuardInstalled) {
-                    window.__uhPopupGuardInstalled = true;
-                    const origOpen = window.open;
-                    let lastUserTap = 0;
-                    const markTap = () => { lastUserTap = Date.now(); };
-                    window.addEventListener('pointerdown', markTap, true);
-                    window.addEventListener('click', markTap, true);
-                    window.addEventListener('keydown', markTap, true);
-                    window.open = function(url, target, features) {
-                        const sinceTap = Date.now() - lastUserTap;
-                        if (sinceTap > 1400) {
-                            return null;
-                        }
-                        return origOpen.apply(this, arguments);
-                    };
-                }
-            } catch(_e) {}
-        })();`;
-        script.textContent = code;
-        (document.head || document.documentElement).appendChild(script);
-        script.remove();
-    } catch (_e) {}
-}
-
 function applyPageProtectConfig(cfg) {
     if (!cfg) return;
     pageProtectState = cfg;
     const shieldOn = (cfg.shieldLevel || 0) > 0 && !cfg.paused;
     applyCosmeticStyle(cfg.cosmetics || [], shieldOn);
+    setupProceduralCosmetics(cfg.procedural || [], shieldOn);
     applySmartDarkMode(cfg.forceDarkWeb === true, cfg.enhanceDark === true, cfg.darkBypassed === true);
-    injectPageRuntimeGuards(cfg);
-    if (cfg.cookieBanners && !cfg.paused) {
-        if (cookieBannerTimer) clearTimeout(cookieBannerTimer);
-        cookieBannerTimer = setTimeout(runCookieBannerAutoReject, 900);
+    if (scriptletsReady) {
+        dispatchScriptletConfig(cfg);
     }
+    startCookieBannerWatcher(cfg.cookieBanners === true && !cfg.paused);
 }
 
 // Kick off protection immediately at document_start
@@ -323,17 +621,14 @@ async function captureImagePayload(img) {
     if (src.startsWith("data:image/")) {
         return { imageUrl: "", dataUrl: src };
     }
-    // Tier A: fast in-memory canvas extraction (same-origin or CORS-permitted images)
     const canvasData = tryExtractCanvasDataUrl(img);
     if (canvasData) {
         return { imageUrl: src.startsWith("http") ? src : "", dataUrl: canvasData };
     }
-    // Tier B: page-context credentialed fetch (carries browser cookies & Referer)
     const fetchedData = await tryFetchImageWithCredentials(src);
     if (fetchedData) {
         return { imageUrl: src.startsWith("http") ? src : "", dataUrl: fetchedData };
     }
-    // Tier C: native OkHttp fetch with explicit page Referer header
     if (src.startsWith("http://") || src.startsWith("https://")) {
         return { imageUrl: src, dataUrl: "" };
     }
@@ -608,7 +903,17 @@ window.addEventListener("message", (event) => {
 
 api.runtime.onMessage.addListener((msg) => {
     if (!msg || !msg.action) return;
-    if (msg.action === "RUN_MENU_COMMAND" && msg.commandId) {
+    if (msg.action === "COLLAPSE_BLOCKED_URL" && msg.url) {
+        blockedUrls.add(msg.url);
+        blockedUrls.add(msg.url.split("#")[0]);
+        try {
+            const u = new URL(msg.url);
+            if (u.pathname && u.pathname.length > 6) {
+                blockedPathHints.add(u.pathname + (u.search || ""));
+            }
+        } catch (_e) {}
+        scheduleCollapseSweep();
+    } else if (msg.action === "RUN_MENU_COMMAND" && msg.commandId) {
         window.postMessage({ type: "UH_RUN_MENU_COMMAND", commandId: msg.commandId }, "*");
     } else if (msg.action === "RELOAD_SCRIPTS") {
         api.runtime.sendMessage({
@@ -637,6 +942,7 @@ api.runtime.onMessage.addListener((msg) => {
             paused: paused,
             cookieBanners: msg.cookieBanners,
             blockPopups: msg.blockPopups,
+            antiFingerprint: msg.antiFingerprint === true && !paused,
             backgroundPlay: msg.backgroundPlay,
             webrtcPolicy: msg.webrtcPolicy,
             forceDarkWeb: msg.forceDarkWeb,

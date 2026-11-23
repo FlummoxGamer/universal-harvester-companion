@@ -76,7 +76,6 @@ class FilterListsActivity : AppCompatActivity() {
                 val context = LocalContext.current
                 val state by UhShieldEngine.state.collectAsState()
 
-                var showNuclearSection by remember { mutableStateOf(false) }
                 var showCustomRulesSection by remember { mutableStateOf(false) }
                 var showAddListDialog by remember { mutableStateOf(false) }
                 var customNameInput by remember { mutableStateOf("") }
@@ -88,17 +87,22 @@ class FilterListsActivity : AppCompatActivity() {
                 val coreLists = remember(state.lists) {
                     state.lists.filter { it.def.tier == FilterPackTier.CORE }
                 }
-                val extraLists = remember(state.lists) {
-                    state.lists.filter {
-                        it.def.tier == FilterPackTier.NUCLEAR ||
-                            it.def.tier == FilterPackTier.SOCIAL ||
-                            it.def.tier == FilterPackTier.REGIONAL
-                    }
+                val nuclearLists = remember(state.lists) {
+                    state.lists.filter { it.def.tier == FilterPackTier.NUCLEAR }
+                }
+                val socialLists = remember(state.lists) {
+                    state.lists.filter { it.def.tier == FilterPackTier.SOCIAL }
+                }
+                val regionalLists = remember(state.lists) {
+                    state.lists.filter { it.def.tier == FilterPackTier.REGIONAL }
                 }
                 val customLists = remember(state.lists) {
                     state.lists.filter { it.def.tier == FilterPackTier.CUSTOM }
                 }
-                val extraEnabledCount = extraLists.count { it.enabled }
+                val anyEnabled = remember(state.lists, state.customUserRules) {
+                    state.lists.any { it.enabled } || state.customUserRules.isNotBlank()
+                }
+                val numberFmt = remember { java.text.NumberFormat.getIntegerInstance() }
 
                 if (showAddListDialog) {
                     AlertDialog(
@@ -154,11 +158,14 @@ class FilterListsActivity : AppCompatActivity() {
                     )
                 }
 
-                val lastSyncLabel = remember(state.lastSyncMs) {
-                    if (state.lastSyncMs <= 0L) "Built-in Day-0 rules active"
-                    else {
-                        val fmt = SimpleDateFormat("MMM d, HH:mm", Locale.getDefault())
-                        "Last updated ${fmt.format(Date(state.lastSyncMs))}"
+                val lastSyncLabel = remember(state.lastSyncMs, anyEnabled, state.totalCompiledRules) {
+                    when {
+                        !anyEnabled -> "All filter lists disabled"
+                        state.lastSyncMs <= 0L -> "Built-in Day-0 rules active"
+                        else -> {
+                            val fmt = SimpleDateFormat("MMM d, HH:mm", Locale.getDefault())
+                            "Last updated ${fmt.format(Date(state.lastSyncMs))}"
+                        }
                     }
                 }
 
@@ -186,7 +193,7 @@ class FilterListsActivity : AppCompatActivity() {
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "${state.totalCompiledRules} Active Rules",
+                                    text = "${numberFmt.format(state.totalCompiledRules)} Active Rules",
                                     color = MaterialTheme.colorScheme.onSurface,
                                     fontSize = 17.sp,
                                     fontWeight = FontWeight.Bold,
@@ -208,7 +215,7 @@ class FilterListsActivity : AppCompatActivity() {
                             Spacer(modifier = Modifier.width(12.dp))
                             Button(
                                 onClick = { UhShieldEngine.syncEnabledLists(force = true) },
-                                enabled = !state.isSyncing,
+                                enabled = !state.isSyncing && anyEnabled,
                                 shape = RoundedCornerShape(12.dp),
                             ) {
                                 if (state.isSyncing) {
@@ -232,7 +239,7 @@ class FilterListsActivity : AppCompatActivity() {
                         }
                     }
 
-                    SettingsCategory("Full Power Default Pack")
+                    SettingsCategory("Core Essentials")
                     UhSettingsCardGroup {
                         coreLists.forEachIndexed { index, status ->
                             if (index > 0) UhSettingsDivider()
@@ -243,63 +250,41 @@ class FilterListsActivity : AppCompatActivity() {
                         }
                     }
 
-                    // Collapsible Nuclear & Extra Packs section to keep UI super clean
-                    SettingsCategory("Extra & Nuclear Packs")
-                    UhSettingsCardGroup {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { showNuclearSection = !showNuclearSection }
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.fx_ic_shield_lock_24),
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp),
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Nuclear, Social & Regional Packs",
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Medium,
-                                )
-                                Text(
-                                    text = if (extraEnabledCount > 0) {
-                                        "$extraEnabledCount extra packs enabled — tap to customize"
-                                    } else {
-                                        "Optional heavy blocks: HaGeZi Pro, OISD, Paywalls & Regional"
-                                    },
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 12.sp,
+                    if (nuclearLists.isNotEmpty()) {
+                        SettingsCategory("Extra & Nuclear Packs")
+                        UhSettingsCardGroup {
+                            nuclearLists.forEachIndexed { index, status ->
+                                if (index > 0) UhSettingsDivider()
+                                FilterListRow(
+                                    status = status,
+                                    onToggle = { enabled -> UhShieldEngine.setListEnabled(status.def.id, enabled) },
                                 )
                             }
-                            Text(
-                                text = if (showNuclearSection) "Hide" else "Show",
-                                color = MaterialTheme.colorScheme.primary,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                            )
                         }
+                    }
 
-                        AnimatedVisibility(visible = showNuclearSection) {
-                            Column {
-                                extraLists.forEach { status ->
-                                    UhSettingsDivider()
-                                    FilterListRow(
-                                        status = status,
-                                        badgeText = when (status.def.tier) {
-                                            FilterPackTier.NUCLEAR -> "NUCLEAR"
-                                            FilterPackTier.SOCIAL -> "SOCIAL"
-                                            FilterPackTier.REGIONAL -> "REGIONAL"
-                                            else -> null
-                                        },
-                                        onToggle = { enabled -> UhShieldEngine.setListEnabled(status.def.id, enabled) },
-                                    )
-                                }
+                    if (socialLists.isNotEmpty()) {
+                        SettingsCategory("Social & Annoyances")
+                        UhSettingsCardGroup {
+                            socialLists.forEachIndexed { index, status ->
+                                if (index > 0) UhSettingsDivider()
+                                FilterListRow(
+                                    status = status,
+                                    onToggle = { enabled -> UhShieldEngine.setListEnabled(status.def.id, enabled) },
+                                )
+                            }
+                        }
+                    }
+
+                    if (regionalLists.isNotEmpty()) {
+                        SettingsCategory("Regional Filters")
+                        UhSettingsCardGroup {
+                            regionalLists.forEachIndexed { index, status ->
+                                if (index > 0) UhSettingsDivider()
+                                FilterListRow(
+                                    status = status,
+                                    onToggle = { enabled -> UhShieldEngine.setListEnabled(status.def.id, enabled) },
+                                )
                             }
                         }
                     }

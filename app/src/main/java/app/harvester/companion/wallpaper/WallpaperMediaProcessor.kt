@@ -19,6 +19,7 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.max
@@ -360,9 +361,16 @@ object WallpaperMediaProcessor {
             var lastReportedPct = 0.12f
             var writtenFrames = 0
             val maxSafeFrames = 4500
+            val muxStartWallMs = System.currentTimeMillis()
+            val maxMuxWallMs = 12_000L
 
             while (true) {
                 if (cancelToken?.isCancelled == true) {
+                    outFile.delete()
+                    return null
+                }
+                if (System.currentTimeMillis() - muxStartWallMs > maxMuxWallMs) {
+                    UHLog.w("video_warn", "Tier 1 MediaMuxer trim exceeded 12s wall-clock guard; delegating to Tier 2.")
                     outFile.delete()
                     return null
                 }
@@ -491,6 +499,7 @@ object WallpaperMediaProcessor {
             targetDurationMs = targetDurationMs,
             basePct = 0.16f,
             maxPct = 0.92f,
+            timeoutSeconds = 25L,
             onProgress = onProgress,
             cancelToken = cancelToken,
             verifyTrack = true,
@@ -525,6 +534,7 @@ object WallpaperMediaProcessor {
             targetDurationMs = targetDurationMs,
             basePct = 0.18f,
             maxPct = 0.92f,
+            timeoutSeconds = 45L,
             onProgress = onProgress,
             cancelToken = cancelToken,
             verifyTrack = true,
@@ -537,6 +547,7 @@ object WallpaperMediaProcessor {
         targetDurationMs: Double,
         basePct: Float,
         maxPct: Float,
+        timeoutSeconds: Long,
         onProgress: ((Float) -> Unit)?,
         cancelToken: TrimCancellationToken?,
         verifyTrack: Boolean,
@@ -579,10 +590,19 @@ object WallpaperMediaProcessor {
 
         cancelToken?.attachSession(session.sessionId)
 
-        try {
-            latch.await()
+        val finishedInTime = try {
+            latch.await(timeoutSeconds, TimeUnit.SECONDS)
         } catch (_: InterruptedException) {
             try { FFmpegKit.cancel(session.sessionId) } catch (_: Exception) {}
+            cancelToken?.clearSession(session.sessionId)
+            outFile.delete()
+            return null
+        }
+
+        if (!finishedInTime) {
+            UHLog.w("video_warn", "FFmpeg trim timed out after ${timeoutSeconds}s; cancelling session.")
+            try { FFmpegKit.cancel(session.sessionId) } catch (_: Exception) {}
+            cancelToken?.clearSession(session.sessionId)
             outFile.delete()
             return null
         }

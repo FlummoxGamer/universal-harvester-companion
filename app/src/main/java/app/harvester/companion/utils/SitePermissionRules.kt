@@ -1,12 +1,22 @@
 package app.harvester.companion.utils
 
 import android.content.Context
-import mozilla.components.feature.sitepermissions.SitePermissionsRules
 import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.settings.PhoneFeature
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import mozilla.components.feature.sitepermissions.SitePermissionsRules
 
 class SitePermissionRules(val context: Context) {
     val isLnaFeatureEnabled: Boolean get() = false
+
+    private val _rulesFlow = MutableStateFlow(getSitePermissionsCustomSettingsRules())
+    val rulesFlow: StateFlow<SitePermissionsRules> = _rulesFlow.asStateFlow()
+
+    fun notifyRulesChanged() {
+        _rulesFlow.value = getSitePermissionsCustomSettingsRules()
+    }
 
     fun getSitePermissionsCustomSettingsRules(): SitePermissionsRules {
         val allowAutoplay = SettingsPrefs.getBool(context, SettingsPrefs.K_AUTOPLAY, false)

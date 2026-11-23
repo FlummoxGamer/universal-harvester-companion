@@ -17,10 +17,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.Call
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
 
 /**
@@ -28,6 +32,7 @@ import kotlin.math.roundToInt
  * - Tracks live download progress for Preview's compact status pill.
  * - Promotes assets cached during Preview straight into wallpaper storage on Apply
  *   with zero redundant re-downloads.
+ * - Enforces strict timeouts & call cancellation so slow/stalled streams can never spin infinitely.
  * - Persists extracted catalog Motion wallpaper thumbnails as local WebP files in
  *   `filesDir/wallpaper_thumbs/` so Customize Home never reloads them over the network.
  */
@@ -36,10 +41,22 @@ object WallpaperMediaCache {
     private const val CACHE_DIR_NAME = "wallpaper_remote_cache"
     private const val THUMB_DIR_NAME = "wallpaper_thumbs"
     private const val MAX_CACHE_BYTES = 180L * 1024L * 1024L // 180 MB cap for preview video cache
+    private const val VIDEO_DOWNLOAD_TIMEOUT_MS = 55_000L
+    private const val THUMB_EXTRACT_TIMEOUT_MS = 8_000L
 
     private val cacheScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val inFlight = ConcurrentHashMap<String, CompletableDeferred<File?>>()
+    private val inFlightCalls = ConcurrentHashMap<String, Call>()
     private val inFlightThumbs = ConcurrentHashMap<String, CompletableDeferred<File?>>()
+
+    private val downloadClient: OkHttpClient by lazy {
+        UhHttpClient.client.newBuilder()
+            .connectTimeout(12, TimeUnit.SECONDS)
+            .readTimeout(18, TimeUnit.SECONDS)
+            .writeTimeout(15, TimeUnit.SECONDS)
+            .callTimeout(50, TimeUnit.SECONDS)
+            .build()
+    }
 
     // Keyed by urlHash(url): value in 0f..1f for determinate progress, -1f for indeterminate.
     private val _downloadProgress = MutableStateFlow<Map<String, Float>>(emptyMap())
@@ -98,7 +115,7 @@ object WallpaperMediaCache {
 
     /**
      * Extracts a single crisp WebP thumbnail for a remote Motion wallpaper and saves it
-     * permanently in `filesDir/wallpaper_thumbs/` (single-flight deduplicated).
+     * permanently in `filesDir/wallpaper_thumbs/` (single-flight deduplicated, strictly timed).
      */
     suspend fun getOrExtractMotionThumb(ctx: Context, url: String): File? = withContext(Dispatchers.IO) {
         val appCtx = ctx.applicationContext
@@ -106,42 +123,48 @@ object WallpaperMediaCache {
 
         val hash = urlHash(url)
         val existing = inFlightThumbs[hash]
-        if (existing != null) return@withContext existing.await()
+        if (existing != null) {
+            return@withContext withTimeoutOrNull(THUMB_EXTRACT_TIMEOUT_MS) { existing.await() }
+        }
 
         val deferred = CompletableDeferred<File?>()
         val raced = inFlightThumbs.putIfAbsent(hash, deferred)
-        if (raced != null) return@withContext raced.await()
+        if (raced != null) {
+            return@withContext withTimeoutOrNull(THUMB_EXTRACT_TIMEOUT_MS) { raced.await() }
+        }
 
         try {
-            val dest = File(thumbDir(appCtx), "mthumb_$hash.webp")
-            val cachedVideo = getCachedVideoFile(appCtx, url)
-            val bitmap = if (cachedVideo != null) {
-                extractScaledVideoFrameFromFile(cachedVideo.absolutePath, 500L)
-            } else {
-                extractScaledVideoFrameFromUrl(url, 500L)
-            }
-
-            val result = if (bitmap != null) {
-                try {
-                    val tmp = File(dest.parentFile, "${dest.name}.tmp")
-                    tmp.outputStream().use { out ->
-                        bitmap.compress(WallpaperMediaProcessor.webpPosterFormat(), 88, out)
-                    }
-                    if (tmp.exists() && tmp.length() > 256L) {
-                        if (dest.exists()) dest.delete()
-                        if (!tmp.renameTo(dest)) {
-                            tmp.copyTo(dest, overwrite = true)
-                            tmp.delete()
-                        }
-                        dest
-                    } else {
-                        tmp.delete()
-                        null
-                    }
-                } finally {
-                    bitmap.recycle()
+            val result = withTimeoutOrNull(THUMB_EXTRACT_TIMEOUT_MS) {
+                val dest = File(thumbDir(appCtx), "mthumb_$hash.webp")
+                val cachedVideo = getCachedVideoFile(appCtx, url)
+                val bitmap = if (cachedVideo != null) {
+                    extractScaledVideoFrameFromFile(cachedVideo.absolutePath, 500L)
+                } else {
+                    extractScaledVideoFrameFromUrl(url, 500L)
                 }
-            } else null
+
+                if (bitmap != null) {
+                    try {
+                        val tmp = File(dest.parentFile, "${dest.name}.tmp")
+                        tmp.outputStream().use { out ->
+                            bitmap.compress(WallpaperMediaProcessor.webpPosterFormat(), 88, out)
+                        }
+                        if (tmp.exists() && tmp.length() > 256L) {
+                            if (dest.exists()) dest.delete()
+                            if (!tmp.renameTo(dest)) {
+                                tmp.copyTo(dest, overwrite = true)
+                                tmp.delete()
+                            }
+                            dest
+                        } else {
+                            tmp.delete()
+                            null
+                        }
+                    } finally {
+                        bitmap.recycle()
+                    }
+                } else null
+            }
 
             deferred.complete(result)
             result
@@ -201,14 +224,27 @@ object WallpaperMediaCache {
     fun prefetchVideoAsync(ctx: Context, url: String) {
         val appCtx = ctx.applicationContext
         if (getCachedVideoFile(appCtx, url) != null) return
+        val key = "vid_${urlHash(url)}"
+        if (inFlight.containsKey(key)) return
         cacheScope.launch {
             getOrDownloadVideo(appCtx, url)
         }
     }
 
     /**
+     * Cancels an in-flight download cleanly (e.g. if timed out) so a fresh retry can start immediately.
+     */
+    fun cancelInFlightVideo(url: String) {
+        val hash = urlHash(url)
+        val key = "vid_$hash"
+        inFlightCalls.remove(key)?.cancel()
+        inFlight.remove(key)?.complete(null)
+        clearProgress(hash)
+    }
+
+    /**
      * Returns a complete local cached video file, joining any in-flight preview prefetch
-     * instead of starting a duplicate download.
+     * with a strict timeout so callers can never hang forever.
      */
     suspend fun getOrDownloadVideo(ctx: Context, url: String): File? = withContext(Dispatchers.IO) {
         val appCtx = ctx.applicationContext
@@ -221,21 +257,34 @@ object WallpaperMediaCache {
         val key = "vid_$hash"
         val existingDeferred = inFlight[key]
         if (existingDeferred != null) {
-            return@withContext existingDeferred.await()
+            val joined = withTimeoutOrNull(VIDEO_DOWNLOAD_TIMEOUT_MS) { existingDeferred.await() }
+            if (joined != null) return@withContext joined
+            // Stale or hung prefetch — cancel and attempt one fresh clean download
+            if (!existingDeferred.isCompleted) {
+                UHLog.w("wallpaper_warn", "In-flight video prefetch timed out; resetting for clean retry.")
+                cancelInFlightVideo(url)
+            } else {
+                return@withContext null
+            }
         }
 
         val deferred = CompletableDeferred<File?>()
         val raced = inFlight.putIfAbsent(key, deferred)
         if (raced != null) {
-            return@withContext raced.await()
+            return@withContext withTimeoutOrNull(VIDEO_DOWNLOAD_TIMEOUT_MS) { raced.await() }
         }
 
         setProgress(hash, -1f)
         try {
             val dest = File(cacheDir(appCtx), "$key.mp4")
             val part = File(cacheDir(appCtx), "$key.mp4.part")
-            val ok = downloadToFile(url, part) { frac ->
-                setProgress(hash, frac)
+            val ok = withTimeoutOrNull(VIDEO_DOWNLOAD_TIMEOUT_MS) {
+                downloadToFile(url, part, callKey = key) { frac ->
+                    setProgress(hash, frac)
+                }
+            } == true
+            if (!ok) {
+                inFlightCalls.remove(key)?.cancel()
             }
             val result = if (ok && part.exists() && part.length() > 1024L) {
                 if (dest.exists()) dest.delete()
@@ -244,7 +293,6 @@ object WallpaperMediaCache {
                     part.delete()
                 }
                 trimCacheIfNeeded(appCtx)
-                // Seed persistent Motion thumbnail from the downloaded local file if missing
                 if (getCachedMotionThumb(appCtx, url) == null) {
                     cacheScope.launch { getOrExtractMotionThumb(appCtx, url) }
                 }
@@ -257,10 +305,12 @@ object WallpaperMediaCache {
             result
         } catch (e: Exception) {
             UHLog.e("wallpaper_error", "Remote video cache failed: ${e.message}")
+            inFlightCalls.remove(key)?.cancel()
             deferred.complete(null)
             null
         } finally {
             clearProgress(hash)
+            inFlightCalls.remove(key)
             inFlight.remove(key, deferred)
         }
     }
@@ -302,14 +352,20 @@ object WallpaperMediaCache {
     fun downloadToFile(
         url: String,
         destFile: File,
+        callKey: String? = null,
         onProgress: ((Float) -> Unit)? = null,
     ): Boolean {
+        var call: Call? = null
         return try {
             val request = Request.Builder()
                 .url(url)
                 .header("User-Agent", UhHttpClient.DEFAULT_USER_AGENT)
                 .build()
-            UhHttpClient.client.newCall(request).execute().use { response ->
+            call = downloadClient.newCall(request)
+            if (callKey != null) {
+                inFlightCalls[callKey] = call
+            }
+            call.execute().use { response ->
                 if (!response.isSuccessful) {
                     UHLog.w("wallpaper_warn", "Download HTTP ${response.code} for $url")
                     return false
@@ -343,6 +399,10 @@ object WallpaperMediaCache {
         } catch (e: Exception) {
             UHLog.e("wallpaper_error", "downloadToFile failed: ${e.message}")
             false
+        } finally {
+            if (callKey != null && call != null) {
+                inFlightCalls.remove(callKey, call)
+            }
         }
     }
 

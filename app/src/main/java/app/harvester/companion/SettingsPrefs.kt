@@ -33,7 +33,7 @@ object SettingsPrefs {
 
     fun homeStatsEnabledFlow(ctx: Context): StateFlow<Boolean> {
         if (_homeStatsEnabledFlow.value == null) {
-            _homeStatsEnabledFlow.value = getBool(ctx, K_HOME_SHOW_STATS, false)
+            _homeStatsEnabledFlow.value = getBool(ctx, K_HOME_SHOW_STATS, true)
         }
         @Suppress("UNCHECKED_CAST")
         return _homeStatsEnabledFlow.asStateFlow() as StateFlow<Boolean>

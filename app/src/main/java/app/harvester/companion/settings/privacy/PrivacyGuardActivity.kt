@@ -184,8 +184,9 @@ class PrivacyGuardActivity : AppCompatActivity() {
                 }
 
                 val enabledListsCount = shieldState.lists.count { it.enabled }
+                val numberFmt = remember { java.text.NumberFormat.getIntegerInstance() }
                 val activeRulesText = if (shieldState.totalCompiledRules > 0) {
-                    "$enabledListsCount active lists • ${shieldState.totalCompiledRules} rules"
+                    "$enabledListsCount active lists • ${numberFmt.format(shieldState.totalCompiledRules)} rules"
                 } else {
                     "$enabledListsCount active filter lists"
                 }
@@ -293,8 +294,8 @@ class PrivacyGuardActivity : AppCompatActivity() {
                         )
                         UhSettingsDivider()
                         SettingsSwitchRow(
-                            title = "Block JavaScript Globally",
-                            subtitle = "Hardened mode — disables scripts across all sites",
+                            title = "Smart JavaScript Blocking",
+                            subtitle = "Blocks third-party scripts while keeping pages usable, with 1-tap in-page controls",
                             key = SettingsPrefs.K_PG_SCRIPT,
                             default = false,
                             iconRes = R.drawable.fx_ic_scripts_24,

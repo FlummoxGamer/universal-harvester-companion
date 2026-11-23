@@ -188,6 +188,25 @@ object GeckoWebExtensionBridge {
         }
     }
 
+    /**
+     * Streams BEGIN -> CHUNK* -> COMMIT messages over the persistent GeckoView port
+     * in strict FIFO order on the main looper so 300k-500k+ rules sync reliably without
+     * exceeding Android Binder IPC transaction limits.
+     */
+    fun pushChunkedPrivacyConfig(messages: List<JSONObject>) {
+        if (messages.isEmpty()) return
+        mainHandler.post {
+            val port = activeBridgePort ?: return@post
+            try {
+                for (msg in messages) {
+                    port.postMessage(msg)
+                }
+            } catch (e: Exception) {
+                UHLog.w("shield", "Failed pushing chunked privacy config (${messages.size} msgs): ${e.message}")
+            }
+        }
+    }
+
     private val headerMessageDelegate = object : WebExtension.MessageDelegate {
         override fun onMessage(
             nativeApp: String,
@@ -223,9 +242,11 @@ object GeckoWebExtensionBridge {
             if (ctx != null) {
                 scope.launch {
                     try {
-                        val cfg = UhShieldEngine.buildExtensionRuntimePayload(ctx)
-                        pushPrivacyRuntimeConfig(cfg)
-                    } catch (_: Exception) {}
+                        val chunks = UhShieldEngine.buildChunkedRuntimeMessages(ctx)
+                        pushChunkedPrivacyConfig(chunks)
+                    } catch (e: Exception) {
+                        UHLog.w("shield", "Initial chunked sync failed: ${e.message}")
+                    }
                 }
             }
         }
@@ -245,6 +266,11 @@ object GeckoWebExtensionBridge {
                     scope.launch {
                         val payload = UhShieldEngine.buildExtensionRuntimePayload(ctx)
                         mainHandler.post { result.complete(payload) }
+                        // Follow up with full chunked rule sync over activeBridgePort
+                        try {
+                            val chunks = UhShieldEngine.buildChunkedRuntimeMessages(ctx)
+                            pushChunkedPrivacyConfig(chunks)
+                        } catch (_: Exception) {}
                     }
                     result
                 }
@@ -253,21 +279,7 @@ object GeckoWebExtensionBridge {
                     val result = GeckoResult<Any>()
                     scope.launch {
                         val url = json.optString("url")
-                        val selectors = UhShieldEngine.getCosmeticSelectorsForHost(url)
-                        val selArr = JSONArray()
-                        selectors.forEach { selArr.put(it) }
-                        val payload = JSONObject().apply {
-                            put("shieldLevel", UhShieldEngine.state.value.level.code)
-                            put("paused", UhShieldEngine.isSitePaused(url))
-                            put("cosmetics", selArr)
-                            put("cookieBanners", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_COOKIE_BANNERS, true))
-                            put("blockPopups", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_POPUP_BLOCK, true))
-                            put("backgroundPlay", SettingsPrefs.getBool(ctx, SettingsPrefs.K_BACKGROUND_PLAY, true))
-                            put("webrtcPolicy", SettingsPrefs.getInt(ctx, SettingsPrefs.K_ADV_WEBRTC_POLICY, 1))
-                            put("forceDarkWeb", UhPrivacyController.isForceDarkWebEffectivelyEnabled(ctx))
-                            put("enhanceDark", SettingsPrefs.getBool(ctx, SettingsPrefs.K_ENHANCE_DARK, false))
-                            put("darkBypassed", UhPrivacyController.isSiteDarkBypassed(ctx, url))
-                        }
+                        val payload = UhShieldEngine.buildPageProtectPayload(ctx, url)
                         mainHandler.post { result.complete(payload) }
                     }
                     result
@@ -284,6 +296,31 @@ object GeckoWebExtensionBridge {
                             if (ads > 0) UhShieldEngine.recordBlockedEvent(host, isTracker = false, count = ads)
                             if (trackers > 0) UhShieldEngine.recordBlockedEvent(host, isTracker = true, count = trackers)
                         }
+                    }
+                    GeckoResult.fromValue(true)
+                }
+
+                "JS_BLOCKED_REPORT" -> {
+                    val host = json.optString("host")
+                    val total = json.optInt("totalBlocked", 0)
+                    val domainsObj = json.optJSONObject("domains")
+                    val domainCounts = LinkedHashMap<String, Int>()
+                    if (domainsObj != null) {
+                        for (key in domainsObj.keys()) {
+                            val count = domainsObj.optInt(key, 0)
+                            if (key.isNotBlank() && count > 0) {
+                                domainCounts[key] = count
+                            }
+                        }
+                    }
+                    UhShieldEngine.reportJsBlocked(host, total, domainCounts)
+                    GeckoResult.fromValue(true)
+                }
+
+                "PAGE_NAVIGATED" -> {
+                    val host = json.optString("host")
+                    if (host.isNotBlank()) {
+                        UhShieldEngine.clearJsBlockedForHost(host)
                     }
                     GeckoResult.fromValue(true)
                 }
