@@ -12,8 +12,8 @@ android {
     applicationId = "app.harvester.companion"
     minSdk = 29
     targetSdk = 36
-    versionCode = 199
-    versionName = "2.4.129"
+    versionCode = 200
+    versionName = "2.4.130"
 
     ksp {
         arg("room.schemaLocation", "$projectDir/schemas")
