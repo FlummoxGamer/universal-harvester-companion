@@ -1,9 +1,0 @@
-{
-  "name": "universal-harvester-companion",
-  "version": "2.4.114",
-  "private": true,
-  "scripts": {
-    "dev": "node server.js",
-    "start": "node server.js"
-  }
-}
