@@ -10,9 +10,26 @@
     let stagingSettings = null;
 
     const pendingBlockedByHost = new Map();
+    const recentBlockedDedup = new Map();
+    const DEDUP_WINDOW_MS = 5000;
     let flushTimer = null;
     let jsReportTimer = null;
     const pendingJsReportHosts = new Set();
+
+    // Live Request Inspector batching
+    let pendingRequestLogs = [];
+    let requestLogTimer = null;
+
+    // Async CNAME resolution dedup cache (bounded)
+    const requestedCnameHosts = new Set();
+
+    // Bounce-tracker main-frame hop detector: tabId -> { host, base, arrivedAt }
+    const tabLastHop = new Map();
+    const BOUNCE_SAFE_BASES = new Set([
+        "google.com", "accounts.google.com", "bing.com", "duckduckgo.com", "yahoo.com",
+        "search.brave.com", "github.com", "microsoftonline.com", "login.live.com",
+        "apple.com", "cloudflare.com", "paypal.com", "stripe.com", "auth0.com", "okta.com"
+    ]);
 
     // Safe tracking params ONLY — never strip Cloudflare (__cf_chl_tk), auth, or streaming redirect tokens (_t, _r, feature, pp)
     const TRACKING_QUERY_PARAMS = new Set([
@@ -27,11 +44,27 @@
         "rb_clickid", "scid", "sscid", "ttclid", "li_fat_id", "epik", "ndclid",
         "oborigurl", "dicbo", "ad_id", "adset_id", "campaign_id",
         "ref_", "dib", "dib_tag", "ascsubtag", "linkcode", "linkid",
-        "cxt", "ref_campaign", "ref_source", "share_source"
+        "cxt", "ref_campaign", "ref_source", "share_source",
+        "si", "sxsrf", "ved", "ei", "gs_lcrp", "oq", "uact", "aqs",
+        "ml_subscriber", "ml_subscriber_hash", "_branch_match_id", "_branch_referrer",
+        "ck_subscriber_id", "mc_cid", "mc_eid", "oft_id", "oft_k", "oft_lk", "oft_d"
     ]);
 
-    function queueBlockedStat(pageHost, isTracker, fallbackHost) {
-        const key = pageHost || B.activeMainHost || fallbackHost || "web";
+    function queueBlockedStat(pageHost, isTracker, reqHost, reqType) {
+        const key = pageHost || B.activeMainHost || reqHost || "web";
+        const now = Date.now();
+        const dedupKey = key + "|" + (reqHost || "dom") + "|" + (reqType || "req") + "|" + (isTracker ? "t" : "a");
+        const prevTs = recentBlockedDedup.get(dedupKey);
+        if (prevTs !== undefined && (now - prevTs) < DEDUP_WINDOW_MS) {
+            return;
+        }
+        recentBlockedDedup.set(dedupKey, now);
+        if (recentBlockedDedup.size > 900) {
+            for (const [k, ts] of recentBlockedDedup.entries()) {
+                if (now - ts >= DEDUP_WINDOW_MS) recentBlockedDedup.delete(k);
+            }
+        }
+
         let entry = pendingBlockedByHost.get(key);
         if (!entry) {
             entry = { ads: 0, trackers: 0 };
@@ -43,6 +76,16 @@
         if (!flushTimer) {
             flushTimer = setTimeout(flushBlockedStats, 350);
         }
+    }
+
+    function notifyBlockedRedirect(sourceHost, targetUrl, isPopupTab) {
+        if (!targetUrl) return;
+        api.runtime.sendNativeMessage("uhApp", {
+            type: "AD_REDIRECT_BLOCKED",
+            sourceHost: sourceHost || B.activeMainHost || "",
+            targetUrl: targetUrl,
+            isPopupTab: isPopupTab === true
+        }).catch(() => {});
     }
 
     function flushBlockedStats() {
@@ -112,6 +155,7 @@
         if (!cfg || typeof cfg !== "object") return;
         if (typeof cfg.shieldLevel === "number") shieldState.shieldLevel = cfg.shieldLevel;
         if (Array.isArray(cfg.pausedHosts)) shieldState.pausedHosts = new Set(cfg.pausedHosts);
+        if (Array.isArray(cfg.redirectAllowOnceHosts)) shieldState.redirectAllowOnceHosts = new Set(cfg.redirectAllowOnceHosts);
         if (typeof cfg.smartBlockJs === "boolean") shieldState.smartBlockJs = cfg.smartBlockJs;
         if (Array.isArray(cfg.jsAllowOnceHosts)) shieldState.jsAllowOnceHosts = new Set(cfg.jsAllowOnceHosts);
         if (Array.isArray(cfg.jsAllowAlwaysHosts)) shieldState.jsAllowAlwaysHosts = new Set(cfg.jsAllowAlwaysHosts);
@@ -120,6 +164,12 @@
         if (typeof cfg.deAmp === "boolean") shieldState.deAmp = cfg.deAmp;
         if (typeof cfg.blockPopups === "boolean") shieldState.blockPopups = cfg.blockPopups;
         if (typeof cfg.antiFingerprint === "boolean") shieldState.antiFingerprint = cfg.antiFingerprint;
+        if (typeof cfg.strictFingerprint === "boolean") shieldState.strictFingerprint = cfg.strictFingerprint;
+        if (typeof cfg.fpSessionSalt === "string" && cfg.fpSessionSalt) shieldState.fpSessionSalt = cfg.fpSessionSalt;
+        if (typeof cfg.refererTrim === "boolean") shieldState.refererTrim = cfg.refererTrim;
+        if (typeof cfg.lanGuard === "boolean") shieldState.lanGuard = cfg.lanGuard;
+        if (typeof cfg.annoyances === "boolean") shieldState.annoyances = cfg.annoyances;
+        if (typeof cfg.cnameUnmask === "boolean") shieldState.cnameUnmask = cfg.cnameUnmask;
         if (typeof cfg.dnt === "boolean") shieldState.dnt = cfg.dnt;
         if (typeof cfg.gpc === "boolean") shieldState.gpc = cfg.gpc;
         if (typeof cfg.webrtcPolicy === "number") {
@@ -138,8 +188,11 @@
             shieldLevel: shieldState.shieldLevel,
             pausedHosts: Array.from(shieldState.pausedHosts),
             cookieBanners: shieldState.cookieBanners,
+            annoyances: shieldState.annoyances,
             blockPopups: shieldState.blockPopups,
             antiFingerprint: shieldState.antiFingerprint,
+            strictFingerprint: shieldState.strictFingerprint,
+            fpSessionSalt: shieldState.fpSessionSalt,
             backgroundPlay: shieldState.backgroundPlay,
             webrtcPolicy: shieldState.webrtcPolicy,
             forceDarkWeb: shieldState.forceDarkWeb,
@@ -195,6 +248,21 @@
                 case "networkRules":
                     for (let i = 0; i < items.length; i++) B.indexWireRule(stagingRules, items[i]);
                     break;
+                case "removeParamRules":
+                    for (let i = 0; i < items.length; i++) {
+                        const w = items[i];
+                        if (!Array.isArray(w) || w.length < 3) continue;
+                        stagingRules.removeParamRules.push({
+                            pattern: w[0] || "",
+                            patternRe: undefined,
+                            param: w[1] || "",
+                            isRegexParam: w[2] === 1,
+                            paramRe: undefined,
+                            includeDomains: Array.isArray(w[3]) ? w[3] : null,
+                            excludeDomains: Array.isArray(w[4]) ? w[4] : null
+                        });
+                    }
+                    break;
             }
             return true;
         }
@@ -239,6 +307,17 @@
                 target = u.searchParams.get("url");
             } else if (host === "href.li" && u.search && u.search.startsWith("?http")) {
                 target = u.search.slice(1);
+            } else if ((host === "youtube.com" || host === "www.youtube.com" || host === "m.youtube.com") && path === "/redirect") {
+                target = u.searchParams.get("q");
+            } else if (host === "l.tiktok.com" || host === "slack-redir.net" || host === "go.skimresources.com" || host === "go.redirectingat.com") {
+                target = u.searchParams.get("url") || u.searchParams.get("target");
+            } else if (host === "t.umblr.com" && path === "/redirect") {
+                target = u.searchParams.get("z");
+            } else if (host === "disq.us" && path === "/url") {
+                const raw = u.searchParams.get("url");
+                if (raw) target = raw.replace(/:[^/]+$/, "");
+            } else if (host === "click.linksynergy.com" || host === "www.anrdoezrs.net" || host === "www.dpbolvw.net" || host === "www.tkqlhce.com") {
+                target = u.searchParams.get("murl") || u.searchParams.get("url");
             }
 
             if (target && (target.startsWith("https://") || target.startsWith("http://"))) {
@@ -309,6 +388,144 @@
         return changed && next !== urlStr ? next : null;
     }
 
+    function applyRemoveParamRules(urlStr, pageHost) {
+        if (!urlStr || !urlStr.includes("?")) return null;
+        if (urlStr.includes("/cdn-cgi/") || urlStr.includes("__cf_chl")) return null;
+        const rules = B.activeRules && B.activeRules.removeParamRules;
+        if (!rules || rules.length === 0) return null;
+
+        let parsed;
+        try {
+            parsed = new URL(urlStr);
+        } catch (_e) {
+            return null;
+        }
+        const lowerUrl = urlStr.toLowerCase();
+        let changed = false;
+
+        for (let i = 0; i < rules.length; i++) {
+            const r = rules[i];
+            if (r.includeDomains && !B.matchesDomainList(pageHost, r.includeDomains)) continue;
+            if (r.excludeDomains && B.matchesDomainList(pageHost, r.excludeDomains)) continue;
+
+            if (r.pattern && r.pattern !== "*") {
+                if (r.patternRe === undefined) {
+                    r.patternRe = B.compileAbpPatternToRegex(r.pattern);
+                }
+                if (r.patternRe && !r.patternRe.test(lowerUrl)) continue;
+            }
+
+            if (!r.param) continue;
+            if (r.isRegexParam) {
+                if (r.paramRe === undefined) {
+                    try { r.paramRe = new RegExp(r.param, "i"); } catch (_e) { r.paramRe = null; }
+                }
+                if (!r.paramRe) continue;
+                const keysToDel = [];
+                for (const k of parsed.searchParams.keys()) {
+                    if (r.paramRe.test(k)) keysToDel.push(k);
+                }
+                for (let j = 0; j < keysToDel.length; j++) {
+                    parsed.searchParams.delete(keysToDel[j]);
+                    changed = true;
+                }
+            } else {
+                const targetLower = r.param.toLowerCase();
+                const keysToDel = [];
+                for (const k of parsed.searchParams.keys()) {
+                    if (k.toLowerCase() === targetLower) keysToDel.push(k);
+                }
+                for (let j = 0; j < keysToDel.length; j++) {
+                    parsed.searchParams.delete(keysToDel[j]);
+                    changed = true;
+                }
+            }
+        }
+        if (!changed) return null;
+        const next = parsed.toString();
+        return next !== urlStr ? next : null;
+    }
+
+    function extractPathHint(urlStr) {
+        try {
+            const u = new URL(urlStr);
+            const p = u.pathname || "/";
+            return p.length > 48 ? p.slice(0, 48) + "…" : p;
+        } catch (_e) {
+            return "";
+        }
+    }
+
+    function queueRequestLog(pageHost, reqHost, urlStr, reqType, action, ruleSource) {
+        const pHost = pageHost || B.activeMainHost || "";
+        if (!pHost || !reqHost) return;
+        pendingRequestLogs.push({
+            pageHost: pHost,
+            reqHost: reqHost,
+            pathHint: extractPathHint(urlStr),
+            type: reqType || "other",
+            action: action || "ALLOWED",
+            ruleSource: ruleSource || "",
+            ts: Date.now()
+        });
+        if (pendingRequestLogs.length >= 40) {
+            flushRequestLogs();
+        } else if (!requestLogTimer) {
+            requestLogTimer = setTimeout(flushRequestLogs, 400);
+        }
+    }
+
+    function flushRequestLogs() {
+        if (requestLogTimer) {
+            clearTimeout(requestLogTimer);
+            requestLogTimer = null;
+        }
+        if (pendingRequestLogs.length === 0) return;
+        const batch = pendingRequestLogs;
+        pendingRequestLogs = [];
+        api.runtime.sendNativeMessage("uhApp", {
+            type: "REQUEST_LOG_BATCH",
+            entries: batch
+        }).catch(() => {});
+    }
+
+    function requestCnameResolve(host) {
+        if (!host || requestedCnameHosts.has(host)) return;
+        if (requestedCnameHosts.size > 1200) {
+            requestedCnameHosts.clear();
+        }
+        requestedCnameHosts.add(host);
+        api.runtime.sendNativeMessage("uhApp", {
+            type: "RESOLVE_CNAME",
+            host: host
+        }).catch(() => {});
+    }
+
+    // Automatic silent bounce-tracker cookie/storage eviction
+    function trackMainFrameHop(tabId, urlStr) {
+        if (typeof tabId !== "number" || tabId < 0 || !urlStr) return;
+        const host = B.normalizeHost(urlStr);
+        if (!host) return;
+        const base = B.getRegistrableBase(host);
+        const now = Date.now();
+        const prev = tabLastHop.get(tabId);
+        if (prev && prev.base && prev.base !== base) {
+            const elapsed = now - prev.arrivedAt;
+            // Rapid cross-site redirect chain (< 2500ms) through an intermediary domain
+            if (elapsed > 0 && elapsed < 2500 && !BOUNCE_SAFE_BASES.has(prev.base) && !BOUNCE_SAFE_BASES.has(prev.host)) {
+                api.runtime.sendNativeMessage("uhApp", {
+                    type: "BOUNCE_TRACKER_EVICT",
+                    host: prev.host
+                }).catch(() => {});
+            }
+        }
+        tabLastHop.set(tabId, { host, base, arrivedAt: now });
+    }
+
+    function clearTabHop(tabId) {
+        tabLastHop.delete(tabId);
+    }
+
     function notifyElementCollapse(details) {
         if (typeof details.tabId !== "number" || details.tabId < 0) return;
         if (details.type !== "image" && details.type !== "imageset" && details.type !== "sub_frame" && details.type !== "object" && details.type !== "media") {
@@ -325,10 +542,16 @@
     }
 
     B.queueBlockedStat = queueBlockedStat;
+    B.notifyBlockedRedirect = notifyBlockedRedirect;
     B.recordBlockedScript = recordBlockedScript;
     B.applySettingsObject = applySettingsObject;
     B.broadcastLiveSettingsToTabs = broadcastLiveSettingsToTabs;
     B.handleChunkedConfigMessage = handleChunkedConfigMessage;
     B.cleanTrackingUrl = cleanTrackingUrl;
+    B.applyRemoveParamRules = applyRemoveParamRules;
+    B.queueRequestLog = queueRequestLog;
+    B.requestCnameResolve = requestCnameResolve;
+    B.trackMainFrameHop = trackMainFrameHop;
+    B.clearTabHop = clearTabHop;
     B.notifyElementCollapse = notifyElementCollapse;
 })(globalThis.__uhBg);

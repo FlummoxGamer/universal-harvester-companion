@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 import okhttp3.Request
 import org.json.JSONObject
 import java.net.URI
+import java.security.SecureRandom
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -31,15 +32,16 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * UH Shield — Flagship 3-layer built-in ad, tracker, annoyance & malware blocker.
  *
- * Layer 1 (Network): Full ABP/uBO rule engine — O(1) domain sets (all-party, 3rd-party, popup, exceptions)
+ * Layer 1 (Network): Full rule engine — O(1) domain sets (all-party, 3rd-party, popup, exceptions)
  *                    + structured path/wildcard/regex/resource-type/domain/exception/redirect rules,
  *                    synced in chunks to the bundled WebExtension with zero rule truncation.
  * Layer 2 (Cosmetic & Anti-Adblock): Global + per-domain CSS hiding rules, #@# cosmetic exceptions,
- *                    procedural :has-text() selectors, blocked-banner collapsing, and uBO MAIN-world scriptlets.
- * Layer 3 (Gecko Native ETP & Cookie Banners): Coordinated via [UhPrivacyController] with live stat sync.
+ *                    procedural :has-text() selectors, blocked-banner collapsing, and MAIN-world scriptlets.
+ * Layer 3 (Engine Native ETP & Privacy): Coordinated via [UhPrivacyController] with live stat sync.
  *
  * Modularized across same-package helpers: [UhShieldModels], [UhShieldCatalog],
- * [UhShieldBootstrapRules], [UhShieldUrlCleaner], [UhShieldStorage], and [UhShieldUpdateWorker].
+ * [UhShieldBootstrapRules], [UhShieldUrlCleaner], [UhShieldStorage], [UhShieldPayloadBuilder],
+ * and [UhShieldUpdateWorker].
  */
 object UhShieldEngine {
 
@@ -107,6 +109,30 @@ object UhShieldEngine {
     // Persistent HTTPS-Only per-site HTTP exceptions (1-tap fallback)
     private val _httpExceptionHosts = MutableStateFlow<Set<String>>(emptySet())
     val httpExceptionHosts: StateFlow<Set<String>> = _httpExceptionHosts.asStateFlow()
+
+    // Per-session "Allow Once" hosts for blocked ad-redirects / popups + live toast event
+    private val redirectAllowOnceHosts: MutableSet<String> = Collections.newSetFromMap(ConcurrentHashMap())
+    private val _blockedRedirectEvent = MutableStateFlow<BlockedRedirectEvent?>(null)
+    val blockedRedirectEvent: StateFlow<BlockedRedirectEvent?> = _blockedRedirectEvent.asStateFlow()
+
+    // Cryptographically random per-session salt for deterministic per-origin anti-fingerprinting farbling
+    val fpSessionSalt: String = run {
+        val bytes = ByteArray(16)
+        SecureRandom().nextBytes(bytes)
+        bytes.joinToString("") { "%02x".format(it) }
+    }
+
+    @Volatile
+    var onLightweightConfigUpdated: (() -> Unit)? = null
+
+    @Volatile
+    var onCnameBlockedDiscovered: ((subdomain: String, target: String, isTracker: Boolean) -> Unit)? = null
+
+    // Live Request Inspector ring buffer per pageHost (bounded to 150 entries/host)
+    private val requestLogByHost = ConcurrentHashMap<String, ArrayDeque<RequestLogEntry>>()
+    private val _requestLogTick = MutableStateFlow(0L)
+    val requestLogTick: StateFlow<Long> = _requestLogTick.asStateFlow()
+    private val requestLogSeq = AtomicLong(1L)
 
     private val lifetimeAds = AtomicLong(0L)
     private val lifetimeTrackers = AtomicLong(0L)
@@ -321,7 +347,99 @@ object UhShieldEngine {
         _httpExceptionHosts.value = next
     }
 
-    // ─── Per-Host & Lifetime Stats + Gecko Native ETP Sync ──────────────────
+    // ─── Blocked Ad-Redirect & Popunder Toast + Allow-Once Controls ─────────
+
+    fun reportBlockedRedirect(sourceHost: String, targetUrl: String, isPopupTab: Boolean = false) {
+        val cleanTarget = normalizeHost(targetUrl)
+        if (cleanTarget.isBlank()) return
+        _blockedRedirectEvent.value = BlockedRedirectEvent(
+            id = System.nanoTime(),
+            sourceHost = normalizeHost(sourceHost),
+            targetUrl = targetUrl,
+            targetHost = cleanTarget,
+            isPopupTab = isPopupTab,
+        )
+    }
+
+    fun dismissBlockedRedirect(eventId: Long? = null) {
+        if (eventId == null || _blockedRedirectEvent.value?.id == eventId) {
+            _blockedRedirectEvent.value = null
+        }
+    }
+
+    fun allowRedirectOnce(urlOrHost: String) {
+        val host = normalizeHost(urlOrHost)
+        if (host.isBlank()) return
+        redirectAllowOnceHosts.add(host)
+        _blockedRedirectEvent.value = null
+        val lightCb = onLightweightConfigUpdated
+        if (lightCb != null) {
+            lightCb.invoke()
+        } else {
+            onCompiledRulesUpdated?.invoke()
+        }
+    }
+
+    // ─── Live Request Inspector & CNAME Unmasking ───────────────────────────
+
+    fun recordRequestLogBatch(entries: List<RequestLogEntry>) {
+        if (entries.isEmpty()) return
+        for (raw in entries) {
+            val host = normalizeHost(raw.pageHost)
+            if (host.isBlank() || raw.reqHost.isBlank()) continue
+            val entry = raw.copy(
+                id = requestLogSeq.getAndIncrement(),
+                pageHost = host,
+                timestampMs = if (raw.timestampMs > 0L) raw.timestampMs else System.currentTimeMillis(),
+            )
+            val deque = requestLogByHost.computeIfAbsent(host) { ArrayDeque(64) }
+            synchronized(deque) {
+                if (deque.size >= 150) deque.removeFirst()
+                deque.addLast(entry)
+            }
+        }
+        if (requestLogByHost.size > 40) {
+            val firstKey = requestLogByHost.keys.firstOrNull()
+            if (firstKey != null) requestLogByHost.remove(firstKey)
+        }
+        _requestLogTick.value = System.nanoTime()
+    }
+
+    fun getRequestLogForHost(urlOrHost: String): List<RequestLogEntry> {
+        val host = normalizeHost(urlOrHost)
+        if (host.isBlank()) return emptyList()
+        val deque = requestLogByHost[host] ?: return emptyList()
+        return synchronized(deque) { deque.toList().asReversed() }
+    }
+
+    fun clearRequestLogForHost(urlOrHost: String) {
+        val host = normalizeHost(urlOrHost)
+        if (host.isNotBlank() && requestLogByHost.remove(host) != null) {
+            _requestLogTick.value = System.nanoTime()
+        }
+    }
+
+    fun resolveCnameAsync(subdomain: String) {
+        val clean = normalizeHost(subdomain)
+        if (clean.isBlank()) return
+        scope.launch {
+            val target = UhCnameUnmasker.resolveCnameBlocking(clean)
+            if (target.isBlank()) return@launch
+            val set = compiledSet
+            if (UhShieldUrlCleaner.matchesDomainSet(target, set.exceptionDomains)) return@launch
+            val isAd = UhShieldUrlCleaner.matchesDomainSet(target, set.adDomains) ||
+                UhShieldUrlCleaner.matchesDomainSet(target, set.thirdPartyAdDomains)
+            val isTracker = !isAd && (
+                UhShieldUrlCleaner.matchesDomainSet(target, set.trackerDomains) ||
+                    UhShieldUrlCleaner.matchesDomainSet(target, set.thirdPartyTrackerDomains)
+                )
+            if (isAd || isTracker) {
+                onCnameBlockedDiscovered?.invoke(clean, target, isTracker)
+            }
+        }
+    }
+
+    // ─── Per-Host & Lifetime Stats + Engine Native ETP Sync ─────────────────
 
     fun getHostStats(urlOrHost: String): ShieldStatsSnapshot {
         val host = normalizeHost(urlOrHost)
@@ -342,11 +460,14 @@ object UhShieldEngine {
         val prev = lastGeckoEtpByTab[tabId]
         if (prev == null || prev.first != newHost) {
             if (newHost.isNotBlank()) {
-                lastGeckoEtpByTab[tabId] = newHost to 0
+                // Seed with -1 sentinel so stale previous-page ETP counts during transition are never double-counted
+                lastGeckoEtpByTab[tabId] = newHost to -1
                 hostStatsMap.remove(newHost)
                 jsBlockedByHost.remove(newHost)
+                requestLogByHost.remove(newHost)
                 _hostStatsTick.value = System.nanoTime()
                 _jsBlockedTick.value = System.nanoTime()
+                _requestLogTick.value = System.nanoTime()
             } else {
                 lastGeckoEtpByTab.remove(tabId)
             }
@@ -354,16 +475,32 @@ object UhShieldEngine {
     }
 
     /**
-     * Syncs GeckoView native Enhanced Tracking Protection blocked tracker count
-     * into UH Shield lifetime & per-site stats using per-tab deltas (no double-counting).
+     * Syncs engine native Enhanced Tracking Protection blocked tracker count
+     * into UH Shield lifetime & per-site stats using strict per-tab deltas (no double-counting).
      */
-    fun recordGeckoEtpTrackers(tabId: String, pageUrl: String, currentGeckoCount: Int) {
+    fun recordGeckoEtpTrackers(tabId: String, pageUrl: String, currentGeckoCount: Int, isLoading: Boolean = false) {
         val host = normalizeHost(pageUrl)
         if (host.isBlank() || currentGeckoCount < 0) return
         val prev = lastGeckoEtpByTab[tabId]
-        val prevCount = if (prev != null && prev.first == host) prev.second else 0
+        if (prev == null || prev.first != host) {
+            // Establish baseline for this host without counting stale pre-navigation totals
+            lastGeckoEtpByTab[tabId] = host to currentGeckoCount
+            return
+        }
+        val prevCount = prev.second
+        if (prevCount < 0) {
+            // First observation after navigating to a new host: while loading, stale trackers from
+            // the previous page may still sit in state; only arm baseline once count drops to 0 or load finishes
+            if (currentGeckoCount == 0 || !isLoading) {
+                lastGeckoEtpByTab[tabId] = host to currentGeckoCount
+                if (!isLoading && currentGeckoCount in 1..25) {
+                    recordBlockedEvent(host, isTracker = true, count = currentGeckoCount)
+                }
+            }
+            return
+        }
         lastGeckoEtpByTab[tabId] = host to currentGeckoCount
-        val delta = currentGeckoCount - prevCount
+        val delta = (currentGeckoCount - prevCount).coerceAtMost(12)
         if (delta > 0) {
             recordBlockedEvent(host, isTracker = true, count = delta)
         }
@@ -561,6 +698,21 @@ object UhShieldEngine {
             )
         }
         scheduleDebouncedRecompile(ctx)
+    }
+
+    /**
+     * Appends a single custom filter rule (from Visual Element Picker or Live Request Inspector)
+     * without duplicating existing lines, persists it, and triggers an immediate recompile.
+     */
+    fun appendCustomRule(ruleLine: String): Boolean {
+        val clean = ruleLine.trim()
+        if (clean.length < 4 || clean.length > 320) return false
+        val current = _state.value.customUserRules
+        val existingLines = current.lineSequence().map { it.trim() }.toSet()
+        if (clean in existingLines) return false
+        val updated = if (current.isBlank()) clean else "${current.trimEnd()}\n$clean"
+        saveCustomUserRules(updated)
+        return true
     }
 
     fun syncEnabledLists(force: Boolean = true) {
@@ -774,11 +926,11 @@ object UhShieldEngine {
 
         if (st.level == ShieldLevel.STANDARD && !isThirdParty) return 0
 
-        if (UhShieldUrlCleaner.matchesDomainSet(reqHost, set.trackerDomains)) return 2
         if (UhShieldUrlCleaner.matchesDomainSet(reqHost, set.adDomains)) return 1
+        if (UhShieldUrlCleaner.matchesDomainSet(reqHost, set.trackerDomains)) return 2
         if (isThirdParty) {
-            if (UhShieldUrlCleaner.matchesDomainSet(reqHost, set.thirdPartyTrackerDomains)) return 2
             if (UhShieldUrlCleaner.matchesDomainSet(reqHost, set.thirdPartyAdDomains)) return 1
+            if (UhShieldUrlCleaner.matchesDomainSet(reqHost, set.thirdPartyTrackerDomains)) return 2
         }
         return 0
     }
@@ -790,6 +942,8 @@ object UhShieldEngine {
             compiledSet = compiledSet,
             jsAllowOnceHosts = jsAllowOnceHosts,
             jsAllowAlwaysHosts = _jsAllowAlwaysHosts.value,
+            redirectAllowOnceHosts = redirectAllowOnceHosts,
+            fpSessionSalt = fpSessionSalt,
         )
 
     fun buildChunkedRuntimeMessages(ctx: Context): List<JSONObject> =
@@ -799,6 +953,8 @@ object UhShieldEngine {
             compiledSet = compiledSet,
             jsAllowOnceHosts = jsAllowOnceHosts,
             jsAllowAlwaysHosts = _jsAllowAlwaysHosts.value,
+            redirectAllowOnceHosts = redirectAllowOnceHosts,
+            fpSessionSalt = fpSessionSalt,
         )
 
     fun getCosmeticSelectorsForHost(pageUrl: String): List<String> =
@@ -814,6 +970,7 @@ object UhShieldEngine {
             pageUrl = pageUrl,
             state = _state.value,
             compiledSet = compiledSet,
+            fpSessionSalt = fpSessionSalt,
         )
 
     // ─── URL Cleaning & Host Utilities (delegated to UhShieldUrlCleaner) ───

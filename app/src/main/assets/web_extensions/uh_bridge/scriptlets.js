@@ -7,6 +7,8 @@
 
     function isCloudflareChallengePage() {
         try {
+            const host = (window.location.hostname || "").toLowerCase();
+            if (host === "challenges.cloudflare.com") return true;
             const path = (window.location.pathname || "").toLowerCase();
             if (path.startsWith("/cdn-cgi/")) return true;
             const title = (document.title || "").toLowerCase();
@@ -18,6 +20,88 @@
             }
         } catch (_e) {}
         return false;
+    }
+
+    function getRegistrableBase(host) {
+        const clean = String(host || "").toLowerCase().replace(/^www\./, "");
+        const parts = clean.split(".");
+        if (parts.length <= 2) return clean;
+        const last2 = parts.slice(-2).join(".");
+        if (last2.length <= 6 && (last2.startsWith("co.") || last2.startsWith("com.") || last2.startsWith("org.") || last2.startsWith("net.") || last2.startsWith("gov."))) {
+            return parts.slice(-3).join(".");
+        }
+        return last2;
+    }
+
+    function fnv1aHash(str) {
+        let h = 0x811c9dc5;
+        for (let i = 0; i < str.length; i++) {
+            h ^= str.charCodeAt(i);
+            h = Math.imul(h, 0x01000193);
+        }
+        return h >>> 0;
+    }
+
+    // -------------------------------------------------------------------------
+    // Native-Code Stealth Cloak (makes patched APIs pass Function.prototype.toString checks)
+    // -------------------------------------------------------------------------
+    const nativeCloakMap = new WeakMap();
+    let nativeToStringPatched = false;
+    function ensureNativeCloakInstalled() {
+        if (nativeToStringPatched) return;
+        nativeToStringPatched = true;
+        try {
+            const origToString = Function.prototype.toString;
+            const cloakedToString = function toString() {
+                if (nativeCloakMap.has(this)) {
+                    return nativeCloakMap.get(this);
+                }
+                return origToString.apply(this, arguments);
+            };
+            nativeCloakMap.set(cloakedToString, "function toString() { [native code] }");
+            Object.defineProperty(Function.prototype, "toString", {
+                value: cloakedToString,
+                writable: true,
+                enumerable: false,
+                configurable: true
+            });
+        } catch (_e) {}
+    }
+
+    function cloakNative(fn, name) {
+        if (typeof fn !== "function") return fn;
+        ensureNativeCloakInstalled();
+        const label = name ? String(name) : (fn.name || "");
+        nativeCloakMap.set(fn, "function " + label + "() { [native code] }");
+        try {
+            Object.defineProperty(fn, "name", { value: label, configurable: true });
+        } catch (_e) {}
+        return fn;
+    }
+
+    function defineCloakedGetter(target, prop, getter) {
+        if (!target) return;
+        const cloaked = cloakNative(getter, "get " + prop);
+        try {
+            Object.defineProperty(target, prop, {
+                get: cloaked,
+                enumerable: true,
+                configurable: true
+            });
+        } catch (_e) {}
+    }
+
+    function reportBlockedRedirect(targetUrl, isPopupTab) {
+        try {
+            if (!targetUrl) return;
+            document.dispatchEvent(new CustomEvent("UH_SCRIPTLET_BLOCKED_REDIRECT", {
+                detail: {
+                    sourceHost: (window.location.hostname || "").toLowerCase().replace(/^www\./, ""),
+                    targetUrl: String(targetUrl),
+                    isPopupTab: isPopupTab === true
+                }
+            }));
+        } catch (_e) {}
     }
 
     function makeMatcher(needle) {
@@ -325,13 +409,44 @@
     }
 
     // -------------------------------------------------------------------------
-    // Runtime Guards: Background Play, WebRTC, Popunder Trap Defuser, Fingerprint
+    // Runtime Guards: Bounce-Tracker, Background Play, WebRTC, Popunder/Meta-Refresh,
+    // Spam Push Blocker, YouTube Ad-JSON Pruner & Hybrid Anti-Fingerprinting
     // -------------------------------------------------------------------------
-    const POPUNDER_REGEX = /(popads|popcash|propellerads|exoclick|exosrv|juicyads|trafficjunky|trafficstars|adsterra|hilltopads|clickadu|monetag|pushame|popunder|afu\.php|click\.php\?|admaven|galaksion|richads|evadav|onclickalgo|highperformanceformat|profitablecpmrate)/i;
+    const POPUNDER_REGEX = /(popads|popcash|propellerads|exoclick|exosrv|juicyads|trafficjunky|trafficstars|adsterra|hilltopads|clickadu|monetag|pushame|popunder|afu\.php|click\.php\?|admaven|galaksion|richads|evadav|onclickalgo|highperformanceformat|profitablecpmrate|acscdn|effectivegatecpm|topcreativeformat|directlink|smartlink|1xbet|melbet|mostbet|betwinner|parimatch)/i;
+    const PUSH_SPAM_SW_REGEX = /(pushame|monetag|propeller|evadav|richads|galaksion|admaven|popads|sw-check-permissions|\/push\/sw|\/sw-push)/i;
+
+    let lastUserTap = 0;
+    let lastTapTarget = null;
+    function installUserGestureTracker() {
+        if (window.__uhGestureTracked) return;
+        window.__uhGestureTracked = true;
+        const markTap = (ev) => {
+            if (ev && ev.isTrusted) {
+                lastUserTap = Date.now();
+                lastTapTarget = ev.target || null;
+            }
+        };
+        window.addEventListener("pointerdown", markTap, true);
+        window.addEventListener("click", markTap, true);
+        window.addEventListener("keydown", markTap, true);
+    }
+
+    // Bounce-tracker window.name sanitizer (prevents cross-site ID carrying)
+    function sanitizeCrossSiteWindowName() {
+        if (window.__uhWindowNameCleaned) return;
+        window.__uhWindowNameCleaned = true;
+        try {
+            if (window.self === window.top && window.name && document.referrer) {
+                const refHost = new URL(document.referrer).hostname;
+                if (refHost && getRegistrableBase(refHost) !== getRegistrableBase(window.location.hostname)) {
+                    window.name = "";
+                }
+            }
+        } catch (_e) {}
+    }
 
     function installBackgroundPlay() {
         if (window.__uhBgPlayInstalled) return;
-        // Never spoof visibility on Cloudflare Turnstile/challenge pages
         if (isCloudflareChallengePage()) return;
         window.__uhBgPlayInstalled = true;
         try {
@@ -353,64 +468,176 @@
         } catch (_e) {}
     }
 
+    function installSpamNotificationGuard() {
+        if (window.__uhNotifGuardInstalled) return;
+        if (isCloudflareChallengePage()) return;
+        window.__uhNotifGuardInstalled = true;
+        installUserGestureTracker();
+        try {
+            if (typeof window.Notification !== "undefined" && typeof window.Notification.requestPermission === "function") {
+                const origReq = window.Notification.requestPermission.bind(window.Notification);
+                window.Notification.requestPermission = function (cb) {
+                    const sinceTap = Date.now() - lastUserTap;
+                    const curHost = window.location.hostname || "";
+                    if (sinceTap > 1500 || POPUNDER_REGEX.test(curHost)) {
+                        if (typeof cb === "function") {
+                            try { cb("denied"); } catch (_e) {}
+                        }
+                        return Promise.resolve("denied");
+                    }
+                    return origReq.apply(this, arguments);
+                };
+            }
+        } catch (_e) {}
+
+        try {
+            if (navigator.serviceWorker && typeof navigator.serviceWorker.register === "function") {
+                const origReg = navigator.serviceWorker.register.bind(navigator.serviceWorker);
+                navigator.serviceWorker.register = function (scriptURL) {
+                    const urlStr = String(scriptURL || "");
+                    if (PUSH_SPAM_SW_REGEX.test(urlStr) || POPUNDER_REGEX.test(window.location.hostname || "")) {
+                        return Promise.reject(new DOMException("Blocked ad push service worker", "SecurityError"));
+                    }
+                    return origReg.apply(this, arguments);
+                };
+            }
+        } catch (_e) {}
+    }
+
     function installPopunderDefuser() {
         if (window.__uhPopupGuardInstalled) return;
         if (isCloudflareChallengePage()) return;
         window.__uhPopupGuardInstalled = true;
+        installUserGestureTracker();
+
+        const isSuspiciousPopupUrl = (urlStr) => {
+            if (!urlStr) return false;
+            return POPUNDER_REGEX.test(String(urlStr));
+        };
+
+        const isCrossOriginUrl = (urlStr) => {
+            try {
+                const u = new URL(String(urlStr), window.location.href);
+                if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+                return getRegistrableBase(u.hostname) !== getRegistrableBase(window.location.hostname);
+            } catch (_e) {
+                return false;
+            }
+        };
+
+        const isOverlayTrapElement = (el) => {
+            if (!el || el.nodeType !== 1) return false;
+            try {
+                const cs = getComputedStyle(el);
+                if (cs.position !== "fixed" && cs.position !== "absolute") return false;
+                const z = parseInt(cs.zIndex, 10) || 0;
+                const rect = el.getBoundingClientRect();
+                const coversLargeArea = rect.width > window.innerWidth * 0.45 && rect.height > window.innerHeight * 0.35;
+                const isTransparent = parseFloat(cs.opacity) < 0.08 || cs.backgroundColor === "rgba(0, 0, 0, 0)" || cs.backgroundColor === "transparent";
+                const hasNoRealContent = (el.textContent || "").trim().length === 0 && !el.querySelector("video, input, form, img");
+                return z >= 99 && coversLargeArea && isTransparent && hasNoRealContent;
+            } catch (_e) {
+                return false;
+            }
+        };
+
+        // 1) Guard window.open including delayed about:blank -> .location = adUrl traps
         try {
             const origOpen = window.open;
-            let lastUserTap = 0;
-            let lastTapTarget = null;
-            const markTap = (ev) => {
-                if (ev && ev.isTrusted) {
-                    lastUserTap = Date.now();
-                    lastTapTarget = ev.target || null;
-                }
-            };
-            window.addEventListener("pointerdown", markTap, true);
-            window.addEventListener("click", markTap, true);
-            window.addEventListener("keydown", markTap, true);
-
-            const isSuspiciousPopupUrl = (urlStr) => {
-                if (!urlStr) return false;
-                return POPUNDER_REGEX.test(String(urlStr));
-            };
-
-            const isOverlayTrapElement = (el) => {
-                if (!el || el.nodeType !== 1) return false;
-                try {
-                    const cs = getComputedStyle(el);
-                    if (cs.position !== "fixed" && cs.position !== "absolute") return false;
-                    const z = parseInt(cs.zIndex, 10) || 0;
-                    const rect = el.getBoundingClientRect();
-                    const coversLargeArea = rect.width > window.innerWidth * 0.45 && rect.height > window.innerHeight * 0.35;
-                    const isTransparent = parseFloat(cs.opacity) < 0.08 || cs.backgroundColor === "rgba(0, 0, 0, 0)" || cs.backgroundColor === "transparent";
-                    const hasNoRealContent = (el.textContent || "").trim().length === 0 && !el.querySelector("video, input, form, img");
-                    return z >= 99 && coversLargeArea && isTransparent && hasNoRealContent;
-                } catch (_e) {
-                    return false;
-                }
+            const createBlankTrapProxy = (target, features) => {
+                let realWin = null;
+                let closed = false;
+                const handleNav = (dest) => {
+                    const destStr = String(dest || "");
+                    if (!destStr) return;
+                    if (isSuspiciousPopupUrl(destStr) || isCrossOriginUrl(destStr)) {
+                        closed = true;
+                        reportBlockedRedirect(destStr, true);
+                        return;
+                    }
+                    try {
+                        realWin = origOpen.call(window, destStr, target, features);
+                    } catch (_e) {}
+                };
+                const locProxy = {
+                    get href() { return "about:blank"; },
+                    set href(v) { handleNav(v); },
+                    assign(v) { handleNav(v); },
+                    replace(v) { handleNav(v); }
+                };
+                return {
+                    get closed() { return realWin ? realWin.closed : closed; },
+                    get location() { return realWin ? realWin.location : locProxy; },
+                    set location(v) { handleNav(v); },
+                    close() { closed = true; if (realWin) { try { realWin.close(); } catch (_e) {} } },
+                    focus() {},
+                    blur() {},
+                    postMessage() {},
+                    document: { write() {}, writeln() {}, open() {}, close() {} }
+                };
             };
 
             window.open = function (url, target, features) {
+                const urlStr = url == null ? "" : String(url).trim();
                 const sinceTap = Date.now() - lastUserTap;
-                if (sinceTap > 1200) {
+                if (isSuspiciousPopupUrl(urlStr)) {
+                    reportBlockedRedirect(urlStr, true);
                     return null;
                 }
-                if (isSuspiciousPopupUrl(url)) {
+                if (sinceTap > 1200) {
+                    if (urlStr && urlStr !== "about:blank") reportBlockedRedirect(urlStr, true);
                     return null;
+                }
+                if (!urlStr || urlStr === "about:blank") {
+                    if (lastTapTarget && (isOverlayTrapElement(lastTapTarget) || lastTapTarget.tagName === "VIDEO")) {
+                        return createBlankTrapProxy(target, features);
+                    }
                 }
                 if (lastTapTarget && (isOverlayTrapElement(lastTapTarget) || lastTapTarget.tagName === "VIDEO")) {
-                    try {
-                        const targetHost = new URL(String(url || ""), window.location.href).hostname;
-                        if (targetHost && targetHost !== window.location.hostname) {
-                            return null;
-                        }
-                    } catch (_e) {}
+                    if (isCrossOriginUrl(urlStr)) {
+                        reportBlockedRedirect(urlStr, true);
+                        return null;
+                    }
                 }
                 return origOpen.apply(this, arguments);
             };
+        } catch (_e) {}
 
+        // 2) Guard synthetic anchor.click() and form.submit() popunder injections
+        try {
+            const origAnchorClick = HTMLAnchorElement.prototype.click;
+            HTMLAnchorElement.prototype.click = function () {
+                try {
+                    const href = this.href || "";
+                    const isBlank = (this.target || "").toLowerCase() === "_blank";
+                    const sinceTap = Date.now() - lastUserTap;
+                    if (isSuspiciousPopupUrl(href) || (isBlank && sinceTap > 1200 && isCrossOriginUrl(href))) {
+                        reportBlockedRedirect(href, isBlank);
+                        return;
+                    }
+                } catch (_e) {}
+                return origAnchorClick.apply(this, arguments);
+            };
+        } catch (_e) {}
+
+        try {
+            const origFormSubmit = HTMLFormElement.prototype.submit;
+            HTMLFormElement.prototype.submit = function () {
+                try {
+                    const action = this.action || "";
+                    const isBlank = (this.target || "").toLowerCase() === "_blank";
+                    const sinceTap = Date.now() - lastUserTap;
+                    if (isSuspiciousPopupUrl(action) || (isBlank && sinceTap > 1200 && isCrossOriginUrl(action))) {
+                        reportBlockedRedirect(action, isBlank);
+                        return;
+                    }
+                } catch (_e) {}
+                return origFormSubmit.apply(this, arguments);
+            };
+        } catch (_e) {}
+
+        // 3) Neutralize click-hijack transparent overlays and suspicious _blank anchors
+        try {
             document.addEventListener("click", (ev) => {
                 try {
                     const target = ev.target;
@@ -422,59 +649,536 @@
                         return;
                     }
                     const anchor = target && target.closest ? target.closest("a[href]") : null;
-                    if (anchor && anchor.target === "_blank") {
+                    if (anchor && (anchor.target === "_blank" || isSuspiciousPopupUrl(anchor.href || ""))) {
                         const href = anchor.href || "";
-                        if (isSuspiciousPopupUrl(href) || (!ev.isTrusted && href && !href.startsWith(window.location.origin))) {
+                        if (isSuspiciousPopupUrl(href) || (!ev.isTrusted && href && isCrossOriginUrl(href))) {
                             ev.preventDefault();
                             ev.stopImmediatePropagation();
+                            reportBlockedRedirect(href, anchor.target === "_blank");
                         }
                     }
                 } catch (_e) {}
             }, true);
         } catch (_e) {}
+
+        // 4) Defuse <meta http-equiv="refresh"> cross-origin ad redirects
+        try {
+            const scrubMetaRefresh = () => {
+                const metas = document.querySelectorAll('meta[http-equiv="refresh" i]');
+                for (let i = 0; i < metas.length; i++) {
+                    const content = metas[i].getAttribute("content") || "";
+                    const match = content.match(/url\s*=\s*['"]?([^'"\s;]+)/i);
+                    if (match && match[1]) {
+                        try {
+                            const abs = new URL(match[1], window.location.href).href;
+                            if (isSuspiciousPopupUrl(abs) || isCrossOriginUrl(abs)) {
+                                metas[i].remove();
+                                reportBlockedRedirect(abs, false);
+                            }
+                        } catch (_e) {}
+                    }
+                }
+            };
+            scrubMetaRefresh();
+            document.addEventListener("DOMContentLoaded", scrubMetaRefresh, { once: true });
+            const headObs = new MutationObserver(scrubMetaRefresh);
+            headObs.observe(document.documentElement || document, { childList: true, subtree: true });
+            setTimeout(() => { try { headObs.disconnect(); } catch (_e) {} }, 6000);
+        } catch (_e) {}
     }
 
-    function installFingerprintHardening() {
-        if (window.__uhFpHardened) return;
-        if (isCloudflareChallengePage()) return;
-        window.__uhFpHardened = true;
-        try {
-            const seed = (Math.random() * 100000) | 0;
-            const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
-            HTMLCanvasElement.prototype.toDataURL = function () {
-                try {
-                    if (this.width > 0 && this.height > 0 && this.width <= 600 && this.height <= 300) {
-                        const ctx = this.getContext("2d");
-                        if (ctx) {
-                            const px = ctx.getImageData(0, 0, 1, 1);
-                            px.data[0] = (px.data[0] ^ ((seed & 1) + 1)) & 255;
-                            ctx.putImageData(px, 0, 0);
-                        }
-                    }
-                } catch (_e) {}
-                return origToDataURL.apply(this, arguments);
-            };
-            if (navigator && typeof navigator.hardwareConcurrency === "number" && navigator.hardwareConcurrency > 4) {
-                Object.defineProperty(navigator, "hardwareConcurrency", { get: () => 4, configurable: true });
+    // -------------------------------------------------------------------------
+    // Built-In Video / YouTube Ad-JSON Pruner & Skipper
+    // -------------------------------------------------------------------------
+    function installVideoAdPruner() {
+        if (window.__uhVideoAdPrunerInstalled) return;
+        const host = (window.location.hostname || "").toLowerCase();
+        const isYouTube = host === "youtube.com" || host.endsWith(".youtube.com");
+        if (!isYouTube) return;
+        window.__uhVideoAdPrunerInstalled = true;
+
+        const AD_KEYS = ["adPlacements", "playerAds", "adSlots", "adBreakHeartbeatParams"];
+        const pruneAdJson = (obj) => {
+            if (!obj || typeof obj !== "object") return obj;
+            for (let i = 0; i < AD_KEYS.length; i++) {
+                if (AD_KEYS[i] in obj) {
+                    if (Array.isArray(obj[AD_KEYS[i]])) obj[AD_KEYS[i]] = [];
+                    else delete obj[AD_KEYS[i]];
+                }
             }
-            if (navigator && typeof navigator.deviceMemory === "number") {
-                Object.defineProperty(navigator, "deviceMemory", { get: () => 4, configurable: true });
+            if (obj.playerResponse && typeof obj.playerResponse === "object") {
+                pruneAdJson(obj.playerResponse);
+            }
+            return obj;
+        };
+
+        try {
+            const origParse = JSON.parse;
+            JSON.parse = function () {
+                const res = origParse.apply(this, arguments);
+                return pruneAdJson(res);
+            };
+        } catch (_e) {}
+
+        try {
+            if (typeof Response !== "undefined" && Response.prototype && Response.prototype.json) {
+                const origJson = Response.prototype.json;
+                Response.prototype.json = function () {
+                    return origJson.apply(this, arguments).then(pruneAdJson);
+                };
             }
         } catch (_e) {}
+
+        try {
+            let playerResp = window.ytInitialPlayerResponse;
+            if (playerResp) pruneAdJson(playerResp);
+            Object.defineProperty(window, "ytInitialPlayerResponse", {
+                configurable: true,
+                get() { return playerResp; },
+                set(v) { playerResp = pruneAdJson(v); }
+            });
+        } catch (_e) {}
+
+        // Lightweight fallback skipper if an in-stream ad overlay renders
+        try {
+            setInterval(() => {
+                const player = document.querySelector(".html5-video-player.ad-showing");
+                if (!player) return;
+                const skipBtn = document.querySelector(".ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button");
+                if (skipBtn) {
+                    try { skipBtn.click(); } catch (_e) {}
+                }
+                const video = player.querySelector("video");
+                if (video && isFinite(video.duration) && video.duration > 0 && video.currentTime < video.duration - 0.2) {
+                    try {
+                        video.muted = true;
+                        video.currentTime = video.duration;
+                    } catch (_e) {}
+                }
+            }, 600);
+        } catch (_e) {}
+    }
+
+    // -------------------------------------------------------------------------
+    // Hybrid Anti-Fingerprinting (Uniform Crowd Core + Deterministic Per-Origin Farbling)
+    // -------------------------------------------------------------------------
+    let currentFpSeed = 0;
+    let fpSeedLocked = false;
+    function updateFpSeed(sessionSalt) {
+        if (fpSeedLocked) return;
+        const baseOrigin = getRegistrableBase(window.location.hostname || "local");
+        const salt = sessionSalt || ("uh_boot_" + Math.floor(performance.timeOrigin || 1));
+        currentFpSeed = fnv1aHash(salt + "|" + baseOrigin);
+    }
+
+    function installFingerprintHardening(sessionSalt) {
+        if (isCloudflareChallengePage()) return;
+        if (sessionSalt) updateFpSeed(sessionSalt);
+        if (window.__uhFpHardened) return;
+        window.__uhFpHardened = true;
+
+        if (!currentFpSeed) updateFpSeed(sessionSalt);
+        const getSeed = () => {
+            fpSeedLocked = true;
+            return currentFpSeed;
+        };
+        const channelDelta = (idx) => {
+            const h = fnv1aHash(getSeed() + ":" + idx);
+            return (h & 1) === 0 ? 1 : -1;
+        };
+
+        // 1) Uniform crowd-common hardware & screen properties (cloaked as native getters)
+        defineCloakedGetter(navigator, "hardwareConcurrency", function () { return 4; });
+        defineCloakedGetter(navigator, "deviceMemory", function () { return 4; });
+        defineCloakedGetter(screen, "colorDepth", function () { return 24; });
+        defineCloakedGetter(screen, "pixelDepth", function () { return 24; });
+        try {
+            const emptyPlugins = Object.assign([], {
+                item: cloakNative(function () { return null; }, "item"),
+                namedItem: cloakNative(function () { return null; }, "namedItem"),
+                refresh: cloakNative(function () {}, "refresh")
+            });
+            defineCloakedGetter(navigator, "plugins", function () { return emptyPlugins; });
+            defineCloakedGetter(navigator, "mimeTypes", function () { return emptyPlugins; });
+        } catch (_e) {}
+
+        // 2) Standardized Battery & Network Information APIs
+        try {
+            if (typeof navigator.getBattery === "function") {
+                const fakeBattery = {
+                    charging: true,
+                    chargingTime: 0,
+                    dischargingTime: Infinity,
+                    level: 1.0,
+                    onchargingchange: null,
+                    onchargingtimechange: null,
+                    ondischargingtimechange: null,
+                    onlevelchange: null,
+                    addEventListener: cloakNative(function () {}, "addEventListener"),
+                    removeEventListener: cloakNative(function () {}, "removeEventListener"),
+                    dispatchEvent: cloakNative(function () { return false; }, "dispatchEvent")
+                };
+                navigator.getBattery = cloakNative(function getBattery() { return Promise.resolve(fakeBattery); }, "getBattery");
+            }
+        } catch (_e) {}
+
+        try {
+            if ("connection" in navigator) {
+                const fakeConn = {
+                    effectiveType: "4g",
+                    rtt: 50,
+                    downlink: 10,
+                    saveData: false,
+                    onchange: null,
+                    addEventListener: cloakNative(function () {}, "addEventListener"),
+                    removeEventListener: cloakNative(function () {}, "removeEventListener"),
+                    dispatchEvent: cloakNative(function () { return false; }, "dispatchEvent")
+                };
+                defineCloakedGetter(navigator, "connection", function () { return fakeConn; });
+            }
+        } catch (_e) {}
+
+        // 3) Redact MediaDevices enumeration fingerprints
+        try {
+            if (navigator.mediaDevices && typeof navigator.mediaDevices.enumerateDevices === "function") {
+                const origEnum = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices);
+                navigator.mediaDevices.enumerateDevices = cloakNative(function enumerateDevices() {
+                    return origEnum().then((list) => {
+                        if (!Array.isArray(list)) return list;
+                        return list.map((d) => ({
+                            deviceId: "",
+                            groupId: "",
+                            kind: d.kind || "audioinput",
+                            label: "",
+                            toJSON() { return { deviceId: "", groupId: "", kind: this.kind, label: "" }; }
+                        }));
+                    });
+                }, "enumerateDevices");
+            }
+        } catch (_e) {}
+
+        // 4) Deterministic Canvas 2D, OffscreenCanvas & Font measureText farbling
+        try {
+            const farbleImageData = (imgData) => {
+                if (!imgData || !imgData.data || imgData.data.length < 16) return imgData;
+                const d = imgData.data;
+                const pixelCount = (d.length / 4) | 0;
+                const steps = Math.min(4, pixelCount);
+                const s = getSeed();
+                for (let k = 0; k < steps; k++) {
+                    const pIdx = (fnv1aHash(s + ":px:" + k + ":" + pixelCount) % pixelCount) * 4;
+                    const ch = k % 3;
+                    const v = d[pIdx + ch];
+                    const delta = channelDelta(k);
+                    d[pIdx + ch] = v === 0 ? 1 : (v === 255 ? 254 : v + delta);
+                }
+                return imgData;
+            };
+
+            const origGetImageData = CanvasRenderingContext2D.prototype.getImageData;
+            const cloneAndFarbleCanvas = (srcCanvas) => {
+                if (!srcCanvas || srcCanvas.width <= 0 || srcCanvas.height <= 0 || srcCanvas.width > 1200 || srcCanvas.height > 800) {
+                    return null;
+                }
+                const clone = document.createElement("canvas");
+                clone.width = srcCanvas.width;
+                clone.height = srcCanvas.height;
+                const ctx = clone.getContext("2d");
+                if (!ctx) return null;
+                ctx.drawImage(srcCanvas, 0, 0);
+                const imgData = origGetImageData.call(ctx, 0, 0, clone.width, clone.height);
+                farbleImageData(imgData);
+                ctx.putImageData(imgData, 0, 0);
+                return clone;
+            };
+
+            CanvasRenderingContext2D.prototype.getImageData = cloakNative(function getImageData() {
+                const imgData = origGetImageData.apply(this, arguments);
+                try { return farbleImageData(imgData); } catch (_e) { return imgData; }
+            }, "getImageData");
+
+            // Font enumeration defense: tiny deterministic sub-pixel jitter on measureText.width
+            const origMeasureText = CanvasRenderingContext2D.prototype.measureText;
+            if (typeof origMeasureText === "function") {
+                CanvasRenderingContext2D.prototype.measureText = cloakNative(function measureText(text) {
+                    const metrics = origMeasureText.apply(this, arguments);
+                    try {
+                        if (metrics && typeof metrics.width === "number" && metrics.width > 0) {
+                            const fontKey = (this.font || "") + "|" + String(text || "").slice(0, 32);
+                            const jitter = (((fnv1aHash(getSeed() + ":ft:" + fontKey) & 511) / 511) - 0.5) * 0.0004;
+                            const fakeWidth = metrics.width + jitter;
+                            return new Proxy(metrics, {
+                                get(target, prop) {
+                                    if (prop === "width") return fakeWidth;
+                                    const val = Reflect.get(target, prop, target);
+                                    return typeof val === "function" ? val.bind(target) : val;
+                                }
+                            });
+                        }
+                    } catch (_e) {}
+                    return metrics;
+                }, "measureText");
+            }
+
+            const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+            HTMLCanvasElement.prototype.toDataURL = cloakNative(function toDataURL() {
+                try {
+                    const clone = cloneAndFarbleCanvas(this);
+                    if (clone) return origToDataURL.apply(clone, arguments);
+                } catch (_e) {}
+                return origToDataURL.apply(this, arguments);
+            }, "toDataURL");
+
+            const origToBlob = HTMLCanvasElement.prototype.toBlob;
+            if (typeof origToBlob === "function") {
+                HTMLCanvasElement.prototype.toBlob = cloakNative(function toBlob() {
+                    try {
+                        const clone = cloneAndFarbleCanvas(this);
+                        if (clone) return origToBlob.apply(clone, arguments);
+                    } catch (_e) {}
+                    return origToBlob.apply(this, arguments);
+                }, "toBlob");
+            }
+
+            if (typeof OffscreenCanvas !== "undefined" && OffscreenCanvas.prototype && typeof OffscreenCanvas.prototype.convertToBlob === "function") {
+                const origConvertToBlob = OffscreenCanvas.prototype.convertToBlob;
+                OffscreenCanvas.prototype.convertToBlob = cloakNative(function convertToBlob() {
+                    try {
+                        if (this.width > 0 && this.height > 0 && this.width <= 800 && this.height <= 600) {
+                            const ctx = this.getContext("2d");
+                            if (ctx) {
+                                const px = ctx.getImageData(0, 0, 1, 1);
+                                farbleImageData(px);
+                                ctx.putImageData(px, 0, 0);
+                            }
+                        }
+                    } catch (_e) {}
+                    return origConvertToBlob.apply(this, arguments);
+                }, "convertToBlob");
+            }
+        } catch (_e) {}
+
+        // 5) WebGL standardized vendor/renderer + deterministic readPixels farbling
+        try {
+            const patchWebGLProto = (proto) => {
+                if (!proto) return;
+                const origGetParam = proto.getParameter;
+                if (typeof origGetParam === "function") {
+                    proto.getParameter = cloakNative(function getParameter(param) {
+                        if (param === 37445) return "Google Inc. (Qualcomm)";
+                        if (param === 37446) return "ANGLE (Qualcomm, Adreno (TM) 640, OpenGL ES 3.2)";
+                        return origGetParam.apply(this, arguments);
+                    }, "getParameter");
+                }
+                const origReadPixels = proto.readPixels;
+                if (typeof origReadPixels === "function") {
+                    proto.readPixels = cloakNative(function readPixels(x, y, w, h, format, type, pixels) {
+                        const res = origReadPixels.apply(this, arguments);
+                        try {
+                            if (pixels && pixels instanceof Uint8Array && pixels.length >= 16) {
+                                const s = getSeed();
+                                for (let k = 0; k < 4; k++) {
+                                    const idx = fnv1aHash(s + ":gl:" + k + ":" + pixels.length) % pixels.length;
+                                    const v = pixels[idx];
+                                    pixels[idx] = v === 0 ? 1 : (v === 255 ? 254 : v + channelDelta(k + 10));
+                                }
+                            }
+                        } catch (_e) {}
+                        return res;
+                    }, "readPixels");
+                }
+            };
+            if (typeof WebGLRenderingContext !== "undefined") patchWebGLProto(WebGLRenderingContext.prototype);
+            if (typeof WebGL2RenderingContext !== "undefined") patchWebGLProto(WebGL2RenderingContext.prototype);
+        } catch (_e) {}
+
+        // 5B) WebGPU Adapter Info Normalization (2026-2027 GPU fingerprinting surface)
+        try {
+            if (navigator.gpu && typeof navigator.gpu.requestAdapter === "function") {
+                const origReqAdapter = navigator.gpu.requestAdapter.bind(navigator.gpu);
+                const uniformGpuInfo = Object.freeze({
+                    vendor: "qualcomm",
+                    architecture: "adreno",
+                    device: "",
+                    description: ""
+                });
+                navigator.gpu.requestAdapter = cloakNative(function requestAdapter() {
+                    return origReqAdapter.apply(navigator.gpu, arguments).then((adapter) => {
+                        if (!adapter) return adapter;
+                        try {
+                            return new Proxy(adapter, {
+                                get(target, prop) {
+                                    if (prop === "info") return uniformGpuInfo;
+                                    if (prop === "requestAdapterInfo") {
+                                        return cloakNative(function requestAdapterInfo() {
+                                            return Promise.resolve(uniformGpuInfo);
+                                        }, "requestAdapterInfo");
+                                    }
+                                    const val = Reflect.get(target, prop, target);
+                                    return typeof val === "function" ? val.bind(target) : val;
+                                }
+                            });
+                        } catch (_e) {
+                            return adapter;
+                        }
+                    });
+                }, "requestAdapter");
+            }
+        } catch (_e) {}
+
+        // 5C) SpeechSynthesis Voices Normalization (eliminates OEM TTS voice fingerprinting)
+        try {
+            if (typeof window.speechSynthesis !== "undefined" && typeof window.speechSynthesis.getVoices === "function") {
+                window.speechSynthesis.getVoices = cloakNative(function getVoices() {
+                    return [];
+                }, "getVoices");
+            }
+        } catch (_e) {}
+
+        // 6) Deterministic AudioContext farbling (idempotent per AudioBuffer)
+        try {
+            const patchedBuffers = new WeakSet();
+            if (typeof AudioBuffer !== "undefined" && AudioBuffer.prototype && typeof AudioBuffer.prototype.getChannelData === "function") {
+                const origGetChannelData = AudioBuffer.prototype.getChannelData;
+                AudioBuffer.prototype.getChannelData = cloakNative(function getChannelData(channel) {
+                    const data = origGetChannelData.apply(this, arguments);
+                    try {
+                        if (data && data.length > 16 && !patchedBuffers.has(data)) {
+                            patchedBuffers.add(data);
+                            const s = getSeed();
+                            const step = Math.max(1, (data.length / 16) | 0);
+                            for (let i = 0; i < data.length; i += step) {
+                                const n = (((fnv1aHash(s + ":au:" + channel + ":" + i) & 255) / 255) - 0.5) * 1e-6;
+                                data[i] = data[i] + n;
+                            }
+                        }
+                    } catch (_e) {}
+                    return data;
+                }, "getChannelData");
+            }
+            if (typeof AnalyserNode !== "undefined" && AnalyserNode.prototype) {
+                const origFloatFreq = AnalyserNode.prototype.getFloatFrequencyData;
+                if (typeof origFloatFreq === "function") {
+                    AnalyserNode.prototype.getFloatFrequencyData = cloakNative(function getFloatFrequencyData(arr) {
+                        origFloatFreq.apply(this, arguments);
+                        try {
+                            if (arr && arr.length > 4) {
+                                const idx = fnv1aHash(getSeed() + ":aff") % arr.length;
+                                if (isFinite(arr[idx])) arr[idx] += channelDelta(21) * 1e-4;
+                            }
+                        } catch (_e) {}
+                    }, "getFloatFrequencyData");
+                }
+                const origByteFreq = AnalyserNode.prototype.getByteFrequencyData;
+                if (typeof origByteFreq === "function") {
+                    AnalyserNode.prototype.getByteFrequencyData = cloakNative(function getByteFrequencyData(arr) {
+                        origByteFreq.apply(this, arguments);
+                        try {
+                            if (arr && arr.length > 4) {
+                                const idx = fnv1aHash(getSeed() + ":abf") % arr.length;
+                                if (arr[idx] > 0 && arr[idx] < 255) arr[idx] += channelDelta(22);
+                            }
+                        } catch (_e) {}
+                    }, "getByteFrequencyData");
+                }
+            }
+        } catch (_e) {}
+
+        // 7) Deterministic sub-pixel ClientRects noise (imperceptible to layout, defeats rect hashing)
+        try {
+            const adjustRect = (r) => {
+                if (!r || typeof r.width !== "number" || (r.width === 0 && r.height === 0)) return r;
+                try {
+                    const rectJitter = (((getSeed() & 1023) / 1023) - 0.5) * 0.0001;
+                    return new DOMRect(r.x + rectJitter, r.y + rectJitter, r.width + rectJitter, r.height + rectJitter);
+                } catch (_e) {
+                    return r;
+                }
+            };
+            const origGetBCR = Element.prototype.getBoundingClientRect;
+            Element.prototype.getBoundingClientRect = cloakNative(function getBoundingClientRect() {
+                return adjustRect(origGetBCR.apply(this, arguments));
+            }, "getBoundingClientRect");
+            if (typeof Range !== "undefined" && Range.prototype && typeof Range.prototype.getClientRects === "function") {
+                const origGetClientRects = Range.prototype.getClientRects;
+                Range.prototype.getClientRects = cloakNative(function getClientRects() {
+                    const list = origGetClientRects.apply(this, arguments);
+                    try {
+                        if (!list || list.length === 0) return list;
+                        const arr = [];
+                        for (let i = 0; i < list.length; i++) arr.push(adjustRect(list[i]));
+                        arr.item = cloakNative(function item(idx) { return arr[idx] || null; }, "item");
+                        return arr;
+                    } catch (_e) {
+                        return list;
+                    }
+                }, "getClientRects");
+            }
+        } catch (_e) {}
+    }
+
+    // Opt-in Strict Anti-Fingerprinting (UTC timezone, uniform en-US locale, screen/DPR bucketing)
+    function installStrictFingerprintHardening() {
+        if (window.__uhStrictFpInstalled) return;
+        if (isCloudflareChallengePage()) return;
+        window.__uhStrictFpInstalled = true;
+
+        try {
+            Date.prototype.getTimezoneOffset = cloakNative(function getTimezoneOffset() {
+                return 0;
+            }, "getTimezoneOffset");
+        } catch (_e) {}
+
+        try {
+            if (typeof Intl !== "undefined" && Intl.DateTimeFormat && Intl.DateTimeFormat.prototype) {
+                const origResolved = Intl.DateTimeFormat.prototype.resolvedOptions;
+                if (typeof origResolved === "function") {
+                    Intl.DateTimeFormat.prototype.resolvedOptions = cloakNative(function resolvedOptions() {
+                        const res = origResolved.apply(this, arguments);
+                        if (res && typeof res === "object") {
+                            res.timeZone = "UTC";
+                            res.locale = "en-US";
+                        }
+                        return res;
+                    }, "resolvedOptions");
+                }
+            }
+        } catch (_e) {}
+
+        const uniformLangs = Object.freeze(["en-US", "en"]);
+        defineCloakedGetter(navigator, "language", function () { return "en-US"; });
+        defineCloakedGetter(navigator, "languages", function () { return uniformLangs; });
+
+        defineCloakedGetter(screen, "width", function () { return 390; });
+        defineCloakedGetter(screen, "height", function () { return 844; });
+        defineCloakedGetter(screen, "availWidth", function () { return 390; });
+        defineCloakedGetter(screen, "availHeight", function () { return 844; });
+        defineCloakedGetter(window, "devicePixelRatio", function () { return 2; });
     }
 
     function applyConfig(cfg) {
         if (!cfg || typeof cfg !== "object") return;
         if (isCloudflareChallengePage()) return;
+
+        sanitizeCrossSiteWindowName();
         if (cfg.backgroundPlay === true) installBackgroundPlay();
         if (cfg.webrtcPolicy === 3) installWebRtcBlock();
-        if (cfg.blockPopups === true && !cfg.paused && (cfg.shieldLevel || 0) > 0) {
+
+        const shieldActive = !cfg.paused && (cfg.shieldLevel || 0) > 0;
+        if (cfg.blockPopups === true && shieldActive) {
             installPopunderDefuser();
+            installSpamNotificationGuard();
+        }
+        if (shieldActive) {
+            installVideoAdPruner();
         }
         if (cfg.antiFingerprint === true && !cfg.paused) {
-            installFingerprintHardening();
+            installFingerprintHardening(cfg.fpSessionSalt || "");
+            if (cfg.strictFingerprint === true) {
+                installStrictFingerprintHardening();
+            }
         }
-        if (Array.isArray(cfg.scriptlets) && !cfg.paused && (cfg.shieldLevel || 0) > 0) {
+        if (Array.isArray(cfg.scriptlets) && shieldActive) {
             for (let i = 0; i < cfg.scriptlets.length; i++) {
                 const s = cfg.scriptlets[i];
                 if (s && s.name) {
@@ -483,6 +1187,17 @@
             }
         }
     }
+
+    // Synchronous document_start boot (eliminates early fingerprint/popunder race condition)
+    try {
+        const root = document.documentElement;
+        if (root && root.dataset && root.dataset.uhBoot) {
+            const rawBoot = root.dataset.uhBoot;
+            delete root.dataset.uhBoot;
+            const bootCfg = JSON.parse(rawBoot);
+            applyConfig(bootCfg);
+        }
+    } catch (_e) {}
 
     document.addEventListener("UH_APPLY_SCRIPTLET_CONFIG", (ev) => {
         if (ev && ev.detail) applyConfig(ev.detail);

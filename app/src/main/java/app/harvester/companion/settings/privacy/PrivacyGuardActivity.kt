@@ -256,10 +256,60 @@ class PrivacyGuardActivity : AppCompatActivity() {
                         UhSettingsDivider()
                         SettingsSwitchRow(
                             title = "Anti-Fingerprinting",
-                            subtitle = "Block canvas, font, and device tracking scripts",
+                            subtitle = "Farble canvas, WebGL, WebGPU, audio, fonts & device signals",
                             key = SettingsPrefs.K_PG_FINGERPRINT,
                             default = true,
                             iconRes = R.drawable.uh_ic_pg_fingerprint_24,
+                            insideCard = true,
+                            onChanged = { UhPrivacyController.applyAllToEngine(context) },
+                        )
+                        UhSettingsDivider()
+                        SettingsSwitchRow(
+                            title = "Strict Anti-Fingerprinting",
+                            subtitle = "Force UTC timezone, uniform en-US locale & bucketed screen size",
+                            key = SettingsPrefs.K_PG_FP_STRICT,
+                            default = false,
+                            iconRes = R.drawable.uh_ic_pg_fingerprint_24,
+                            insideCard = true,
+                            onChanged = { UhPrivacyController.applyAllToEngine(context) },
+                        )
+                        UhSettingsDivider()
+                        SettingsSwitchRow(
+                            title = "Annoyance Killer Pack",
+                            subtitle = "Block Google One-Tap, Open-in-App bars, newsletter popups, chat bubbles & sponsored cards",
+                            key = SettingsPrefs.K_PG_ANNOYANCES,
+                            default = true,
+                            iconRes = R.drawable.uh_ic_pg_cookie_banner_24,
+                            insideCard = true,
+                            onChanged = { UhPrivacyController.applyAllToEngine(context) },
+                        )
+                        UhSettingsDivider()
+                        SettingsSwitchRow(
+                            title = "CNAME Tracker Unmasking",
+                            subtitle = "Unmask first-party CNAME-cloaked trackers & analytics proxies",
+                            key = SettingsPrefs.K_PG_CNAME_UNMASK,
+                            default = true,
+                            iconRes = R.drawable.uh_ic_cat_trackers_24,
+                            insideCard = true,
+                            onChanged = { UhPrivacyController.applyAllToEngine(context) },
+                        )
+                        UhSettingsDivider()
+                        SettingsSwitchRow(
+                            title = "Local Network Guard",
+                            subtitle = "Block public sites from port-scanning localhost & LAN devices",
+                            key = SettingsPrefs.K_PG_LAN_GUARD,
+                            default = true,
+                            iconRes = R.drawable.uh_ic_local_network_24,
+                            insideCard = true,
+                            onChanged = { UhPrivacyController.applyAllToEngine(context) },
+                        )
+                        UhSettingsDivider()
+                        SettingsSwitchRow(
+                            title = "Auto-Shred Closed Sites",
+                            subtitle = "Automatically wipe cookies & site storage when you close a site's last tab",
+                            key = SettingsPrefs.K_PG_AUTO_SHRED,
+                            default = false,
+                            iconRes = R.drawable.uh_ic_pg_cookie_jar_24,
                             insideCard = true,
                             onChanged = { UhPrivacyController.applyAllToEngine(context) },
                         )

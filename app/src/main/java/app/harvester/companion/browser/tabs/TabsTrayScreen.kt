@@ -188,7 +188,7 @@ fun TabsTrayScreen(
         MaterialTheme.colorScheme.primary
     }
 
-    // Build flattened grid items for NORMAL section (Firefox-style collapsible group stacks + ungrouped tabs)
+    // Build flattened grid items for NORMAL section (collapsible group stacks + ungrouped tabs)
     val normalGridEntries = remember(normalTabs, orderedNormalIds.toList(), groups) {
         val tabMap = normalTabs.associateBy { it.id }
         val groupedTabIds = groups.flatMap { it.tabIds }.toSet()

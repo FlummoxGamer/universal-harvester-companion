@@ -51,6 +51,8 @@
                     backgroundPlay: cfg.backgroundPlay === true,
                     webrtcPolicy: cfg.webrtcPolicy || 0,
                     antiFingerprint: cfg.antiFingerprint === true,
+                    strictFingerprint: cfg.strictFingerprint === true,
+                    fpSessionSalt: cfg.fpSessionSalt || "",
                     scriptlets: Array.isArray(cfg.scriptlets) ? cfg.scriptlets : []
                 }
             }));
@@ -64,9 +66,46 @@
         }
     });
 
-    // Load CSP-safe MAIN-world scriptlets runner immediately at document_start
+    // Relay scriptlet-blocked popunders/meta-refresh redirects to native toast & stats
+    document.addEventListener("UH_SCRIPTLET_BLOCKED_REDIRECT", (ev) => {
+        try {
+            const d = ev && ev.detail;
+            if (!d || !d.targetUrl) return;
+            api.runtime.sendMessage({
+                type: "UH_BLOCKED_REDIRECT",
+                sourceHost: d.sourceHost || currentNormalizedHost(),
+                targetUrl: d.targetUrl,
+                isPopupTab: d.isPopupTab === true
+            }).catch(() => {});
+        } catch (_e) {}
+    });
+
+    // Write synchronous boot snapshot BEFORE loading scriptlets.js so guards arm at line 1
     (function loadScriptletsRunner() {
         try {
+            let bootCfg = {
+                shieldLevel: 2,
+                paused: false,
+                blockPopups: true,
+                backgroundPlay: true,
+                webrtcPolicy: 1,
+                antiFingerprint: true,
+                strictFingerprint: false,
+                annoyances: true,
+                fpSessionSalt: ""
+            };
+            try {
+                const cached = sessionStorage.getItem("__uh_boot_cfg");
+                if (cached) {
+                    const parsed = JSON.parse(cached);
+                    if (parsed && typeof parsed === "object") {
+                        bootCfg = Object.assign(bootCfg, parsed);
+                    }
+                }
+            } catch (_e) {}
+            if (document.documentElement) {
+                document.documentElement.dataset.uhBoot = JSON.stringify(bootCfg);
+            }
             const s = document.createElement("script");
             s.src = api.runtime.getURL("scriptlets.js");
             s.onload = () => s.remove();
@@ -116,53 +155,140 @@
         (document.head || document.documentElement).appendChild(styleEl);
     }
 
+    // :style(...) filter rules injection
+    function applyCustomStyleRules(styleRules, enabled) {
+        const id = "__uh_shield_style_rules";
+        const existing = document.getElementById(id);
+        if (!enabled || !Array.isArray(styleRules) || styleRules.length === 0) {
+            if (existing) existing.remove();
+            return;
+        }
+        const lines = [];
+        for (let i = 0; i < styleRules.length; i++) {
+            const r = styleRules[i];
+            if (r && r.sel && r.css) {
+                lines.push(r.sel + " { " + r.css + " }");
+            }
+        }
+        if (lines.length === 0) {
+            if (existing) existing.remove();
+            return;
+        }
+        const styleEl = existing || document.createElement("style");
+        styleEl.id = id;
+        styleEl.textContent = lines.join("\n");
+        (document.head || document.documentElement).appendChild(styleEl);
+    }
+
+    // :remove() DOM node stripping
+    let activeRemoveSelectors = [];
+    function applyRemoveSelectors(selectors, enabled) {
+        activeRemoveSelectors = (enabled && Array.isArray(selectors)) ? selectors : [];
+        if (activeRemoveSelectors.length === 0) return;
+        runRemoveSelectors();
+    }
+
+    function runRemoveSelectors() {
+        if (!activeRemoveSelectors.length) return;
+        for (let i = 0; i < activeRemoveSelectors.length; i++) {
+            try {
+                const nodes = document.querySelectorAll(activeRemoveSelectors[i]);
+                for (let j = 0; j < nodes.length; j++) {
+                    if (nodes[j] && nodes[j] !== document.body && nodes[j] !== document.documentElement) {
+                        nodes[j].remove();
+                    }
+                }
+            } catch (_e) {}
+        }
+    }
+
     // -------------------------------------------------------------------------
-    // Blocked Ad Element, First-Party GIF/Static Banner & Empty Slot Collapsing
+    // Deep Ad-Slot, Multi-Wrapper & First-Party Banner Collapsing (Zero Blank Gaps)
     // -------------------------------------------------------------------------
     const FIRST_PARTY_AD_HREF_RE = /(doubleclick|googlesyndication|adservice|popads|propellerads|adsterra|exoclick|monetag|clickadu|hilltopads|outbrain|taboola|mgid|revcontent|\/adclick|\/click\.php|\/banner_click|\/out\.php\?|\/go\/bet|\/go\/casino|1xbet|melbet|mostbet|betwinner|parimatch)/i;
     const FIRST_PARTY_AD_IMG_RE = /(\/ads\/|\/banners?\/|\/promo[-_]?banner|ad[-_]?banner|300x250|728x90|320x50|160x600|468x60|1xbet|melbet|mostbet|betwinner|casino[-_]?banner)/i;
+    const AD_SLOT_PLACEHOLDER_SELECTOR = [
+        "ins.adsbygoogle",
+        "[id^='div-gpt-ad']",
+        "[id^='google_ads_iframe']",
+        "[data-ad-slot]",
+        "[data-ad-unit]",
+        "[data-google-query-id]",
+        "[class*='ad-slot' i]",
+        "[class*='ad_slot' i]",
+        "[class*='ad-wrapper' i]",
+        "[class*='ad_wrapper' i]",
+        "[class*='ad-container' i]",
+        "[class*='ad_container' i]",
+        "[class*='ad-placeholder' i]",
+        "[class*='ad-banner' i]",
+        "[class*='leaderboard-ad' i]",
+        "[class*='billboard-ad' i]",
+        "[aria-label='Advertisement' i]",
+        "[aria-label='Sponsored' i]"
+    ].join(", ");
 
-    function collapseElement(el) {
-        if (!el || el.nodeType !== 1 || el.dataset.uhCollapsed === "1") return;
+    function forceZeroBox(el) {
         el.dataset.uhCollapsed = "1";
         el.style.setProperty("display", "none", "important");
         el.style.setProperty("visibility", "hidden", "important");
         el.style.setProperty("width", "0", "important");
         el.style.setProperty("height", "0", "important");
+        el.style.setProperty("min-width", "0", "important");
         el.style.setProperty("min-height", "0", "important");
+        el.style.setProperty("max-height", "0", "important");
         el.style.setProperty("margin", "0", "important");
         el.style.setProperty("padding", "0", "important");
         el.style.setProperty("border", "0", "important");
+        el.style.setProperty("overflow", "hidden", "important");
+    }
+
+    function collapseElement(el) {
+        if (!el || el.nodeType !== 1 || el.dataset.uhCollapsed === "1") return;
+        forceZeroBox(el);
         collapseEmptyAdAncestors(el.parentElement);
     }
 
     function looksLikeAdWrapper(el) {
         if (!el || el === document.body || el === document.documentElement) return false;
         const tag = el.tagName;
+        if (tag === "MAIN" || tag === "HEADER" || tag === "FOOTER" || tag === "NAV" || tag === "ARTICLE") return false;
         if (tag === "INS" || tag === "ASIDE") return true;
         if (tag === "A" || tag === "PICTURE" || tag === "FIGURE") return true;
         const idCls = ((el.id || "") + " " + (typeof el.className === "string" ? el.className : "")).toLowerCase();
         if (
-            /(^|[\s_-])(ad|ads|advert|banner|sponsor|promo|dfp|gpt|taboola|outbrain|mgid|adsbygoogle)([\s_-]|$)/.test(idCls) ||
+            /(^|[\s_-])(ad|ads|advert|advertisement|banner|sponsor|sponsored|promo|dfp|gpt|taboola|outbrain|mgid|adsbygoogle|adslot|adbox|adunit|adwrap|leaderboard|billboard|skyscraper|outstream)([\s_-]|$)/.test(idCls) ||
             el.hasAttribute("data-ad") ||
             el.hasAttribute("data-ad-slot") ||
             el.hasAttribute("data-ad-unit") ||
-            el.hasAttribute("data-google-query-id")
+            el.hasAttribute("data-google-query-id") ||
+            /^(advertisement|sponsored)$/i.test((el.getAttribute("aria-label") || "").trim())
         ) {
             return true;
+        }
+        // Generic single-child DIV/SECTION wrapper that ONLY held collapsed ad element(s) or an "Advertisement" label
+        if ((tag === "DIV" || tag === "SECTION") && el.children.length <= 3) {
+            const text = (el.textContent || "").trim();
+            if (text.length === 0 || /^(advertisement|sponsored|ad|ads|promoted|paid content)$/i.test(text)) {
+                return true;
+            }
         }
         return false;
     }
 
     function hasOtherVisibleContent(container) {
         const text = (container.textContent || "").trim();
-        if (text.length > 24 && !/^(advertisement|sponsored|ad|ads|promoted)$/i.test(text)) {
+        if (text.length > 28 && !/^(advertisement|sponsored|ad|ads|promoted|paid content|scroll to continue with content)$/i.test(text)) {
             return true;
         }
         for (let i = 0; i < container.children.length; i++) {
             const ch = container.children[i];
             if (ch.dataset && ch.dataset.uhCollapsed === "1") continue;
-            if (ch.tagName === "SCRIPT" || ch.tagName === "STYLE" || ch.tagName === "NOSCRIPT") continue;
+            if (ch.tagName === "SCRIPT" || ch.tagName === "STYLE" || ch.tagName === "NOSCRIPT" || ch.tagName === "TEMPLATE") continue;
+            const chText = (ch.textContent || "").trim();
+            if (chText.length > 0 && /^(advertisement|sponsored|ad|ads|promoted)$/i.test(chText) && !ch.querySelector("img, video, a[href], button")) {
+                continue;
+            }
             try {
                 const cs = getComputedStyle(ch);
                 if (cs.display === "none" || cs.visibility === "hidden") continue;
@@ -176,18 +302,31 @@
     function collapseEmptyAdAncestors(parent) {
         let cur = parent;
         let depth = 0;
-        while (cur && depth < 4 && cur !== document.body && cur !== document.documentElement) {
+        while (cur && depth < 6 && cur !== document.body && cur !== document.documentElement) {
             if (!looksLikeAdWrapper(cur)) break;
             if (hasOtherVisibleContent(cur)) break;
-            cur.dataset.uhCollapsed = "1";
-            cur.style.setProperty("display", "none", "important");
-            cur.style.setProperty("height", "0", "important");
-            cur.style.setProperty("min-height", "0", "important");
-            cur.style.setProperty("margin", "0", "important");
-            cur.style.setProperty("padding", "0", "important");
+            forceZeroBox(cur);
             cur = cur.parentElement;
             depth++;
         }
+    }
+
+    function sweepEmptyAdPlaceholders() {
+        const shieldOn = C.pageProtectState && (C.pageProtectState.shieldLevel || 0) > 0 && !C.pageProtectState.paused;
+        if (!shieldOn || !document.body) return;
+        try {
+            const slots = document.querySelectorAll(AD_SLOT_PLACEHOLDER_SELECTOR);
+            const limit = Math.min(slots.length, 160);
+            for (let i = 0; i < limit; i++) {
+                const el = slots[i];
+                if (!el || (el.dataset && el.dataset.uhCollapsed === "1")) continue;
+                if (el === document.body || el === document.documentElement) continue;
+                // Only collapse if slot is empty or only holds broken/hidden/caption nodes
+                if (!hasOtherVisibleContent(el)) {
+                    collapseElement(el);
+                }
+            }
+        } catch (_e) {}
     }
 
     function urlMatchesBlocked(rawAttr) {
@@ -232,8 +371,229 @@
                     }
                 }
             }
+            sweepEmptyAdPlaceholders();
         } catch (_e) {}
         if (collapsedCount > 0) {
+            api.runtime.sendMessage({
+                type: "UH_CONTENT_BLOCKED_AD",
+                host: currentNormalizedHost()
+            }).catch(() => {});
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Annoyance Killer Pack (Google One-Tap, Open-in-App, Newsletters, Chat Bubbles, Sponsored Cards)
+    // -------------------------------------------------------------------------
+    const ANNOYANCE_DIRECT_SELECTORS = [
+        // 1) Sign in with Google One-Tap popups
+        "#credential_picker_container",
+        "#credential_picker_iframe",
+        "div[data-id='credential_picker_container']",
+        "iframe[src*='accounts.google.com/gsi/']",
+        // 2) Open in App / Smart App Banners
+        "[id*='smartbanner' i]",
+        "[class*='smartbanner' i]",
+        "[id*='open-in-app' i]",
+        "[class*='open-in-app' i]",
+        "[data-testid*='app-banner' i]",
+        "[class*='app-upsell' i]",
+        "shreddit-experience-tree [slot='upsell']",
+        "xpromo-app-selector",
+        // 3) Floating support chat bubbles
+        "#intercom-container",
+        ".intercom-lightweight-app",
+        "#drift-widget",
+        "#drift-frame-controller",
+        "#hubspot-messages-iframe-container",
+        ".crisp-client",
+        "#tawk-bubble-container",
+        "[id^='tawk_']",
+        ".zEWidget-launcher",
+        "iframe[title*='chat widget' i]",
+        "iframe[title*='live chat' i]",
+        "iframe[title*='Messaging window' i]",
+        "#tidio-chat",
+        "#fc_frame",
+        ".fb_dialog_content"
+    ].join(", ");
+
+    const OPEN_IN_APP_TEXT_RE = /(open in (the )?app|get the app|download (the )?app|continue in (the )?app|switch to (the )?app|use (the )?app)/i;
+    const NEWSLETTER_TEXT_RE = /(subscribe to our newsletter|join our newsletter|sign up for our newsletter|get our daily newsletter|enter your email to subscribe|don't miss a story)/i;
+    const SPONSORED_BADGE_RE = /^(sponsored|promoted|paid partner|paid post|partner content|advertisement|ad)$/i;
+
+    function runAnnoyanceKillers() {
+        if (!isTopFrame || !document.body) return;
+        const st = C.pageProtectState;
+        const shieldOn = st && (st.shieldLevel || 0) > 0 && !st.paused;
+        if (!shieldOn || st.annoyances === false) return;
+
+        let killed = 0;
+
+        // A) Direct selector sweep (Google One-Tap, smartbanners, floating chat widgets)
+        try {
+            const directNodes = document.querySelectorAll(ANNOYANCE_DIRECT_SELECTORS);
+            for (let i = 0; i < directNodes.length; i++) {
+                const el = directNodes[i];
+                if (el && el.dataset && el.dataset.uhCollapsed !== "1") {
+                    collapseElement(el);
+                    killed++;
+                }
+            }
+        } catch (_e) {}
+
+        // B) Fixed/sticky "Open in App" bars & Newsletter subscription popups
+        try {
+            const vw = window.innerWidth || 0;
+            const vh = window.innerHeight || 0;
+            if (vw >= 200 && vh >= 200) {
+                const nodes = document.querySelectorAll("div, section, aside, dialog");
+                const limit = Math.min(nodes.length, 220);
+                for (let i = 0; i < limit; i++) {
+                    const el = nodes[i];
+                    if (!el || (el.dataset && el.dataset.uhCollapsed === "1")) continue;
+                    const cs = getComputedStyle(el);
+                    if (cs.display === "none" || cs.visibility === "hidden") continue;
+                    if (cs.position !== "fixed" && cs.position !== "sticky") continue;
+                    const z = parseInt(cs.zIndex, 10) || 0;
+                    if (z < 50) continue;
+
+                    const idCls = ((el.id || "") + " " + (typeof el.className === "string" ? el.className : "")).toLowerCase();
+                    if (SAFE_MODAL_RE.test(idCls)) continue;
+                    if (el.querySelector("video, audio, input[type='password'], .cf-turnstile")) continue;
+
+                    const rect = el.getBoundingClientRect();
+                    const text = (el.textContent || "").trim().slice(0, 320);
+                    if (!text) continue;
+
+                    // Open-in-App top/bottom bar (compact banner < 150px height)
+                    if (rect.height > 28 && rect.height <= 150 && rect.width >= vw * 0.55 && OPEN_IN_APP_TEXT_RE.test(text)) {
+                        collapseElement(el);
+                        killed++;
+                        continue;
+                    }
+
+                    // Newsletter modal overlay (large fixed dialog asking for email subscription)
+                    if (
+                        z >= 200 &&
+                        rect.width >= vw * 0.45 &&
+                        rect.height >= vh * 0.25 &&
+                        NEWSLETTER_TEXT_RE.test(text) &&
+                        !/(sign in|log in|create account|checkout|shipping)/i.test(text)
+                    ) {
+                        collapseElement(el);
+                        restoreScrollLock();
+                        killed++;
+                    }
+                }
+            }
+        } catch (_e) {}
+
+        // C) First-party sponsored feed cards & native ad tiles
+        try {
+            const cards = document.querySelectorAll("article, li, [data-testid*='card' i], [class*='feed-item' i], [class*='story-card' i], [class*='promo-card' i], shreddit-ad-post");
+            const limit = Math.min(cards.length, 140);
+            for (let i = 0; i < limit; i++) {
+                const card = cards[i];
+                if (!card || (card.dataset && card.dataset.uhCollapsed === "1")) continue;
+                if (card.tagName === "SHREDDIT-AD-POST") {
+                    collapseElement(card);
+                    killed++;
+                    continue;
+                }
+                const badges = card.querySelectorAll("span, small, label, a, div, p");
+                const bLimit = Math.min(badges.length, 24);
+                let isSponsored = false;
+                for (let j = 0; j < bLimit; j++) {
+                    const b = badges[j];
+                    if (b.children.length > 0) continue;
+                    const t = (b.textContent || "").trim();
+                    if (t.length >= 2 && t.length <= 20 && SPONSORED_BADGE_RE.test(t)) {
+                        isSponsored = true;
+                        break;
+                    }
+                }
+                if (isSponsored) {
+                    collapseElement(card);
+                    killed++;
+                }
+            }
+        } catch (_e) {}
+
+        if (killed > 0) {
+            api.runtime.sendMessage({
+                type: "UH_CONTENT_BLOCKED_AD",
+                host: currentNormalizedHost()
+            }).catch(() => {});
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Strict Interstitial & Countdown Overlay Ad-Wall Buster + Scroll Unlock
+    // -------------------------------------------------------------------------
+    const INTERSTITIAL_ID_CLASS_RE = /(interstitial|ad[-_]?wall|adblock[-_]?(modal|wall|overlay|notice|detect)|disable[-_]?adblock|popup[-_]?ad|overlay[-_]?ad|fc-ab-root|sp-message-container|splash[-_]?ad|fullpage[-_]?ad)/i;
+    const INTERSTITIAL_TEXT_RE = /(disable your ad ?blocker|turn off ad ?blocker|whitelist this site|skip ad in \d+|continue in \d+\s*(s|sec|seconds)|wait \d+\s*(s|sec|seconds)|ad closes in \d+|advertisement|sponsored offer)/i;
+    const SAFE_MODAL_RE = /(login|sign[\s_-]?in|sign[\s_-]?up|register|checkout|payment|cart|search|menu|nav|player|video|cookie|consent|captcha|turnstile|verify)/i;
+
+    function restoreScrollLock() {
+        try {
+            const html = document.documentElement;
+            const body = document.body;
+            if (html && getComputedStyle(html).overflow === "hidden") {
+                html.style.setProperty("overflow", "auto", "important");
+            }
+            if (body && getComputedStyle(body).overflow === "hidden") {
+                body.style.setProperty("overflow", "auto", "important");
+            }
+        } catch (_e) {}
+    }
+
+    function bustInterstitialAdWalls() {
+        if (!isTopFrame) return;
+        const shieldOn = C.pageProtectState && (C.pageProtectState.shieldLevel || 0) > 0 && !C.pageProtectState.paused;
+        if (!shieldOn || !document.body) return;
+        const vw = window.innerWidth || 0;
+        const vh = window.innerHeight || 0;
+        if (vw < 200 || vh < 200) return;
+
+        let busted = 0;
+        try {
+            const candidates = document.querySelectorAll("div, section, aside, dialog, ins");
+            const limit = Math.min(candidates.length, 260);
+            for (let i = 0; i < limit; i++) {
+                const el = candidates[i];
+                if (!el || (el.dataset && el.dataset.uhCollapsed === "1")) continue;
+                const cs = getComputedStyle(el);
+                if (cs.display === "none" || cs.visibility === "hidden") continue;
+                if (cs.position !== "fixed" && cs.position !== "sticky") continue;
+                const z = parseInt(cs.zIndex, 10) || 0;
+                if (z < 500) continue;
+
+                const rect = el.getBoundingClientRect();
+                if (rect.width < vw * 0.45 || rect.height < vh * 0.35) continue;
+
+                // Strict safety guardrails: never break media players, login/auth forms, or verification widgets
+                if (el.querySelector("video, audio, form, input[type='password'], input[type='email'], .cf-turnstile")) {
+                    continue;
+                }
+                const idCls = ((el.id || "") + " " + (typeof el.className === "string" ? el.className : "")).toLowerCase();
+                if (SAFE_MODAL_RE.test(idCls)) continue;
+
+                const text = (el.textContent || "").trim().slice(0, 400);
+                const isTransparentTrap = (parseFloat(cs.opacity) < 0.08 || cs.backgroundColor === "rgba(0, 0, 0, 0)" || cs.backgroundColor === "transparent") && text.length === 0;
+                const matchesAdWall = INTERSTITIAL_ID_CLASS_RE.test(idCls) || (text.length > 0 && INTERSTITIAL_TEXT_RE.test(text));
+
+                if (isTransparentTrap || matchesAdWall) {
+                    el.dataset.uhCollapsed = "1";
+                    el.style.setProperty("display", "none", "important");
+                    el.style.setProperty("visibility", "hidden", "important");
+                    el.style.setProperty("pointer-events", "none", "important");
+                    busted++;
+                }
+            }
+        } catch (_e) {}
+
+        if (busted > 0) {
+            restoreScrollLock();
             api.runtime.sendMessage({
                 type: "UH_CONTENT_BLOCKED_AD",
                 host: currentNormalizedHost()
@@ -245,7 +605,10 @@
         if (collapseRaf) return;
         collapseRaf = requestAnimationFrame(() => {
             collapseRaf = 0;
+            runRemoveSelectors();
             scanAndCollapseAdBanners(document);
+            bustInterstitialAdWalls();
+            runAnnoyanceKillers();
         });
     }
 
@@ -315,7 +678,10 @@
                 if (Array.isArray(rules) && rules.length > 0) {
                     runProceduralCosmetics(rules);
                 }
+                runRemoveSelectors();
                 scanAndCollapseAdBanners(document);
+                bustInterstitialAdWalls();
+                runAnnoyanceKillers();
             });
         };
 
@@ -338,6 +704,9 @@
 
     C.dispatchScriptletConfig = dispatchScriptletConfig;
     C.applyCosmeticStyle = applyCosmeticStyle;
+    C.applyCustomStyleRules = applyCustomStyleRules;
+    C.applyRemoveSelectors = applyRemoveSelectors;
     C.scheduleCollapseSweep = scheduleCollapseSweep;
     C.setupProceduralCosmetics = setupProceduralCosmetics;
+    C.collapseElement = collapseElement;
 })();

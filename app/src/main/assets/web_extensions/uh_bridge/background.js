@@ -32,6 +32,13 @@
                     B.broadcastLiveSettingsToTabs();
                     return;
                 }
+                if (msg.action === "ADD_CNAME_BLOCK" && msg.subdomain) {
+                    B.cnameBlockedHosts.set(String(msg.subdomain).toLowerCase(), {
+                        target: msg.target || "",
+                        isTracker: msg.isTracker !== false
+                    });
+                    return;
+                }
                 const query = (msg.action === "APPLY_GLOBAL_ZOOM" || msg.action === "SET_PIP_ISOLATION") ? {} : { active: true };
                 api.tabs.query(query).then((tabs) => {
                     if (!tabs || !tabs.length) {
@@ -84,13 +91,30 @@
         if (message.type === "UH_CHECK_POPUP_URL") {
             const blocked = B.isBlockedPopunderUrl(message.url || "", message.openerHost || "");
             if (blocked) {
-                B.queueBlockedStat(message.openerHost || "", false, B.normalizeHost(message.url || ""));
+                B.queueBlockedStat(message.openerHost || "", false, B.normalizeHost(message.url || ""), "popup_check");
+                B.notifyBlockedRedirect(message.openerHost || "", message.url || "", true);
             }
             return Promise.resolve({ blocked });
         }
-        if (message.type === "UH_CONTENT_BLOCKED_AD") {
-            B.queueBlockedStat(message.host || B.activeMainHost, false, message.host || "");
+        if (message.type === "UH_BLOCKED_REDIRECT") {
+            const targetUrl = message.targetUrl || "";
+            const sourceHost = message.sourceHost || B.activeMainHost || "";
+            const targetHost = B.normalizeHost(targetUrl) || "ad-redirect";
+            B.queueBlockedStat(sourceHost, false, targetHost, "scriptlet_redirect");
+            if (targetUrl) {
+                B.notifyBlockedRedirect(sourceHost, targetUrl, message.isPopupTab === true);
+            }
             return Promise.resolve(true);
+        }
+        if (message.type === "UH_CONTENT_BLOCKED_AD") {
+            B.queueBlockedStat(message.host || B.activeMainHost, false, message.host || "cosmetic", "cosmetic");
+            return Promise.resolve(true);
+        }
+        if (message.type === "UH_ADD_CUSTOM_RULE" && message.rule) {
+            return api.runtime.sendNativeMessage("uhApp", {
+                type: "ADD_CUSTOM_RULE",
+                rule: String(message.rule)
+            }).catch(() => false);
         }
         if (message.type === "UH_MEDIA_STATE") {
             api.runtime.sendNativeMessage("uhApp", {

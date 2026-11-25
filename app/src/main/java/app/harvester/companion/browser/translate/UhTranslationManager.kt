@@ -532,7 +532,7 @@ object UhTranslationManager {
             return
         }
 
-        // Subtle floating offer pill (like Firefox Android, UH-branded)
+        // Subtle floating offer pill (UH-branded)
         if (!cur.autoOfferEnabled) return
         val dismissKey = "$tabId|$host"
         if (dismissKey in dismissedOfferKeys) {

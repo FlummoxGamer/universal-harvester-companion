@@ -30,7 +30,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
- * Rich Media Playback Foreground Service (Firefox / Brave grade).
+ * Rich Media Playback Foreground Service.
  *
  * Features:
  * - Full [MediaSessionCompat] with live seekbar scrubbing (`ACTION_SEEK_TO`), duration & position sync

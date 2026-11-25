@@ -88,3 +88,47 @@ data class JsBlockedPageState(
     val blockedDomains: Map<String, Int> = emptyMap(),
     val updatedAtMs: Long = 0L,
 )
+
+data class BlockedRedirectEvent(
+    val id: Long = 0L,
+    val sourceHost: String = "",
+    val targetUrl: String = "",
+    val targetHost: String = "",
+    val isPopupTab: Boolean = false,
+)
+
+enum class RequestLogAction(val label: String, val isBlocked: Boolean) {
+    ALLOWED("OK", false),
+    BLOCKED_AD("AD", true),
+    BLOCKED_TRACKER("TRACKER", true),
+    BLOCKED_CNAME("CNAME", true),
+    BLOCKED_LAN("LAN", true);
+
+    companion object {
+        fun fromWire(raw: String): RequestLogAction = when (raw) {
+            "BLOCKED_AD" -> BLOCKED_AD
+            "BLOCKED_TRACKER" -> BLOCKED_TRACKER
+            "BLOCKED_CNAME" -> BLOCKED_CNAME
+            "BLOCKED_LAN" -> BLOCKED_LAN
+            else -> ALLOWED
+        }
+    }
+}
+
+data class RequestLogEntry(
+    val id: Long = 0L,
+    val pageHost: String = "",
+    val reqHost: String = "",
+    val pathHint: String = "",
+    val resourceType: String = "",
+    val action: RequestLogAction = RequestLogAction.ALLOWED,
+    val ruleSource: String = "",
+    val timestampMs: Long = 0L,
+)
+
+data class HomographWarning(
+    val asciiHost: String,
+    val unicodeHost: String,
+    val reason: String,
+)
+

@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.compose.content
 import androidx.lifecycle.lifecycleScope
+import android.widget.Toast
+import app.harvester.companion.GeckoWebExtensionBridge
 import app.harvester.companion.UHApp
 import app.harvester.companion.components.PermissionStorage
 import app.harvester.companion.privacy.ShieldLevel
@@ -54,6 +56,7 @@ import app.harvester.companion.settings.trustpanel.store.TrustPanelState
 import app.harvester.companion.settings.trustpanel.store.TrustPanelStore
 import app.harvester.companion.settings.trustpanel.store.WebsiteInfoState
 import app.harvester.companion.settings.trustpanel.ui.ClearSiteDataDialog
+import app.harvester.companion.settings.trustpanel.ui.LiveRequestInspectorPanel
 import app.harvester.companion.settings.trustpanel.ui.ProtectionPanel
 import app.harvester.companion.settings.trustpanel.ui.TrackerCategoryDetailsPanel
 import app.harvester.companion.settings.trustpanel.ui.TrackersBlockedPanel
@@ -150,6 +153,7 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
 
             val shieldState by UhShieldEngine.state.collectAsState()
             val hostTick by UhShieldEngine.hostStatsTick.collectAsState()
+            val requestLogTick by UhShieldEngine.requestLogTick.collectAsState()
             val darkBypassHosts by UhPrivacyController.darkBypassHosts.collectAsState()
             val trustState by store.stateFlow.collectAsState()
 
@@ -250,6 +254,7 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                     Route.TrackersPanel -> contentState = Route.ProtectionPanel
                     Route.TrackerCategoryDetailsPanel -> contentState = Route.TrackersPanel
                     Route.ClearSiteDataDialog -> contentState = Route.ProtectionPanel
+                    Route.RequestInspectorPanel -> contentState = Route.ProtectionPanel
                     else -> this@TrustPanelFragment.dismissAllowingStateLoss()
                 }
             }
@@ -283,6 +288,12 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                                 val isShieldPausedForSite = siteHost.isNotBlank() && siteHost in shieldState.pausedHosts
                                 val showWebDarkToggle = UhPrivacyController.isForceDarkWebEffectivelyEnabled(ctx)
                                 val isWebDarkBypassed = siteHost.isNotBlank() && siteHost in darkBypassHosts
+                                val requestLogs = remember(siteHost, requestLogTick) {
+                                    UhShieldEngine.getRequestLogForHost(siteHost)
+                                }
+                                val requestLogsBlockedCount = remember(requestLogs) {
+                                    requestLogs.count { it.action.isBlocked }
+                                }
 
                                 ProtectionPanel(
                                     websiteInfoState = websiteInfoState,
@@ -294,6 +305,8 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                                     showWebDarkToggle = showWebDarkToggle,
                                     isWebDarkEnabledForSite = !isWebDarkBypassed,
                                     numberOfGeckoTrackersBlocked = trackersBlockedCount,
+                                    requestLogTotalCount = requestLogs.size,
+                                    requestLogBlockedCount = requestLogsBlockedCount,
                                     websitePermissions = websitePermissions.filter { it.isVisible },
                                     onToggleShieldForSite = {
                                         if (shieldState.level == ShieldLevel.OFF) {
@@ -316,6 +329,29 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                                     onToggleWebDarkForSite = {
                                         UhPrivacyController.toggleSiteDarkBypass(ctx, siteUrl)
                                     },
+                                    onBlockElementClick = {
+                                        dismissAllowingStateLoss()
+                                        val started = GeckoWebExtensionBridge.startElementPicker()
+                                        if (!started) {
+                                            Toast.makeText(ctx, "Element picker unavailable on this page", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    onRequestInspectorClick = {
+                                        contentState = Route.RequestInspectorPanel
+                                    },
+                                    onForgetSiteClick = {
+                                        UhPrivacyController.forgetSiteData(ctx, siteUrl) {
+                                            Toast.makeText(
+                                                ctx.applicationContext,
+                                                "Cleared cookies & storage for $siteHost",
+                                                Toast.LENGTH_SHORT,
+                                            ).show()
+                                        }
+                                        store.state.sessionState?.let {
+                                            components.useCases.sessionUseCases.reload(it.id)
+                                        }
+                                        dismissAllowingStateLoss()
+                                    },
                                     onTrackerDetailsClick = {
                                         if (trackersBlockedCount > 0) {
                                             contentState = Route.TrackersPanel
@@ -336,6 +372,37 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                                     onAutoplayValueClick = { showAutoplayDialog = true },
                                     onToggleablePermissionClick = { store.dispatch(TrustPanelAction.TogglePermission(it)) },
                                     onViewCertificateClick = { showCertDialog = true },
+                                )
+                            }
+
+                            Route.RequestInspectorPanel -> {
+                                val siteUrl = websiteInfoState.websiteUrl.ifBlank { url }
+                                val siteHost = remember(siteUrl) { UhShieldEngine.normalizeHost(siteUrl) }
+                                val requestLogs = remember(siteHost, requestLogTick) {
+                                    UhShieldEngine.getRequestLogForHost(siteHost)
+                                }
+                                LiveRequestInspectorPanel(
+                                    siteHost = siteHost,
+                                    entries = requestLogs,
+                                    onAllowHost = { reqHost ->
+                                        if (reqHost.isNotBlank()) {
+                                            UhShieldEngine.appendCustomRule("@@||$reqHost^")
+                                            Toast.makeText(ctx, "Added allow rule for $reqHost", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    onBlockHost = { reqHost ->
+                                        if (reqHost.isNotBlank()) {
+                                            UhShieldEngine.appendCustomRule("||$reqHost^")
+                                            Toast.makeText(ctx, "Added block rule for $reqHost", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    onReloadClick = {
+                                        UhShieldEngine.clearRequestLogForHost(siteHost)
+                                        store.state.sessionState?.let {
+                                            components.useCases.sessionUseCases.reload(it.id)
+                                        }
+                                    },
+                                    onBackButtonClick = { contentState = Route.ProtectionPanel },
                                 )
                             }
 
@@ -433,4 +500,5 @@ enum class Route {
     TrackersPanel,
     TrackerCategoryDetailsPanel,
     ClearSiteDataDialog,
+    RequestInspectorPanel,
 }

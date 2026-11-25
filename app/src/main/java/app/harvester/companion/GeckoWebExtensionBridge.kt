@@ -17,6 +17,8 @@ import app.harvester.companion.browser.translate.FastTranslatorClient
 import app.harvester.companion.components.Components
 import app.harvester.companion.core.network.UhHttpClient
 import app.harvester.companion.media.UhMediaController
+import app.harvester.companion.privacy.RequestLogAction
+import app.harvester.companion.privacy.RequestLogEntry
 import app.harvester.companion.privacy.UhPrivacyController
 import app.harvester.companion.privacy.UhShieldEngine
 import kotlinx.coroutines.CoroutineScope
@@ -194,6 +196,36 @@ object GeckoWebExtensionBridge {
                 })
             } catch (e: Exception) {
                 UHLog.w("shield", "Failed pushing APPLY_PRIVACY_CONFIG: ${e.message}")
+            }
+        }
+    }
+
+    fun startElementPicker(): Boolean {
+        val port = activeBridgePort ?: return false
+        mainHandler.post {
+            try {
+                port.postMessage(JSONObject().apply {
+                    put("action", "START_ELEMENT_PICKER")
+                })
+            } catch (e: Exception) {
+                UHLog.w("shield", "Failed starting visual element picker: ${e.message}")
+            }
+        }
+        return true
+    }
+
+    fun pushCnameBlockedHost(subdomain: String, target: String, isTracker: Boolean) {
+        val port = activeBridgePort ?: return
+        mainHandler.post {
+            try {
+                port.postMessage(JSONObject().apply {
+                    put("action", "ADD_CNAME_BLOCK")
+                    put("subdomain", subdomain)
+                    put("target", target)
+                    put("isTracker", isTracker)
+                })
+            } catch (e: Exception) {
+                UHLog.w("shield", "Failed pushing ADD_CNAME_BLOCK: ${e.message}")
             }
         }
     }
@@ -402,6 +434,71 @@ object GeckoWebExtensionBridge {
                     val host = json.optString("host")
                     if (host.isNotBlank()) {
                         UhShieldEngine.clearJsBlockedForHost(host)
+                    }
+                    GeckoResult.fromValue(true)
+                }
+
+                "AD_REDIRECT_BLOCKED" -> {
+                    val sourceHost = json.optString("sourceHost")
+                    val targetUrl = json.optString("targetUrl")
+                    val isPopupTab = json.optBoolean("isPopupTab", false)
+                    if (targetUrl.isNotBlank()) {
+                        UhShieldEngine.reportBlockedRedirect(sourceHost, targetUrl, isPopupTab)
+                    }
+                    GeckoResult.fromValue(true)
+                }
+
+                "REQUEST_LOG_BATCH" -> {
+                    val arr = json.optJSONArray("entries")
+                    if (arr != null && arr.length() > 0) {
+                        val batch = ArrayList<RequestLogEntry>(arr.length())
+                        for (i in 0 until arr.length()) {
+                            val o = arr.optJSONObject(i) ?: continue
+                            val pageHost = o.optString("pageHost")
+                            val reqHost = o.optString("reqHost")
+                            if (pageHost.isBlank() || reqHost.isBlank()) continue
+                            batch.add(
+                                RequestLogEntry(
+                                    pageHost = pageHost,
+                                    reqHost = reqHost,
+                                    pathHint = o.optString("pathHint"),
+                                    resourceType = o.optString("type"),
+                                    action = RequestLogAction.fromWire(o.optString("action")),
+                                    ruleSource = o.optString("ruleSource"),
+                                    timestampMs = o.optLong("ts", System.currentTimeMillis()),
+                                )
+                            )
+                        }
+                        if (batch.isNotEmpty()) {
+                            UhShieldEngine.recordRequestLogBatch(batch)
+                        }
+                    }
+                    GeckoResult.fromValue(true)
+                }
+
+                "ADD_CUSTOM_RULE" -> {
+                    val rule = json.optString("rule")
+                    val added = if (rule.isNotBlank()) UhShieldEngine.appendCustomRule(rule) else false
+                    if (added) {
+                        mainHandler.post {
+                            Toast.makeText(ctx, "Element rule saved to UH Shield", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    GeckoResult.fromValue(added)
+                }
+
+                "RESOLVE_CNAME" -> {
+                    val host = json.optString("host")
+                    if (host.isNotBlank()) {
+                        UhShieldEngine.resolveCnameAsync(host)
+                    }
+                    GeckoResult.fromValue(true)
+                }
+
+                "BOUNCE_TRACKER_EVICT" -> {
+                    val host = json.optString("host")
+                    if (host.isNotBlank()) {
+                        UhPrivacyController.evictBounceTrackerHost(host)
                     }
                     GeckoResult.fromValue(true)
                 }

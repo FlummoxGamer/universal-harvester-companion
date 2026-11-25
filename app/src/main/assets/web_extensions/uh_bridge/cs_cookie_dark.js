@@ -246,8 +246,23 @@
     function applyPageProtectConfig(cfg) {
         if (!cfg) return;
         C.pageProtectState = cfg;
+        try {
+            sessionStorage.setItem("__uh_boot_cfg", JSON.stringify({
+                shieldLevel: cfg.shieldLevel || 0,
+                paused: cfg.paused === true,
+                blockPopups: cfg.blockPopups === true,
+                backgroundPlay: cfg.backgroundPlay === true,
+                webrtcPolicy: cfg.webrtcPolicy || 0,
+                antiFingerprint: cfg.antiFingerprint === true,
+                strictFingerprint: cfg.strictFingerprint === true,
+                annoyances: cfg.annoyances !== false,
+                fpSessionSalt: cfg.fpSessionSalt || ""
+            }));
+        } catch (_e) {}
         const shieldOn = (cfg.shieldLevel || 0) > 0 && !cfg.paused;
         C.applyCosmeticStyle(cfg.cosmetics || [], shieldOn);
+        if (C.applyCustomStyleRules) C.applyCustomStyleRules(cfg.styleRules || [], shieldOn);
+        if (C.applyRemoveSelectors) C.applyRemoveSelectors(cfg.removeSelectors || [], shieldOn);
         C.setupProceduralCosmetics(cfg.procedural || [], shieldOn);
         applySmartDarkMode(cfg.forceDarkWeb === true, cfg.enhanceDark === true, cfg.darkBypassed === true);
         if (C.scriptletsReady) {

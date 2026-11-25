@@ -118,6 +118,12 @@ object SettingsPrefs {
     const val K_PG_REDIRECT = "pg_redirect"         // 0 = Stop redirecting to app, 1 = Ask, 2 = Always allow
     const val K_PG_POPUP_BLOCK = "pg_popup_block"   // Block popups & ad-tab hijacks
     const val K_PG_CLEAR_URLS = "pg_clear_urls"     // Strip tracking URL parameters
+    const val K_PG_FP_STRICT = "pg_fingerprint_strict" // Opt-in UTC timezone, uniform language & screen bucketing
+    const val K_PG_AUTO_SHRED = "pg_auto_shred"     // Opt-in auto-clear site data when last tab closes
+    const val K_PG_AUTO_SHRED_ALLOW_HOSTS = "pg_auto_shred_allow_hosts"
+    const val K_PG_LAN_GUARD = "pg_lan_guard"       // Silent public-to-LAN port-scan blocker
+    const val K_PG_ANNOYANCES = "pg_annoyances"     // One-Tap, Open-in-App, newsletters, chat bubbles & sponsored cards
+    const val K_PG_CNAME_UNMASK = "pg_cname_unmask" // Cached DoH CNAME cloaking & 1st-party tracker unmasking
 
     // Advanced Privacy Keys
     const val K_ADV_SAFE_BROWSING = "adv_safe_browsing"

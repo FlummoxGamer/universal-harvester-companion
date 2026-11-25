@@ -32,6 +32,8 @@
         gpt: "data:application/javascript;base64,KHdpbmRvdy5nb29nbGV0YWc9d2luZG93Lmdvb2dsZXRhZ3x8e2NtZDpbXX0pLmFwaVJlYWR5PXRydWU7",
         popads: "data:application/javascript;base64,KGZ1bmN0aW9uKCl7fSkoKTs=",
         vast: "data:application/xml;base64,PFZBU1QgdmVyc2lvbj0iMy4wIi8+",
+        vmap: "data:application/xml;base64,PHZtYXA6Vk1BUCB4bWxuczp2bWFwPSJodHRwOi8vd3d3LmlhYi5uZXQvdm1hcC0xLjAiIHZlcnNpb249IjEuMCIvPg==",
+        ima: "data:application/javascript;base64,KGZ1bmN0aW9uKCl7d2luZG93Lmdvb2dsZT13aW5kb3cuZ29vZ2xlfHx7fTt3aW5kb3cuZ29vZ2xlLmltYT13aW5kb3cuZ29vZ2xlLmltYXx8e0Fkc0xvYWRlcjpmdW5jdGlvbigpe3RoaXMuYWRkRXZlbnRMaXN0ZW5lcj1mdW5jdGlvbigpe307dGhpcy5yZXF1ZXN0QWRzPWZ1bmN0aW9uKCl7fTt9fTt9KSgpOw==",
         gif: "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==",
         html: "data:text/html;base64,PCFET0NUWVBFIGh0bWw+PGh0bWw+PGhlYWQ+PC9oZWFkPjxib2R5PjwvYm9keT48L2h0bWw+",
         css: "data:text/css;base64,Lyogbm9vcCAqLw==",
@@ -54,7 +56,8 @@
             excByDomain: new Map(),
             excByToken: new Map(),
             excGeneric: [],
-            popupRules: []
+            popupRules: [],
+            removeParamRules: []
         };
     }
 
@@ -354,12 +357,52 @@
         if (details.type === "script") {
             if (lowerUrl.includes("adsbygoogle.js")) return REDIRECT_DATA_URLS.adsbygoogle;
             if (lowerUrl.includes("gpt.js") || lowerUrl.includes("pubads_impl")) return REDIRECT_DATA_URLS.gpt;
+            if (lowerUrl.includes("imasdk.googleapis.com") || lowerUrl.includes("/ima3.js")) return REDIRECT_DATA_URLS.ima;
         }
-        if (details.type === "xmlhttprequest" && (lowerUrl.includes("vast") || lowerUrl.includes("vmap"))) {
-            return REDIRECT_DATA_URLS.vast;
+        if (details.type === "xmlhttprequest" || details.type === "fetch" || details.type === "other") {
+            if (lowerUrl.includes("vmap")) return REDIRECT_DATA_URLS.vmap;
+            if (lowerUrl.includes("vast") || lowerUrl.includes("/gampad/ads")) return REDIRECT_DATA_URLS.vast;
         }
         return null;
     }
+
+    // Local Network / Private-IP Guard (blocks public sites from port-scanning localhost & LAN)
+    function isPrivateOrLanHost(host) {
+        if (!host) return false;
+        const h = host.toLowerCase();
+        if (
+            h === "localhost" ||
+            h === "0.0.0.0" ||
+            h === "::1" ||
+            h === "[::1]" ||
+            h.endsWith(".localhost") ||
+            h.endsWith(".local") ||
+            h.endsWith(".internal") ||
+            h.endsWith(".lan") ||
+            h.endsWith(".home.arpa")
+        ) {
+            return true;
+        }
+        // IPv4 private / loopback / link-local / CGNAT ranges
+        const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+        if (m) {
+            const a = Number(m[1]);
+            const b = Number(m[2]);
+            if (a === 127 || a === 10 || a === 0) return true;
+            if (a === 192 && b === 168) return true;
+            if (a === 169 && b === 254) return true;
+            if (a === 172 && b >= 16 && b <= 31) return true;
+            if (a === 100 && b >= 64 && b <= 127) return true;
+        }
+        // IPv6 ULA (fc00::/7) or link-local (fe80::/10)
+        if (h.startsWith("[fc") || h.startsWith("[fd") || h.startsWith("[fe80:")) {
+            return true;
+        }
+        return false;
+    }
+
+    // Known first-party proxied tracker & telemetry endpoints
+    const FIRST_PARTY_TRACKER_PATH_RE = /(\/gtm\.js(?:[?#]|$)|\/g\/collect(?:[?#]|$)|\/j\/collect(?:[?#]|$)|\/r\/collect(?:[?#]|$)|\/_vercel\/insights|\/_vercel\/speed-insights|\/cdn-cgi\/rum(?:[?#]|$)|\/matomo\.js(?:[?#]|$)|\/piwik\.js(?:[?#]|$)|\/matomo\.php(?:[?#]|$)|\/piwik\.php(?:[?#]|$)|\/telemetry\/v\d|\/smetrics\/|\/b\/ss\/|\/analytics\/collect(?:[?#]|$)|\/events\/track(?:[?#]|$))/i;
 
     globalThis.__uhBg = {
         api,
@@ -369,9 +412,11 @@
         TYPE_POPUP,
         activeRules: createEmptyRuleEngine(),
         activeMainHost: "",
+        cnameBlockedHosts: new Map(),
         shieldState: {
             shieldLevel: 2,
             pausedHosts: new Set(),
+            redirectAllowOnceHosts: new Set(),
             smartBlockJs: false,
             jsAllowOnceHosts: new Set(),
             jsAllowAlwaysHosts: new Set(),
@@ -380,6 +425,12 @@
             deAmp: true,
             blockPopups: true,
             antiFingerprint: true,
+            strictFingerprint: false,
+            fpSessionSalt: "",
+            refererTrim: true,
+            lanGuard: true,
+            annoyances: true,
+            cnameUnmask: true,
             dnt: false,
             gpc: true,
             webrtcPolicy: 1,
@@ -397,10 +448,13 @@
         matchesDomainSet,
         matchesDomainList,
         mapDetailsTypeToBit,
+        compileAbpPatternToRegex,
         tokenizeUrl,
         indexWireRule,
         matchesStructuredRule,
         findMatchingRuleInIndex,
-        resolveSmartRedirect
+        resolveSmartRedirect,
+        isPrivateOrLanHost,
+        FIRST_PARTY_TRACKER_PATH_RE
     };
 })();

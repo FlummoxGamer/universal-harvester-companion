@@ -5,13 +5,13 @@ import org.json.JSONObject
 import java.util.Locale
 
 /**
- * Full-featured Adblock Plus / uBlock Origin filter rule compiler.
+ * Full-featured standard filter-list rule compiler.
  *
  * Compiles filter lists without artificial domain caps into:
  * - O(1) domain hash sets (all-party, third-party-only, popup-only, exceptions)
  * - Structured network rules (path/wildcard/regex, resource types, $domain, @@ exceptions, $important, $redirect)
  * - Global & domain-scoped CSS cosmetic rules + #@# cosmetic exceptions + procedural :has-text() rules
- * - Domain-scoped uBO anti-adblock scriptlets (##+js(...))
+ * - Domain-scoped anti-adblock scriptlets (##+js(...))
  */
 object UhAdblockRuleCompiler {
 
@@ -106,6 +106,40 @@ object UhAdblockRuleCompiler {
         }
     }
 
+    data class StyleCosmeticRule(
+        val selector: String,
+        val cssDecl: String,
+    ) {
+        fun toWireJson(): JSONObject = JSONObject().apply {
+            put("sel", selector)
+            put("css", cssDecl)
+        }
+    }
+
+    data class RemoveParamRule(
+        val pattern: String,
+        val param: String,
+        val isRegexParam: Boolean = false,
+        val includeDomains: List<String> = emptyList(),
+        val excludeDomains: List<String> = emptyList(),
+    ) {
+        fun toWireJson(): JSONArray = JSONArray().apply {
+            put(pattern)
+            put(param)
+            put(if (isRegexParam) 1 else 0)
+            if (includeDomains.isNotEmpty()) {
+                put(JSONArray().apply { includeDomains.forEach { put(it) } })
+            } else {
+                put(JSONObject.NULL)
+            }
+            if (excludeDomains.isNotEmpty()) {
+                put(JSONArray().apply { excludeDomains.forEach { put(it) } })
+            } else {
+                put(JSONObject.NULL)
+            }
+        }
+    }
+
     class Builder {
         val adDomains = HashSet<String>(16384)
         val trackerDomains = HashSet<String>(16384)
@@ -128,9 +162,21 @@ object UhAdblockRuleCompiler {
         val domainProcedural = HashMap<String, MutableList<ProceduralCosmeticRule>>(256)
 
         val domainScriptlets = HashMap<String, MutableList<ScriptletRule>>(512)
+        val domainStyleRules = HashMap<String, MutableList<StyleCosmeticRule>>(256)
+        val domainRemoveRules = HashMap<String, MutableList<String>>(256)
+        val removeParamRules = ArrayList<RemoveParamRule>(256)
+        private val removeParamDedup = HashSet<String>(256)
+
+        fun addRemoveParamRule(rule: RemoveParamRule) {
+            if (removeParamRules.size >= MAX_REMOVE_PARAM_RULES) return
+            val key = "${rule.pattern}|${rule.param}|${rule.isRegexParam}|${rule.includeDomains}"
+            if (removeParamDedup.add(key)) {
+                removeParamRules.add(rule)
+            }
+        }
 
         fun addNetworkRule(rule: CompiledNetworkRule) {
-            // Keep structured rules well-bounded in memory while still accommodating full EasyList/EasyPrivacy/uBO
+            // Keep structured rules well-bounded in memory while accommodating full multi-list sets
             if (networkRules.size >= MAX_STRUCTURED_RULES && !rule.isException && !rule.important) return
             val key = "${rule.isException}|${rule.pattern}|${rule.anchorDomain}|${rule.includeTypes}|${rule.excludeTypes}|${rule.thirdPartyOnly}|${rule.firstPartyOnly}|${rule.includeDomains}|${rule.redirect}"
             if (networkRuleDedup.add(key)) {
@@ -148,8 +194,11 @@ object UhAdblockRuleCompiler {
             thirdPartyTrackerDomains.removeAll(thirdPartyExceptionDomains)
             popupDomains.removeAll(exceptionDomains)
 
-            // Deduplicate domain overlaps (all-party supersedes third-party-only)
+            // Deduplicate domain overlaps: all-party supersedes third-party, and Ads take priority over Trackers
             thirdPartyAdDomains.removeAll(adDomains)
+            trackerDomains.removeAll(adDomains)
+            thirdPartyTrackerDomains.removeAll(adDomains)
+            thirdPartyTrackerDomains.removeAll(thirdPartyAdDomains)
             thirdPartyTrackerDomains.removeAll(trackerDomains)
 
             // Remove globally exempted cosmetic selectors
@@ -167,7 +216,10 @@ object UhAdblockRuleCompiler {
                 domainCosmetics.values.sumOf { it.size } +
                 globalProcedural.size +
                 domainProcedural.values.sumOf { it.size } +
-                domainScriptlets.values.sumOf { it.size }
+                domainScriptlets.values.sumOf { it.size } +
+                domainStyleRules.values.sumOf { it.size } +
+                domainRemoveRules.values.sumOf { it.size } +
+                removeParamRules.size
 
             return CompiledFilterSet(
                 adDomains = adDomains,
@@ -186,6 +238,9 @@ object UhAdblockRuleCompiler {
                 globalProcedural = globalProcedural,
                 domainProcedural = domainProcedural,
                 domainScriptlets = domainScriptlets,
+                domainStyleRules = domainStyleRules,
+                domainRemoveRules = domainRemoveRules,
+                removeParamRules = removeParamRules,
                 totalRules = total,
             )
         }
@@ -208,6 +263,9 @@ object UhAdblockRuleCompiler {
         val globalProcedural: List<ProceduralCosmeticRule> = emptyList(),
         val domainProcedural: Map<String, List<ProceduralCosmeticRule>> = emptyMap(),
         val domainScriptlets: Map<String, List<ScriptletRule>> = emptyMap(),
+        val domainStyleRules: Map<String, List<StyleCosmeticRule>> = emptyMap(),
+        val domainRemoveRules: Map<String, List<String>> = emptyMap(),
+        val removeParamRules: List<RemoveParamRule> = emptyList(),
         val totalRules: Int = 0,
     ) {
         companion object {
@@ -245,6 +303,10 @@ object UhAdblockRuleCompiler {
         val globalProcedural = ArrayList<ProceduralCosmeticRule>(MAX_GLOBAL_PROCEDURAL)
         val domainProcedural = HashMap<String, MutableList<ProceduralCosmeticRule>>(256)
         val domainScriptlets = HashMap<String, MutableList<ScriptletRule>>(512)
+        val domainStyleRules = HashMap<String, MutableList<StyleCosmeticRule>>(256)
+        val domainRemoveRules = HashMap<String, MutableList<String>>(256)
+        val removeParamRules = ArrayList<RemoveParamRule>(256)
+        val removeParamDedup = HashSet<String>(256)
 
         for (set in sets) {
             adDomains.addAll(set.adDomains)
@@ -296,9 +358,26 @@ object UhAdblockRuleCompiler {
                     if (target.size < MAX_SCRIPTLETS_PER_HOST && sc !in target) target.add(sc)
                 }
             }
+            for ((dom, list) in set.domainStyleRules) {
+                val target = domainStyleRules.getOrPut(dom) { ArrayList(list.size) }
+                for (st in list) {
+                    if (target.size < MAX_STYLE_RULES_PER_HOST && st !in target) target.add(st)
+                }
+            }
+            for ((dom, list) in set.domainRemoveRules) {
+                val target = domainRemoveRules.getOrPut(dom) { ArrayList(list.size) }
+                for (sel in list) {
+                    if (target.size < MAX_REMOVE_RULES_PER_HOST && sel !in target) target.add(sel)
+                }
+            }
+            for (rp in set.removeParamRules) {
+                if (removeParamRules.size >= MAX_REMOVE_PARAM_RULES) break
+                val key = "${rp.pattern}|${rp.param}|${rp.isRegexParam}|${rp.includeDomains}"
+                if (removeParamDedup.add(key)) removeParamRules.add(rp)
+            }
         }
 
-        // Apply global exceptions & deduplicate overlaps across merged sets
+        // Apply global exceptions & deduplicate overlaps (Ads supersede Trackers for accurate classification)
         adDomains.removeAll(exceptionDomains)
         trackerDomains.removeAll(exceptionDomains)
         thirdPartyAdDomains.removeAll(exceptionDomains)
@@ -307,6 +386,9 @@ object UhAdblockRuleCompiler {
         thirdPartyTrackerDomains.removeAll(thirdPartyExceptionDomains)
         popupDomains.removeAll(exceptionDomains)
         thirdPartyAdDomains.removeAll(adDomains)
+        trackerDomains.removeAll(adDomains)
+        thirdPartyTrackerDomains.removeAll(adDomains)
+        thirdPartyTrackerDomains.removeAll(thirdPartyAdDomains)
         thirdPartyTrackerDomains.removeAll(trackerDomains)
         globalCosmetics.removeAll(globalCosmeticExceptions)
 
@@ -322,7 +404,10 @@ object UhAdblockRuleCompiler {
             domainCosmetics.values.sumOf { it.size } +
             globalProcedural.size +
             domainProcedural.values.sumOf { it.size } +
-            domainScriptlets.values.sumOf { it.size }
+            domainScriptlets.values.sumOf { it.size } +
+            domainStyleRules.values.sumOf { it.size } +
+            domainRemoveRules.values.sumOf { it.size } +
+            removeParamRules.size
 
         return CompiledFilterSet(
             adDomains = adDomains,
@@ -341,6 +426,9 @@ object UhAdblockRuleCompiler {
             globalProcedural = globalProcedural,
             domainProcedural = domainProcedural,
             domainScriptlets = domainScriptlets,
+            domainStyleRules = domainStyleRules,
+            domainRemoveRules = domainRemoveRules,
+            removeParamRules = removeParamRules,
             totalRules = total,
         )
     }
@@ -351,6 +439,9 @@ object UhAdblockRuleCompiler {
     private const val MAX_GLOBAL_PROCEDURAL = 120
     private const val MAX_DOMAIN_PROCEDURAL_PER_HOST = 20
     private const val MAX_SCRIPTLETS_PER_HOST = 16
+    private const val MAX_STYLE_RULES_PER_HOST = 20
+    private const val MAX_REMOVE_RULES_PER_HOST = 20
+    private const val MAX_REMOVE_PARAM_RULES = 1200
 
     private val SUPPORTED_SCRIPTLET_ALIASES: Map<String, String> = mapOf(
         "abort-on-property-read" to "abort-on-property-read",
@@ -428,18 +519,21 @@ object UhAdblockRuleCompiler {
             // 4) Standard cosmetic or scriptlet rule: domain##selector or domain##+js(...)
             val cosIdx = line.indexOf("##")
             if (cosIdx >= 0) {
+                val domainsPart = line.substring(0, cosIdx)
                 val body = line.substring(cosIdx + 2).trim()
                 if (body.startsWith("+js(") && body.endsWith(")")) {
-                    parseScriptletRule(line.substring(0, cosIdx), body, builder)
+                    parseScriptletRule(domainsPart, body, builder)
+                } else if (body.contains(":style(") || body.endsWith(":remove()")) {
+                    parseStyleOrRemoveCosmetic(domainsPart, body, builder)
                 } else if (body.contains(":has-text(") || body.contains(":-abp-contains(")) {
                     parseProceduralCosmetic(line, cosIdx, 2, builder)
                 } else {
-                    parseStandardCosmetic(line.substring(0, cosIdx), body, builder)
+                    parseStandardCosmetic(domainsPart, body, builder)
                 }
                 continue
             }
 
-            // Skip AdGuard HTML/CSS injection markers that aren't standard CSS/network rules
+            // Skip non-standard HTML/CSS injection markers that aren't standard CSS/network rules
             if (line.contains("#$#") || line.contains("#%#") || line.contains("$$") || line.contains("$@#")) {
                 continue
             }
@@ -451,7 +545,7 @@ object UhAdblockRuleCompiler {
 
     private fun parseStandardCosmetic(domainsPart: String, selector: String, builder: Builder) {
         if (selector.length !in 2..200) return
-        // Reject non-standard uBO/ABP extended pseudo-selectors Gecko CSS doesn't support natively
+        // Reject non-standard extended pseudo-selectors Gecko CSS doesn't support natively
         // Note: Standard :has(...) IS supported natively in Gecko 121+
         if (selector.contains("{") || selector.contains("}") ||
             selector.contains(":style(") || selector.contains(":remove(") ||
@@ -498,6 +592,37 @@ object UhAdblockRuleCompiler {
             }
             for (ex in excludes) {
                 builder.domainCosmeticExceptions.getOrPut(ex) { HashSet() }.add(selector)
+            }
+        }
+    }
+
+    private fun parseStyleOrRemoveCosmetic(domainsPart: String, body: String, builder: Builder) {
+        if (domainsPart.isBlank()) return // Keep :style() and :remove() domain-scoped for safety
+        val styleIdx = body.indexOf(":style(")
+        if (styleIdx > 0 && body.endsWith(")")) {
+            val sel = body.substring(0, styleIdx).trim()
+            val cssDecl = body.substring(styleIdx + 7, body.length - 1).trim()
+            if (sel.length !in 2..160 || cssDecl.length !in 3..240) return
+            if (sel.contains("{") || sel.contains("}") || cssDecl.contains("{") || cssDecl.contains("}")) return
+            val rule = StyleCosmeticRule(sel, cssDecl)
+            for (raw in domainsPart.split(',')) {
+                val d = raw.trim().lowercase(Locale.ROOT)
+                if (d.contains('.') && !d.startsWith("~")) {
+                    val list = builder.domainStyleRules.getOrPut(d) { ArrayList() }
+                    if (list.size < MAX_STYLE_RULES_PER_HOST && rule !in list) list.add(rule)
+                }
+            }
+            return
+        }
+        if (body.endsWith(":remove()")) {
+            val sel = body.removeSuffix(":remove()").trim()
+            if (sel.length !in 2..160 || sel.contains("{") || sel.contains("}") || sel.contains(":xpath(")) return
+            for (raw in domainsPart.split(',')) {
+                val d = raw.trim().lowercase(Locale.ROOT)
+                if (d.contains('.') && !d.startsWith("~")) {
+                    val list = builder.domainRemoveRules.getOrPut(d) { ArrayList() }
+                    if (list.size < MAX_REMOVE_RULES_PER_HOST && sel !in list) list.add(sel)
+                }
             }
         }
     }
@@ -663,6 +788,7 @@ object UhAdblockRuleCompiler {
         var isPopup = false
         var important = false
         var redirect: String? = null
+        var removeParam: String? = null
         var hasUnsupportedBlockingModifier = false
         val includeDomains = ArrayList<String>(2)
         val excludeDomains = ArrayList<String>(2)
@@ -688,8 +814,16 @@ object UhAdblockRuleCompiler {
                         // Matches all types including popup
                         isPopup = true
                     }
+                    lower.startsWith("removeparam=") -> {
+                        val rawParam = opt.substringAfter('=').trim()
+                        if (rawParam.isNotBlank() && !rawParam.startsWith("~")) {
+                            removeParam = rawParam
+                        } else {
+                            hasUnsupportedBlockingModifier = true
+                        }
+                    }
                     lower == "badfilter" || lower == "csp" || lower.startsWith("csp=") ||
-                        lower.startsWith("removeparam=") || lower.startsWith("replace=") ||
+                        lower.startsWith("replace=") ||
                         lower == "elemhide" || lower == "generichide" || lower == "specifichide" ||
                         lower == "genericblock" || lower == "ehide" || lower == "ghide" || lower == "shide" -> {
                         // Modifier not handled as a simple request block; skip rule safely so we never over-block
@@ -725,6 +859,29 @@ object UhAdblockRuleCompiler {
         }
 
         if (hasUnsupportedBlockingModifier) return
+
+        // Handle $removeparam= rules directly without turning them into request cancellations
+        if (removeParam != null) {
+            if (isException) return
+            val rpVal = removeParam!!
+            val isRegexParam = rpVal.length > 2 && rpVal.startsWith("/") && rpVal.endsWith("/")
+            val cleanParam = if (isRegexParam) rpVal.substring(1, rpVal.length - 1) else rpVal.lowercase(Locale.ROOT)
+            if (cleanParam.isBlank() || cleanParam.length > 80) return
+            if (isRegexParam) {
+                try { Regex(cleanParam) } catch (_: Exception) { return }
+            }
+            val cleanPat = patternPart.trim().lowercase(Locale.ROOT)
+            builder.addRemoveParamRule(
+                RemoveParamRule(
+                    pattern = if (cleanPat == "*" || cleanPat == "/*") "" else cleanPat,
+                    param = cleanParam,
+                    isRegexParam = isRegexParam,
+                    includeDomains = includeDomains,
+                    excludeDomains = excludeDomains,
+                )
+            )
+            return
+        }
 
         // Skip document-only blocking rules (we never want an ad filter rule to blank a top-level page)
         if (!isException && includeTypes == TYPE_DOCUMENT) return

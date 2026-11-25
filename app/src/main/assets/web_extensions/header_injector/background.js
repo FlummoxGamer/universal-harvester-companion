@@ -1,7 +1,7 @@
 const api = typeof browser !== "undefined" ? browser : chrome;
 
 // Header capture is dormant by default so we NEVER block network requests or
-// alter genuine Firefox/GeckoView TLS/HTTP fingerprints (e.g. Cloudflare WAF).
+// alter genuine GeckoView TLS/HTTP fingerprints (e.g. Cloudflare WAF).
 let captureActive = false;
 let nativePort = null;
 

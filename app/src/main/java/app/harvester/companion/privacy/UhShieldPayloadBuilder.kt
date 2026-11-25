@@ -22,13 +22,18 @@ internal object UhShieldPayloadBuilder {
         compiledSet: UhAdblockRuleCompiler.CompiledFilterSet,
         jsAllowOnceHosts: Set<String>,
         jsAllowAlwaysHosts: Set<String>,
+        redirectAllowOnceHosts: Set<String> = emptySet(),
+        fpSessionSalt: String = "",
     ): JSONObject {
         val pausedArr = JSONArray().apply { state.pausedHosts.forEach { put(it) } }
         val jsOnceArr = JSONArray().apply { jsAllowOnceHosts.forEach { put(it) } }
         val jsAlwaysArr = JSONArray().apply { jsAllowAlwaysHosts.forEach { put(it) } }
+        val redirectOnceArr = JSONArray().apply { redirectAllowOnceHosts.forEach { put(it) } }
         val darkBypassArr = JSONArray().apply {
             SettingsPrefs.getStringSet(ctx, SettingsPrefs.K_DARK_BYPASS_HOSTS).forEach { put(it) }
         }
+        val antiFingerprint = SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_FINGERPRINT, true)
+        val clearUrls = SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_CLEAR_URLS, true)
 
         return JSONObject().apply {
             put("shieldLevel", state.level.code)
@@ -37,11 +42,18 @@ internal object UhShieldPayloadBuilder {
             put("smartBlockJs", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_SCRIPT, false))
             put("jsAllowOnceHosts", jsOnceArr)
             put("jsAllowAlwaysHosts", jsAlwaysArr)
+            put("redirectAllowOnceHosts", redirectOnceArr)
             put("cookieBanners", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_COOKIE_BANNERS, true))
-            put("clearUrls", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_CLEAR_URLS, true))
+            put("clearUrls", clearUrls)
             put("deAmp", SettingsPrefs.getBool(ctx, SettingsPrefs.K_ADV_DEAMP, true))
             put("blockPopups", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_POPUP_BLOCK, true))
-            put("antiFingerprint", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_FINGERPRINT, true))
+            put("antiFingerprint", antiFingerprint)
+            put("strictFingerprint", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_FP_STRICT, false))
+            put("fpSessionSalt", fpSessionSalt)
+            put("refererTrim", antiFingerprint || clearUrls)
+            put("lanGuard", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_LAN_GUARD, true))
+            put("annoyances", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_ANNOYANCES, true))
+            put("cnameUnmask", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_CNAME_UNMASK, true))
             put("dnt", SettingsPrefs.getBool(ctx, SettingsPrefs.K_ADV_DNT, false))
             put("gpc", SettingsPrefs.getBool(ctx, SettingsPrefs.K_ADV_GPC, true))
             put("webrtcPolicy", SettingsPrefs.getInt(ctx, SettingsPrefs.K_ADV_WEBRTC_POLICY, 1))
@@ -58,6 +70,8 @@ internal object UhShieldPayloadBuilder {
         compiledSet: UhAdblockRuleCompiler.CompiledFilterSet,
         jsAllowOnceHosts: Set<String>,
         jsAllowAlwaysHosts: Set<String>,
+        redirectAllowOnceHosts: Set<String> = emptySet(),
+        fpSessionSalt: String = "",
     ): List<JSONObject> {
         val syncId = System.nanoTime()
         val messages = ArrayList<JSONObject>(32)
@@ -74,6 +88,8 @@ internal object UhShieldPayloadBuilder {
                         compiledSet = compiledSet,
                         jsAllowOnceHosts = jsAllowOnceHosts,
                         jsAllowAlwaysHosts = jsAllowAlwaysHosts,
+                        redirectAllowOnceHosts = redirectAllowOnceHosts,
+                        fpSessionSalt = fpSessionSalt,
                     )
                 )
             }
@@ -150,6 +166,21 @@ internal object UhShieldPayloadBuilder {
             }
         }
 
+        if (compiledSet.removeParamRules.isNotEmpty()) {
+            val rpArr = JSONArray()
+            for (rp in compiledSet.removeParamRules) {
+                rpArr.put(rp.toWireJson())
+            }
+            messages.add(
+                JSONObject().apply {
+                    put("action", "SHIELD_CONFIG_CHUNK")
+                    put("syncId", syncId)
+                    put("kind", "removeParamRules")
+                    put("items", rpArr)
+                }
+            )
+        }
+
         messages.add(
             JSONObject().apply {
                 put("action", "SHIELD_CONFIG_COMMIT")
@@ -207,6 +238,7 @@ internal object UhShieldPayloadBuilder {
         pageUrl: String,
         state: UhShieldEngine.State,
         compiledSet: UhAdblockRuleCompiler.CompiledFilterSet,
+        fpSessionSalt: String = "",
     ): JSONObject {
         val host = UhShieldUrlCleaner.normalizeHost(pageUrl)
         val paused = host.isNotBlank() && host in state.pausedHosts
@@ -215,6 +247,8 @@ internal object UhShieldPayloadBuilder {
         val selArr = JSONArray()
         val procArr = JSONArray()
         val scriptletsArr = JSONArray()
+        val styleRulesArr = JSONArray()
+        val removeSelArr = JSONArray()
 
         if (shieldActive && compiledSet.totalRules > 0) {
             getCosmeticSelectorsForHost(pageUrl, state, compiledSet).forEach { selArr.put(it) }
@@ -225,6 +259,8 @@ internal object UhShieldPayloadBuilder {
                 while (true) {
                     compiledSet.domainProcedural[candidate]?.forEach { procArr.put(it.toWireJson()) }
                     compiledSet.domainScriptlets[candidate]?.forEach { scriptletsArr.put(it.toWireJson()) }
+                    compiledSet.domainStyleRules[candidate]?.forEach { styleRulesArr.put(it.toWireJson()) }
+                    compiledSet.domainRemoveRules[candidate]?.forEach { removeSelArr.put(it) }
                     val dot = candidate.indexOf('.')
                     if (dot < 0 || dot >= candidate.length - 1) break
                     candidate = candidate.substring(dot + 1)
@@ -240,9 +276,14 @@ internal object UhShieldPayloadBuilder {
             put("cosmetics", selArr)
             put("procedural", procArr)
             put("scriptlets", scriptletsArr)
+            put("styleRules", styleRulesArr)
+            put("removeSelectors", removeSelArr)
+            put("annoyances", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_ANNOYANCES, true) && !paused)
             put("cookieBanners", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_COOKIE_BANNERS, true) && !paused)
             put("blockPopups", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_POPUP_BLOCK, true) && !paused)
             put("antiFingerprint", antiFingerprintPref && !paused)
+            put("strictFingerprint", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_FP_STRICT, false) && antiFingerprintPref && !paused)
+            put("fpSessionSalt", fpSessionSalt)
             put("backgroundPlay", SettingsPrefs.getBool(ctx, SettingsPrefs.K_BACKGROUND_PLAY, true))
             put("webrtcPolicy", SettingsPrefs.getInt(ctx, SettingsPrefs.K_ADV_WEBRTC_POLICY, 1))
             put("forceDarkWeb", UhPrivacyController.isForceDarkWebEffectivelyEnabled(ctx))

@@ -102,6 +102,12 @@ object UhPrivacyController {
                     }
                 }
             }
+            UhShieldEngine.onLightweightConfigUpdated = {
+                pushLightweightSettingsToExtension()
+            }
+            UhShieldEngine.onCnameBlockedDiscovered = { subdomain, target, isTracker ->
+                GeckoWebExtensionBridge.pushCnameBlockedHost(subdomain, target, isTracker)
+            }
         }
         applyAllToEngine(ctx)
     }
@@ -350,6 +356,7 @@ object UhPrivacyController {
                         s.dohProviderUrl = dohUrl
                     }
                     applyNativeCookieBannerModeIfSupported(s, cookieBanners)
+                    applyNativeEchIfSupported(s, dohUrl.isNotBlank())
                 } catch (e: Exception) {
                     UHLog.w("privacy", "Error applying live settings to GeckoEngine: ${e.message}")
                 }
@@ -378,6 +385,92 @@ object UhPrivacyController {
                 ?.invoke(settings, targetValue)
         } catch (_: Throwable) {
             // Expected on GeckoView 154+; content.js Shadow-DOM & CMP auto-rejector handles cookie banners
+        }
+    }
+
+    private fun applyNativeEchIfSupported(settings: Settings, dohActive: Boolean) {
+        if (!dohActive) return
+        try {
+            // Enable Encrypted Client Hello (ECH) when supported by the bundled GeckoView version
+            settings.javaClass.methods
+                .firstOrNull { it.name == "setEncryptedClientHelloEnabled" && it.parameterTypes.size == 1 }
+                ?.invoke(settings, true)
+        } catch (_: Throwable) {
+            // Graceful no-op on GeckoView versions where ECH is managed internally with DoH
+        }
+    }
+
+    /**
+     * 1-tap "Forget This Site": clears cookies, localStorage, IndexedDB, and auth sessions
+     * for the target host and wipes its live shield stats/logs.
+     */
+    fun forgetSiteData(ctx: Context, urlOrHost: String, onComplete: (() -> Unit)? = null) {
+        val host = UhShieldEngine.normalizeHost(urlOrHost)
+        if (host.isBlank()) {
+            onComplete?.invoke()
+            return
+        }
+        UhShieldEngine.resetHostStats(host)
+        UhShieldEngine.clearRequestLogForHost(host)
+        UhShieldEngine.clearJsBlockedForHost(host)
+        mainHandler.post {
+            try {
+                engineRef?.clearData(
+                    data = Engine.BrowsingData.select(
+                        Engine.BrowsingData.AUTH_SESSIONS,
+                        Engine.BrowsingData.ALL_SITE_DATA,
+                    ),
+                    host = host,
+                    onSuccess = { onComplete?.invoke() },
+                    onError = { onComplete?.invoke() },
+                ) ?: onComplete?.invoke()
+            } catch (_: Exception) {
+                onComplete?.invoke()
+            }
+        }
+    }
+
+    /**
+     * Silently evicts cookies and storage dropped by rapid cross-site bounce-tracker redirect hops.
+     */
+    fun evictBounceTrackerHost(hostOrUrl: String) {
+        val host = UhShieldEngine.normalizeHost(hostOrUrl)
+        if (host.isBlank()) return
+        mainHandler.post {
+            try {
+                engineRef?.clearData(
+                    data = Engine.BrowsingData.select(Engine.BrowsingData.ALL_SITE_DATA),
+                    host = host,
+                )
+            } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * Opt-in Auto-Shred Closed Sites: when enabled, clears site data once the last tab
+     * belonging to a non-whitelisted host is closed.
+     */
+    fun onTabClosedCheckAutoShred(ctx: Context, closedUrl: String, remainingTabUrls: List<String>) {
+        if (!SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_AUTO_SHRED, false)) return
+        val closedHost = UhShieldEngine.normalizeHost(closedUrl)
+        if (closedHost.isBlank()) return
+        val allowList = SettingsPrefs.getStringSet(ctx, SettingsPrefs.K_PG_AUTO_SHRED_ALLOW_HOSTS)
+        if (closedHost in allowList) return
+        val stillOpen = remainingTabUrls.any { UhShieldEngine.normalizeHost(it) == closedHost }
+        if (!stillOpen) {
+            forgetSiteData(ctx, closedHost)
+        }
+    }
+
+    fun pushLightweightSettingsToExtension() {
+        val ctx = appContext ?: return
+        ioScope.launch {
+            try {
+                val cfg = UhShieldEngine.buildExtensionRuntimePayload(ctx)
+                GeckoWebExtensionBridge.pushPrivacyRuntimeConfig(cfg)
+            } catch (e: Exception) {
+                UHLog.w("privacy", "Failed pushing lightweight privacy config: ${e.message}")
+            }
         }
     }
 

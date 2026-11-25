@@ -159,6 +159,8 @@
             C.runImageOcrTranslation(msg.fromLang || "auto", msg.toLang || "en");
         } else if (msg.action === "CLEAR_IMAGE_TRANSLATIONS" && isTopFrame) {
             C.clearImageTranslationOverlays();
+        } else if (msg.action === "START_ELEMENT_PICKER" && isTopFrame) {
+            if (C.startElementPicker) C.startElementPicker();
         } else if (msg.action === "APPLY_LIVE_PAGE_CONFIG" && isTopFrame) {
             const host = C.currentNormalizedHost();
             const paused = Array.isArray(msg.pausedHosts) && msg.pausedHosts.includes(host);
@@ -167,8 +169,11 @@
                 shieldLevel: msg.shieldLevel,
                 paused: paused,
                 cookieBanners: msg.cookieBanners,
+                annoyances: msg.annoyances !== false && !paused,
                 blockPopups: msg.blockPopups,
                 antiFingerprint: msg.antiFingerprint === true && !paused,
+                strictFingerprint: msg.strictFingerprint === true && msg.antiFingerprint === true && !paused,
+                fpSessionSalt: msg.fpSessionSalt || (C.pageProtectState && C.pageProtectState.fpSessionSalt) || "",
                 backgroundPlay: msg.backgroundPlay,
                 webrtcPolicy: msg.webrtcPolicy,
                 forceDarkWeb: msg.forceDarkWeb,

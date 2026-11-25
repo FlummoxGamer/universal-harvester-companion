@@ -23,6 +23,7 @@
                 "cs_cookie_dark.js",
                 "cs_media_pip.js",
                 "cs_image_translate.js",
+                "cs_element_picker.js",
                 "content.js"
             ],
             "run_at": "document_start",

@@ -59,8 +59,8 @@ import mozilla.components.concept.engine.HitResult
 import mozilla.components.feature.tabs.TabsUseCases
 
 /**
- * Centered floating Material 3 Long-Press Context Menu card combining Chrome, Brave & Firefox
- * best-in-slot actions across Image, Linked Image (dual actions), Link, Video, Audio, Email, Phone & Geo.
+ * Centered floating Material 3 Long-Press Context Menu card with modern mobile browser
+ * actions across Image, Linked Image (dual actions), Link, Video, Audio, Email, Phone & Geo.
  */
 @Composable
 fun ContextMenuDialog(

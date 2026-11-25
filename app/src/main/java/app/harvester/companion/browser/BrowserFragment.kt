@@ -506,10 +506,25 @@ class BrowserFragment : Fragment() {
     private fun setupLogging(components: app.harvester.companion.components.Components) {
         var lastTabId: String? = null
         var lastNormalizedHost: String? = null
+        var prevTabUrls = mapOf<String, String>()
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 components.store.stateFlow.collect { state ->
+                    val currentTabUrls = state.tabs.associate { it.id to it.content.url }
+                    if (prevTabUrls.isNotEmpty()) {
+                        val remainingUrls = currentTabUrls.values.toList()
+                        val ctx = context
+                        if (ctx != null) {
+                            for ((closedId, closedUrl) in prevTabUrls) {
+                                if (closedId !in currentTabUrls && closedUrl.isNotBlank()) {
+                                    UhPrivacyController.onTabClosedCheckAutoShred(ctx, closedUrl, remainingUrls)
+                                }
+                            }
+                        }
+                    }
+                    prevTabUrls = currentTabUrls
+
                     val tab = state.selectedTab ?: return@collect
                     val content = tab.content
                     viewModel.refreshBookmarkState(content.url)
@@ -527,7 +542,12 @@ class BrowserFragment : Fragment() {
                     // Sync GeckoView native ETP blocked trackers into UH Shield live stats (delta-based)
                     val geckoBlocked = tab.trackingProtection.blockedTrackers.size
                     if (geckoBlocked > 0 && host.isNotBlank()) {
-                        UhShieldEngine.recordGeckoEtpTrackers(tab.id, content.url, geckoBlocked)
+                        UhShieldEngine.recordGeckoEtpTrackers(
+                            tabId = tab.id,
+                            pageUrl = content.url,
+                            currentGeckoCount = geckoBlocked,
+                            isLoading = content.loading,
+                        )
                     }
 
                     if (content.url.isBlank() && content.loading) {

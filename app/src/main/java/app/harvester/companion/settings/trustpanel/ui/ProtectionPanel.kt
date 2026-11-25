@@ -50,9 +50,14 @@ internal fun ProtectionPanel(
     showWebDarkToggle: Boolean,
     isWebDarkEnabledForSite: Boolean,
     numberOfGeckoTrackersBlocked: Int,
+    requestLogTotalCount: Int,
+    requestLogBlockedCount: Int,
     websitePermissions: List<WebsitePermission>,
     onToggleShieldForSite: () -> Unit,
     onToggleWebDarkForSite: () -> Unit,
+    onBlockElementClick: () -> Unit,
+    onRequestInspectorClick: () -> Unit,
+    onForgetSiteClick: () -> Unit,
     onTrackerDetailsClick: () -> Unit,
     onClearSiteDataMenuClick: () -> Unit,
     onPrivacyGuardClick: () -> Unit,
@@ -123,6 +128,34 @@ internal fun ProtectionPanel(
                     }
                 },
             )
+        }
+
+        // Quick Privacy Power Tools (Block Element, Live Request Inspector, 1-Tap Forget Site)
+        if (siteHost.isNotBlank()) {
+            MenuGroup {
+                MenuItem(
+                    label = "Block Element",
+                    description = "Tap any ad, banner, or overlay on this page to hide it",
+                    beforeIconPainter = painterResource(id = R.drawable.fx_ic_edit_24),
+                    onClick = onBlockElementClick,
+                )
+                MenuItem(
+                    label = "Live Request Inspector",
+                    description = if (requestLogTotalCount > 0) {
+                        "$requestLogBlockedCount blocked • $requestLogTotalCount requests captured"
+                    } else {
+                        "Inspect live network requests & create 1-tap rules"
+                    },
+                    beforeIconPainter = painterResource(id = R.drawable.fx_ic_logs_24),
+                    onClick = onRequestInspectorClick,
+                )
+                MenuItem(
+                    label = "Forget This Site",
+                    description = "Instantly shred cookies, cache & storage for $siteHost",
+                    beforeIconPainter = painterResource(id = R.drawable.fx_ic_delete_24),
+                    onClick = onForgetSiteClick,
+                )
+            }
         }
 
         // Optional Per-Site Force Dark Mode bypass (only visible when Dark Mode + Force Web Dark are active)
