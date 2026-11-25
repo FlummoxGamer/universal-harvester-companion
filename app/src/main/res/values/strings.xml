@@ -134,4 +134,10 @@
     <string name="download_change_folder">Change</string>
     <string name="download_select_all_description">Select all downloads</string>
     <string name="download_delete_selected_description">Delete selected downloads</string>
+    <string name="mozac_browser_errorpages_archive_check_button">Check web archive</string>
+    <string name="mozac_browser_errorpages_archive_checking">Checking web archive…</string>
+    <string name="mozac_browser_errorpages_archive_not_found">No archived copy found</string>
+    <string name="mozac_browser_errorpages_archive_retry">Try again</string>
+    <string name="mozac_browser_errorpages_archive_search_web">Search the web</string>
+    <string name="mozac_browser_errorpages_archive_unreachable">Web archive is unreachable</string>
 </resources>

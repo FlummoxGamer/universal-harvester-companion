@@ -146,6 +146,4 @@ object SettingsPrefs {
     const val K_TAB_SLEEP_SECONDS = "tab_sleep_seconds"
     const val K_TAB_CONFIRM_SWIPE = "tab_confirm_swipe"
     const val K_TAB_AUTO_COLLAPSE_GROUPS = "tab_auto_collapse_groups"
-    const val K_UBLOCK_ENABLED = "ublock_enabled"
-    const val K_UBLOCK_AUTO_UPDATE = "ublock_auto_update"
 }

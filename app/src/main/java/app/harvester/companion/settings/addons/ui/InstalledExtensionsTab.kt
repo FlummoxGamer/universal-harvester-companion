@@ -41,7 +41,6 @@ import app.harvester.companion.UHBrand
 import app.harvester.companion.settings.addons.ExtensionInstallTask
 import app.harvester.companion.settings.addons.ExtensionUpdateInfo
 import app.harvester.companion.settings.addons.InstalledExtensionItem
-import app.harvester.companion.settings.addons.UBlockOriginManager
 
 @Composable
 fun InstalledExtensionsTab(
@@ -49,11 +48,6 @@ fun InstalledExtensionsTab(
     activeTasks: Map<String, ExtensionInstallTask>,
     availableUpdates: Map<String, ExtensionUpdateInfo>,
     isCheckingUpdates: Boolean,
-    ublockState: UBlockOriginManager.State,
-    onToggleUblock: (Boolean) -> Unit,
-    onCheckUblockUpdate: () -> Unit,
-    onCancelUblockUpdate: () -> Unit,
-    onOpenUblockDashboard: (String) -> Unit,
     onCheckAllUpdates: () -> Unit,
     onUpdateAll: () -> Unit,
     onUpdateSingle: (String) -> Unit,
@@ -63,7 +57,7 @@ fun InstalledExtensionsTab(
     onOpenExtensionOptions: (String) -> Unit,
     onExploreCatalog: () -> Unit,
 ) {
-    val userExtensions = installedExtensions.filter { it.id != UBlockOriginManager.UBLOCK_ID }
+    val userExtensions = installedExtensions
     val enabledExtensions = userExtensions.filter { it.enabled }
     val disabledExtensions = userExtensions.filter { !it.enabled }
     val activeTaskList = activeTasks.values.toList()
@@ -75,15 +69,6 @@ fun InstalledExtensionsTab(
         verticalArrangement = Arrangement.spacedBy(10.dp),
         contentPadding = PaddingValues(bottom = 28.dp)
     ) {
-        item(key = "ublock_shield_installed") {
-            UBlockOriginShieldCard(
-                state = ublockState,
-                onToggleEnabled = onToggleUblock,
-                onCheckUpdate = onCheckUblockUpdate,
-                onCancelUpdate = onCancelUblockUpdate,
-                onOpenOptions = onOpenUblockDashboard
-            )
-        }
 
         // Updates Banner or Check for Updates row
         if (availableUpdates.isNotEmpty()) {
@@ -250,7 +235,7 @@ fun InstalledExtensionsTab(
                             modifier = Modifier.size(34.dp)
                         )
                         Text(
-                            text = "No extra extensions installed",
+                            text = "No extensions installed",
                             color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold

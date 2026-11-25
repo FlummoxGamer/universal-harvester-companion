@@ -263,14 +263,29 @@ class BrowserFragment : Fragment() {
         if (!hasLoadedInitialUrl) {
             hasLoadedInitialUrl = true
             if (!initialUrl.isNullOrBlank()) {
+                viewModel.setPendingUrl(initialUrl!!)
                 components.useCases.sessionUseCases.loadUrl(initialUrl!!)
             } else if (components.store.state.selectedTab == null) {
                 UHLog.w("web_warn", "BrowserFragment created without an initial URL or selected tab.")
             }
         }
 
+        // Keep root XML container synchronized with Light / Dark / AMOLED theme at all times
+        val syncRootBackground = {
+            val bg = app.harvester.companion.ThemePrefs.resolveBackgroundColorInt(context)
+            binding.root.setBackgroundColor(bg)
+            binding.browserLayout.setBackgroundColor(bg)
+        }
+        syncRootBackground()
+
         setupLogging(components)
         ViewCompat.setOnApplyWindowInsetsListener(binding.browserLayout) { v, insets ->
+            val inPip = viewModel.isInPipMode.value
+            val isFullScreen = components.store.state.selectedTab?.content?.fullScreen == true
+            if (inPip || isFullScreen) {
+                v.setPadding(0, 0, 0, 0)
+                return@setOnApplyWindowInsetsListener insets
+            }
             val bars = insets.getInsets(
                 WindowInsetsCompat.Type.statusBars() or
                     WindowInsetsCompat.Type.displayCutout() or
@@ -278,7 +293,8 @@ class BrowserFragment : Fragment() {
             )
             val density = v.resources.displayMetrics.density
             val isLandscape = v.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-            val toolbarClearancePx = ((if (isLandscape) 52f else 62f) * density).toInt()
+            // Exact match with UHAddressBar barHeight (50dp landscape, 58dp portrait) to eliminate 4dp gap strip
+            val toolbarClearancePx = ((if (isLandscape) 50f else 58f) * density).toInt()
             val isBottom = viewModel.isBarBottom.value
             val topPadding = bars.top + if (!isBottom) toolbarClearancePx else 0
             val bottomPadding = bars.bottom + if (isBottom) toolbarClearancePx else 0
@@ -318,8 +334,26 @@ class BrowserFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.isBarBottom.collect {
-                    ViewCompat.requestApplyInsets(binding.browserLayout)
+                launch {
+                    viewModel.isBarBottom.collect {
+                        ViewCompat.requestApplyInsets(binding.browserLayout)
+                    }
+                }
+                launch {
+                    viewModel.isInPipMode.collect { inPip ->
+                        binding.swipeRefresh.isEnabled = !inPip
+                        ViewCompat.requestApplyInsets(binding.browserLayout)
+                    }
+                }
+                launch {
+                    app.harvester.companion.ThemePrefs.modeFlow(context).collect {
+                        syncRootBackground()
+                    }
+                }
+                launch {
+                    SettingsPrefs.enhanceDarkFlow(context).collect {
+                        syncRootBackground()
+                    }
                 }
             }
         }

@@ -5,6 +5,21 @@
 
     const executedScriptlets = new Set();
 
+    function isCloudflareChallengePage() {
+        try {
+            const path = (window.location.pathname || "").toLowerCase();
+            if (path.startsWith("/cdn-cgi/")) return true;
+            const title = (document.title || "").toLowerCase();
+            if (title.includes("just a moment") || title.includes("attention required") || title.includes("checking your browser")) {
+                return true;
+            }
+            if (document.getElementById("challenge-running") || document.getElementById("cf-challenge-running") || document.querySelector(".cf-turnstile")) {
+                return true;
+            }
+        } catch (_e) {}
+        return false;
+    }
+
     function makeMatcher(needle) {
         if (!needle) return () => true;
         if (needle.length > 2 && needle.startsWith("/") && needle.endsWith("/")) {
@@ -81,10 +96,12 @@
 
         const a0 = (args && args[0]) || "";
         const a1 = (args && args[1]) || "";
+        const a2 = (args && args[2]) || "";
 
         try {
             switch (name) {
-                case "abort-on-property-read": {
+                case "abort-on-property-read":
+                case "aopr": {
                     if (!a0) return;
                     installAbortErrorFilter();
                     defineChainProperty(a0, () => ({
@@ -94,7 +111,8 @@
                     }));
                     break;
                 }
-                case "abort-on-property-write": {
+                case "abort-on-property-write":
+                case "aopw": {
                     if (!a0) return;
                     installAbortErrorFilter();
                     defineChainProperty(a0, () => ({
@@ -104,7 +122,8 @@
                     }));
                     break;
                 }
-                case "abort-current-inline-script": {
+                case "abort-current-inline-script":
+                case "acis": {
                     if (!a0) return;
                     installAbortErrorFilter();
                     const matcher = makeMatcher(a1);
@@ -124,7 +143,8 @@
                     });
                     break;
                 }
-                case "set-constant": {
+                case "set-constant":
+                case "set": {
                     if (!a0) return;
                     const val = parseConstantValue(a1);
                     defineChainProperty(a0, () => ({
@@ -134,7 +154,8 @@
                     }));
                     break;
                 }
-                case "no-setTimeout-if": {
+                case "no-setTimeout-if":
+                case "nostif": {
                     const matcher = makeMatcher(a0);
                     const delayMatch = a1 ? parseInt(a1, 10) : NaN;
                     const origSetTimeout = window.setTimeout;
@@ -148,7 +169,8 @@
                     };
                     break;
                 }
-                case "no-setInterval-if": {
+                case "no-setInterval-if":
+                case "nosiif": {
                     const matcher = makeMatcher(a0);
                     const delayMatch = a1 ? parseInt(a1, 10) : NaN;
                     const origSetInterval = window.setInterval;
@@ -162,7 +184,22 @@
                     };
                     break;
                 }
-                case "window.open-defuser": {
+                case "addEventListener-defuser":
+                case "aeld": {
+                    const typeMatcher = makeMatcher(a0);
+                    const fnMatcher = makeMatcher(a1);
+                    const origAdd = EventTarget.prototype.addEventListener;
+                    EventTarget.prototype.addEventListener = function (type, listener) {
+                        if (typeMatcher(String(type || ""))) {
+                            const fnStr = typeof listener === "function" ? listener.toString() : String(listener || "");
+                            if (fnMatcher(fnStr)) return;
+                        }
+                        return origAdd.apply(this, arguments);
+                    };
+                    break;
+                }
+                case "window.open-defuser":
+                case "nowoif": {
                     const matcher = makeMatcher(a0);
                     const origOpen = window.open;
                     window.open = function (url) {
@@ -203,7 +240,8 @@
                     }
                     break;
                 }
-                case "noop-fetch": {
+                case "noop-fetch":
+                case "no-fetch-if": {
                     const matcher = makeMatcher(a0);
                     const origFetch = window.fetch;
                     if (typeof origFetch === "function") {
@@ -215,6 +253,50 @@
                             return origFetch.apply(this, arguments);
                         };
                     }
+                    break;
+                }
+                case "remove-attr":
+                case "ra": {
+                    if (!a0) return;
+                    const attrs = a0.split("|").filter(Boolean);
+                    const sel = a1 || "*";
+                    const clean = () => {
+                        try {
+                            const nodes = document.querySelectorAll(sel);
+                            for (let i = 0; i < nodes.length; i++) {
+                                for (let j = 0; j < attrs.length; j++) {
+                                    nodes[i].removeAttribute(attrs[j]);
+                                }
+                            }
+                        } catch (_e) {}
+                    };
+                    clean();
+                    document.addEventListener("DOMContentLoaded", clean, { once: true });
+                    break;
+                }
+                case "set-attr": {
+                    if (!a0 || !a1) return;
+                    const apply = () => {
+                        try {
+                            const nodes = document.querySelectorAll(a0);
+                            for (let i = 0; i < nodes.length; i++) {
+                                nodes[i].setAttribute(a1, a2);
+                            }
+                        } catch (_e) {}
+                    };
+                    apply();
+                    document.addEventListener("DOMContentLoaded", apply, { once: true });
+                    break;
+                }
+                case "overlay-buster": {
+                    const bust = () => {
+                        try {
+                            if (document.documentElement) document.documentElement.style.setProperty("overflow", "auto", "important");
+                            if (document.body) document.body.style.setProperty("overflow", "auto", "important");
+                        } catch (_e) {}
+                    };
+                    setTimeout(bust, 600);
+                    setTimeout(bust, 1800);
                     break;
                 }
                 case "bab-defuser": {
@@ -233,6 +315,8 @@
                         window.sniffAdBlock = fakeBab;
                         window.BlockAdBlock = fakeCtor;
                         window.FuckAdBlock = fakeCtor;
+                        window.canRunAds = true;
+                        window.isAdBlockActive = false;
                     } catch (_e) {}
                     break;
                 }
@@ -243,10 +327,12 @@
     // -------------------------------------------------------------------------
     // Runtime Guards: Background Play, WebRTC, Popunder Trap Defuser, Fingerprint
     // -------------------------------------------------------------------------
-    const POPUNDER_REGEX = /(popads|popcash|propellerads|exoclick|exosrv|juicyads|trafficjunky|trafficstars|adsterra|hilltopads|clickadu|monetag|pushame|popunder|afu\.php|click\.php\?)/i;
+    const POPUNDER_REGEX = /(popads|popcash|propellerads|exoclick|exosrv|juicyads|trafficjunky|trafficstars|adsterra|hilltopads|clickadu|monetag|pushame|popunder|afu\.php|click\.php\?|admaven|galaksion|richads|evadav|onclickalgo|highperformanceformat|profitablecpmrate)/i;
 
     function installBackgroundPlay() {
         if (window.__uhBgPlayInstalled) return;
+        // Never spoof visibility on Cloudflare Turnstile/challenge pages
+        if (isCloudflareChallengePage()) return;
         window.__uhBgPlayInstalled = true;
         try {
             Object.defineProperty(document, "hidden", { get: () => false, configurable: true });
@@ -269,6 +355,7 @@
 
     function installPopunderDefuser() {
         if (window.__uhPopupGuardInstalled) return;
+        if (isCloudflareChallengePage()) return;
         window.__uhPopupGuardInstalled = true;
         try {
             const origOpen = window.open;
@@ -286,9 +373,7 @@
 
             const isSuspiciousPopupUrl = (urlStr) => {
                 if (!urlStr) return false;
-                const s = String(urlStr);
-                if (POPUNDER_REGEX.test(s)) return true;
-                return false;
+                return POPUNDER_REGEX.test(String(urlStr));
             };
 
             const isOverlayTrapElement = (el) => {
@@ -315,7 +400,6 @@
                 if (isSuspiciousPopupUrl(url)) {
                     return null;
                 }
-                // Block popunder opened by clicking a transparent overlay trap or directly on a video player
                 if (lastTapTarget && (isOverlayTrapElement(lastTapTarget) || lastTapTarget.tagName === "VIDEO")) {
                     try {
                         const targetHost = new URL(String(url || ""), window.location.href).hostname;
@@ -327,7 +411,6 @@
                 return origOpen.apply(this, arguments);
             };
 
-            // Defuse transparent click-hijack overlays and synthetic blank-tab ad anchors
             document.addEventListener("click", (ev) => {
                 try {
                     const target = ev.target;
@@ -353,9 +436,9 @@
 
     function installFingerprintHardening() {
         if (window.__uhFpHardened) return;
+        if (isCloudflareChallengePage()) return;
         window.__uhFpHardened = true;
         try {
-            // Subtle deterministic 1-LSB canvas jitter per page load to thwart canvas hash tracking
             const seed = (Math.random() * 100000) | 0;
             const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
             HTMLCanvasElement.prototype.toDataURL = function () {
@@ -382,12 +465,12 @@
 
     function applyConfig(cfg) {
         if (!cfg || typeof cfg !== "object") return;
+        if (isCloudflareChallengePage()) return;
         if (cfg.backgroundPlay === true) installBackgroundPlay();
         if (cfg.webrtcPolicy === 3) installWebRtcBlock();
         if (cfg.blockPopups === true && !cfg.paused && (cfg.shieldLevel || 0) > 0) {
             installPopunderDefuser();
         }
-        // Automatically skipped when site is paused so sites that break under anti-FP work cleanly
         if (cfg.antiFingerprint === true && !cfg.paused) {
             installFingerprintHardening();
         }
@@ -405,6 +488,5 @@
         if (ev && ev.detail) applyConfig(ev.detail);
     });
 
-    // Notify isolated world that scriptlets runner is ready
     document.dispatchEvent(new CustomEvent("UH_SCRIPTLETS_READY"));
 })();

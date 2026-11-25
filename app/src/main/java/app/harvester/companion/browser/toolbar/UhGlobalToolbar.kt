@@ -172,7 +172,11 @@ fun UhGlobalToolbar(
         return
     }
 
-    val displayUrl = if (isBrowser) (selectedTab?.content?.url ?: "") else ""
+    val pendingUrl by viewModel.pendingUrl.collectAsState()
+    val rawTabUrl = selectedTab?.content?.url.orEmpty()
+    val displayUrl = if (isBrowser) {
+        if (rawTabUrl.isNotBlank() && rawTabUrl != "about:blank") rawTabUrl else pendingUrl
+    } else ""
     val pageTitle = if (isBrowser) (selectedTab?.content?.title ?: "") else ""
     val pageProgress = if (isBrowser) (selectedTab?.content?.progress ?: 0) else 0
     val isPageLoading = isBrowser && (selectedTab?.content?.loading == true)
@@ -246,6 +250,7 @@ fun UhGlobalToolbar(
         val target = viewModel.normalize(query)
         if (target.isNotBlank()) {
             try {
+                viewModel.setPendingUrl(target)
                 if (isBrowser) {
                     components.useCases.sessionUseCases.loadUrl(target)
                 } else {
@@ -318,6 +323,16 @@ fun UhGlobalToolbar(
                 Modifier.navigationBarsPadding()
             } else {
                 Modifier.statusBarsPadding()
+            }
+            if (isBrowser && isBarBottom && selectedTab?.content?.fullScreen != true) {
+                // Paint continuous status bar backing matching Light / Dark / AMOLED theme
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.TopCenter)
+                        .background(MaterialTheme.colorScheme.background)
+                        .statusBarsPadding()
+                )
             }
             Box(
                 modifier = Modifier.fillMaxSize(),

@@ -12,7 +12,6 @@
     },
     "permissions": [
         "webRequest",
-        "webRequestBlocking",
         "nativeMessaging",
         "geckoViewAddons",
         "<all_urls>"

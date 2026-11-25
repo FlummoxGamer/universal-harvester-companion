@@ -1,11 +1,16 @@
 package app.harvester.companion
 
+import android.app.PendingIntent
 import android.app.PictureInPictureParams
+import android.app.RemoteAction
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.Configuration
+import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
-import android.util.Rational
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -20,8 +25,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.fragment.app.FragmentContainerView
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
 import androidx.navigation.NavOptions
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -29,15 +36,35 @@ import androidx.navigation.fragment.NavHostFragment
 import app.harvester.companion.browser.BrowserFragment
 import app.harvester.companion.browser.BrowserViewModel
 import app.harvester.companion.browser.toolbar.UhGlobalToolbar
+import app.harvester.companion.media.UhMediaController
 import app.harvester.companion.theme.UHTheme
+import kotlinx.coroutines.launch
 import mozilla.components.browser.state.selector.selectedTab
-import mozilla.components.concept.engine.mediasession.MediaSession
 
 class HomeActivity : AppCompatActivity() {
+
+    companion object {
+        const val EXTRA_SELECT_TAB_ID = "uh_extra_select_tab_id"
+
+        private const val ACTION_PIP_REPLAY_10 = "app.harvester.companion.pip.REPLAY_10"
+        private const val ACTION_PIP_TOGGLE_PLAY = "app.harvester.companion.pip.TOGGLE_PLAY"
+        private const val ACTION_PIP_FORWARD_10 = "app.harvester.companion.pip.FORWARD_10"
+    }
 
     private val browserViewModel: BrowserViewModel by viewModels()
     private var navControllerState by mutableStateOf<NavController?>(null)
     private var isInPipMode by mutableStateOf(false)
+    private var pipReceiverRegistered = false
+
+    private val pipActionReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                ACTION_PIP_REPLAY_10 -> UhMediaController.seekRelative(-10L)
+                ACTION_PIP_TOGGLE_PLAY -> UhMediaController.togglePlayPause()
+                ACTION_PIP_FORWARD_10 -> UhMediaController.seekRelative(10L)
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
@@ -46,6 +73,9 @@ class HomeActivity : AppCompatActivity() {
             statusBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
         )
+
+        registerPipActionReceiver()
+        observeMediaStateForPip()
 
         setContent {
             val controller = navControllerState
@@ -150,6 +180,92 @@ class HomeActivity : AppCompatActivity() {
         })
     }
 
+    override fun onDestroy() {
+        if (pipReceiverRegistered) {
+            try { unregisterReceiver(pipActionReceiver) } catch (_: Exception) {}
+            pipReceiverRegistered = false
+        }
+        super.onDestroy()
+    }
+
+    private fun registerPipActionReceiver() {
+        try {
+            val filter = IntentFilter().apply {
+                addAction(ACTION_PIP_REPLAY_10)
+                addAction(ACTION_PIP_TOGGLE_PLAY)
+                addAction(ACTION_PIP_FORWARD_10)
+            }
+            ContextCompat.registerReceiver(
+                this,
+                pipActionReceiver,
+                filter,
+                ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
+            pipReceiverRegistered = true
+        } catch (e: Exception) {
+            UHLog.w("media", "Failed registering PiP action receiver: ${e.message}")
+        }
+    }
+
+    private fun observeMediaStateForPip() {
+        lifecycleScope.launch {
+            var lastPlaying: Boolean? = null
+            UhMediaController.state.collect { snap ->
+                if (isInPipMode && lastPlaying != snap.isPlaying) {
+                    lastPlaying = snap.isPlaying
+                    try {
+                        setPictureInPictureParams(buildPipParams(snap.isPlaying))
+                    } catch (_: Exception) {}
+                } else if (!isInPipMode) {
+                    lastPlaying = null
+                }
+            }
+        }
+    }
+
+    private fun buildPipParams(isPlaying: Boolean): PictureInPictureParams {
+        val replayAction = RemoteAction(
+            Icon.createWithResource(this, R.drawable.uh_ic_media_replay10_24),
+            "Rewind 10s",
+            "Rewind 10 seconds",
+            pipPendingIntent(ACTION_PIP_REPLAY_10, 201),
+        )
+        val playPauseAction = RemoteAction(
+            Icon.createWithResource(
+                this,
+                if (isPlaying) R.drawable.uh_ic_media_pause_24 else R.drawable.uh_ic_media_play_24,
+            ),
+            if (isPlaying) "Pause" else "Play",
+            if (isPlaying) "Pause playback" else "Resume playback",
+            pipPendingIntent(ACTION_PIP_TOGGLE_PLAY, 202),
+        )
+        val forwardAction = RemoteAction(
+            Icon.createWithResource(this, R.drawable.uh_ic_media_forward10_24),
+            "Forward 10s",
+            "Forward 10 seconds",
+            pipPendingIntent(ACTION_PIP_FORWARD_10, 203),
+        )
+
+        val builder = PictureInPictureParams.Builder()
+            .setAspectRatio(UhMediaController.resolveActiveVideoAspectRatio())
+            .setActions(listOf(replayAction, playPauseAction, forwardAction))
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setSeamlessResizeEnabled(true)
+        }
+        return builder.build()
+    }
+
+    private fun pipPendingIntent(action: String, requestCode: Int): PendingIntent {
+        val intent = Intent(action).apply { setPackage(packageName) }
+        return PendingIntent.getBroadcast(
+            this,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
     fun navigateFromMenu(destinationId: Int) {
         window?.decorView?.post {
             val controller = navControllerState
@@ -168,7 +284,25 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun handleIntent(intent: Intent?, controller: NavController? = navControllerState) {
-        val url = intent?.data?.toString() ?: return
+        if (intent == null) return
+
+        // Direct tap from rich media notification -> select & focus the playing tab
+        val targetTabId = intent.getStringExtra(EXTRA_SELECT_TAB_ID)
+        if (!targetTabId.isNullOrBlank()) {
+            intent.removeExtra(EXTRA_SELECT_TAB_ID)
+            val components = (application as? UHApp)?.components
+            if (components != null) {
+                components.useCases.tabsUseCases.selectTab(targetTabId)
+                if (controller != null && controller.currentDestination?.id != R.id.browserFragment) {
+                    try {
+                        controller.navigate(R.id.action_homeFragment_to_browserFragment)
+                    } catch (_: Exception) {}
+                }
+            }
+            return
+        }
+
+        val url = intent.data?.toString() ?: return
         val isSupportedScheme = url.startsWith("http://") ||
             url.startsWith("https://") ||
             url.startsWith("moz-extension://")
@@ -181,6 +315,7 @@ class HomeActivity : AppCompatActivity() {
             return
         }
         try {
+            browserViewModel.setPendingUrl(url)
             if (controller.currentDestination?.id == R.id.homeFragment) {
                 val bundle = Bundle().apply { putString("url", url) }
                 controller.navigate(R.id.action_homeFragment_to_browserFragment, bundle)
@@ -199,19 +334,25 @@ class HomeActivity : AppCompatActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         if (!SettingsPrefs.getBool(this, SettingsPrefs.K_PIP_ENABLED, true)) return
         val controller = navControllerState
         if (controller?.currentDestination?.id != R.id.browserFragment) return
         val tab = (application as? UHApp)?.components?.store?.state?.selectedTab ?: return
-        val isPlayingMedia = tab.mediaSessionState?.playbackState == MediaSession.PlaybackState.PLAYING
-        if (tab.content.fullScreen || isPlayingMedia) {
+
+        if (UhMediaController.hasActivePlayingVideo(tab)) {
             try {
-                val params = PictureInPictureParams.Builder()
-                    .setAspectRatio(Rational(16, 9))
-                    .build()
-                enterPictureInPictureMode(params)
+                // Isolate ONLY the active <video> player and strip browser chrome before PiP transition
+                GeckoWebExtensionBridge.setPipVideoIsolation(true)
+                browserViewModel.setPipMode(true)
+                val params = buildPipParams(isPlaying = true)
+                val entered = enterPictureInPictureMode(params)
+                if (!entered) {
+                    GeckoWebExtensionBridge.setPipVideoIsolation(false)
+                    browserViewModel.setPipMode(false)
+                }
             } catch (e: Exception) {
+                GeckoWebExtensionBridge.setPipVideoIsolation(false)
+                browserViewModel.setPipMode(false)
                 UHLog.w("media", "PiP entry skipped: ${e.message}")
             }
         }
@@ -223,6 +364,8 @@ class HomeActivity : AppCompatActivity() {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         isInPipMode = isInPictureInPictureMode
+        browserViewModel.setPipMode(isInPictureInPictureMode)
+        GeckoWebExtensionBridge.setPipVideoIsolation(isInPictureInPictureMode)
     }
 
     override fun onNewIntent(intent: Intent) {

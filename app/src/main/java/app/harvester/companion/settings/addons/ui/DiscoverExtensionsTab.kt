@@ -52,7 +52,6 @@ import app.harvester.companion.settings.addons.AmoAddon
 import app.harvester.companion.settings.addons.CatalogCategory
 import app.harvester.companion.settings.addons.CatalogSort
 import app.harvester.companion.settings.addons.ExtensionInstallTask
-import app.harvester.companion.settings.addons.UBlockOriginManager
 
 @Composable
 fun DiscoverExtensionsTab(
@@ -69,11 +68,6 @@ fun DiscoverExtensionsTab(
     onRetry: () -> Unit,
     installedIds: Set<String>,
     activeTasks: Map<String, ExtensionInstallTask>,
-    ublockState: UBlockOriginManager.State,
-    onToggleUblock: (Boolean) -> Unit,
-    onCheckUblockUpdate: () -> Unit,
-    onCancelUblockUpdate: () -> Unit,
-    onOpenUblockDashboard: (String) -> Unit,
     onInstallAddon: (AmoAddon) -> Unit,
     onCancelInstall: (String) -> Unit,
     onAddonClick: (AmoAddon) -> Unit,
@@ -253,17 +247,6 @@ fun DiscoverExtensionsTab(
             contentPadding = PaddingValues(bottom = 28.dp),
             modifier = Modifier.fillMaxSize()
         ) {
-            if (searchQuery.isBlank()) {
-                item(span = { GridItemSpan(gridColumns) }, key = "ublock_shield_discover") {
-                    UBlockOriginShieldCard(
-                        state = ublockState,
-                        onToggleEnabled = onToggleUblock,
-                        onCheckUpdate = onCheckUblockUpdate,
-                        onCancelUpdate = onCancelUblockUpdate,
-                        onOpenOptions = onOpenUblockDashboard
-                    )
-                }
-            }
 
             if (isLoading) {
                 item(span = { GridItemSpan(gridColumns) }, key = "discover_loading") {
@@ -369,7 +352,7 @@ fun DiscoverExtensionsTab(
                 }
             } else {
                 items(
-                    items = addons.filter { it.guid != UBlockOriginManager.UBLOCK_ID },
+                    items = addons,
                     key = { it.guid }
                 ) { addon ->
                     val isInstalled = addon.guid in installedIds

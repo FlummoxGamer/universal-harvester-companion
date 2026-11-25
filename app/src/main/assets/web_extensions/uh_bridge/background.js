@@ -3,7 +3,8 @@ const api = typeof browser !== "undefined" ? browser : chrome;
 let nativePort = null;
 
 // -----------------------------------------------------------------------------
-// UH Shield v4 Runtime State — Full ABP/uBO Engine with Chunked Zero-Cap Sync
+// UH Shield v5 Runtime Engine — Lazy-RegExp Inverted Index, Zero-Freeze Sync,
+// Accurate Live Stats, Cloudflare-Safe URL Cleaner & Clean Redirect Shims
 // -----------------------------------------------------------------------------
 const TYPE_SCRIPT = 1 << 0;
 const TYPE_IMAGE = 1 << 1;
@@ -28,6 +29,11 @@ const FLAG_IMPORTANT = 64;
 
 const REDIRECT_DATA_URLS = {
     js: "data:application/javascript;base64,KGZ1bmN0aW9uKCl7fSkoKTs=",
+    noopjs: "data:application/javascript;base64,KGZ1bmN0aW9uKCl7fSkoKTs=",
+    adsbygoogle: "data:application/javascript;base64,KHdpbmRvdy5hZHNieWdvb2dsZT13aW5kb3cuYWRzYnlnb29nbGV8fFtdKS5wdXNoPWZ1bmN0aW9uKCl7fTs=",
+    gpt: "data:application/javascript;base64,KHdpbmRvdy5nb29nbGV0YWc9d2luZG93Lmdvb2dsZXRhZ3x8e2NtZDpbXX0pLmFwaVJlYWR5PXRydWU7",
+    popads: "data:application/javascript;base64,KGZ1bmN0aW9uKCl7fSkoKTs=",
+    vast: "data:application/xml;base64,PFZBU1QgdmVyc2lvbj0iMy4wIi8+",
     gif: "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==",
     html: "data:text/html;base64,PCFET0NUWVBFIGh0bWw+PGh0bWw+PGhlYWQ+PC9oZWFkPjxib2R5PjwvYm9keT48L2h0bWw+",
     css: "data:text/css;base64,Lyogbm9vcCAqLw==",
@@ -43,16 +49,13 @@ function createEmptyRuleEngine() {
         popupDomains: new Set(),
         exceptionDomains: new Set(),
         thirdPartyExceptionDomains: new Set(),
-        // Structured blocking rules indexed for sub-millisecond evaluation
         blockByDomain: new Map(),
         blockByToken: new Map(),
         blockGeneric: [],
         importantRules: [],
-        // Structured @@ exception rules indexed identically
         excByDomain: new Map(),
         excByToken: new Map(),
         excGeneric: [],
-        // Structured $popup rules
         popupRules: []
     };
 }
@@ -61,9 +64,10 @@ let activeRules = createEmptyRuleEngine();
 let stagingSyncId = null;
 let stagingRules = null;
 let stagingSettings = null;
+let activeMainHost = "";
 
 const shieldState = {
-    shieldLevel: 2, // 0=Off, 1=Standard, 2=Aggressive
+    shieldLevel: 2,
     pausedHosts: new Set(),
     smartBlockJs: false,
     jsAllowOnceHosts: new Set(),
@@ -83,22 +87,23 @@ const shieldState = {
 };
 
 const tabUrlMap = new Map();
-const tabJsBlockedMap = new Map(); // tabId -> { host, total, domains: Map<domain, count> }
-const recentPopupCandidates = new Map(); // tabId -> { openerHost, createdAt }
+const tabJsBlockedMap = new Map();
+const recentPopupCandidates = new Map();
 const pendingBlockedByHost = new Map();
 let flushTimer = null;
 let jsReportTimer = null;
 const pendingJsReportHosts = new Set();
 
+// Safe tracking params ONLY — never strip Cloudflare (__cf_chl_tk), auth, or streaming redirect tokens (_t, _r, feature, pp)
 const TRACKING_QUERY_PARAMS = new Set([
     "fbclid", "gclid", "dclid", "gbraid", "wbraid", "msclkid", "twclid",
-    "yclid", "ymclid", "igshid", "igsh", "si", "feature", "pp", "ref_src", "ref_url",
+    "yclid", "ymclid", "igshid", "igsh", "ref_src", "ref_url",
     "oly_anon_id", "oly_enc_id", "vero_id", "wickedid",
     "_hsenc", "_hsmi", "hsctatracking", "mkt_tok", "trk", "trkid",
     "spm", "scm", "aff_id", "aff_sub", "click_id", "clickid", "irclickid",
     "s_cid", "s_kwcid", "ef_id", "icid", "ncid", "sr_share", "share_id",
-    "__cf_chl_tk", "guccounter", "guce_referrer", "guce_referrer_sig",
-    "is_from_webapp", "sender_device", "sender_web_id", "_t", "_r",
+    "guccounter", "guce_referrer", "guce_referrer_sig",
+    "is_from_webapp", "sender_device", "sender_web_id",
     "rb_clickid", "scid", "sscid", "ttclid", "li_fat_id", "epik", "ndclid",
     "oborigurl", "dicbo", "ad_id", "adset_id", "campaign_id",
     "ref_", "dib", "dib_tag", "ascsubtag", "linkcode", "linkid",
@@ -253,9 +258,11 @@ function addToMapArray(map, key, val) {
     arr.push(val);
 }
 
-function compileAndIndexWireRule(engine, wire) {
+// LAZY RegExp compilation: ingesting 500k rules takes milliseconds instead of freezing on 40k new RegExp() calls!
+function indexWireRule(engine, wire) {
     if (!Array.isArray(wire) || wire.length < 5) return;
     const pattern = wire[0];
+    if (!pattern) return;
     const flags = wire[1] || 0;
     const anchorDomain = wire[2] || "";
     const includeTypes = wire[3] || 0;
@@ -272,24 +279,18 @@ function compileAndIndexWireRule(engine, wire) {
     const isPopup = (flags & FLAG_POPUP) !== 0;
     const important = (flags & FLAG_IMPORTANT) !== 0;
 
-    let regex = null;
     let substring = null;
-
-    if (isRegex) {
-        try {
-            regex = new RegExp(pattern, "i");
-        } catch (_e) {
-            return;
-        }
-    } else if (pattern.includes("*") || pattern.includes("^") || pattern.includes("|")) {
-        regex = compileAbpPatternToRegex(pattern);
-        if (!regex) return;
+    let needsRegex = false;
+    if (isRegex || pattern.includes("*") || pattern.includes("^") || pattern.includes("|")) {
+        needsRegex = true;
     } else {
         substring = pattern.toLowerCase();
     }
 
     const rule = {
-        regex,
+        rawPattern: needsRegex ? pattern : null,
+        isRegex,
+        regex: undefined, // lazily compiled on first pre-filter match
         substring,
         isException,
         isTracker,
@@ -329,6 +330,24 @@ function compileAndIndexWireRule(engine, wire) {
     }
 }
 
+function getOrCompileRegex(rule) {
+    if (rule.regex !== undefined) return rule.regex;
+    if (!rule.rawPattern) {
+        rule.regex = null;
+        return null;
+    }
+    if (rule.isRegex) {
+        try {
+            rule.regex = new RegExp(rule.rawPattern, "i");
+        } catch (_e) {
+            rule.regex = null;
+        }
+    } else {
+        rule.regex = compileAbpPatternToRegex(rule.rawPattern);
+    }
+    return rule.regex;
+}
+
 function matchesStructuredRule(rule, lowerUrl, pageHost, isThirdParty, typeBit) {
     if (rule.thirdPartyOnly && !isThirdParty) return false;
     if (rule.firstPartyOnly && isThirdParty) return false;
@@ -342,14 +361,11 @@ function matchesStructuredRule(rule, lowerUrl, pageHost, isThirdParty, typeBit) 
     if (rule.substring !== null) {
         return lowerUrl.includes(rule.substring);
     }
-    if (rule.regex !== null) {
-        return rule.regex.test(lowerUrl);
-    }
-    return false;
+    const re = getOrCompileRegex(rule);
+    return re !== null ? re.test(lowerUrl) : false;
 }
 
 function findMatchingRuleInIndex(domainMap, tokenMap, genericArr, reqHost, lowerUrl, urlTokens, pageHost, isThirdParty, typeBit) {
-    // 1. Check rules anchored to reqHost or any parent domain suffix
     if (domainMap.size > 0 && reqHost) {
         let cur = reqHost;
         while (cur) {
@@ -367,7 +383,6 @@ function findMatchingRuleInIndex(domainMap, tokenMap, genericArr, reqHost, lower
         }
     }
 
-    // 2. Check rules indexed by URL literal tokens
     if (tokenMap.size > 0) {
         for (const tok of urlTokens) {
             const list = tokenMap.get(tok);
@@ -380,7 +395,6 @@ function findMatchingRuleInIndex(domainMap, tokenMap, genericArr, reqHost, lower
         }
     }
 
-    // 3. Check tokenless generic regex rules
     for (let i = 0; i < genericArr.length; i++) {
         if (matchesStructuredRule(genericArr[i], lowerUrl, pageHost, isThirdParty, typeBit)) {
             return genericArr[i];
@@ -389,11 +403,25 @@ function findMatchingRuleInIndex(domainMap, tokenMap, genericArr, reqHost, lower
     return null;
 }
 
+function resolveSmartRedirect(rule, details, lowerUrl) {
+    if (rule && rule.redirect && REDIRECT_DATA_URLS[rule.redirect]) {
+        return REDIRECT_DATA_URLS[rule.redirect];
+    }
+    if (details.type === "script") {
+        if (lowerUrl.includes("adsbygoogle.js")) return REDIRECT_DATA_URLS.adsbygoogle;
+        if (lowerUrl.includes("gpt.js") || lowerUrl.includes("pubads_impl")) return REDIRECT_DATA_URLS.gpt;
+    }
+    if (details.type === "xmlhttprequest" && (lowerUrl.includes("vast") || lowerUrl.includes("vmap"))) {
+        return REDIRECT_DATA_URLS.vast;
+    }
+    return null;
+}
+
 // -----------------------------------------------------------------------------
-// Stats & Smart JS Reporting (Batched for zero IPC overhead)
+// Live Stats & Smart JS Reporting (Fast 350ms Batch Flush)
 // -----------------------------------------------------------------------------
-function queueBlockedStat(pageHost, isTracker) {
-    const key = pageHost || "unknown";
+function queueBlockedStat(pageHost, isTracker, fallbackHost) {
+    const key = pageHost || activeMainHost || fallbackHost || "web";
     let entry = pendingBlockedByHost.get(key);
     if (!entry) {
         entry = { ads: 0, trackers: 0 };
@@ -403,7 +431,7 @@ function queueBlockedStat(pageHost, isTracker) {
     else entry.ads += 1;
 
     if (!flushTimer) {
-        flushTimer = setTimeout(flushBlockedStats, 650);
+        flushTimer = setTimeout(flushBlockedStats, 350);
     }
 }
 
@@ -555,7 +583,7 @@ function handleChunkedConfigMessage(msg) {
                 for (let i = 0; i < items.length; i++) stagingRules.thirdPartyExceptionDomains.add(items[i]);
                 break;
             case "networkRules":
-                for (let i = 0; i < items.length; i++) compileAndIndexWireRule(stagingRules, items[i]);
+                for (let i = 0; i < items.length; i++) indexWireRule(stagingRules, items[i]);
                 break;
         }
         return true;
@@ -579,7 +607,7 @@ function handleChunkedConfigMessage(msg) {
 }
 
 // -----------------------------------------------------------------------------
-// Expanded ClearURLs + Redirect Link Unwrapper + Auto De-AMP
+// Cloudflare-Safe ClearURLs + Redirect Link Unwrapper + Auto De-AMP
 // -----------------------------------------------------------------------------
 function unwrapRedirectLink(urlStr) {
     try {
@@ -615,6 +643,9 @@ function unwrapRedirectLink(urlStr) {
 
 function cleanTrackingUrl(urlStr, allowRedirectUnwrap) {
     if (!urlStr || (!urlStr.startsWith("http://") && !urlStr.startsWith("https://"))) return null;
+    // Never rewrite Cloudflare challenge or clearance URLs
+    if (urlStr.includes("/cdn-cgi/") || urlStr.includes("__cf_chl")) return null;
+
     let next = urlStr;
     let changed = false;
 
@@ -695,6 +726,7 @@ if (api.webRequest && api.webRequest.onBeforeRequest) {
             try {
                 if (details.type === "main_frame") {
                     const nextHost = normalizeHost(details.url);
+                    if (nextHost) activeMainHost = nextHost;
                     if (typeof details.tabId === "number" && details.tabId >= 0) {
                         tabUrlMap.set(details.tabId, details.url);
                         tabJsBlockedMap.delete(details.tabId);
@@ -714,8 +746,9 @@ if (api.webRequest && api.webRequest.onBeforeRequest) {
                     return {};
                 }
 
-                const pageUrl = details.documentUrl || details.originUrl || tabUrlMap.get(details.tabId) || "";
-                const pageHost = normalizeHost(pageUrl);
+                const tabUrl = (typeof details.tabId === "number" && details.tabId >= 0) ? (tabUrlMap.get(details.tabId) || "") : "";
+                const pageUrl = tabUrl || details.documentUrl || details.originUrl || "";
+                const pageHost = normalizeHost(pageUrl) || activeMainHost;
                 const isPaused = !!(pageHost && shieldState.pausedHosts.has(pageHost));
 
                 const reqHost = normalizeHost(details.url);
@@ -723,7 +756,12 @@ if (api.webRequest && api.webRequest.onBeforeRequest) {
                 const isThirdParty = !pageHost || getRegistrableBase(reqHost) !== getRegistrableBase(pageHost);
                 const typeBit = mapDetailsTypeToBit(details.type);
 
-                // 1) Smart JavaScript Blocking: block 3rd-party scripts cleanly with in-page recovery UI
+                // Never block Cloudflare Turnstile / challenge assets
+                if (reqHost === "challenges.cloudflare.com" || details.url.includes("/cdn-cgi/")) {
+                    return {};
+                }
+
+                // 1) Smart JavaScript Blocking
                 if (shieldState.smartBlockJs && typeBit === TYPE_SCRIPT && isThirdParty && !isPaused) {
                     const jsAllowed = pageHost && (
                         shieldState.jsAllowOnceHosts.has(pageHost) ||
@@ -745,22 +783,21 @@ if (api.webRequest && api.webRequest.onBeforeRequest) {
                         return urlTokens;
                     };
 
-                    // 2A) Check $important rules first (override @@ exceptions)
+                    // 2A) $important rules
                     if (rules.importantRules.length > 0) {
                         for (let i = 0; i < rules.importantRules.length; i++) {
                             const r = rules.importantRules[i];
                             if (matchesStructuredRule(r, lowerUrl, pageHost, isThirdParty, typeBit)) {
-                                queueBlockedStat(pageHost, r.isTracker);
-                                if (r.redirect && REDIRECT_DATA_URLS[r.redirect]) {
-                                    return { redirectUrl: REDIRECT_DATA_URLS[r.redirect] };
-                                }
+                                queueBlockedStat(pageHost, r.isTracker, reqHost);
+                                const shim = resolveSmartRedirect(r, details, lowerUrl);
+                                if (shim) return { redirectUrl: shim };
                                 notifyElementCollapse(details);
                                 return { cancel: true };
                             }
                         }
                     }
 
-                    // 2B) Check @@ Exception rules BEFORE blocking (critical for streaming/video players!)
+                    // 2B) @@ Exception rules
                     let isExempt = matchesDomainSet(reqHost, rules.exceptionDomains);
                     if (!isExempt && isThirdParty) {
                         isExempt = matchesDomainSet(reqHost, rules.thirdPartyExceptionDomains);
@@ -781,33 +818,35 @@ if (api.webRequest && api.webRequest.onBeforeRequest) {
                     }
 
                     if (!isExempt) {
-                        // 2C) O(1) Domain Hash Sets
                         const allowDomainFirstParty = shieldState.shieldLevel >= 2;
 
                         if ((allowDomainFirstParty || isThirdParty) && matchesDomainSet(reqHost, rules.trackerDomains)) {
-                            queueBlockedStat(pageHost, true);
+                            queueBlockedStat(pageHost, true, reqHost);
                             notifyElementCollapse(details);
                             return { cancel: true };
                         }
                         if ((allowDomainFirstParty || isThirdParty) && matchesDomainSet(reqHost, rules.adDomains)) {
-                            queueBlockedStat(pageHost, false);
+                            queueBlockedStat(pageHost, false, reqHost);
+                            const shim = resolveSmartRedirect(null, details, lowerUrl);
+                            if (shim) return { redirectUrl: shim };
                             notifyElementCollapse(details);
                             return { cancel: true };
                         }
                         if (isThirdParty) {
                             if (matchesDomainSet(reqHost, rules.thirdPartyTrackerDomains)) {
-                                queueBlockedStat(pageHost, true);
+                                queueBlockedStat(pageHost, true, reqHost);
                                 notifyElementCollapse(details);
                                 return { cancel: true };
                             }
                             if (matchesDomainSet(reqHost, rules.thirdPartyAdDomains)) {
-                                queueBlockedStat(pageHost, false);
+                                queueBlockedStat(pageHost, false, reqHost);
+                                const shim = resolveSmartRedirect(null, details, lowerUrl);
+                                if (shim) return { redirectUrl: shim };
                                 notifyElementCollapse(details);
                                 return { cancel: true };
                             }
                         }
 
-                        // 2D) Structured Rules (paths, wildcards, static ad images/GIFs, regex, $domain, $image/$script/$xhr, $redirect)
                         if (rules.blockByDomain.size > 0 || rules.blockByToken.size > 0 || rules.blockGeneric.length > 0) {
                             const matched = findMatchingRuleInIndex(
                                 rules.blockByDomain,
@@ -821,13 +860,11 @@ if (api.webRequest && api.webRequest.onBeforeRequest) {
                                 typeBit
                             );
                             if (matched) {
-                                // Standard mode respects first-party safety unless rule explicitly specifies first-party or image/subdocument ad path
                                 const allowInStandard = isThirdParty || matched.firstPartyOnly || (typeBit === TYPE_IMAGE) || (typeBit === TYPE_SUBDOCUMENT);
                                 if (shieldState.shieldLevel >= 2 || allowInStandard) {
-                                    queueBlockedStat(pageHost, matched.isTracker);
-                                    if (matched.redirect && REDIRECT_DATA_URLS[matched.redirect]) {
-                                        return { redirectUrl: REDIRECT_DATA_URLS[matched.redirect] };
-                                    }
+                                    queueBlockedStat(pageHost, matched.isTracker, reqHost);
+                                    const shim = resolveSmartRedirect(matched, details, lowerUrl);
+                                    if (shim) return { redirectUrl: shim };
                                     notifyElementCollapse(details);
                                     return { cancel: true };
                                 }
@@ -836,7 +873,7 @@ if (api.webRequest && api.webRequest.onBeforeRequest) {
                     }
                 }
 
-                // 3) Expanded ClearURLs on sub_frame & xmlhttprequest GET requests
+                // 3) ClearURLs on sub_frame & xmlhttprequest GET
                 if (
                     shieldState.clearUrls &&
                     !isPaused &&
@@ -858,7 +895,7 @@ if (api.webRequest && api.webRequest.onBeforeRequest) {
 }
 
 // -----------------------------------------------------------------------------
-// Popunder Ad-Tab Trap Blocker ($popup rules + cross-origin ad tab guard)
+// Popunder Ad-Tab Trap Blocker
 // -----------------------------------------------------------------------------
 function isBlockedPopunderUrl(urlStr, openerHost) {
     if (!urlStr || (!urlStr.startsWith("http://") && !urlStr.startsWith("https://"))) return false;
@@ -897,7 +934,7 @@ function checkAndClosePopupTab(tabId, urlStr, openerHost) {
     if (openerHost && shieldState.pausedHosts.has(openerHost)) return;
     if (isBlockedPopunderUrl(urlStr, openerHost)) {
         recentPopupCandidates.delete(tabId);
-        queueBlockedStat(openerHost || normalizeHost(urlStr), false);
+        queueBlockedStat(openerHost || normalizeHost(urlStr), false, normalizeHost(urlStr));
         try {
             api.tabs.remove(tabId).catch(() => {});
         } catch (_e) {}
@@ -940,6 +977,7 @@ if (api.tabs && api.tabs.onUpdated) {
         try {
             const url = changeInfo && changeInfo.url;
             if (!url) return;
+            tabUrlMap.set(tabId, url);
             const cand = recentPopupCandidates.get(tabId);
             if (cand) {
                 if (Date.now() - cand.createdAt > 4000) {
@@ -979,6 +1017,22 @@ if (api.tabs && api.tabs.onRemoved) {
     });
 }
 
+// Seed tabUrlMap for any already-open tabs
+if (api.tabs && api.tabs.query) {
+    api.tabs.query({}).then((tabs) => {
+        if (!tabs) return;
+        for (const t of tabs) {
+            if (t.url) {
+                tabUrlMap.set(t.id, t.url);
+                if (t.active) {
+                    const h = normalizeHost(t.url);
+                    if (h) activeMainHost = h;
+                }
+            }
+        }
+    }).catch(() => {});
+}
+
 // -----------------------------------------------------------------------------
 // Native Port & Bridge Messaging
 // -----------------------------------------------------------------------------
@@ -1009,7 +1063,7 @@ function ensureNativePort() {
                 broadcastLiveSettingsToTabs();
                 return;
             }
-            const query = msg.action === "APPLY_GLOBAL_ZOOM" ? {} : { active: true };
+            const query = (msg.action === "APPLY_GLOBAL_ZOOM" || msg.action === "SET_PIP_ISOLATION") ? {} : { active: true };
             api.tabs.query(query).then((tabs) => {
                 if (!tabs || !tabs.length) {
                     reportDeliveryFailure(msg);
@@ -1038,12 +1092,10 @@ function ensureNativePort() {
 
 ensureNativePort();
 
-// Bootstrap runtime privacy config immediately on extension startup (triggers chunked rule stream)
 api.runtime.sendNativeMessage("uhApp", { type: "GET_PRIVACY_RUNTIME" })
     .then((cfg) => { if (cfg) applySettingsObject(cfg); })
     .catch(() => {});
 
-// Return Promises directly for Firefox/GeckoView WebExtension runtime.onMessage
 api.runtime.onMessage.addListener((message) => {
     if (!message) return undefined;
     ensureNativePort();
@@ -1063,9 +1115,29 @@ api.runtime.onMessage.addListener((message) => {
     if (message.type === "UH_CHECK_POPUP_URL") {
         const blocked = isBlockedPopunderUrl(message.url || "", message.openerHost || "");
         if (blocked) {
-            queueBlockedStat(message.openerHost || "", false);
+            queueBlockedStat(message.openerHost || "", false, normalizeHost(message.url || ""));
         }
         return Promise.resolve({ blocked });
+    }
+    if (message.type === "UH_CONTENT_BLOCKED_AD") {
+        queueBlockedStat(message.host || activeMainHost, false, message.host || "");
+        return Promise.resolve(true);
+    }
+    if (message.type === "UH_MEDIA_STATE") {
+        api.runtime.sendNativeMessage("uhApp", {
+            type: "MEDIA_STATE_UPDATE",
+            title: message.title || "",
+            artist: message.artist || "",
+            artworkUrl: message.artworkUrl || "",
+            pageUrl: message.pageUrl || "",
+            playing: message.playing === true,
+            hasVideo: message.hasVideo === true,
+            durationSec: Number(message.durationSec) || 0,
+            positionSec: Number(message.positionSec) || 0,
+            videoWidth: Number(message.videoWidth) || 0,
+            videoHeight: Number(message.videoHeight) || 0
+        }).catch(() => {});
+        return Promise.resolve(true);
     }
     if (message.type === "UH_NATIVE_CALL") {
         const payload = Object.assign({}, message.payload || {}, {

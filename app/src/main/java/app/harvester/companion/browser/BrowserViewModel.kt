@@ -60,8 +60,22 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private val _isEditing = MutableStateFlow(false)
     val isEditing: StateFlow<Boolean> = _isEditing
 
+    private val _pendingUrl = MutableStateFlow("")
+    val pendingUrl: StateFlow<String> = _pendingUrl.asStateFlow()
+
+    private val _isInPipMode = MutableStateFlow(false)
+    val isInPipMode: StateFlow<Boolean> = _isInPipMode.asStateFlow()
+
     val isBarBottom: StateFlow<Boolean> = SettingsPrefs.addressBarBottomFlow(context)
     val searchEngine: StateFlow<SearchEnginePrefs.Entry> = SearchEnginePrefs.activeEngineFlow(context)
+
+    fun setPendingUrl(url: String) {
+        _pendingUrl.value = url
+    }
+
+    fun setPipMode(inPip: Boolean) {
+        _isInPipMode.value = inPip
+    }
 
     private val _editText = MutableStateFlow("")
     val editText: StateFlow<String> = _editText

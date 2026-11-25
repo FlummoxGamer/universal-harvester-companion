@@ -3,7 +3,9 @@
     window.__uh_bridge_inject_ready = true;
 
     // -------------------------------------------------------------------------
-    // 1. Early Network Ring Buffer (document_start Fetch + XHR capture)
+    // 1. On-Demand Network Capture (ONLY hooked when DevTools or Capture starts
+    //    so window.fetch / XMLHttpRequest stay pristine [native code] for
+    //    Cloudflare Turnstile, anti-bot scripts, and streaming players)
     // -------------------------------------------------------------------------
     const MAX_NET_ENTRIES = 200;
     const earlyNetLog = (window.__uhEarlyNetLog = window.__uhEarlyNetLog || []);
@@ -160,7 +162,8 @@
         }
     }
 
-    installEarlyNetworkCapture();
+    // Expose opt-in hook activator for DevTools / Capture only
+    window.__uhEnableNetworkCapture = installEarlyNetworkCapture;
 
     // -------------------------------------------------------------------------
     // 2. Userscript Safe Executor & Global Zoom
@@ -246,6 +249,7 @@
                 try { window.__uh_runMenuCommand(d.commandId); } catch (_e) {}
             }
         } else if (d.type === "UH_TOGGLE_DEVTOOLS") {
+            installEarlyNetworkCapture();
             if (typeof window.__uhToggleDevTools === "function") {
                 try { window.__uhToggleDevTools(d.darkTheme !== false); } catch (_e) {}
             }

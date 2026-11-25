@@ -147,10 +147,11 @@ fun UHAddressBar(
     val hasPageUrl = !isWallpaperActive && url.isNotBlank() && url != "about:blank"
 
     Row(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
-            .height(barHeight)
             .background(outerBarColor)
+            .then(modifier)
+            .height(barHeight)
             .padding(horizontal = if (isLandscape) 12.dp else 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

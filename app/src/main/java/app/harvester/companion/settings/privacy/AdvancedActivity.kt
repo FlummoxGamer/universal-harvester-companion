@@ -198,7 +198,7 @@ class AdvancedActivity : AppCompatActivity() {
                             subtitle = "Block phishing, malware, and deceptive downloads",
                             key = SettingsPrefs.K_ADV_SAFE_BROWSING,
                             default = true,
-                            iconRes = R.drawable.fx_ic_shield_lock_24,
+                            iconRes = R.drawable.uh_ic_pg_safe_browsing_24,
                             insideCard = true,
                             onChanged = { UhPrivacyController.applyAllToEngine(context) },
                         )
@@ -208,7 +208,7 @@ class AdvancedActivity : AppCompatActivity() {
                             subtitle = "Bypass Google AMP wrappers and load canonical publisher pages",
                             key = SettingsPrefs.K_ADV_DEAMP,
                             default = true,
-                            iconRes = R.drawable.fx_ic_link_24,
+                            iconRes = R.drawable.uh_ic_pg_deamp_24,
                             insideCard = true,
                             onChanged = { UhPrivacyController.applyAllToEngine(context) },
                         )
@@ -218,7 +218,7 @@ class AdvancedActivity : AppCompatActivity() {
                             subtitle = "Send Sec-GPC: 1 header telling sites not to sell your data",
                             key = SettingsPrefs.K_ADV_GPC,
                             default = true,
-                            iconRes = R.drawable.fx_ic_lock_24,
+                            iconRes = R.drawable.uh_ic_pg_gpc_24,
                             insideCard = true,
                             onChanged = { UhPrivacyController.applyAllToEngine(context) },
                         )
@@ -228,7 +228,7 @@ class AdvancedActivity : AppCompatActivity() {
                             subtitle = "Send legacy DNT: 1 request header to websites",
                             key = SettingsPrefs.K_ADV_DNT,
                             default = false,
-                            iconRes = R.drawable.fx_ic_info_24,
+                            iconRes = R.drawable.uh_ic_pg_dnt_24,
                             insideCard = true,
                             onChanged = { UhPrivacyController.applyAllToEngine(context) },
                         )
@@ -239,7 +239,7 @@ class AdvancedActivity : AppCompatActivity() {
                         SettingsRow(
                             title = "Secure DNS (DNS-over-HTTPS)",
                             subtitle = dohSubtitle,
-                            iconRes = R.drawable.ic_globe,
+                            iconRes = R.drawable.uh_ic_pg_doh_dns_24,
                             showChevron = true,
                             insideCard = true,
                             onClick = { showDohDialog = true },
@@ -248,7 +248,7 @@ class AdvancedActivity : AppCompatActivity() {
                         SettingsRow(
                             title = "WebRTC IP Protection",
                             subtitle = "${currentWebRtc.label} — ${currentWebRtc.summary}",
-                            iconRes = R.drawable.fx_ic_shield_lock_24,
+                            iconRes = R.drawable.uh_ic_pg_webrtc_24,
                             showChevron = true,
                             insideCard = true,
                             onClick = { showWebRtcDialog = true },

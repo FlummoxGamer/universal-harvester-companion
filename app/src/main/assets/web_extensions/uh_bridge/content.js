@@ -20,8 +20,9 @@ function sendNativeCall(payload) {
 }
 
 // -----------------------------------------------------------------------------
-// 1B. UH Shield v4: Cosmetics, Procedural :has-text(), Blocked Banner Collapse,
-//     Shadow-DOM Cookie Banner Auto-Reject, Scriptlets & Smart Dark Web
+// 1B. UH Shield v5: adoptedStyleSheets Cosmetics, rAF-Throttled Procedural &
+//     First-Party GIF/Banner Ad Collapse, Shadow-DOM Cookie Reject,
+//     True AMOLED Website Dark Mode & Media/Video-Only PiP Bridge
 // -----------------------------------------------------------------------------
 let pageProtectState = null;
 let scriptletsReady = false;
@@ -29,10 +30,11 @@ let cookieBannerObserver = null;
 let cookieBannerStopTimer = null;
 let cookieBannerRejected = false;
 let proceduralObserver = null;
-let proceduralTimer = null;
+let proceduralRaf = 0;
+let cosmeticSheet = null;
 const blockedUrls = new Set();
 const blockedPathHints = new Set();
-let collapseSweepTimer = null;
+let collapseRaf = 0;
 
 function currentNormalizedHost() {
     try {
@@ -82,23 +84,48 @@ function applyCosmeticStyle(selectors, enabled) {
     const existing = document.getElementById(id);
     if (!enabled || !Array.isArray(selectors) || selectors.length === 0) {
         if (existing) existing.remove();
+        if (cosmeticSheet && document.adoptedStyleSheets) {
+            try {
+                document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== cosmeticSheet);
+            } catch (_e) {}
+            cosmeticSheet = null;
+        }
         return;
     }
+
     const chunks = [];
-    const batch = 45;
+    const batch = 50;
     for (let i = 0; i < selectors.length; i += batch) {
         const part = selectors.slice(i, i + batch).join(", ");
         chunks.push(part + " { display: none !important; visibility: hidden !important; height: 0 !important; min-height: 0 !important; max-height: 0 !important; margin: 0 !important; padding: 0 !important; border: 0 !important; overflow: hidden !important; }");
     }
+    const cssText = chunks.join("\n");
+
+    // Prefer zero-reflow adoptedStyleSheets when supported
+    if (typeof CSSStyleSheet !== "undefined" && document.adoptedStyleSheets) {
+        try {
+            if (!cosmeticSheet) {
+                cosmeticSheet = new CSSStyleSheet();
+                document.adoptedStyleSheets = [...document.adoptedStyleSheets, cosmeticSheet];
+            }
+            cosmeticSheet.replaceSync(cssText);
+            if (existing) existing.remove();
+            return;
+        } catch (_e) {}
+    }
+
     const styleEl = existing || document.createElement("style");
     styleEl.id = id;
-    styleEl.textContent = chunks.join("\n");
+    styleEl.textContent = cssText;
     (document.head || document.documentElement).appendChild(styleEl);
 }
 
 // -----------------------------------------------------------------------------
-// Blocked Ad Element & Empty Banner Slot Collapsing
+// Blocked Ad Element, First-Party GIF/Static Banner & Empty Slot Collapsing
 // -----------------------------------------------------------------------------
+const FIRST_PARTY_AD_HREF_RE = /(doubleclick|googlesyndication|adservice|popads|propellerads|adsterra|exoclick|monetag|clickadu|hilltopads|outbrain|taboola|mgid|revcontent|\/adclick|\/click\.php|\/banner_click|\/out\.php\?|\/go\/bet|\/go\/casino|1xbet|melbet|mostbet|betwinner|parimatch)/i;
+const FIRST_PARTY_AD_IMG_RE = /(\/ads\/|\/banners?\/|\/promo[-_]?banner|ad[-_]?banner|300x250|728x90|320x50|160x600|468x60|1xbet|melbet|mostbet|betwinner|casino[-_]?banner)/i;
+
 function collapseElement(el) {
     if (!el || el.nodeType !== 1 || el.dataset.uhCollapsed === "1") return;
     el.dataset.uhCollapsed = "1";
@@ -182,30 +209,50 @@ function urlMatchesBlocked(rawAttr) {
     return false;
 }
 
-function runBlockedCollapseSweep() {
-    collapseSweepTimer = null;
-    if (blockedUrls.size === 0) return;
+function scanAndCollapseAdBanners(rootNode) {
+    const shieldOn = pageProtectState && (pageProtectState.shieldLevel || 0) > 0 && !pageProtectState.paused;
+    if (!shieldOn && blockedUrls.size === 0) return;
+    const scope = rootNode && rootNode.querySelectorAll ? rootNode : document;
+    let collapsedCount = 0;
     try {
-        const nodes = document.querySelectorAll("img, iframe, object, embed, video, source");
+        const nodes = scope.querySelectorAll("img, iframe, object, embed, video, source");
         for (let i = 0; i < nodes.length; i++) {
             const el = nodes[i];
             if (el.dataset && el.dataset.uhCollapsed === "1") continue;
             const src = el.currentSrc || el.src || el.getAttribute("src") || el.getAttribute("data-src") || el.getAttribute("data") || "";
             const srcset = el.getAttribute("srcset") || "";
-            if (urlMatchesBlocked(src) || (srcset && urlMatchesBlocked(srcset.split(",")[0].trim().split(/\s+/)[0]))) {
+            if (blockedUrls.size > 0 && (urlMatchesBlocked(src) || (srcset && urlMatchesBlocked(srcset.split(",")[0].trim().split(/\s+/)[0])))) {
                 const target = el.tagName === "SOURCE" && el.parentElement ? el.parentElement : el;
                 collapseElement(target);
+                continue;
+            }
+            // Collapse first-party GIF / static ad banners wrapped in ad/betting click links
+            if (shieldOn && el.tagName === "IMG") {
+                const anchor = el.closest("a[href]");
+                const href = anchor ? (anchor.href || "") : "";
+                if ((href && FIRST_PARTY_AD_HREF_RE.test(href)) || (src && FIRST_PARTY_AD_IMG_RE.test(src))) {
+                    collapseElement(anchor || el);
+                    collapsedCount++;
+                }
             }
         }
     } catch (_e) {}
+    if (collapsedCount > 0) {
+        api.runtime.sendMessage({
+            type: "UH_CONTENT_BLOCKED_AD",
+            host: currentNormalizedHost()
+        }).catch(() => {});
+    }
 }
 
 function scheduleCollapseSweep() {
-    if (collapseSweepTimer) return;
-    collapseSweepTimer = setTimeout(runBlockedCollapseSweep, 40);
+    if (collapseRaf) return;
+    collapseRaf = requestAnimationFrame(() => {
+        collapseRaf = 0;
+        scanAndCollapseAdBanners(document);
+    });
 }
 
-// Immediately collapse broken <img> / <iframe> whose URL was blocked by UH Shield
 document.addEventListener("error", (ev) => {
     const el = ev && ev.target;
     if (!el || el.nodeType !== 1) return;
@@ -218,7 +265,7 @@ document.addEventListener("error", (ev) => {
 }, true);
 
 // -----------------------------------------------------------------------------
-// Procedural Cosmetic Engine (:has-text / :-abp-contains / :upward)
+// Frame-Throttled Procedural Cosmetic Engine (:has-text / :-abp-contains / :upward)
 // -----------------------------------------------------------------------------
 function runProceduralCosmetics(rules) {
     if (!Array.isArray(rules) || rules.length === 0) return;
@@ -259,23 +306,37 @@ function setupProceduralCosmetics(rules, enabled) {
         try { proceduralObserver.disconnect(); } catch (_e) {}
         proceduralObserver = null;
     }
-    if (!enabled || !Array.isArray(rules) || rules.length === 0) return;
+    if (!enabled) return;
 
+    let lastRun = 0;
     const trigger = () => {
-        if (proceduralTimer) return;
-        proceduralTimer = setTimeout(() => {
-            proceduralTimer = null;
-            runProceduralCosmetics(rules);
-        }, 180);
+        if (proceduralRaf) return;
+        proceduralRaf = requestAnimationFrame(() => {
+            proceduralRaf = 0;
+            const now = performance.now();
+            if (now - lastRun < 250) return;
+            lastRun = now;
+            if (Array.isArray(rules) && rules.length > 0) {
+                runProceduralCosmetics(rules);
+            }
+            scanAndCollapseAdBanners(document);
+        });
     };
 
     if (document.body) {
-        runProceduralCosmetics(rules);
+        trigger();
     } else {
         document.addEventListener("DOMContentLoaded", trigger, { once: true });
     }
 
-    proceduralObserver = new MutationObserver(trigger);
+    proceduralObserver = new MutationObserver((mutations) => {
+        for (let i = 0; i < mutations.length; i++) {
+            if (mutations[i].addedNodes && mutations[i].addedNodes.length > 0) {
+                trigger();
+                break;
+            }
+        }
+    });
     proceduralObserver.observe(document.documentElement || document, { childList: true, subtree: true });
 }
 
@@ -336,7 +397,6 @@ function searchAndClickRejectInRoot(root, depth) {
         } catch (_e) {}
     }
 
-    // Check buttons with explicit reject/decline text inside visible cookie containers
     try {
         const btns = root.querySelectorAll("button, a[role='button']");
         for (let i = 0; i < btns.length && i < 120; i++) {
@@ -353,11 +413,10 @@ function searchAndClickRejectInRoot(root, depth) {
         }
     } catch (_e) {}
 
-    // Traverse open Shadow DOM hosts (Usercentrics, Didomi, Sourcepoint, etc.)
     try {
-        const hosts = root.querySelectorAll("#usercentrics-root, [id*='consent' i], [id*='cookie' i], [id*='cmp' i], div, aside, section");
+        const hosts = root.querySelectorAll("#usercentrics-root, [id*='consent' i], [id*='cookie' i], [id*='cmp' i]");
         let checked = 0;
-        for (let i = 0; i < hosts.length && checked < 40; i++) {
+        for (let i = 0; i < hosts.length && checked < 20; i++) {
             const h = hosts[i];
             if (h.shadowRoot) {
                 checked++;
@@ -410,7 +469,6 @@ function startCookieBannerWatcher(enabled) {
     cookieBannerObserver = new MutationObserver(kick);
     cookieBannerObserver.observe(document.documentElement || document, { childList: true, subtree: true });
 
-    // Disconnect cleanly after 10 seconds to save battery & CPU
     cookieBannerStopTimer = setTimeout(() => {
         if (cookieBannerObserver) {
             try { cookieBannerObserver.disconnect(); } catch (_e) {}
@@ -420,7 +478,7 @@ function startCookieBannerWatcher(enabled) {
 }
 
 // -----------------------------------------------------------------------------
-// Smart Dark Web Mode
+// Global True AMOLED Website Dark Mode (Light Force-Dark + Already-Dark Deepener)
 // -----------------------------------------------------------------------------
 function isPageAlreadyDark() {
     try {
@@ -449,34 +507,70 @@ function isColorDark(cssColor) {
     return lum < 0.38;
 }
 
-function applySmartDarkMode(enabled, enhanceDark, bypassed) {
+function applySmartDarkMode(forceDarkEnabled, amoledEnabled, bypassed) {
     if (!isTopFrame) return;
     const id = "__uh_smart_dark";
+    const amoledId = "__uh_amoled_deep";
     const existing = document.getElementById(id);
-    if (!enabled || bypassed) {
+    const existingAmoled = document.getElementById(amoledId);
+
+    if (bypassed || (!forceDarkEnabled && !amoledEnabled)) {
         if (existing) existing.remove();
+        if (existingAmoled) existingAmoled.remove();
         return;
     }
+
     const evaluateAndInject = () => {
-        if (isPageAlreadyDark()) {
-            const el = document.getElementById(id);
-            if (el) el.remove();
+        const alreadyDark = isPageAlreadyDark();
+
+        if (alreadyDark) {
+            // Never invert already-dark sites; when AMOLED is on, deepen dark-grey base surfaces to #000000
+            const invEl = document.getElementById(id);
+            if (invEl) invEl.remove();
+
+            if (amoledEnabled) {
+                const amoledCss = [
+                    "html, body { background-color: #000000 !important; color-scheme: dark !important; }",
+                    ":root { --yt-spec-base-background: #000000 !important; --yt-spec-raised-background: #0A0A0A !important; --bgColor-default: #000000 !important; --color-canvas-default: #000000 !important; }",
+                    "ytd-app, ytm-app, #app, #root, #__next, main { background-color: #000000 !important; }"
+                ].join("\n");
+                const el = document.getElementById(amoledId) || document.createElement("style");
+                el.id = amoledId;
+                el.textContent = amoledCss;
+                (document.head || document.documentElement).appendChild(el);
+            } else {
+                const el = document.getElementById(amoledId);
+                if (el) el.remove();
+            }
             return;
         }
-        const inv = enhanceDark ? "0.96" : "0.90";
-        const contrast = enhanceDark ? "1.06" : "0.96";
-        const bgHex = enhanceDark ? "#000000" : "#121318";
+
+        // Page is bright: remove amoled-only deepener
+        const amEl = document.getElementById(amoledId);
+        if (amEl) amEl.remove();
+
+        // Apply Force Dark (or full AMOLED global inversion when AMOLED Dark Mode is enabled)
+        if (!forceDarkEnabled && !amoledEnabled) {
+            const invEl = document.getElementById(id);
+            if (invEl) invEl.remove();
+            return;
+        }
+
+        const inv = amoledEnabled ? "1" : "0.90";
+        const contrast = amoledEnabled ? "1.05" : "0.96";
+        const bgHex = amoledEnabled ? "#000000" : "#121318";
         const css = [
             "html { background-color: " + bgHex + " !important; color-scheme: dark !important; filter: invert(" + inv + ") hue-rotate(180deg) contrast(" + contrast + ") !important; }",
             "img, video, picture, canvas, svg, [style*='background-image'], iframe { filter: invert(1) hue-rotate(180deg) !important; }",
             "img[src$='.svg'], img[src*='logo'] { filter: invert(0.1) !important; }",
-            "video:fullscreen, video:-webkit-full-screen { filter: none !important; }"
+            "video:fullscreen, video:-webkit-full-screen, .__uh_pip_video_only { filter: none !important; }"
         ].join("\n");
         const styleEl = document.getElementById(id) || document.createElement("style");
         styleEl.id = id;
         styleEl.textContent = css;
         (document.head || document.documentElement).appendChild(styleEl);
     };
+
     if (document.body) {
         evaluateAndInject();
     } else {
@@ -498,13 +592,280 @@ function applyPageProtectConfig(cfg) {
     startCookieBannerWatcher(cfg.cookieBanners === true && !cfg.paused);
 }
 
-// Kick off protection immediately at document_start
 api.runtime.sendMessage({
     type: "UH_GET_PAGE_PROTECT",
     url: window.location.href
 }).then((cfg) => {
     if (cfg) applyPageProtectConfig(cfg);
 }).catch(() => {});
+
+// -----------------------------------------------------------------------------
+// 1C. Rich Media Metadata Enricher + Video-Only PiP Isolation Engine
+// -----------------------------------------------------------------------------
+let activeMediaEl = null;
+let pipIsolatedVideo = null;
+let pipSavedStyle = null;
+let pipSavedParent = null;
+let pipSavedNextSibling = null;
+let pipSavedScrollX = 0;
+let pipSavedScrollY = 0;
+let mediaReportTimer = null;
+
+function findPrimaryMediaElement() {
+    const videos = Array.from(document.querySelectorAll("video"));
+    // Prefer actively playing video with largest visible area
+    let best = null;
+    let bestScore = -1;
+    for (let i = 0; i < videos.length; i++) {
+        const v = videos[i];
+        const rect = v.getBoundingClientRect();
+        const area = Math.max(0, rect.width) * Math.max(0, rect.height);
+        const playingBonus = (!v.paused && !v.ended && v.readyState >= 2) ? 10000000 : 0;
+        const score = playingBonus + area + ((v.videoWidth || 0) * (v.videoHeight || 0));
+        if (score > bestScore && (v.readyState >= 1 || !v.paused || area > 10000)) {
+            bestScore = score;
+            best = v;
+        }
+    }
+    if (best) return best;
+    const audios = Array.from(document.querySelectorAll("audio"));
+    for (let i = 0; i < audios.length; i++) {
+        if (!audios[i].paused && !audios[i].ended) return audios[i];
+    }
+    return audios[0] || null;
+}
+
+function extractCleanMediaMetadata(mediaEl) {
+    const ms = navigator.mediaSession && navigator.mediaSession.metadata;
+    const host = currentNormalizedHost();
+    let title = (ms && ms.title) ? String(ms.title).trim() : "";
+    let artist = (ms && ms.artist) ? String(ms.artist).trim() : "";
+    let artworkUrl = "";
+
+    if (ms && Array.isArray(ms.artwork) && ms.artwork.length > 0) {
+        artworkUrl = ms.artwork[ms.artwork.length - 1].src || ms.artwork[0].src || "";
+    }
+
+    if (!title) {
+        const ogTitle = document.querySelector('meta[property="og:title"], meta[name="twitter:title"]');
+        title = (ogTitle && ogTitle.content) ? ogTitle.content.trim() : "";
+    }
+    if (!title) {
+        const h1 = document.querySelector("h1.ytd-watch-metadata, h1.slim-video-information-title, h1");
+        if (h1) title = (h1.textContent || "").trim();
+    }
+    if (!title) {
+        title = (document.title || "").trim();
+    }
+    // Strip common site suffixes like " - YouTube", " | Watch Online"
+    title = title.replace(/\s*[-–|·]\s*(YouTube|Vimeo|Twitch|Dailymotion|Facebook|Instagram|TikTok|X)$/i, "").trim();
+    if (!title || /^https?:\/\//i.test(title)) {
+        title = host ? ("Playing on " + host) : "Media Playback";
+    }
+
+    if (!artist) {
+        const channelEl = document.querySelector("#channel-name a, .slim-owner-channel-name, meta[name='author'], meta[property='og:site_name']");
+        if (channelEl) {
+            artist = (channelEl.content || channelEl.textContent || "").trim();
+        }
+    }
+    if (!artist) {
+        artist = host || "UH Browser";
+    }
+
+    // Artwork fallbacks: YouTube thumbnail -> video poster -> og:image -> link icon
+    if (!artworkUrl && (host === "youtube.com" || host === "m.youtube.com" || host === "youtu.be")) {
+        try {
+            const u = new URL(window.location.href);
+            const vid = u.searchParams.get("v") || (host === "youtu.be" ? u.pathname.slice(1) : "");
+            if (vid && /^[a-zA-Z0-9_-]{6,16}$/.test(vid)) {
+                artworkUrl = "https://i.ytimg.com/vi/" + vid + "/hqdefault.jpg";
+            }
+        } catch (_e) {}
+    }
+    if (!artworkUrl && mediaEl && mediaEl.poster) {
+        artworkUrl = mediaEl.poster;
+    }
+    if (!artworkUrl) {
+        const ogImg = document.querySelector('meta[property="og:image"], meta[name="twitter:image"]');
+        if (ogImg && ogImg.content) artworkUrl = ogImg.content;
+    }
+    if (artworkUrl && !artworkUrl.startsWith("http") && !artworkUrl.startsWith("data:")) {
+        try { artworkUrl = new URL(artworkUrl, window.location.href).href; } catch (_e) {}
+    }
+
+    return { title, artist, artworkUrl };
+}
+
+function reportMediaStateNow() {
+    const el = findPrimaryMediaElement();
+    activeMediaEl = el;
+    if (!el) return;
+    const isVideo = el.tagName === "VIDEO";
+    const meta = extractCleanMediaMetadata(el);
+    const dur = isFinite(el.duration) && el.duration > 0 ? el.duration : 0;
+    const pos = isFinite(el.currentTime) && el.currentTime >= 0 ? el.currentTime : 0;
+    api.runtime.sendMessage({
+        type: "UH_MEDIA_STATE",
+        title: meta.title,
+        artist: meta.artist,
+        artworkUrl: meta.artworkUrl,
+        pageUrl: window.location.href,
+        playing: !el.paused && !el.ended,
+        hasVideo: isVideo,
+        durationSec: dur,
+        positionSec: pos,
+        videoWidth: isVideo ? (el.videoWidth || el.clientWidth || 16) : 0,
+        videoHeight: isVideo ? (el.videoHeight || el.clientHeight || 9) : 0
+    }).catch(() => {});
+}
+
+function scheduleMediaReport() {
+    if (mediaReportTimer) return;
+    mediaReportTimer = setTimeout(() => {
+        mediaReportTimer = null;
+        reportMediaStateNow();
+    }, 250);
+}
+
+// Listen cleanly for HTML5 media play/pause/seek/loadedmetadata events
+["play", "playing", "pause", "ended", "loadedmetadata", "durationchange", "seeked"].forEach((evt) => {
+    document.addEventListener(evt, (e) => {
+        const t = e && e.target;
+        if (t && (t.tagName === "VIDEO" || t.tagName === "AUDIO")) {
+            activeMediaEl = t;
+            scheduleMediaReport();
+        }
+    }, true);
+});
+
+// Periodic lightweight position sync ONLY while actively playing (every 2s)
+setInterval(() => {
+    if (activeMediaEl && !activeMediaEl.paused && !activeMediaEl.ended) {
+        reportMediaStateNow();
+    }
+}, 2000);
+
+function handleMediaControlAction(msg) {
+    const el = activeMediaEl || findPrimaryMediaElement();
+    if (!el) return;
+    try {
+        switch (msg.command) {
+            case "PLAY":
+                el.play().catch(() => {});
+                break;
+            case "PAUSE":
+                el.pause();
+                break;
+            case "TOGGLE_PLAY_PAUSE":
+                if (el.paused) el.play().catch(() => {}); else el.pause();
+                break;
+            case "SEEK_RELATIVE": {
+                const delta = Number(msg.deltaSec) || 0;
+                const dur = isFinite(el.duration) ? el.duration : (el.currentTime + Math.abs(delta));
+                el.currentTime = Math.max(0, Math.min(dur, (el.currentTime || 0) + delta));
+                break;
+            }
+            case "SEEK_TO": {
+                const target = Number(msg.positionSec);
+                if (isFinite(target) && target >= 0) {
+                    el.currentTime = target;
+                }
+                break;
+            }
+            case "NEXT": {
+                const nextBtn = document.querySelector(".ytp-next-button, button[aria-label*='Next' i], a[aria-label*='Next' i]");
+                if (nextBtn) nextBtn.click();
+                else if (isFinite(el.duration)) el.currentTime = Math.min(el.duration, el.currentTime + 30);
+                break;
+            }
+            case "PREV": {
+                if (el.currentTime > 4) {
+                    el.currentTime = 0;
+                } else {
+                    const prevBtn = document.querySelector(".ytp-prev-button, button[aria-label*='Previous' i]");
+                    if (prevBtn) prevBtn.click();
+                    else el.currentTime = 0;
+                }
+                break;
+            }
+        }
+        setTimeout(reportMediaStateNow, 120);
+    } catch (_e) {}
+}
+
+function setPipVideoIsolation(enable) {
+    const styleId = "__uh_pip_isolation_style";
+    if (enable) {
+        if (pipIsolatedVideo) return;
+        const video = (activeMediaEl && activeMediaEl.tagName === "VIDEO") ? activeMediaEl : findPrimaryMediaElement();
+        if (!video || video.tagName !== "VIDEO") return;
+
+        pipIsolatedVideo = video;
+        pipSavedScrollX = window.scrollX || 0;
+        pipSavedScrollY = window.scrollY || 0;
+        pipSavedStyle = video.getAttribute("style");
+        pipSavedParent = video.parentNode;
+        pipSavedNextSibling = video.nextSibling;
+
+        let styleEl = document.getElementById(styleId);
+        if (!styleEl) {
+            styleEl = document.createElement("style");
+            styleEl.id = styleId;
+            styleEl.textContent = [
+                "html.__uh_pip_active, html.__uh_pip_active body { margin: 0 !important; padding: 0 !important; overflow: hidden !important; background: #000000 !important; width: 100vw !important; height: 100vh !important; }",
+                "html.__uh_pip_active body > *:not(.__uh_pip_host) { visibility: hidden !important; opacity: 0 !important; pointer-events: none !important; }",
+                ".__uh_pip_host { position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100vh !important; background: #000000 !important; z-index: 2147483647 !important; display: flex !important; align-items: center !important; justify-content: center !important; visibility: visible !important; opacity: 1 !important; }",
+                ".__uh_pip_video_only { position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100vh !important; max-width: 100vw !important; max-height: 100vh !important; object-fit: contain !important; background: #000000 !important; margin: 0 !important; padding: 0 !important; transform: none !important; visibility: visible !important; opacity: 1 !important; z-index: 2147483647 !important; }"
+            ].join("\n");
+            (document.head || document.documentElement).appendChild(styleEl);
+        }
+
+        const wasPlaying = !video.paused && !video.ended;
+        const host = document.createElement("div");
+        host.id = "__uh_pip_host";
+        host.className = "__uh_pip_host";
+        document.documentElement.classList.add("__uh_pip_active");
+        video.classList.add("__uh_pip_video_only");
+        host.appendChild(video);
+        (document.body || document.documentElement).appendChild(host);
+        if (wasPlaying && video.paused) {
+            video.play().catch(() => {});
+        }
+    } else {
+        document.documentElement.classList.remove("__uh_pip_active");
+        const styleEl = document.getElementById(styleId);
+        if (styleEl) styleEl.remove();
+
+        const video = pipIsolatedVideo;
+        if (video) {
+            const wasPlaying = !video.paused && !video.ended;
+            video.classList.remove("__uh_pip_video_only");
+            if (pipSavedStyle !== null) video.setAttribute("style", pipSavedStyle);
+            else video.removeAttribute("style");
+
+            if (pipSavedParent && document.contains(pipSavedParent)) {
+                try {
+                    if (pipSavedNextSibling && pipSavedNextSibling.parentNode === pipSavedParent) {
+                        pipSavedParent.insertBefore(video, pipSavedNextSibling);
+                    } else {
+                        pipSavedParent.appendChild(video);
+                    }
+                } catch (_e) {}
+            }
+            const host = document.getElementById("__uh_pip_host");
+            if (host) host.remove();
+            if (wasPlaying && video.paused) {
+                video.play().catch(() => {});
+            }
+            window.scrollTo(pipSavedScrollX, pipSavedScrollY);
+        }
+        pipIsolatedVideo = null;
+        pipSavedStyle = null;
+        pipSavedParent = null;
+        pipSavedNextSibling = null;
+    }
+}
 
 // -----------------------------------------------------------------------------
 // 2. Multi-Script On-Device Image OCR Translation Overlays (CSP-immune)
@@ -651,11 +1012,7 @@ async function runImageOcrTranslation(fromLang, toLang) {
     }
 
     if (!rawTargets.length) {
-        sendNativeCall({
-            type: "IMAGE_TRANSLATE_DONE",
-            imageCount: 0,
-            overlayCount: 0
-        });
+        sendNativeCall({ type: "IMAGE_TRANSLATE_DONE", imageCount: 0, overlayCount: 0 });
         return;
     }
 
@@ -667,19 +1024,11 @@ async function runImageOcrTranslation(fromLang, toLang) {
         if (!cap) continue;
         const id = "img_" + candidates.length;
         imgById.set(id, rawTargets[i]);
-        candidates.push({
-            id: id,
-            imageUrl: cap.imageUrl,
-            dataUrl: cap.dataUrl
-        });
+        candidates.push({ id: id, imageUrl: cap.imageUrl, dataUrl: cap.dataUrl });
     }
 
     if (!candidates.length) {
-        sendNativeCall({
-            type: "IMAGE_TRANSLATE_DONE",
-            imageCount: 0,
-            overlayCount: 0
-        });
+        sendNativeCall({ type: "IMAGE_TRANSLATE_DONE", imageCount: 0, overlayCount: 0 });
         return;
     }
 
@@ -691,11 +1040,7 @@ async function runImageOcrTranslation(fromLang, toLang) {
     });
 
     if (!resp || !Array.isArray(resp.results)) {
-        sendNativeCall({
-            type: "IMAGE_TRANSLATE_DONE",
-            imageCount: candidates.length,
-            overlayCount: 0
-        });
+        sendNativeCall({ type: "IMAGE_TRANSLATE_DONE", imageCount: candidates.length, overlayCount: 0 });
         return;
     }
 
@@ -913,6 +1258,10 @@ api.runtime.onMessage.addListener((msg) => {
             }
         } catch (_e) {}
         scheduleCollapseSweep();
+    } else if (msg.action === "SET_PIP_ISOLATION") {
+        setPipVideoIsolation(msg.enabled === true);
+    } else if (msg.action === "MEDIA_CONTROL_ACTION") {
+        handleMediaControlAction(msg);
     } else if (msg.action === "RUN_MENU_COMMAND" && msg.commandId) {
         window.postMessage({ type: "UH_RUN_MENU_COMMAND", commandId: msg.commandId }, "*");
     } else if (msg.action === "RELOAD_SCRIPTS") {

@@ -16,14 +16,17 @@ import android.widget.Toast
 import app.harvester.companion.browser.translate.FastTranslatorClient
 import app.harvester.companion.components.Components
 import app.harvester.companion.core.network.UhHttpClient
+import app.harvester.companion.media.UhMediaController
 import app.harvester.companion.privacy.UhPrivacyController
 import app.harvester.companion.privacy.UhShieldEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -37,6 +40,7 @@ import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.WebExtension
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 object GeckoWebExtensionBridge {
 
@@ -50,6 +54,12 @@ object GeckoWebExtensionBridge {
     private var componentsRef: Components? = null
     @Volatile
     private var activeBridgePort: WebExtension.Port? = null
+    @Volatile
+    private var headerInjectorPort: WebExtension.Port? = null
+    @Volatile
+    private var chunkSyncJob: Job? = null
+    private val chunkSyncGeneration = AtomicLong(0L)
+    private val pendingRuleSyncNeeded = AtomicBoolean(false)
 
     private val _devToolsVisible = MutableStateFlow(false)
     val devToolsVisible: StateFlow<Boolean> = _devToolsVisible.asStateFlow()
@@ -190,24 +200,95 @@ object GeckoWebExtensionBridge {
 
     /**
      * Streams BEGIN -> CHUNK* -> COMMIT messages over the persistent GeckoView port
-     * in strict FIFO order on the main looper so 300k-500k+ rules sync reliably without
-     * exceeding Android Binder IPC transaction limits.
+     * in paced batches so 400k-500k+ rules sync reliably without stuttering the UI thread
+     * or exceeding Android Binder IPC limits. Cancels any superseded in-flight push.
      */
     fun pushChunkedPrivacyConfig(messages: List<JSONObject>) {
         if (messages.isEmpty()) return
-        mainHandler.post {
-            val port = activeBridgePort ?: return@post
-            try {
-                for (msg in messages) {
-                    port.postMessage(msg)
+        if (activeBridgePort == null) {
+            pendingRuleSyncNeeded.set(true)
+            return
+        }
+        val gen = chunkSyncGeneration.incrementAndGet()
+        chunkSyncJob?.cancel()
+        chunkSyncJob = scope.launch {
+            for (msg in messages) {
+                if (chunkSyncGeneration.get() != gen) return@launch
+                val port = activeBridgePort
+                if (port == null) {
+                    pendingRuleSyncNeeded.set(true)
+                    return@launch
                 }
+                mainHandler.post {
+                    if (chunkSyncGeneration.get() != gen) return@post
+                    try {
+                        port.postMessage(msg)
+                    } catch (e: Exception) {
+                        UHLog.w("shield", "Failed pushing chunk msg: ${e.message}")
+                    }
+                }
+                delay(4L)
+            }
+            pendingRuleSyncNeeded.set(false)
+        }
+    }
+
+    fun setHeaderCaptureEnabled(enabled: Boolean) {
+        val port = headerInjectorPort ?: return
+        mainHandler.post {
+            try {
+                port.postMessage(JSONObject().apply {
+                    put("action", "SET_HEADER_CAPTURE")
+                    put("enabled", enabled)
+                })
             } catch (e: Exception) {
-                UHLog.w("shield", "Failed pushing chunked privacy config (${messages.size} msgs): ${e.message}")
+                UHLog.w("ext", "Failed toggling header capture: ${e.message}")
+            }
+        }
+    }
+
+    fun setPipVideoIsolation(enabled: Boolean) {
+        val port = activeBridgePort ?: return
+        mainHandler.post {
+            try {
+                port.postMessage(JSONObject().apply {
+                    put("action", "SET_PIP_ISOLATION")
+                    put("enabled", enabled)
+                })
+            } catch (e: Exception) {
+                UHLog.w("media", "Failed toggling PiP video isolation: ${e.message}")
+            }
+        }
+    }
+
+    fun sendMediaControlAction(command: String, deltaSec: Double = 0.0, positionSec: Double = 0.0) {
+        val port = activeBridgePort ?: return
+        mainHandler.post {
+            try {
+                port.postMessage(JSONObject().apply {
+                    put("action", "MEDIA_CONTROL_ACTION")
+                    put("command", command)
+                    if (deltaSec != 0.0) put("deltaSec", deltaSec)
+                    if (positionSec >= 0.0 && command == "SEEK_TO") put("positionSec", positionSec)
+                })
+            } catch (e: Exception) {
+                UHLog.w("media", "Failed sending MEDIA_CONTROL_ACTION ($command): ${e.message}")
             }
         }
     }
 
     private val headerMessageDelegate = object : WebExtension.MessageDelegate {
+        override fun onConnect(port: WebExtension.Port) {
+            headerInjectorPort = port
+            port.setDelegate(object : WebExtension.PortDelegate {
+                override fun onPortMessage(message: Any, p: WebExtension.Port) {}
+                override fun onDisconnect(p: WebExtension.Port) {
+                    if (headerInjectorPort === p) headerInjectorPort = null
+                }
+            })
+            setHeaderCaptureEnabled(SessionRecorder.isActive())
+        }
+
         override fun onMessage(
             nativeApp: String,
             message: Any,
@@ -322,6 +403,11 @@ object GeckoWebExtensionBridge {
                     if (host.isNotBlank()) {
                         UhShieldEngine.clearJsBlockedForHost(host)
                     }
+                    GeckoResult.fromValue(true)
+                }
+
+                "MEDIA_STATE_UPDATE" -> {
+                    UhMediaController.onWebMediaState(json)
                     GeckoResult.fromValue(true)
                 }
 

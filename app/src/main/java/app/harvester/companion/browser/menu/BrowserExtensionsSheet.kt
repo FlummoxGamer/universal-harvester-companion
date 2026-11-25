@@ -74,7 +74,6 @@ import app.harvester.companion.settings.addons.BUILTIN_INTERNAL_EXTENSION_IDS
 import app.harvester.companion.settings.addons.ExtensionPermissionsFormatter
 import app.harvester.companion.settings.addons.ExtensionsActivity
 import app.harvester.companion.settings.addons.InstalledExtensionItem
-import app.harvester.companion.settings.addons.UBlockOriginManager
 import app.harvester.companion.settings.addons.UhExtensionManager
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.state.WebExtensionState
@@ -100,7 +99,6 @@ fun BrowserExtensionsSheet(
     val components = (context.applicationContext as UHApp).components
     val browserState by components.store.stateFlow.collectAsState()
     val installedMeta by UhExtensionManager.installedExtensions.collectAsState()
-    val ublockState by UBlockOriginManager.state.collectAsState()
     val activeTasks by UhExtensionManager.activeTasks.collectAsState()
 
     LaunchedEffect(Unit) {
@@ -136,8 +134,7 @@ fun BrowserExtensionsSheet(
                 meta = meta,
             )
         }.sortedWith(
-            compareByDescending<ExtensionSheetEntry> { it.id == UBlockOriginManager.UBLOCK_ID }
-                .thenByDescending { it.enabled }
+            compareByDescending<ExtensionSheetEntry> { it.enabled }
                 .thenBy { it.name.lowercase() }
         )
     }
@@ -210,7 +207,6 @@ fun BrowserExtensionsSheet(
                 ExtensionsListPage(
                     entries = allEntries,
                     isPrivateTab = isPrivateTab,
-                    isUblockUpdating = ublockState.isUpdating,
                     onRunPopupOrOpenDetails = { entry ->
                         val action = entry.action
                         val canRunAction = entry.enabled &&
@@ -279,7 +275,6 @@ fun BrowserExtensionsSheet(
 private fun ExtensionsListPage(
     entries: List<ExtensionSheetEntry>,
     isPrivateTab: Boolean,
-    isUblockUpdating: Boolean,
     onRunPopupOrOpenDetails: (ExtensionSheetEntry) -> Unit,
     onOpenDetails: (ExtensionSheetEntry) -> Unit,
     onToggleEnabled: (ExtensionSheetEntry, Boolean) -> Unit,
@@ -354,7 +349,7 @@ private fun ExtensionsListPage(
                         modifier = Modifier.size(30.dp)
                     )
                     Text(
-                        text = if (isUblockUpdating) "Setting up uBlock Origin Shield…" else "No extensions installed",
+                        text = "No extensions installed",
                         color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold
@@ -955,13 +950,7 @@ private fun ExtensionSheetIcon(
             )
         } else {
             Icon(
-                painter = painterResource(
-                    id = if (id == UBlockOriginManager.UBLOCK_ID) {
-                        R.drawable.uh_ic_shield_checkmark_24
-                    } else {
-                        R.drawable.fx_ic_extensions_24
-                    }
-                ),
+                painter = painterResource(id = R.drawable.fx_ic_extensions_24),
                 contentDescription = name,
                 tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp)

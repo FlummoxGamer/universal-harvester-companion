@@ -123,8 +123,7 @@ object UhExtensionManager {
         when (request) {
             is WebExtensionPromptRequest.AfterInstallation.Permissions.Required -> {
                 val ext = request.extension
-                val isAutoApproved = ext.id == UBlockOriginManager.UBLOCK_ID ||
-                    autoApproveIds.contains(ext.id) ||
+                val isAutoApproved = autoApproveIds.contains(ext.id) ||
                     autoApproveIds.contains("*")
 
                 if (isAutoApproved) {
@@ -176,7 +175,7 @@ object UhExtensionManager {
 
             is WebExtensionPromptRequest.AfterInstallation.Permissions.Optional -> {
                 val ext = request.extension
-                if (ext.id == UBlockOriginManager.UBLOCK_ID || autoApproveIds.contains(ext.id)) {
+                if (autoApproveIds.contains(ext.id)) {
                     request.onConfirm(true)
                     store.dispatch(WebExtensionAction.ConsumePromptRequestWebExtensionAction)
                     return
@@ -223,7 +222,7 @@ object UhExtensionManager {
         newDataCollectionPermissions: List<String>,
         onPermissionsGranted: (Boolean) -> Unit,
     ) {
-        if (extension.id == UBlockOriginManager.UBLOCK_ID || autoApproveIds.contains(extension.id)) {
+        if (autoApproveIds.contains(extension.id)) {
             onPermissionsGranted(true)
             return
         }
@@ -280,8 +279,7 @@ object UhExtensionManager {
                             )
                         }
                         .sortedWith(
-                            compareByDescending<InstalledExtensionItem> { it.id == UBlockOriginManager.UBLOCK_ID }
-                                .thenByDescending { it.enabled }
+                            compareByDescending<InstalledExtensionItem> { it.enabled }
                                 .thenBy { it.name.lowercase() }
                         )
 
@@ -477,9 +475,6 @@ object UhExtensionManager {
                     source = EnableSource.USER,
                     onSuccess = {
                         refreshInstalledExtensions()
-                        if (item.id == UBlockOriginManager.UBLOCK_ID) {
-                            UBlockOriginManager.syncInstalledState()
-                        }
                     },
                     onError = {
                         emitEvent("Could not enable ${item.name}", isError = true)
@@ -491,9 +486,6 @@ object UhExtensionManager {
                     source = EnableSource.USER,
                     onSuccess = {
                         refreshInstalledExtensions()
-                        if (item.id == UBlockOriginManager.UBLOCK_ID) {
-                            UBlockOriginManager.syncInstalledState()
-                        }
                     },
                     onError = {
                         emitEvent("Could not disable ${item.name}", isError = true)
@@ -531,9 +523,6 @@ object UhExtensionManager {
                 onSuccess = {
                     _availableUpdates.update { it - item.id }
                     refreshInstalledExtensions()
-                    if (item.id == UBlockOriginManager.UBLOCK_ID) {
-                        UBlockOriginManager.syncInstalledState()
-                    }
                     emitEvent("${item.name} uninstalled")
                 },
                 onError = { _, err ->
@@ -557,7 +546,7 @@ object UhExtensionManager {
         _isCheckingUpdates.value = true
         ioScope.launch {
             try {
-                val installed = _installedExtensions.value.filter { it.id != UBlockOriginManager.UBLOCK_ID }
+                val installed = _installedExtensions.value
                 val foundUpdates = linkedMapOf<String, ExtensionUpdateInfo>()
                 for (item in installed) {
                     val latest = AmoApiClient.fetchAddon(item.id) ?: continue

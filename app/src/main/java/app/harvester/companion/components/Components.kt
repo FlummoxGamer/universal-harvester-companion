@@ -16,7 +16,7 @@ import app.harvester.companion.core.downloads.UhDownloadMiddleware
 import app.harvester.companion.core.downloads.UhDownloadService
 import app.harvester.companion.data.downloads.UhDownloadStorage
 import app.harvester.companion.feature.session.HistoryDelegate
-import app.harvester.companion.media.UhMediaSessionService
+import app.harvester.companion.media.UhMediaController
 import app.harvester.companion.privacy.UhPrivacyController
 import app.harvester.companion.privacy.UhShieldEngine
 import app.harvester.companion.service.nimbus.Nimbus
@@ -209,7 +209,6 @@ class Components(val context: Context) {
                 },
                 onExtensionsLoaded = {
                     app.harvester.companion.settings.addons.UhExtensionManager.refreshInstalledExtensions()
-                    app.harvester.companion.settings.addons.UBlockOriginManager.syncInstalledState()
                 },
             )
         } catch (e: Exception) {
@@ -220,32 +219,18 @@ class Components(val context: Context) {
             engine = engine,
             store = browserStore,
         )
-        // UH Shield is the built-in default blocker; uBlock Origin stays supported if installed manually
+        // UH Shield is the built-in default ad & tracker blocker
         UhShieldEngine.init(context.applicationContext)
         UhPrivacyController.init(context.applicationContext, engine)
-        app.harvester.companion.settings.addons.UBlockOriginManager.init(context.applicationContext, engine)
         app.harvester.companion.browser.translate.UhTranslationManager.init(
             context = context.applicationContext,
             engine = engine,
             store = browserStore,
         )
-        try {
-            val mediaFeature = mozilla.components.feature.media.MediaSessionFeature(
-                applicationContext = context.applicationContext,
-                mediaServiceClass = UhMediaSessionService::class.java,
-                store = browserStore,
-            )
-            activeMediaSessionFeature = mediaFeature
-            mediaFeature.start()
-        } catch (e: Exception) {
-            UHLog.w("media", "Failed starting MediaSessionFeature: ${e.message}")
-        }
+        UhMediaController.init(context.applicationContext, browserStore)
         registerNetworkResumeCallback(browserStore)
         browserStore
     }
-
-    @Volatile
-    var activeMediaSessionFeature: mozilla.components.feature.media.MediaSessionFeature? = null
 
     private fun registerNetworkResumeCallback(browserStore: BrowserStore) {
         val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager

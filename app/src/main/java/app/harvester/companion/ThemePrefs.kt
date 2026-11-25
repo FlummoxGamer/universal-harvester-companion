@@ -2,6 +2,7 @@ package app.harvester.companion
 
 import android.content.Context
 import android.content.res.Configuration
+import androidx.appcompat.app.AppCompatDelegate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,16 +37,38 @@ object ThemePrefs {
         else -> (ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
     }
 
+    fun isAmoled(ctx: Context, mode: Int = getMode(ctx)): Boolean =
+        isDark(ctx, mode) && SettingsPrefs.getBool(ctx, SettingsPrefs.K_ENHANCE_DARK, false)
+
+    fun resolveBackgroundColorInt(ctx: Context): Int = when {
+        isAmoled(ctx) -> 0xFF000000.toInt()
+        isDark(ctx) -> 0xFF0A0F1A.toInt()
+        else -> 0xFFFFFFFF.toInt()
+    }
+
     fun setMode(ctx: Context, mode: Int) {
         prefs(ctx).edit().putInt(KEY_MODE, mode).apply()
         _modeFlow.value = mode
+        syncAppCompatNightMode(mode)
         syncEngineColorScheme(ctx, mode)
     }
 
     fun applyCurrent(ctx: Context) {
         val mode = getMode(ctx)
         _modeFlow.value = mode
+        syncAppCompatNightMode(mode)
         syncEngineColorScheme(ctx, mode)
+    }
+
+    private fun syncAppCompatNightMode(mode: Int) {
+        val target = when (mode) {
+            MODE_LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
+            MODE_DARK -> AppCompatDelegate.MODE_NIGHT_YES
+            else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+        }
+        if (AppCompatDelegate.getDefaultNightMode() != target) {
+            AppCompatDelegate.setDefaultNightMode(target)
+        }
     }
 
     private fun syncEngineColorScheme(ctx: Context, mode: Int) {

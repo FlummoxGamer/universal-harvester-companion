@@ -215,6 +215,136 @@ object UhAdblockRuleCompiler {
         }
     }
 
+    /**
+     * Merges multiple pre-compiled per-list [CompiledFilterSet]s in memory with zero disk I/O
+     * or filter string reparsing, keeping 400k-500k rule toggles instantaneous and lag-free.
+     */
+    fun mergeSets(sets: List<CompiledFilterSet>): CompiledFilterSet {
+        if (sets.isEmpty()) return CompiledFilterSet.EMPTY
+        if (sets.size == 1) return sets[0]
+
+        val adDomains = HashSet<String>(sets.sumOf { it.adDomains.size }.coerceAtLeast(16))
+        val trackerDomains = HashSet<String>(sets.sumOf { it.trackerDomains.size }.coerceAtLeast(16))
+        val thirdPartyAdDomains = HashSet<String>(sets.sumOf { it.thirdPartyAdDomains.size }.coerceAtLeast(16))
+        val thirdPartyTrackerDomains = HashSet<String>(sets.sumOf { it.thirdPartyTrackerDomains.size }.coerceAtLeast(16))
+        val popupDomains = HashSet<String>(sets.sumOf { it.popupDomains.size }.coerceAtLeast(16))
+        val exceptionDomains = HashSet<String>(sets.sumOf { it.exceptionDomains.size }.coerceAtLeast(16))
+        val thirdPartyExceptionDomains = HashSet<String>(sets.sumOf { it.thirdPartyExceptionDomains.size }.coerceAtLeast(16))
+
+        val networkRules = ArrayList<CompiledNetworkRule>(
+            sets.sumOf { it.networkRules.size }.coerceAtMost(MAX_STRUCTURED_RULES)
+        )
+        val networkDedup = HashSet<String>(4096)
+
+        val globalCosmetics = LinkedHashSet<String>(MAX_GLOBAL_COSMETICS)
+        val globalCosmeticExceptions = HashSet<String>(128)
+        val domainCosmetics = HashMap<String, MutableList<String>>(2048)
+        val domainCosmeticExceptions = HashMap<String, MutableSet<String>>(512)
+        val excludedDomainCosmetics = HashMap<String, MutableSet<String>>(256)
+
+        val globalProcedural = ArrayList<ProceduralCosmeticRule>(MAX_GLOBAL_PROCEDURAL)
+        val domainProcedural = HashMap<String, MutableList<ProceduralCosmeticRule>>(256)
+        val domainScriptlets = HashMap<String, MutableList<ScriptletRule>>(512)
+
+        for (set in sets) {
+            adDomains.addAll(set.adDomains)
+            trackerDomains.addAll(set.trackerDomains)
+            thirdPartyAdDomains.addAll(set.thirdPartyAdDomains)
+            thirdPartyTrackerDomains.addAll(set.thirdPartyTrackerDomains)
+            popupDomains.addAll(set.popupDomains)
+            exceptionDomains.addAll(set.exceptionDomains)
+            thirdPartyExceptionDomains.addAll(set.thirdPartyExceptionDomains)
+
+            for (rule in set.networkRules) {
+                if (networkRules.size >= MAX_STRUCTURED_RULES && !rule.isException && !rule.important) continue
+                val key = "${rule.isException}|${rule.pattern}|${rule.anchorDomain}|${rule.includeTypes}|${rule.excludeTypes}|${rule.thirdPartyOnly}|${rule.firstPartyOnly}|${rule.includeDomains}|${rule.redirect}"
+                if (networkDedup.add(key)) {
+                    networkRules.add(rule)
+                }
+            }
+
+            for (sel in set.globalCosmetics) {
+                if (globalCosmetics.size < MAX_GLOBAL_COSMETICS) globalCosmetics.add(sel)
+            }
+            globalCosmeticExceptions.addAll(set.globalCosmeticExceptions)
+
+            for ((dom, list) in set.domainCosmetics) {
+                val target = domainCosmetics.getOrPut(dom) { ArrayList(list.size) }
+                for (sel in list) {
+                    if (target.size < MAX_DOMAIN_COSMETICS_PER_HOST && sel !in target) target.add(sel)
+                }
+            }
+            for ((dom, exSet) in set.domainCosmeticExceptions) {
+                domainCosmeticExceptions.getOrPut(dom) { HashSet() }.addAll(exSet)
+            }
+            for ((dom, exSet) in set.excludedDomainCosmetics) {
+                excludedDomainCosmetics.getOrPut(dom) { HashSet() }.addAll(exSet)
+            }
+
+            for (proc in set.globalProcedural) {
+                if (globalProcedural.size < MAX_GLOBAL_PROCEDURAL) globalProcedural.add(proc)
+            }
+            for ((dom, list) in set.domainProcedural) {
+                val target = domainProcedural.getOrPut(dom) { ArrayList(list.size) }
+                for (p in list) {
+                    if (target.size < MAX_DOMAIN_PROCEDURAL_PER_HOST) target.add(p)
+                }
+            }
+            for ((dom, list) in set.domainScriptlets) {
+                val target = domainScriptlets.getOrPut(dom) { ArrayList(list.size) }
+                for (sc in list) {
+                    if (target.size < MAX_SCRIPTLETS_PER_HOST && sc !in target) target.add(sc)
+                }
+            }
+        }
+
+        // Apply global exceptions & deduplicate overlaps across merged sets
+        adDomains.removeAll(exceptionDomains)
+        trackerDomains.removeAll(exceptionDomains)
+        thirdPartyAdDomains.removeAll(exceptionDomains)
+        thirdPartyTrackerDomains.removeAll(exceptionDomains)
+        thirdPartyAdDomains.removeAll(thirdPartyExceptionDomains)
+        thirdPartyTrackerDomains.removeAll(thirdPartyExceptionDomains)
+        popupDomains.removeAll(exceptionDomains)
+        thirdPartyAdDomains.removeAll(adDomains)
+        thirdPartyTrackerDomains.removeAll(trackerDomains)
+        globalCosmetics.removeAll(globalCosmeticExceptions)
+
+        val total = adDomains.size +
+            trackerDomains.size +
+            thirdPartyAdDomains.size +
+            thirdPartyTrackerDomains.size +
+            popupDomains.size +
+            exceptionDomains.size +
+            thirdPartyExceptionDomains.size +
+            networkRules.size +
+            globalCosmetics.size +
+            domainCosmetics.values.sumOf { it.size } +
+            globalProcedural.size +
+            domainProcedural.values.sumOf { it.size } +
+            domainScriptlets.values.sumOf { it.size }
+
+        return CompiledFilterSet(
+            adDomains = adDomains,
+            trackerDomains = trackerDomains,
+            thirdPartyAdDomains = thirdPartyAdDomains,
+            thirdPartyTrackerDomains = thirdPartyTrackerDomains,
+            popupDomains = popupDomains,
+            exceptionDomains = exceptionDomains,
+            thirdPartyExceptionDomains = thirdPartyExceptionDomains,
+            networkRules = networkRules,
+            globalCosmetics = globalCosmetics.toList(),
+            globalCosmeticExceptions = globalCosmeticExceptions,
+            domainCosmetics = domainCosmetics,
+            domainCosmeticExceptions = domainCosmeticExceptions,
+            excludedDomainCosmetics = excludedDomainCosmetics,
+            globalProcedural = globalProcedural,
+            domainProcedural = domainProcedural,
+            domainScriptlets = domainScriptlets,
+            totalRules = total,
+        )
+    }
+
     private const val MAX_STRUCTURED_RULES = 36_000
     private const val MAX_GLOBAL_COSMETICS = 1200
     private const val MAX_DOMAIN_COSMETICS_PER_HOST = 90
@@ -247,6 +377,13 @@ object UhAdblockRuleCompiler {
         "bab-defuser" to "bab-defuser",
         "nofab" to "bab-defuser",
         "fuckadblock.js-3.2.0" to "bab-defuser",
+        "addEventListener-defuser" to "addEventListener-defuser",
+        "addeventlistener-defuser" to "addEventListener-defuser",
+        "aeld" to "addEventListener-defuser",
+        "remove-attr" to "remove-attr",
+        "ra" to "remove-attr",
+        "set-attr" to "set-attr",
+        "overlay-buster" to "overlay-buster",
     )
 
     fun parseLines(

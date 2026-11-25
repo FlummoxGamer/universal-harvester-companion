@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -50,6 +51,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.harvester.companion.R
+import app.harvester.companion.privacy.FilterCategoryStatus
+import app.harvester.companion.privacy.FilterCategoryTier
 import app.harvester.companion.privacy.FilterListStatus
 import app.harvester.companion.privacy.FilterPackTier
 import app.harvester.companion.privacy.UhShieldEngine
@@ -58,6 +61,7 @@ import app.harvester.companion.settings.components.UhSettingsCardGroup
 import app.harvester.companion.settings.components.UhSettingsDivider
 import app.harvester.companion.settings.components.UhSettingsScaffold
 import app.harvester.companion.theme.UHTheme
+import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -84,17 +88,11 @@ class FilterListsActivity : AppCompatActivity() {
                     mutableStateOf(state.customUserRules)
                 }
 
-                val coreLists = remember(state.lists) {
-                    state.lists.filter { it.def.tier == FilterPackTier.CORE }
+                val coreCategories = remember(state.categories) {
+                    state.categories.filter { it.def.tier == FilterCategoryTier.CORE }
                 }
-                val nuclearLists = remember(state.lists) {
-                    state.lists.filter { it.def.tier == FilterPackTier.NUCLEAR }
-                }
-                val socialLists = remember(state.lists) {
-                    state.lists.filter { it.def.tier == FilterPackTier.SOCIAL }
-                }
-                val regionalLists = remember(state.lists) {
-                    state.lists.filter { it.def.tier == FilterPackTier.REGIONAL }
+                val extraCategories = remember(state.categories) {
+                    state.categories.filter { it.def.tier == FilterCategoryTier.EXTRA }
                 }
                 val customLists = remember(state.lists) {
                     state.lists.filter { it.def.tier == FilterPackTier.CUSTOM }
@@ -102,7 +100,7 @@ class FilterListsActivity : AppCompatActivity() {
                 val anyEnabled = remember(state.lists, state.customUserRules) {
                     state.lists.any { it.enabled } || state.customUserRules.isNotBlank()
                 }
-                val numberFmt = remember { java.text.NumberFormat.getIntegerInstance() }
+                val numberFmt = remember { NumberFormat.getIntegerInstance() }
 
                 if (showAddListDialog) {
                     AlertDialog(
@@ -111,7 +109,7 @@ class FilterListsActivity : AppCompatActivity() {
                         text = {
                             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text(
-                                    text = "Supports Adblock Plus, uBlock Origin, and Hosts filter lists (.txt).",
+                                    text = "Supports standard Adblock, filter syntax, and Hosts blocklists (.txt).",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 12.sp,
                                 )
@@ -160,8 +158,8 @@ class FilterListsActivity : AppCompatActivity() {
 
                 val lastSyncLabel = remember(state.lastSyncMs, anyEnabled, state.totalCompiledRules) {
                     when {
-                        !anyEnabled -> "All filter lists disabled"
-                        state.lastSyncMs <= 0L -> "Built-in Day-0 rules active"
+                        !anyEnabled -> "All filter packs disabled"
+                        state.lastSyncMs <= 0L -> "Built-in protection rules active"
                         else -> {
                             val fmt = SimpleDateFormat("MMM d, HH:mm", Locale.getDefault())
                             "Last updated ${fmt.format(Date(state.lastSyncMs))}"
@@ -206,7 +204,7 @@ class FilterListsActivity : AppCompatActivity() {
                                 )
                                 if (!state.lastSyncError.isNullOrBlank()) {
                                     Text(
-                                        text = "Some lists skipped: ${state.lastSyncError}",
+                                        text = "Some feeds skipped: ${state.lastSyncError}",
                                         color = MaterialTheme.colorScheme.error,
                                         fontSize = 11.sp,
                                     )
@@ -241,51 +239,25 @@ class FilterListsActivity : AppCompatActivity() {
 
                     SettingsCategory("Core Essentials")
                     UhSettingsCardGroup {
-                        coreLists.forEachIndexed { index, status ->
+                        coreCategories.forEachIndexed { index, status ->
                             if (index > 0) UhSettingsDivider()
-                            FilterListRow(
+                            FilterCategoryRow(
                                 status = status,
-                                onToggle = { enabled -> UhShieldEngine.setListEnabled(status.def.id, enabled) },
+                                numberFmt = numberFmt,
+                                onToggle = { enabled -> UhShieldEngine.setCategoryEnabled(status.def.id, enabled) },
                             )
                         }
                     }
 
-                    if (nuclearLists.isNotEmpty()) {
-                        SettingsCategory("Extra & Nuclear Packs")
-                        UhSettingsCardGroup {
-                            nuclearLists.forEachIndexed { index, status ->
-                                if (index > 0) UhSettingsDivider()
-                                FilterListRow(
-                                    status = status,
-                                    onToggle = { enabled -> UhShieldEngine.setListEnabled(status.def.id, enabled) },
-                                )
-                            }
-                        }
-                    }
-
-                    if (socialLists.isNotEmpty()) {
-                        SettingsCategory("Social & Annoyances")
-                        UhSettingsCardGroup {
-                            socialLists.forEachIndexed { index, status ->
-                                if (index > 0) UhSettingsDivider()
-                                FilterListRow(
-                                    status = status,
-                                    onToggle = { enabled -> UhShieldEngine.setListEnabled(status.def.id, enabled) },
-                                )
-                            }
-                        }
-                    }
-
-                    if (regionalLists.isNotEmpty()) {
-                        SettingsCategory("Regional Filters")
-                        UhSettingsCardGroup {
-                            regionalLists.forEachIndexed { index, status ->
-                                if (index > 0) UhSettingsDivider()
-                                FilterListRow(
-                                    status = status,
-                                    onToggle = { enabled -> UhShieldEngine.setListEnabled(status.def.id, enabled) },
-                                )
-                            }
+                    SettingsCategory("Extra Protection Packs")
+                    UhSettingsCardGroup {
+                        extraCategories.forEachIndexed { index, status ->
+                            if (index > 0) UhSettingsDivider()
+                            FilterCategoryRow(
+                                status = status,
+                                numberFmt = numberFmt,
+                                onToggle = { enabled -> UhShieldEngine.setCategoryEnabled(status.def.id, enabled) },
+                            )
                         }
                     }
 
@@ -293,8 +265,9 @@ class FilterListsActivity : AppCompatActivity() {
                     SettingsCategory("Custom Filter Lists")
                     UhSettingsCardGroup {
                         customLists.forEach { status ->
-                            FilterListRow(
+                            CustomFilterListRow(
                                 status = status,
+                                numberFmt = numberFmt,
                                 onToggle = { enabled -> UhShieldEngine.setListEnabled(status.def.id, enabled) },
                                 onDelete = { UhShieldEngine.removeCustomFilterList(status.def.id) },
                             )
@@ -334,7 +307,7 @@ class FilterListsActivity : AppCompatActivity() {
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(
-                                painter = painterResource(id = R.drawable.fx_ic_scripts_24),
+                                painter = painterResource(id = R.drawable.uh_ic_cat_custom_rules_24),
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(22.dp),
@@ -412,11 +385,10 @@ class FilterListsActivity : AppCompatActivity() {
 }
 
 @Composable
-private fun FilterListRow(
-    status: FilterListStatus,
-    badgeText: String? = null,
+private fun FilterCategoryRow(
+    status: FilterCategoryStatus,
+    numberFmt: NumberFormat,
     onToggle: (Boolean) -> Unit,
-    onDelete: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
@@ -425,30 +397,40 @@ private fun FilterListRow(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(
+                    if (status.enabled) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerHigh
+                    }
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                painter = painterResource(id = status.def.iconRes),
+                contentDescription = null,
+                tint = if (status.enabled) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = status.def.name,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (badgeText != null) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = badgeText,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
-                            .padding(horizontal = 5.dp, vertical = 1.dp),
-                    )
-                }
-            }
+            Text(
+                text = status.def.title,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = status.def.description,
@@ -459,24 +441,81 @@ private fun FilterListRow(
             )
             if (status.ruleCount > 0) {
                 Text(
-                    text = "${status.ruleCount} rules loaded",
+                    text = if (status.enabled) {
+                        "${numberFmt.format(status.ruleCount)} rules active"
+                    } else {
+                        "${numberFmt.format(status.ruleCount)} rules ready"
+                    },
+                    color = if (status.enabled) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    },
+                    fontSize = 11.sp,
+                )
+            }
+        }
+
+        Switch(
+            checked = status.enabled,
+            onCheckedChange = onToggle,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = MaterialTheme.colorScheme.background,
+                checkedTrackColor = MaterialTheme.colorScheme.primary,
+            ),
+        )
+    }
+}
+
+@Composable
+private fun CustomFilterListRow(
+    status: FilterListStatus,
+    numberFmt: NumberFormat,
+    onToggle: (Boolean) -> Unit,
+    onDelete: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggle(!status.enabled) }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
+            Text(
+                text = status.def.name,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = status.def.description,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (status.ruleCount > 0) {
+                Text(
+                    text = "${numberFmt.format(status.ruleCount)} rules",
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
                     fontSize = 11.sp,
                 )
             }
         }
 
-        if (onDelete != null) {
-            IconButton(onClick = onDelete, modifier = Modifier.size(34.dp)) {
-                Icon(
-                    painter = painterResource(id = R.drawable.fx_ic_delete_24),
-                    contentDescription = "Remove list",
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-            Spacer(modifier = Modifier.width(4.dp))
+        IconButton(onClick = onDelete, modifier = Modifier.size(34.dp)) {
+            Icon(
+                painter = painterResource(id = R.drawable.fx_ic_delete_24),
+                contentDescription = "Remove list",
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(18.dp),
+            )
         }
+        Spacer(modifier = Modifier.width(4.dp))
 
         Switch(
             checked = status.enabled,

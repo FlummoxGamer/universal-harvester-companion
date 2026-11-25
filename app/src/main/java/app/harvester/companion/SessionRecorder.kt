@@ -52,11 +52,13 @@ object SessionRecorder {
             active = true
             startedAt = System.currentTimeMillis()
         }
+        GeckoWebExtensionBridge.setHeaderCaptureEnabled(true)
         UHLog.d(TAG, "started")
     }
 
     fun stop() {
         synchronized(lock) { active = false }
+        GeckoWebExtensionBridge.setHeaderCaptureEnabled(false)
         UHLog.d(TAG, "stopped events=${events.size}")
     }
 

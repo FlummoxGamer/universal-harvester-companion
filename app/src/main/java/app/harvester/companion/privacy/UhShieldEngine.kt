@@ -8,12 +8,16 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import app.harvester.companion.R
 import app.harvester.companion.SettingsPrefs
+import app.harvester.companion.ThemePrefs
 import app.harvester.companion.UHLog
 import app.harvester.companion.core.network.UhHttpClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -68,6 +72,26 @@ data class FilterListStatus(
     val ruleCount: Int = 0,
     val lastUpdatedMs: Long = 0L,
     val lastError: String? = null,
+)
+
+enum class FilterCategoryTier {
+    CORE,
+    EXTRA,
+}
+
+data class FilterCategoryDef(
+    val id: String,
+    val title: String,
+    val description: String,
+    val tier: FilterCategoryTier,
+    val iconRes: Int,
+    val listIds: List<String>,
+)
+
+data class FilterCategoryStatus(
+    val def: FilterCategoryDef,
+    val enabled: Boolean,
+    val ruleCount: Int = 0,
 )
 
 data class ShieldStatsSnapshot(
@@ -285,11 +309,82 @@ object UhShieldEngine {
         ),
     )
 
+    val FILTER_CATEGORIES: List<FilterCategoryDef> = listOf(
+        // === 4 Core Essentials ===
+        FilterCategoryDef(
+            id = "uh_core_ads",
+            title = "Ad & Banner Blocking",
+            description = "Blocks web ads, popups, banners, and video ads",
+            tier = FilterCategoryTier.CORE,
+            iconRes = R.drawable.uh_ic_cat_ads_24,
+            listIds = listOf("easylist", "ubo_filters"),
+        ),
+        FilterCategoryDef(
+            id = "uh_core_trackers",
+            title = "Tracker & Analytics Shield",
+            description = "Stops cross-site trackers, telemetry, and CNAME cloaking",
+            tier = FilterCategoryTier.CORE,
+            iconRes = R.drawable.uh_ic_cat_trackers_24,
+            listIds = listOf("easyprivacy", "ubo_privacy", "peter_lowe", "hagezi_pro"),
+        ),
+        FilterCategoryDef(
+            id = "uh_core_malware_fixes",
+            title = "Malware & Anti-Breakage",
+            description = "Blocks malvertising, scam redirects, and fixes broken layouts",
+            tier = FilterCategoryTier.CORE,
+            iconRes = R.drawable.uh_ic_cat_malware_24,
+            listIds = listOf("ubo_badware"),
+        ),
+        FilterCategoryDef(
+            id = "uh_core_cookies",
+            title = "Cookie Consent & Nags",
+            description = "Hides intrusive cookie banners and newsletter popups",
+            tier = FilterCategoryTier.CORE,
+            iconRes = R.drawable.uh_ic_pg_cookie_banner_24,
+            listIds = listOf("fanboy_cookies"),
+        ),
+
+        // === 4 Extra Protection Packs ===
+        FilterCategoryDef(
+            id = "uh_extra_nuclear",
+            title = "Maximum Threat Defense",
+            description = "Heavy-duty ad networks, aggressive trackers, and telemetry",
+            tier = FilterCategoryTier.EXTRA,
+            iconRes = R.drawable.uh_ic_cat_nuclear_24,
+            listIds = listOf("hagezi_ultimate", "oisd_big"),
+        ),
+        FilterCategoryDef(
+            id = "uh_extra_phishing",
+            title = "Anti-Phishing & Scam Guard",
+            description = "Real-time malicious payload and phishing domain blocking",
+            tier = FilterCategoryTier.EXTRA,
+            iconRes = R.drawable.uh_ic_cat_phishing_24,
+            listIds = listOf("urlhaus_malware"),
+        ),
+        FilterCategoryDef(
+            id = "uh_extra_overlays_social",
+            title = "Social Widgets & Overlays",
+            description = "Strips app-install banners, paywall nags, share buttons, and chat popups",
+            tier = FilterCategoryTier.EXTRA,
+            iconRes = R.drawable.uh_ic_cat_social_24,
+            listIds = listOf("ubo_annoyances", "fanboy_social"),
+        ),
+        FilterCategoryDef(
+            id = "uh_extra_mobile_regional",
+            title = "Mobile & Regional Ads",
+            description = "Extra mobile sticky banners and international site ad filters",
+            tier = FilterCategoryTier.EXTRA,
+            iconRes = R.drawable.uh_ic_cat_regional_24,
+            listIds = listOf("adguard_mobile", "indian_list", "japanese_list"),
+        ),
+    )
+
     data class State(
         val level: ShieldLevel = ShieldLevel.AGGRESSIVE,
         val pausedHosts: Set<String> = emptySet(),
         val lifetimeStats: ShieldStatsSnapshot = ShieldStatsSnapshot(),
         val lists: List<FilterListStatus> = emptyList(),
+        val categories: List<FilterCategoryStatus> = emptyList(),
         val customUserRules: String = "",
         val totalCompiledRules: Int = 0,
         val isSyncing: Boolean = false,
@@ -299,6 +394,12 @@ object UhShieldEngine {
 
     private val initialized = AtomicBoolean(false)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    @Volatile
+    private var recompileJob: Job? = null
+
+    // Per-list compiled cache so toggling lists/categories merges in memory with zero disk reparse
+    private val parsedListCache = ConcurrentHashMap<String, UhAdblockRuleCompiler.CompiledFilterSet>()
 
     @Volatile
     private var appContext: Context? = null
@@ -370,13 +471,15 @@ object UhShieldEngine {
         }
 
         val statuses = loadListStatuses(app)
+        val cats = buildCategoryStatuses(statuses)
         _state.value = State(
             level = level,
             pausedHosts = paused,
             lifetimeStats = ShieldStatsSnapshot(ads, trackers, savedMs),
             lists = statuses,
+            categories = cats,
             customUserRules = userRules,
-            totalCompiledRules = compiledSet.totalRules,
+            totalCompiledRules = estimateActiveRules(statuses, userRules, compiledSet.totalRules),
             lastSyncMs = lastSync,
         )
 
@@ -653,6 +756,29 @@ object UhShieldEngine {
 
     // ─── Filter List Management ─────────────────────────────────────────────
 
+    fun setCategoryEnabled(categoryId: String, enabled: Boolean) {
+        val ctx = appContext ?: return
+        val cat = FILTER_CATEGORIES.firstOrNull { it.id == categoryId } ?: return
+        val prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val currentEnabled = getEnabledListIds(ctx).toMutableSet()
+        if (enabled) currentEnabled.addAll(cat.listIds) else currentEnabled.removeAll(cat.listIds.toSet())
+        prefs.edit().putStringSet(KEY_ENABLED_LISTS, currentEnabled).apply()
+
+        _state.update { st ->
+            val updatedLists = st.lists.map {
+                if (it.def.id in cat.listIds) it.copy(enabled = enabled) else it
+            }
+            val instantTotal = estimateActiveRules(updatedLists, st.customUserRules)
+            st.copy(
+                lists = updatedLists,
+                categories = buildCategoryStatuses(updatedLists),
+                totalCompiledRules = instantTotal,
+            )
+        }
+
+        scheduleDebouncedRecompile(ctx, listsToEnsureDownloaded = if (enabled) cat.listIds else emptyList())
+    }
+
     fun setListEnabled(listId: String, enabled: Boolean) {
         val ctx = appContext ?: return
         val prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -661,17 +787,38 @@ object UhShieldEngine {
         prefs.edit().putStringSet(KEY_ENABLED_LISTS, currentEnabled).apply()
 
         _state.update { st ->
-            st.copy(lists = st.lists.map { if (it.def.id == listId) it.copy(enabled = enabled) else it })
+            val updatedLists = st.lists.map {
+                if (it.def.id == listId) it.copy(enabled = enabled) else it
+            }
+            val instantTotal = estimateActiveRules(updatedLists, st.customUserRules)
+            st.copy(
+                lists = updatedLists,
+                categories = buildCategoryStatuses(updatedLists),
+                totalCompiledRules = instantTotal,
+            )
         }
 
-        scope.launch {
-            val file = listCacheFile(ctx, listId)
-            if (enabled && (!file.exists() || file.length() < 64L)) {
-                _state.update { it.copy(isSyncing = true) }
-                try {
-                    syncSingleList(ctx, listId)
-                } finally {
-                    _state.update { it.copy(isSyncing = false) }
+        scheduleDebouncedRecompile(ctx, listsToEnsureDownloaded = if (enabled) listOf(listId) else emptyList())
+    }
+
+    private fun scheduleDebouncedRecompile(ctx: Context, listsToEnsureDownloaded: List<String> = emptyList()) {
+        recompileJob?.cancel()
+        recompileJob = scope.launch {
+            delay(160L)
+            if (listsToEnsureDownloaded.isNotEmpty()) {
+                val missing = listsToEnsureDownloaded.filter { id ->
+                    val file = listCacheFile(ctx, id)
+                    !file.exists() || file.length() < 64L
+                }
+                if (missing.isNotEmpty()) {
+                    _state.update { it.copy(isSyncing = true) }
+                    try {
+                        for (id in missing) {
+                            syncSingleList(ctx, id)
+                        }
+                    } finally {
+                        _state.update { it.copy(isSyncing = false) }
+                    }
                 }
             }
             recompileFromDisk(ctx)
@@ -705,11 +852,15 @@ object UhShieldEngine {
         ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit().putStringSet(KEY_ENABLED_LISTS, enabledSet).apply()
 
-        _state.update { it.copy(lists = loadListStatuses(ctx)) }
-        scope.launch {
-            syncSingleList(ctx, id)
-            recompileFromDisk(ctx)
+        val statuses = loadListStatuses(ctx)
+        _state.update {
+            it.copy(
+                lists = statuses,
+                categories = buildCategoryStatuses(statuses),
+                totalCompiledRules = estimateActiveRules(statuses, it.customUserRules),
+            )
         }
+        scheduleDebouncedRecompile(ctx, listsToEnsureDownloaded = listOf(id))
         return true
     }
 
@@ -717,20 +868,33 @@ object UhShieldEngine {
         val ctx = appContext ?: return
         val customs = loadCustomListDefs(ctx).filterNot { it.id == listId }
         saveCustomListDefs(ctx, customs)
+        parsedListCache.remove(listId)
         listCacheFile(ctx, listId).delete()
         val enabledSet = getEnabledListIds(ctx) - listId
         ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit().putStringSet(KEY_ENABLED_LISTS, enabledSet).apply()
-        _state.update { it.copy(lists = loadListStatuses(ctx)) }
-        scope.launch { recompileFromDisk(ctx) }
+        val statuses = loadListStatuses(ctx)
+        _state.update {
+            it.copy(
+                lists = statuses,
+                categories = buildCategoryStatuses(statuses),
+                totalCompiledRules = estimateActiveRules(statuses, it.customUserRules),
+            )
+        }
+        scheduleDebouncedRecompile(ctx)
     }
 
     fun saveCustomUserRules(rulesText: String) {
         val ctx = appContext ?: return
         ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit().putString(KEY_CUSTOM_RULES, rulesText).apply()
-        _state.update { it.copy(customUserRules = rulesText) }
-        scope.launch { recompileFromDisk(ctx) }
+        _state.update {
+            it.copy(
+                customUserRules = rulesText,
+                totalCompiledRules = estimateActiveRules(it.lists, rulesText),
+            )
+        }
+        scheduleDebouncedRecompile(ctx)
     }
 
     fun syncEnabledLists(force: Boolean = true) {
@@ -757,12 +921,14 @@ object UhShieldEngine {
             ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .edit().putLong(KEY_LAST_SYNC_MS, now).apply()
             recompileFromDisk(ctx)
+            val statuses = loadListStatuses(ctx)
             _state.update {
                 it.copy(
                     isSyncing = false,
                     lastSyncMs = now,
                     lastSyncError = anyError,
-                    lists = loadListStatuses(ctx),
+                    lists = statuses,
+                    categories = buildCategoryStatuses(statuses),
                 )
             }
             return anyError == null
@@ -795,6 +961,7 @@ object UhShieldEngine {
                 val out = listCacheFile(ctx, listId)
                 out.parentFile?.mkdirs()
                 out.writeText(body)
+                parsedListCache.remove(listId)
                 val count = countEffectiveRules(body)
                 saveListMeta(ctx, listId, count, System.currentTimeMillis(), null)
                 null
@@ -840,6 +1007,41 @@ object UhShieldEngine {
         return builder.build()
     }
 
+    private fun buildCategoryStatuses(statuses: List<FilterListStatus>): List<FilterCategoryStatus> {
+        val byId = statuses.associateBy { it.def.id }
+        return FILTER_CATEGORIES.map { cat ->
+            val members = cat.listIds.mapNotNull { byId[it] }
+            val enabled = members.any { it.enabled }
+            val rules = members.sumOf { st ->
+                val cached = parsedListCache[st.def.id]?.totalRules ?: 0
+                if (cached > 0) cached else st.ruleCount
+            }
+            FilterCategoryStatus(def = cat, enabled = enabled, ruleCount = rules)
+        }
+    }
+
+    private fun estimateActiveRules(
+        statuses: List<FilterListStatus>,
+        customRules: String,
+        fallbackBootstrapCount: Int = 0,
+    ): Int {
+        val enabled = statuses.filter { it.enabled }
+        val customCount = if (customRules.isBlank()) 0 else customRules.lineSequence().count {
+            val t = it.trim()
+            t.length >= 3 && !t.startsWith("!") && !(t.startsWith("#") && !t.startsWith("##") && !t.startsWith("#@#") && !t.startsWith("#?#"))
+        }
+        if (enabled.isEmpty() && customCount == 0) return 0
+        var sum = 0
+        for (st in enabled) {
+            val cached = parsedListCache[st.def.id]?.totalRules ?: 0
+            sum += if (cached > 0) cached else st.ruleCount
+        }
+        if (sum == 0 && enabled.isNotEmpty()) {
+            sum = if (fallbackBootstrapCount > 0) fallbackBootstrapCount else (BOOTSTRAP_AD_DOMAINS.size + BOOTSTRAP_TRACKER_DOMAINS.size + BOOTSTRAP_URL_PATTERNS.size + BOOTSTRAP_GLOBAL_COSMETICS.size)
+        }
+        return sum + customCount
+    }
+
     private fun recompileFromDisk(ctx: Context) {
         val enabledIds = getEnabledListIds(ctx)
         val customRules = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -848,27 +1050,44 @@ object UhShieldEngine {
         // If user explicitly disabled EVERY filter list and has no custom rules -> 0 active rules!
         if (enabledIds.isEmpty() && customRules.isBlank()) {
             compiledSet = UhAdblockRuleCompiler.CompiledFilterSet.EMPTY
-            _state.update { it.copy(totalCompiledRules = 0, lists = loadListStatuses(ctx)) }
+            val statuses = loadListStatuses(ctx)
+            _state.update {
+                it.copy(
+                    totalCompiledRules = 0,
+                    lists = statuses,
+                    categories = buildCategoryStatuses(statuses),
+                )
+            }
             onCompiledRulesUpdated?.invoke()
             return
         }
 
-        val builder = UhAdblockRuleCompiler.Builder()
         val allDefs = BUILT_IN_LISTS + loadCustomListDefs(ctx)
+        val setsToMerge = ArrayList<UhAdblockRuleCompiler.CompiledFilterSet>(enabledIds.size + 1)
         var parsedAnyDiskList = false
 
         for (def in allDefs) {
             if (def.id !in enabledIds) continue
+            val cached = parsedListCache[def.id]
+            if (cached != null) {
+                setsToMerge.add(cached)
+                parsedAnyDiskList = true
+                continue
+            }
             val file = listCacheFile(ctx, def.id)
             if (!file.exists() || file.length() < 32L) continue
             try {
+                val singleBuilder = UhAdblockRuleCompiler.Builder()
                 file.bufferedReader().useLines { lines ->
                     UhAdblockRuleCompiler.parseLines(
                         lines = lines,
                         isTrackerList = def.isTrackerList,
-                        builder = builder,
+                        builder = singleBuilder,
                     )
                 }
+                val singleCompiled = singleBuilder.build()
+                parsedListCache[def.id] = singleCompiled
+                setsToMerge.add(singleCompiled)
                 parsedAnyDiskList = true
             } catch (e: Exception) {
                 UHLog.w("shield", "Failed parsing cached list ${def.id}: ${e.message}")
@@ -877,29 +1096,30 @@ object UhShieldEngine {
 
         // Only apply offline Day-0 bootstrap when lists ARE enabled but none have downloaded to disk yet
         if (enabledIds.isNotEmpty() && !parsedAnyDiskList) {
-            builder.adDomains.addAll(BOOTSTRAP_AD_DOMAINS)
-            builder.trackerDomains.addAll(BOOTSTRAP_TRACKER_DOMAINS)
-            BOOTSTRAP_URL_PATTERNS.forEach { pat ->
-                builder.addNetworkRule(UhAdblockRuleCompiler.CompiledNetworkRule(pattern = pat))
-            }
-            builder.globalCosmetics.addAll(BOOTSTRAP_GLOBAL_COSMETICS)
-            BOOTSTRAP_DOMAIN_COSMETICS.forEach { (dom, sels) ->
-                builder.domainCosmetics.getOrPut(dom) { ArrayList() }.addAll(sels)
-            }
+            setsToMerge.add(buildBootstrapFilterSet())
         }
 
         if (customRules.isNotBlank()) {
+            val customBuilder = UhAdblockRuleCompiler.Builder()
             UhAdblockRuleCompiler.parseLines(
                 lines = customRules.lineSequence(),
                 isTrackerList = false,
-                builder = builder,
+                builder = customBuilder,
             )
+            setsToMerge.add(customBuilder.build())
         }
 
-        val compiled = builder.build()
+        val compiled = UhAdblockRuleCompiler.mergeSets(setsToMerge)
         compiledSet = compiled
 
-        _state.update { it.copy(totalCompiledRules = compiled.totalRules, lists = loadListStatuses(ctx)) }
+        val statuses = loadListStatuses(ctx)
+        _state.update {
+            it.copy(
+                totalCompiledRules = compiled.totalRules,
+                lists = statuses,
+                categories = buildCategoryStatuses(statuses),
+            )
+        }
         onCompiledRulesUpdated?.invoke()
     }
 
@@ -972,7 +1192,7 @@ object UhShieldEngine {
             put("webrtcPolicy", SettingsPrefs.getInt(ctx, SettingsPrefs.K_ADV_WEBRTC_POLICY, 1))
             put("backgroundPlay", SettingsPrefs.getBool(ctx, SettingsPrefs.K_BACKGROUND_PLAY, true))
             put("forceDarkWeb", UhPrivacyController.isForceDarkWebEffectivelyEnabled(ctx))
-            put("enhanceDark", SettingsPrefs.getBool(ctx, SettingsPrefs.K_ENHANCE_DARK, false))
+            put("enhanceDark", ThemePrefs.isAmoled(ctx))
             put("darkBypassHosts", darkBypassArr)
         }
     }
@@ -1164,7 +1384,7 @@ object UhShieldEngine {
             put("backgroundPlay", SettingsPrefs.getBool(ctx, SettingsPrefs.K_BACKGROUND_PLAY, true))
             put("webrtcPolicy", SettingsPrefs.getInt(ctx, SettingsPrefs.K_ADV_WEBRTC_POLICY, 1))
             put("forceDarkWeb", UhPrivacyController.isForceDarkWebEffectivelyEnabled(ctx))
-            put("enhanceDark", SettingsPrefs.getBool(ctx, SettingsPrefs.K_ENHANCE_DARK, false))
+            put("enhanceDark", ThemePrefs.isAmoled(ctx))
             put("darkBypassed", UhPrivacyController.isSiteDarkBypassed(ctx, pageUrl))
         }
     }
@@ -1175,6 +1395,8 @@ object UhShieldEngine {
     fun cleanTrackingUrl(rawUrl: String, stripTrackers: Boolean = true, deAmp: Boolean = true): String {
         if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://")) return rawUrl
         var current = rawUrl.trim()
+        // Never mutate Cloudflare / WAF challenge URLs (preserves Turnstile & __cf_chl_* redirects)
+        if (current.contains("/cdn-cgi/") || current.contains("__cf_chl")) return current
 
         if (stripTrackers) {
             current = unwrapRedirectUrl(current)
@@ -1374,15 +1596,15 @@ object UhShieldEngine {
 
     private val TRACKING_PARAMS: Set<String> = setOf(
         "fbclid", "gclid", "dclid", "gbraid", "wbraid", "msclkid", "twclid",
-        "yclid", "ymclid", "igshid", "igsh", "si", "feature", "pp", "ref_src", "ref_url",
+        "yclid", "ymclid", "igshid", "igsh", "si", "ref_src", "ref_url",
         "oly_anon_id", "oly_enc_id", "vero_id", "wickedid",
         "_hsenc", "_hsmi", "hsctatracking", "mkt_tok", "trk", "trkid",
         "spm", "scm", "aff_id", "aff_sub", "click_id", "clickid", "irclickid",
         "s_cid", "s_kwcid", "ef_id", "icid", "ncid", "sr_share", "share_id",
-        "__cf_chl_tk", "guccounter", "guce_referrer", "guce_referrer_sig",
+        "guccounter", "guce_referrer", "guce_referrer_sig",
         "nb", "ei", "ved", "uact", "oq", "gs_lcp", "sclient",
-        "is_from_webapp", "sender_device", "sender_web_id", "_t", "_r",
-        "rb_clickid", "s_cid", "scid", "sscid", "ttclid", "li_fat_id",
+        "is_from_webapp", "sender_device", "sender_web_id",
+        "rb_clickid", "scid", "sscid", "ttclid", "li_fat_id",
         "epik", "ndclid", "oborigurl", "dicbo", "ad_id", "adset_id", "campaign_id",
         "ref_", "qid", "sr", "dib", "dib_tag", "ascsubtag", "linkcode", "linkid",
         "cxt", "cn", "ref_campaign", "ref_source", "share_source",

@@ -99,7 +99,6 @@ class ExtensionsActivity : AppCompatActivity() {
             val pendingPrompt by UhExtensionManager.pendingPrompt.collectAsState()
             val availableUpdates by UhExtensionManager.availableUpdates.collectAsState()
             val isCheckingUpdates by UhExtensionManager.isCheckingUpdates.collectAsState()
-            val ublockState by UBlockOriginManager.state.collectAsState()
 
             val pickXpiLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.OpenDocument()
@@ -113,7 +112,6 @@ class ExtensionsActivity : AppCompatActivity() {
 
             LaunchedEffect(Unit) {
                 UhExtensionManager.refreshInstalledExtensions()
-                UBlockOriginManager.syncInstalledState()
                 UhExtensionManager.checkForUpdates(force = false)
             }
 
@@ -169,7 +167,7 @@ class ExtensionsActivity : AppCompatActivity() {
                 }
             }
 
-            val userInstalledCount = installedExtensions.count { it.id != UBlockOriginManager.UBLOCK_ID }
+            val userInstalledCount = installedExtensions.size
 
             UhSettingsScaffold(
                 title = "Extensions",
@@ -244,11 +242,6 @@ class ExtensionsActivity : AppCompatActivity() {
                                 onRetry = { reloadToken++ },
                                 installedIds = installedIds,
                                 activeTasks = activeTasks,
-                                ublockState = ublockState,
-                                onToggleUblock = { UBlockOriginManager.setGloballyEnabled(it) },
-                                onCheckUblockUpdate = { UBlockOriginManager.checkAndInstallOrUpdate(force = true) },
-                                onCancelUblockUpdate = { UBlockOriginManager.cancelUpdate() },
-                                onOpenUblockDashboard = openInBrowser,
                                 onInstallAddon = { addon ->
                                     UhExtensionManager.installFromUrl(
                                         url = addon.xpiUrl,
@@ -271,11 +264,6 @@ class ExtensionsActivity : AppCompatActivity() {
                                 activeTasks = activeTasks,
                                 availableUpdates = availableUpdates,
                                 isCheckingUpdates = isCheckingUpdates,
-                                ublockState = ublockState,
-                                onToggleUblock = { UBlockOriginManager.setGloballyEnabled(it) },
-                                onCheckUblockUpdate = { UBlockOriginManager.checkAndInstallOrUpdate(force = true) },
-                                onCancelUblockUpdate = { UBlockOriginManager.cancelUpdate() },
-                                onOpenUblockDashboard = openInBrowser,
                                 onCheckAllUpdates = { UhExtensionManager.checkForUpdates(force = true) },
                                 onUpdateAll = { UhExtensionManager.updateAllExtensions() },
                                 onUpdateSingle = { UhExtensionManager.updateExtension(it) },

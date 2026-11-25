@@ -183,12 +183,12 @@ class PrivacyGuardActivity : AppCompatActivity() {
                     )
                 }
 
-                val enabledListsCount = shieldState.lists.count { it.enabled }
+                val enabledCategoriesCount = shieldState.categories.count { it.enabled }
                 val numberFmt = remember { java.text.NumberFormat.getIntegerInstance() }
                 val activeRulesText = if (shieldState.totalCompiledRules > 0) {
-                    "$enabledListsCount active lists • ${numberFmt.format(shieldState.totalCompiledRules)} rules"
+                    "$enabledCategoriesCount active packs • ${numberFmt.format(shieldState.totalCompiledRules)} rules"
                 } else {
-                    "$enabledListsCount active filter lists"
+                    "$enabledCategoriesCount active protection packs"
                 }
 
                 UhSettingsScaffold(
@@ -206,7 +206,7 @@ class PrivacyGuardActivity : AppCompatActivity() {
                         SettingsRow(
                             title = "Blocking Strength",
                             subtitle = "${shieldState.level.label} — ${shieldState.level.summary}",
-                            iconRes = R.drawable.fx_ic_shield_lock_24,
+                            iconRes = R.drawable.uh_ic_pg_shield_level_24,
                             showChevron = true,
                             insideCard = true,
                             onClick = { showShieldDialog = true },
@@ -215,7 +215,7 @@ class PrivacyGuardActivity : AppCompatActivity() {
                         SettingsRow(
                             title = "Filter Lists & Customization",
                             subtitle = activeRulesText,
-                            iconRes = R.drawable.fx_ic_scripts_24,
+                            iconRes = R.drawable.uh_ic_pg_filter_lists_24,
                             showChevron = true,
                             insideCard = true,
                             onClick = {
@@ -229,7 +229,7 @@ class PrivacyGuardActivity : AppCompatActivity() {
                         SettingsRow(
                             title = "Always Use HTTPS",
                             subtitle = httpsOptions.getOrElse(httpsMode) { httpsOptions[2] }.first,
-                            iconRes = R.drawable.fx_ic_lock_24,
+                            iconRes = R.drawable.uh_ic_pg_https_24,
                             showChevron = true,
                             insideCard = true,
                             onClick = { showHttpsDialog = true },
@@ -240,7 +240,7 @@ class PrivacyGuardActivity : AppCompatActivity() {
                             subtitle = "Automatically dismiss and reject intrusive consent popups",
                             key = SettingsPrefs.K_PG_COOKIE_BANNERS,
                             default = true,
-                            iconRes = R.drawable.uh_ic_cookies_24,
+                            iconRes = R.drawable.uh_ic_pg_cookie_banner_24,
                             insideCard = true,
                             onChanged = { UhPrivacyController.applyAllToEngine(context) },
                         )
@@ -248,7 +248,7 @@ class PrivacyGuardActivity : AppCompatActivity() {
                         SettingsRow(
                             title = "Cookie Protection",
                             subtitle = cookieOptions.getOrElse(cookieChoice) { cookieOptions.first() }.first,
-                            iconRes = R.drawable.fx_ic_storage_24,
+                            iconRes = R.drawable.uh_ic_pg_cookie_jar_24,
                             showChevron = true,
                             insideCard = true,
                             onClick = { showCookieDialog = true },
@@ -259,7 +259,7 @@ class PrivacyGuardActivity : AppCompatActivity() {
                             subtitle = "Block canvas, font, and device tracking scripts",
                             key = SettingsPrefs.K_PG_FINGERPRINT,
                             default = true,
-                            iconRes = R.drawable.fx_ic_shield_lock_24,
+                            iconRes = R.drawable.uh_ic_pg_fingerprint_24,
                             insideCard = true,
                             onChanged = { UhPrivacyController.applyAllToEngine(context) },
                         )
@@ -269,7 +269,7 @@ class PrivacyGuardActivity : AppCompatActivity() {
                             subtitle = "Remove utm, fbclid, gclid & tracking params on browse and copy",
                             key = SettingsPrefs.K_PG_CLEAR_URLS,
                             default = true,
-                            iconRes = R.drawable.fx_ic_link_24,
+                            iconRes = R.drawable.uh_ic_pg_url_clean_24,
                             insideCard = true,
                             onChanged = { UhPrivacyController.applyAllToEngine(context) },
                         )
@@ -279,7 +279,7 @@ class PrivacyGuardActivity : AppCompatActivity() {
                             subtitle = "Stop unwanted popups, popunders, and redirect traps",
                             key = SettingsPrefs.K_PG_POPUP_BLOCK,
                             default = true,
-                            iconRes = R.drawable.fx_ic_close_24,
+                            iconRes = R.drawable.uh_ic_pg_popup_block_24,
                             insideCard = true,
                             onChanged = { UhPrivacyController.applyAllToEngine(context) },
                         )
@@ -287,7 +287,7 @@ class PrivacyGuardActivity : AppCompatActivity() {
                         SettingsRow(
                             title = "App Redirects",
                             subtitle = redirectOptions.getOrElse(redirectChoice) { redirectOptions[1] }.first,
-                            iconRes = R.drawable.fx_ic_link_24,
+                            iconRes = R.drawable.uh_ic_pg_app_redirect_24,
                             showChevron = true,
                             insideCard = true,
                             onClick = { showRedirectDialog = true },
@@ -298,7 +298,7 @@ class PrivacyGuardActivity : AppCompatActivity() {
                             subtitle = "Blocks third-party scripts while keeping pages usable, with 1-tap in-page controls",
                             key = SettingsPrefs.K_PG_SCRIPT,
                             default = false,
-                            iconRes = R.drawable.fx_ic_scripts_24,
+                            iconRes = R.drawable.uh_ic_pg_js_block_24,
                             insideCard = true,
                             onChanged = { UhPrivacyController.applyAllToEngine(context) },
                         )
@@ -309,7 +309,7 @@ class PrivacyGuardActivity : AppCompatActivity() {
                         SettingsRow(
                             title = "Site Settings",
                             subtitle = "Default permissions, paused Shield sites & per-site rules",
-                            iconRes = R.drawable.fx_ic_settings_24,
+                            iconRes = R.drawable.uh_ic_pg_site_controls_24,
                             showChevron = true,
                             insideCard = true,
                             onClick = {
@@ -320,7 +320,7 @@ class PrivacyGuardActivity : AppCompatActivity() {
                         SettingsRow(
                             title = "Advanced Protections",
                             subtitle = "Safe Browsing, De-AMP, GPC, Secure DNS & WebRTC",
-                            iconRes = R.drawable.fx_ic_shield_lock_24,
+                            iconRes = R.drawable.uh_ic_pg_advanced_24,
                             showChevron = true,
                             insideCard = true,
                             onClick = {

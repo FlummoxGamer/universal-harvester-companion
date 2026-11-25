@@ -147,13 +147,13 @@ class AppearanceActivity : AppCompatActivity() {
                             },
                         )
 
-                        // Only show Enhance Dark Theme & Force Dark Mode on Websites when Dark Mode is active
+                        // Only show AMOLED Dark Mode & Force Dark Mode on Websites when Dark Mode is active
                         AnimatedVisibility(visible = isDarkActive) {
                             Column {
                                 UhSettingsDivider()
                                 SettingsSwitchRow(
-                                    title = "Enhance Dark Theme",
-                                    subtitle = "Apply deeper AMOLED contrast across dark surfaces",
+                                    title = "AMOLED Dark Mode",
+                                    subtitle = "True pitch-black #000000 surfaces for the entire app and websites",
                                     key = SettingsPrefs.K_ENHANCE_DARK,
                                     default = false,
                                     insideCard = true,
