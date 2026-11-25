@@ -8,12 +8,23 @@
         }
     },
     "background": {
-        "scripts": ["background.js"]
+        "scripts": [
+            "bg_rules.js",
+            "bg_privacy_sync.js",
+            "bg_webrequest.js",
+            "background.js"
+        ]
     },
     "content_scripts": [
         {
             "matches": ["<all_urls>"],
-            "js": ["content.js"],
+            "js": [
+                "cs_cosmetics.js",
+                "cs_cookie_dark.js",
+                "cs_media_pip.js",
+                "cs_image_translate.js",
+                "content.js"
+            ],
             "run_at": "document_start",
             "all_frames": true
         }

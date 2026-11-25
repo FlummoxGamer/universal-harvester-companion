@@ -196,14 +196,14 @@ object UhMediaController {
         }
 
         val rawTitle = pickCleanTitle(
-            ms.metadata.title,
+            ms.metadata?.title,
             webTitle,
             tab.content.title,
             pageUrl,
         )
         val rawArtist = pickCleanArtist(
-            ms.metadata.artist,
-            ms.metadata.album,
+            ms.metadata?.artist,
+            ms.metadata?.album,
             webArtist,
             pageUrl,
         )
@@ -226,7 +226,7 @@ object UhMediaController {
         if (!isPrivate && geckoArtworkKey != artKey) {
             geckoArtworkKey = artKey
             geckoArtworkBitmap = null
-            val getter = ms.metadata.getArtwork
+            val getter = ms.metadata?.getArtwork
             if (getter != null) {
                 ioScope.launch {
                     try {
