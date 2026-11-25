@@ -256,50 +256,10 @@ class PrivacyGuardActivity : AppCompatActivity() {
                         UhSettingsDivider()
                         SettingsSwitchRow(
                             title = "Anti-Fingerprinting",
-                            subtitle = "Farble canvas, WebGL, WebGPU, audio, fonts & device signals",
+                            subtitle = "Randomizes canvas, WebGL, audio & fonts with unified timezone, locale & header alignment",
                             key = SettingsPrefs.K_PG_FINGERPRINT,
                             default = true,
                             iconRes = R.drawable.uh_ic_pg_fingerprint_24,
-                            insideCard = true,
-                            onChanged = { UhPrivacyController.applyAllToEngine(context) },
-                        )
-                        UhSettingsDivider()
-                        SettingsSwitchRow(
-                            title = "Strict Anti-Fingerprinting",
-                            subtitle = "Force UTC timezone, uniform en-US locale & bucketed screen size",
-                            key = SettingsPrefs.K_PG_FP_STRICT,
-                            default = false,
-                            iconRes = R.drawable.uh_ic_pg_fingerprint_24,
-                            insideCard = true,
-                            onChanged = { UhPrivacyController.applyAllToEngine(context) },
-                        )
-                        UhSettingsDivider()
-                        SettingsSwitchRow(
-                            title = "Annoyance Killer Pack",
-                            subtitle = "Block Google One-Tap, Open-in-App bars, newsletter popups, chat bubbles & sponsored cards",
-                            key = SettingsPrefs.K_PG_ANNOYANCES,
-                            default = true,
-                            iconRes = R.drawable.uh_ic_pg_cookie_banner_24,
-                            insideCard = true,
-                            onChanged = { UhPrivacyController.applyAllToEngine(context) },
-                        )
-                        UhSettingsDivider()
-                        SettingsSwitchRow(
-                            title = "CNAME Tracker Unmasking",
-                            subtitle = "Unmask first-party CNAME-cloaked trackers & analytics proxies",
-                            key = SettingsPrefs.K_PG_CNAME_UNMASK,
-                            default = true,
-                            iconRes = R.drawable.uh_ic_cat_trackers_24,
-                            insideCard = true,
-                            onChanged = { UhPrivacyController.applyAllToEngine(context) },
-                        )
-                        UhSettingsDivider()
-                        SettingsSwitchRow(
-                            title = "Local Network Guard",
-                            subtitle = "Block public sites from port-scanning localhost & LAN devices",
-                            key = SettingsPrefs.K_PG_LAN_GUARD,
-                            default = true,
-                            iconRes = R.drawable.uh_ic_local_network_24,
                             insideCard = true,
                             onChanged = { UhPrivacyController.applyAllToEngine(context) },
                         )
@@ -326,7 +286,7 @@ class PrivacyGuardActivity : AppCompatActivity() {
                         UhSettingsDivider()
                         SettingsSwitchRow(
                             title = "Popup & Ad-Tab Blocker",
-                            subtitle = "Stop unwanted popups, popunders, and redirect traps",
+                            subtitle = "Blocks popunders, click-hijack overlays & betting redirects without breaking normal sites",
                             key = SettingsPrefs.K_PG_POPUP_BLOCK,
                             default = true,
                             iconRes = R.drawable.uh_ic_pg_popup_block_24,
@@ -345,7 +305,7 @@ class PrivacyGuardActivity : AppCompatActivity() {
                         UhSettingsDivider()
                         SettingsSwitchRow(
                             title = "Smart JavaScript Blocking",
-                            subtitle = "Blocks third-party scripts while keeping pages usable, with 1-tap in-page controls",
+                            subtitle = "Silently blocks untrusted 3rd-party scripts while keeping CDNs, logins & media smooth",
                             key = SettingsPrefs.K_PG_SCRIPT,
                             default = false,
                             iconRes = R.drawable.uh_ic_pg_js_block_24,

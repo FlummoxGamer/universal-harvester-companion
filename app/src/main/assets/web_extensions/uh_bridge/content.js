@@ -173,6 +173,7 @@
                 blockPopups: msg.blockPopups,
                 antiFingerprint: msg.antiFingerprint === true && !paused,
                 strictFingerprint: msg.strictFingerprint === true && msg.antiFingerprint === true && !paused,
+                dnt: msg.dnt === true,
                 fpSessionSalt: msg.fpSessionSalt || (C.pageProtectState && C.pageProtectState.fpSessionSalt) || "",
                 backgroundPlay: msg.backgroundPlay,
                 webrtcPolicy: msg.webrtcPolicy,

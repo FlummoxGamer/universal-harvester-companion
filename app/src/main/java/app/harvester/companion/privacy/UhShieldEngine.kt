@@ -186,8 +186,13 @@ object UhShieldEngine {
 
         scope.launch {
             recompileFromDisk(app)
+            val activeIds = UhShieldStorage.getEnabledListIds(app)
             val stale = (System.currentTimeMillis() - lastSync) > TimeUnit.HOURS.toMillis(24)
-            if (stale && UhShieldStorage.getEnabledListIds(app).isNotEmpty()) {
+            val anyMissingOnDisk = activeIds.any { id ->
+                val f = UhShieldStorage.listCacheFile(app, id)
+                !f.exists() || f.length() < 64L
+            }
+            if (activeIds.isNotEmpty() && (stale || anyMissingOnDisk)) {
                 syncEnabledLists(force = false)
             }
         }
@@ -310,9 +315,11 @@ object UhShieldEngine {
     fun revokeJsAlways(host: String) {
         val clean = normalizeHost(host)
         val ctx = appContext ?: return
+        jsAllowOnceHosts.remove(clean)
         val next = _jsAllowAlwaysHosts.value - clean
         UhShieldStorage.prefs(ctx).edit().putStringSet(UhShieldStorage.KEY_JS_ALLOW_HOSTS, next).apply()
         _jsAllowAlwaysHosts.value = next
+        _jsBlockedTick.value = System.nanoTime()
         onCompiledRulesUpdated?.invoke()
     }
 

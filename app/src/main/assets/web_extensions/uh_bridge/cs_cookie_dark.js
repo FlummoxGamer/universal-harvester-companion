@@ -255,6 +255,7 @@
                 webrtcPolicy: cfg.webrtcPolicy || 0,
                 antiFingerprint: cfg.antiFingerprint === true,
                 strictFingerprint: cfg.strictFingerprint === true,
+                dnt: cfg.dnt === true,
                 annoyances: cfg.annoyances !== false,
                 fpSessionSalt: cfg.fpSessionSalt || ""
             }));

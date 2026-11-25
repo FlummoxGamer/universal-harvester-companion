@@ -34,6 +34,7 @@ internal object UhShieldPayloadBuilder {
         }
         val antiFingerprint = SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_FINGERPRINT, true)
         val clearUrls = SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_CLEAR_URLS, true)
+        val shieldActive = state.level != ShieldLevel.OFF
 
         return JSONObject().apply {
             put("shieldLevel", state.level.code)
@@ -48,12 +49,12 @@ internal object UhShieldPayloadBuilder {
             put("deAmp", SettingsPrefs.getBool(ctx, SettingsPrefs.K_ADV_DEAMP, true))
             put("blockPopups", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_POPUP_BLOCK, true))
             put("antiFingerprint", antiFingerprint)
-            put("strictFingerprint", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_FP_STRICT, false))
+            put("strictFingerprint", antiFingerprint)
             put("fpSessionSalt", fpSessionSalt)
             put("refererTrim", antiFingerprint || clearUrls)
-            put("lanGuard", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_LAN_GUARD, true))
-            put("annoyances", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_ANNOYANCES, true))
-            put("cnameUnmask", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_CNAME_UNMASK, true))
+            put("lanGuard", shieldActive)
+            put("annoyances", shieldActive)
+            put("cnameUnmask", shieldActive)
             put("dnt", SettingsPrefs.getBool(ctx, SettingsPrefs.K_ADV_DNT, false))
             put("gpc", SettingsPrefs.getBool(ctx, SettingsPrefs.K_ADV_GPC, true))
             put("webrtcPolicy", SettingsPrefs.getInt(ctx, SettingsPrefs.K_ADV_WEBRTC_POLICY, 1))
@@ -131,7 +132,13 @@ internal object UhShieldPayloadBuilder {
         appendDomainChunks("trackerDomains", compiledSet.trackerDomains)
         appendDomainChunks("thirdPartyAdDomains", compiledSet.thirdPartyAdDomains)
         appendDomainChunks("thirdPartyTrackerDomains", compiledSet.thirdPartyTrackerDomains)
-        appendDomainChunks("popupDomains", compiledSet.popupDomains)
+        val mergedPopups = HashSet<String>(compiledSet.popupDomains.size + UhShieldBootstrapRules.ALWAYS_POPUP_DOMAINS.size).apply {
+            addAll(compiledSet.popupDomains)
+            if (state.level != ShieldLevel.OFF) {
+                addAll(UhShieldBootstrapRules.ALWAYS_POPUP_DOMAINS)
+            }
+        }
+        appendDomainChunks("popupDomains", mergedPopups)
         appendDomainChunks("exceptionDomains", compiledSet.exceptionDomains)
         appendDomainChunks("thirdPartyExceptionDomains", compiledSet.thirdPartyExceptionDomains)
 
@@ -278,11 +285,12 @@ internal object UhShieldPayloadBuilder {
             put("scriptlets", scriptletsArr)
             put("styleRules", styleRulesArr)
             put("removeSelectors", removeSelArr)
-            put("annoyances", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_ANNOYANCES, true) && !paused)
+            put("annoyances", shieldActive)
             put("cookieBanners", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_COOKIE_BANNERS, true) && !paused)
             put("blockPopups", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_POPUP_BLOCK, true) && !paused)
             put("antiFingerprint", antiFingerprintPref && !paused)
-            put("strictFingerprint", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_FP_STRICT, false) && antiFingerprintPref && !paused)
+            put("strictFingerprint", antiFingerprintPref && !paused)
+            put("dnt", SettingsPrefs.getBool(ctx, SettingsPrefs.K_ADV_DNT, false))
             put("fpSessionSalt", fpSessionSalt)
             put("backgroundPlay", SettingsPrefs.getBool(ctx, SettingsPrefs.K_BACKGROUND_PLAY, true))
             put("webrtcPolicy", SettingsPrefs.getInt(ctx, SettingsPrefs.K_ADV_WEBRTC_POLICY, 1))

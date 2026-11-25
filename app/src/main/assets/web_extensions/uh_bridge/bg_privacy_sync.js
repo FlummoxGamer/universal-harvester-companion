@@ -192,6 +192,7 @@
             blockPopups: shieldState.blockPopups,
             antiFingerprint: shieldState.antiFingerprint,
             strictFingerprint: shieldState.strictFingerprint,
+            dnt: shieldState.dnt,
             fpSessionSalt: shieldState.fpSessionSalt,
             backgroundPlay: shieldState.backgroundPlay,
             webrtcPolicy: shieldState.webrtcPolicy,

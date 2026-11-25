@@ -412,7 +412,7 @@
     // Runtime Guards: Bounce-Tracker, Background Play, WebRTC, Popunder/Meta-Refresh,
     // Spam Push Blocker, YouTube Ad-JSON Pruner & Hybrid Anti-Fingerprinting
     // -------------------------------------------------------------------------
-    const POPUNDER_REGEX = /(popads|popcash|propellerads|exoclick|exosrv|juicyads|trafficjunky|trafficstars|adsterra|hilltopads|clickadu|monetag|pushame|popunder|afu\.php|click\.php\?|admaven|galaksion|richads|evadav|onclickalgo|highperformanceformat|profitablecpmrate|acscdn|effectivegatecpm|topcreativeformat|directlink|smartlink|1xbet|melbet|mostbet|betwinner|parimatch)/i;
+    const POPUNDER_REGEX = /(jaya9|babu88|krikya|baji(?:live|999|88)|bj88|crickex|jeebet|jeetbuzz|jeetwin|mcw\d+|casinomcw|nagad88|popads|popcash|propellerads|propellerclick|exoclick|exosrv|realsrv|magsrv|pemsrv|juicyads|trafficjunky|trafficstars|adsterra|hilltopads|clickadu|monetag|pushame|popunder|afu\.php|adclick\.php|admaven|galaksion|richads|evadav|onclickalgo|highperformanceformat|profitablecpmrate|acscdn|effectivegatecpm|topcreativeformat|directlink|smartlink|1xbet|melbet|mostbet|betwinner|parimatch)/i;
     const PUSH_SPAM_SW_REGEX = /(pushame|monetag|propeller|evadav|richads|galaksion|admaven|popads|sw-check-permissions|\/push\/sw|\/sw-push)/i;
 
     let lastUserTap = 0;
@@ -579,21 +579,14 @@
 
             window.open = function (url, target, features) {
                 const urlStr = url == null ? "" : String(url).trim();
-                const sinceTap = Date.now() - lastUserTap;
                 if (isSuspiciousPopupUrl(urlStr)) {
                     reportBlockedRedirect(urlStr, true);
                     return null;
                 }
-                if (sinceTap > 1200) {
-                    if (urlStr && urlStr !== "about:blank") reportBlockedRedirect(urlStr, true);
-                    return null;
-                }
-                if (!urlStr || urlStr === "about:blank") {
-                    if (lastTapTarget && (isOverlayTrapElement(lastTapTarget) || lastTapTarget.tagName === "VIDEO")) {
+                if (lastTapTarget && isOverlayTrapElement(lastTapTarget)) {
+                    if (!urlStr || urlStr === "about:blank") {
                         return createBlankTrapProxy(target, features);
                     }
-                }
-                if (lastTapTarget && (isOverlayTrapElement(lastTapTarget) || lastTapTarget.tagName === "VIDEO")) {
                     if (isCrossOriginUrl(urlStr)) {
                         reportBlockedRedirect(urlStr, true);
                         return null;
@@ -603,16 +596,14 @@
             };
         } catch (_e) {}
 
-        // 2) Guard synthetic anchor.click() and form.submit() popunder injections
+        // 2) Guard synthetic anchor.click() and form.submit() ONLY for confirmed popunder/betting traps
         try {
             const origAnchorClick = HTMLAnchorElement.prototype.click;
             HTMLAnchorElement.prototype.click = function () {
                 try {
                     const href = this.href || "";
-                    const isBlank = (this.target || "").toLowerCase() === "_blank";
-                    const sinceTap = Date.now() - lastUserTap;
-                    if (isSuspiciousPopupUrl(href) || (isBlank && sinceTap > 1200 && isCrossOriginUrl(href))) {
-                        reportBlockedRedirect(href, isBlank);
+                    if (isSuspiciousPopupUrl(href)) {
+                        reportBlockedRedirect(href, (this.target || "").toLowerCase() === "_blank");
                         return;
                     }
                 } catch (_e) {}
@@ -625,10 +616,8 @@
             HTMLFormElement.prototype.submit = function () {
                 try {
                     const action = this.action || "";
-                    const isBlank = (this.target || "").toLowerCase() === "_blank";
-                    const sinceTap = Date.now() - lastUserTap;
-                    if (isSuspiciousPopupUrl(action) || (isBlank && sinceTap > 1200 && isCrossOriginUrl(action))) {
-                        reportBlockedRedirect(action, isBlank);
+                    if (isSuspiciousPopupUrl(action)) {
+                        reportBlockedRedirect(action, (this.target || "").toLowerCase() === "_blank");
                         return;
                     }
                 } catch (_e) {}
@@ -636,7 +625,7 @@
             };
         } catch (_e) {}
 
-        // 3) Neutralize click-hijack transparent overlays and suspicious _blank anchors
+        // 3) Neutralize click-hijack transparent overlays and confirmed betting/popunder anchors
         try {
             document.addEventListener("click", (ev) => {
                 try {
@@ -649,19 +638,16 @@
                         return;
                     }
                     const anchor = target && target.closest ? target.closest("a[href]") : null;
-                    if (anchor && (anchor.target === "_blank" || isSuspiciousPopupUrl(anchor.href || ""))) {
-                        const href = anchor.href || "";
-                        if (isSuspiciousPopupUrl(href) || (!ev.isTrusted && href && isCrossOriginUrl(href))) {
-                            ev.preventDefault();
-                            ev.stopImmediatePropagation();
-                            reportBlockedRedirect(href, anchor.target === "_blank");
-                        }
+                    if (anchor && isSuspiciousPopupUrl(anchor.href || "")) {
+                        ev.preventDefault();
+                        ev.stopImmediatePropagation();
+                        reportBlockedRedirect(anchor.href, anchor.target === "_blank");
                     }
                 } catch (_e) {}
             }, true);
         } catch (_e) {}
 
-        // 4) Defuse <meta http-equiv="refresh"> cross-origin ad redirects
+        // 4) Defuse <meta http-equiv="refresh"> ONLY for confirmed popunder/betting redirects
         try {
             const scrubMetaRefresh = () => {
                 const metas = document.querySelectorAll('meta[http-equiv="refresh" i]');
@@ -671,7 +657,7 @@
                     if (match && match[1]) {
                         try {
                             const abs = new URL(match[1], window.location.href).href;
-                            if (isSuspiciousPopupUrl(abs) || isCrossOriginUrl(abs)) {
+                            if (isSuspiciousPopupUrl(abs)) {
                                 metas[i].remove();
                                 reportBlockedRedirect(abs, false);
                             }
@@ -681,9 +667,6 @@
             };
             scrubMetaRefresh();
             document.addEventListener("DOMContentLoaded", scrubMetaRefresh, { once: true });
-            const headObs = new MutationObserver(scrubMetaRefresh);
-            headObs.observe(document.documentElement || document, { childList: true, subtree: true });
-            setTimeout(() => { try { headObs.disconnect(); } catch (_e) {} }, 6000);
         } catch (_e) {}
     }
 
@@ -787,9 +770,9 @@
             return (h & 1) === 0 ? 1 : -1;
         };
 
-        // 1) Uniform crowd-common hardware & screen properties (cloaked as native getters)
+        // 1) Uniform Gecko-native hardware & screen properties (NEVER define Chrome-only deviceMemory on Gecko)
         defineCloakedGetter(navigator, "hardwareConcurrency", function () { return 4; });
-        defineCloakedGetter(navigator, "deviceMemory", function () { return 4; });
+        defineCloakedGetter(navigator, "maxTouchPoints", function () { return 5; });
         defineCloakedGetter(screen, "colorDepth", function () { return 24; });
         defineCloakedGetter(screen, "pixelDepth", function () { return 24; });
         try {
@@ -965,8 +948,9 @@
                 const origGetParam = proto.getParameter;
                 if (typeof origGetParam === "function") {
                     proto.getParameter = cloakNative(function getParameter(param) {
-                        if (param === 37445) return "Google Inc. (Qualcomm)";
-                        if (param === 37446) return "ANGLE (Qualcomm, Adreno (TM) 640, OpenGL ES 3.2)";
+                        if (param === 37445) return "Qualcomm";
+                        if (param === 37446) return "Adreno (TM) 640";
+                        if (param === 7936 || param === 7937) return "Mozilla";
                         return origGetParam.apply(this, arguments);
                     }, "getParameter");
                 }

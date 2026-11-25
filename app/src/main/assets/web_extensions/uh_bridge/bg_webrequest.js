@@ -1,16 +1,26 @@
 // -----------------------------------------------------------------------------
-// UH Bridge Background Module 3: Network Blocker, Popunder/Redirect Killer & Headers
+// UH Bridge Background Module 3: Network Blocker, Precision Popunder Killer & Headers
 // -----------------------------------------------------------------------------
 (function (B) {
     const api = B.api;
     const shieldState = B.shieldState;
 
-    const KNOWN_POPUNDER_PATH_HINTS = [
-        "/popunder", "/afu.php", "/click.php?", "/redirect/pop", "/pops/",
-        "/interstitial/ad", "/pop.php", "/jump/next.php", "/adclick.php",
-        "/directlink", "/smartlink"
-    ];
+    const CLIENT_HINT_HEADERS_TO_STRIP = new Set([
+        "sec-ch-ua",
+        "sec-ch-ua-mobile",
+        "sec-ch-ua-platform",
+        "sec-ch-ua-platform-version",
+        "sec-ch-ua-model",
+        "sec-ch-ua-full-version",
+        "sec-ch-ua-full-version-list",
+        "sec-ch-ua-arch",
+        "sec-ch-ua-bitness",
+        "sec-ch-ua-wow64",
+        "x-requested-with"
+    ]);
 
+    // Precision popunder & gambling/betting hijack detector — NEVER blocks normal websites
+    // by adDomains/trackerDomains so regular browsing and download links work on tap 1.
     function isMainFrameAdRedirect(urlStr, sourceHost) {
         if (!urlStr || (!urlStr.startsWith("http://") && !urlStr.startsWith("https://"))) return false;
         if (urlStr.includes("/cdn-cgi/")) return false;
@@ -24,38 +34,11 @@
         const rules = B.activeRules;
         if (B.matchesDomainSet(reqHost, rules.exceptionDomains)) return false;
 
-        if (
-            B.matchesDomainSet(reqHost, rules.popupDomains) ||
-            B.matchesDomainSet(reqHost, rules.adDomains) ||
-            B.matchesDomainSet(reqHost, rules.thirdPartyAdDomains)
-        ) {
-            return true;
-        }
-
-        const lower = urlStr.toLowerCase();
-        for (let i = 0; i < KNOWN_POPUNDER_PATH_HINTS.length; i++) {
-            if (lower.includes(KNOWN_POPUNDER_PATH_HINTS[i])) return true;
-        }
-
-        for (let i = 0; i < rules.popupRules.length; i++) {
-            if (B.matchesStructuredRule(rules.popupRules[i], lower, sourceHost || "", true, B.TYPE_POPUP)) {
-                return true;
-            }
-        }
-        return false;
+        return B.isConfirmedPopunderOrBettingTrap(urlStr, reqHost, sourceHost, rules);
     }
 
     function isBlockedPopunderUrl(urlStr, openerHost) {
-        if (isMainFrameAdRedirect(urlStr, openerHost)) return true;
-        if (!urlStr || (!urlStr.startsWith("http://") && !urlStr.startsWith("https://"))) return false;
-        const reqHost = B.normalizeHost(urlStr);
-        if (!reqHost) return false;
-        if (shieldState.redirectAllowOnceHosts && shieldState.redirectAllowOnceHosts.has(reqHost)) return false;
-        const isThirdParty = !openerHost || B.getRegistrableBase(reqHost) !== B.getRegistrableBase(openerHost);
-        if (!isThirdParty) return false;
-        const rules = B.activeRules;
-        if (B.matchesDomainSet(reqHost, rules.exceptionDomains)) return false;
-        return B.matchesDomainSet(reqHost, rules.trackerDomains);
+        return isMainFrameAdRedirect(urlStr, openerHost);
     }
 
     function checkAndClosePopupTab(tabId, urlStr, openerHost, openerTabId) {
@@ -66,6 +49,7 @@
         B.recentPopupCandidates.delete(tabId);
         const targetHost = B.normalizeHost(urlStr);
         B.queueBlockedStat(openerHost || targetHost, false, targetHost, "popup_tab");
+        B.queueRequestLog(openerHost || targetHost, targetHost, urlStr, "popup", "BLOCKED_AD", "Popunder / Redirect Trap");
         B.notifyBlockedRedirect(openerHost || B.activeMainHost, urlStr, true);
 
         const removeTab = () => {
@@ -89,7 +73,7 @@
     }
 
     // -------------------------------------------------------------------------
-    // Layer 1 Network Blocker + Main-Frame Ad-Redirect Guard + Smart JS + ClearURLs
+    // Layer 1 Network Blocker + Precision Popunder Guard + 3-Tier Smart JS + ClearURLs
     // -------------------------------------------------------------------------
     if (api.webRequest && api.webRequest.onBeforeRequest) {
         api.webRequest.onBeforeRequest.addListener(
@@ -101,17 +85,17 @@
                         const prevHost = B.normalizeHost(prevTabUrl);
                         const nextHost = B.normalizeHost(details.url);
 
-                        // A) Cancel newly opened popunder tab at network layer before it renders
+                        // A) Cancel newly opened popunder / betting hijack tab before it renders
                         if (hasTab && shieldState.blockPopups && shieldState.shieldLevel !== 0) {
                             const cand = B.recentPopupCandidates.get(details.tabId);
-                            if (cand && (Date.now() - cand.createdAt) <= 5000) {
+                            if (cand && (Date.now() - cand.createdAt) <= 6000) {
                                 if (checkAndClosePopupTab(details.tabId, details.url, cand.openerHost, cand.openerTabId)) {
                                     return { cancel: true };
                                 }
                             }
                         }
 
-                        // B) Cancel same-tab full-page ad/interstitial hijack so user stays on parent page
+                        // B) Cancel same-tab betting/popunder hijack so user stays smoothly on the parent page
                         if (
                             hasTab &&
                             shieldState.blockPopups &&
@@ -121,6 +105,7 @@
                             isMainFrameAdRedirect(details.url, prevHost)
                         ) {
                             B.queueBlockedStat(prevHost, false, nextHost, "main_frame_redirect");
+                            B.queueRequestLog(prevHost, nextHost, details.url, "main_frame", "BLOCKED_AD", "Ad Redirect Trap");
                             B.notifyBlockedRedirect(prevHost, details.url, false);
                             return { cancel: true };
                         }
@@ -167,9 +152,10 @@
                         return {};
                     }
 
-                    // 0) Local Network / Private-IP Port-Scan Guard (public site -> localhost / LAN IP)
+                    // 0) Local Network / Private-IP Port-Scan Guard (automatically active with UH Shield)
                     if (
                         shieldState.lanGuard &&
+                        shieldState.shieldLevel !== 0 &&
                         !isPaused &&
                         pageHost &&
                         !B.isPrivateOrLanHost(pageHost) &&
@@ -179,7 +165,7 @@
                         return { cancel: true };
                     }
 
-                    // 0B) Google One-Tap Sign-In iframe/script killer (Annoyance Pack)
+                    // 0B) Google One-Tap Sign-In iframe/script killer (automatically active with UH Shield)
                     if (
                         shieldState.annoyances &&
                         shieldState.shieldLevel !== 0 &&
@@ -194,20 +180,7 @@
                         return { cancel: true };
                     }
 
-                    // 1) Smart JavaScript Blocking
-                    if (shieldState.smartBlockJs && typeBit === B.TYPE_SCRIPT && isThirdParty && !isPaused) {
-                        const jsAllowed = pageHost && (
-                            shieldState.jsAllowOnceHosts.has(pageHost) ||
-                            shieldState.jsAllowAlwaysHosts.has(pageHost)
-                        );
-                        if (!jsAllowed) {
-                            B.recordBlockedScript(details.tabId, pageHost, reqHost);
-                            B.queueRequestLog(pageHost, reqHost, details.url, details.type, "BLOCKED_TRACKER", "Smart JS Block");
-                            return { cancel: true };
-                        }
-                    }
-
-                    // 2) UH Shield Network Filtering (Ad-First Classification + CNAME Unmasking + 5s Retry Dedup)
+                    // 1) UH Shield Network Filtering (runs BEFORE Smart JS so trackers on shared CDNs are still blocked!)
                     if (shieldState.shieldLevel !== 0 && !isPaused) {
                         const rules = B.activeRules;
                         const lowerUrl = details.url.toLowerCase();
@@ -217,7 +190,7 @@
                             return urlTokens;
                         };
 
-                        // 2A) $important rules
+                        // 1A) $important rules
                         if (rules.importantRules.length > 0) {
                             for (let i = 0; i < rules.importantRules.length; i++) {
                                 const r = rules.importantRules[i];
@@ -232,7 +205,7 @@
                             }
                         }
 
-                        // 2B) @@ Exception rules
+                        // 1B) @@ Exception rules
                         let isExempt = B.matchesDomainSet(reqHost, rules.exceptionDomains);
                         if (!isExempt && isThirdParty) {
                             isExempt = B.matchesDomainSet(reqHost, rules.thirdPartyExceptionDomains);
@@ -255,7 +228,7 @@
                         if (!isExempt) {
                             const allowDomainFirstParty = shieldState.shieldLevel >= 2;
 
-                            // 2C) CNAME-Cloaked First-Party Tracker Blocking + Async Unmasking
+                            // 1C) CNAME-Cloaked First-Party Tracker Blocking + Async Unmasking
                             if (shieldState.cnameUnmask) {
                                 const cnameHit = B.cnameBlockedHosts.get(reqHost);
                                 if (cnameHit) {
@@ -271,17 +244,23 @@
                                     B.notifyElementCollapse(details);
                                     return { cancel: true };
                                 }
-                                // Queue zero-lag async DoH CNAME lookup for first-party subdomains (e.g. metrics.site.com)
                                 if (!isThirdParty && reqHost !== pageHost && reqHost.split(".").length >= 3) {
                                     B.requestCnameResolve(reqHost);
                                 }
-                                // Offline first-party tracker proxy paths (/gtm.js, /g/collect, /_vercel/insights, /cdn-cgi/rum)
                                 if (allowDomainFirstParty && !isThirdParty && B.FIRST_PARTY_TRACKER_PATH_RE.test(details.url)) {
                                     B.queueBlockedStat(pageHost, true, reqHost, details.type);
                                     B.queueRequestLog(pageHost, reqHost, details.url, details.type, "BLOCKED_TRACKER", "1st-Party Tracker Path");
                                     B.notifyElementCollapse(details);
                                     return { cancel: true };
                                 }
+                            }
+
+                            // 1D) Block subresources & iframes pointing to confirmed popunder/betting networks
+                            if (isThirdParty && B.matchesDomainSet(reqHost, rules.popupDomains)) {
+                                B.queueBlockedStat(pageHost, false, reqHost, details.type);
+                                B.queueRequestLog(pageHost, reqHost, details.url, details.type, "BLOCKED_AD", "Popunder Network");
+                                B.notifyElementCollapse(details);
+                                return { cancel: true };
                             }
 
                             // Always classify Ads BEFORE Trackers so ad domains present in multi-purpose lists count as Ads
@@ -350,6 +329,21 @@
                         }
                     }
 
+                    // 2) Best-in-Slot 3-Tier Smart JavaScript Blocking (Opt-In, Zero Annoyance, Zero Breakage)
+                    // Allows Tier-1 core CDNs/auth/captcha/payment/media + Tier-2 same-brand companion hosts;
+                    // silently blocks untrusted 3rd-party scripts without nagging banners.
+                    if (shieldState.smartBlockJs && typeBit === B.TYPE_SCRIPT && isThirdParty && !isPaused) {
+                        const jsSiteAllowed = pageHost && (
+                            shieldState.jsAllowOnceHosts.has(pageHost) ||
+                            shieldState.jsAllowAlwaysHosts.has(pageHost)
+                        );
+                        if (!jsSiteAllowed && !B.isEssentialSmartJsHost(reqHost, pageHost, details.url)) {
+                            B.recordBlockedScript(details.tabId, pageHost, reqHost);
+                            B.queueRequestLog(pageHost, reqHost, details.url, details.type, "BLOCKED_TRACKER", "Smart JS Filter");
+                            return { cancel: true };
+                        }
+                    }
+
                     // 3) ClearURLs + $removeparam on sub_frame & xmlhttprequest GET
                     if (
                         !isPaused &&
@@ -371,7 +365,7 @@
                         }
                     }
 
-                    // Log allowed subresource requests for Live Request Inspector (skip high-volume font/stylesheet noise only if same-origin)
+                    // Log allowed subresource requests for Live Request Inspector
                     if (isThirdParty || details.type === "script" || details.type === "xmlhttprequest" || details.type === "fetch" || details.type === "sub_frame") {
                         B.queueRequestLog(pageHost, reqHost, details.url, details.type, "ALLOWED", isThirdParty ? "3P" : "1P");
                     }
@@ -432,7 +426,7 @@
                 if (!url) return;
                 const cand = B.recentPopupCandidates.get(tabId);
                 if (cand) {
-                    if (Date.now() - cand.createdAt > 5000) {
+                    if (Date.now() - cand.createdAt > 6000) {
                         B.recentPopupCandidates.delete(tabId);
                     } else if (checkAndClosePopupTab(tabId, url, cand.openerHost, cand.openerTabId)) {
                         return;
@@ -444,52 +438,121 @@
     }
 
     // -------------------------------------------------------------------------
-    // Privacy Request Headers: DNT, Sec-GPC & Cross-Origin Referer Trimming
+    // Privacy & Anti-Fingerprinting HTTP Header Alignment:
+    // Unified Gecko UA, Accept-Language, Accept, Client-Hints Scrub, GPC & Referer Trim
     // -------------------------------------------------------------------------
     if (api.webRequest && api.webRequest.onBeforeSendHeaders) {
         api.webRequest.onBeforeSendHeaders.addListener(
             (details) => {
                 try {
-                    if (!shieldState.dnt && !shieldState.gpc && !shieldState.refererTrim) return {};
-                    const headers = details.requestHeaders ? details.requestHeaders.slice() : [];
-                    let modified = false;
+                    const rawHeaders = details.requestHeaders;
+                    if (!Array.isArray(rawHeaders)) return {};
 
-                    if (shieldState.dnt && !headers.some((h) => h.name.toLowerCase() === "dnt")) {
+                    const reqHost = B.normalizeHost(details.url || "");
+                    const tabUrl = (typeof details.tabId === "number" && details.tabId >= 0) ? (B.tabUrlMap.get(details.tabId) || "") : "";
+                    const pageHost = details.type === "main_frame" ? reqHost : (B.normalizeHost(tabUrl) || B.activeMainHost || reqHost);
+                    const isPaused = !!(pageHost && shieldState.pausedHosts.has(pageHost));
+                    const isCf = !!(details.url && (details.url.includes("/cdn-cgi/") || reqHost === "challenges.cloudflare.com"));
+                    const fpAlign = shieldState.antiFingerprint && !isPaused && !isCf;
+
+                    if (!fpAlign && !shieldState.dnt && !shieldState.gpc && !shieldState.refererTrim) return {};
+
+                    const headers = [];
+                    let modified = false;
+                    let hasDnt = false;
+                    let hasGpc = false;
+                    let hasUa = false;
+                    let hasAcceptLang = false;
+                    let hasAccept = false;
+                    const reqBase = reqHost ? B.getRegistrableBase(reqHost) : "";
+
+                    for (let i = 0; i < rawHeaders.length; i++) {
+                        const h = rawHeaders[i];
+                        const lname = h.name.toLowerCase();
+
+                        // Strip any Chromium Client Hints or WebView X-Requested-With leaks
+                        if (fpAlign && CLIENT_HINT_HEADERS_TO_STRIP.has(lname)) {
+                            modified = true;
+                            continue;
+                        }
+
+                        // Normalize User-Agent to clean Firefox/Gecko Android crowd profile (strips ; wv & OEM model)
+                        if (lname === "user-agent") {
+                            hasUa = true;
+                            if (fpAlign && h.value !== B.UNIFIED_GECKO_UA) {
+                                headers.push({ name: h.name, value: B.UNIFIED_GECKO_UA });
+                                modified = true;
+                                continue;
+                            }
+                        }
+
+                        // Normalize Accept-Language to match JS navigator.languages (en-US,en;q=0.5)
+                        if (lname === "accept-language") {
+                            hasAcceptLang = true;
+                            if (fpAlign && h.value !== B.UNIFIED_ACCEPT_LANG) {
+                                headers.push({ name: h.name, value: B.UNIFIED_ACCEPT_LANG });
+                                modified = true;
+                                continue;
+                            }
+                        }
+
+                        // Align navigation Accept header with standard Firefox 132 crowd value
+                        if (lname === "accept" && details.type === "main_frame") {
+                            hasAccept = true;
+                            if (fpAlign && h.value !== B.UNIFIED_HTML_ACCEPT) {
+                                headers.push({ name: h.name, value: B.UNIFIED_HTML_ACCEPT });
+                                modified = true;
+                                continue;
+                            }
+                        }
+
+                        if (lname === "dnt") {
+                            hasDnt = true;
+                            if (!shieldState.dnt) {
+                                modified = true;
+                                continue;
+                            }
+                        }
+                        if (lname === "sec-gpc") hasGpc = true;
+
+                        // Trim cross-site Referer down to origin-only to prevent path/search leakage
+                        if (lname === "referer" && shieldState.refererTrim && !isCf && reqBase && h.value) {
+                            try {
+                                const refUrl = new URL(h.value);
+                                const refHost = refUrl.hostname.toLowerCase().replace(/^www\./, "");
+                                if (refHost && B.getRegistrableBase(refHost) !== reqBase) {
+                                    const trimmed = refUrl.origin + "/";
+                                    if (h.value !== trimmed) {
+                                        headers.push({ name: h.name, value: trimmed });
+                                        modified = true;
+                                        continue;
+                                    }
+                                }
+                            } catch (_e) {}
+                        }
+
+                        headers.push(h);
+                    }
+
+                    if (fpAlign && !hasUa) {
+                        headers.push({ name: "User-Agent", value: B.UNIFIED_GECKO_UA });
+                        modified = true;
+                    }
+                    if (fpAlign && !hasAcceptLang) {
+                        headers.push({ name: "Accept-Language", value: B.UNIFIED_ACCEPT_LANG });
+                        modified = true;
+                    }
+                    if (fpAlign && details.type === "main_frame" && !hasAccept) {
+                        headers.push({ name: "Accept", value: B.UNIFIED_HTML_ACCEPT });
+                        modified = true;
+                    }
+                    if (shieldState.dnt && !hasDnt) {
                         headers.push({ name: "DNT", value: "1" });
                         modified = true;
                     }
-                    if (shieldState.gpc && !headers.some((h) => h.name.toLowerCase() === "sec-gpc")) {
+                    if (shieldState.gpc && !hasGpc) {
                         headers.push({ name: "Sec-GPC", value: "1" });
                         modified = true;
-                    }
-
-                    // Trim cross-site Referer down to origin-only to prevent path/search leakage
-                    if (
-                        shieldState.refererTrim &&
-                        details.url &&
-                        !details.url.includes("/cdn-cgi/") &&
-                        !details.url.includes("challenges.cloudflare.com")
-                    ) {
-                        const reqHost = B.normalizeHost(details.url);
-                        const reqBase = reqHost ? B.getRegistrableBase(reqHost) : "";
-                        if (reqBase) {
-                            for (let i = 0; i < headers.length; i++) {
-                                if (headers[i].name.toLowerCase() === "referer" && headers[i].value) {
-                                    try {
-                                        const refUrl = new URL(headers[i].value);
-                                        const refHost = refUrl.hostname.toLowerCase().replace(/^www\./, "");
-                                        if (refHost && B.getRegistrableBase(refHost) !== reqBase) {
-                                            const trimmed = refUrl.origin + "/";
-                                            if (headers[i].value !== trimmed) {
-                                                headers[i] = { name: headers[i].name, value: trimmed };
-                                                modified = true;
-                                            }
-                                        }
-                                    } catch (_e) {}
-                                    break;
-                                }
-                            }
-                        }
                     }
 
                     return modified ? { requestHeaders: headers } : {};

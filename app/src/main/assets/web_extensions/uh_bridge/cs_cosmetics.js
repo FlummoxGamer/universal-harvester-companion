@@ -90,7 +90,7 @@
                 backgroundPlay: true,
                 webrtcPolicy: 1,
                 antiFingerprint: true,
-                strictFingerprint: false,
+                strictFingerprint: true,
                 annoyances: true,
                 fpSessionSalt: ""
             };
@@ -205,8 +205,8 @@
     // -------------------------------------------------------------------------
     // Deep Ad-Slot, Multi-Wrapper & First-Party Banner Collapsing (Zero Blank Gaps)
     // -------------------------------------------------------------------------
-    const FIRST_PARTY_AD_HREF_RE = /(doubleclick|googlesyndication|adservice|popads|propellerads|adsterra|exoclick|monetag|clickadu|hilltopads|outbrain|taboola|mgid|revcontent|\/adclick|\/click\.php|\/banner_click|\/out\.php\?|\/go\/bet|\/go\/casino|1xbet|melbet|mostbet|betwinner|parimatch)/i;
-    const FIRST_PARTY_AD_IMG_RE = /(\/ads\/|\/banners?\/|\/promo[-_]?banner|ad[-_]?banner|300x250|728x90|320x50|160x600|468x60|1xbet|melbet|mostbet|betwinner|casino[-_]?banner)/i;
+    const FIRST_PARTY_AD_HREF_RE = /(doubleclick|googlesyndication|adservice|popads|propellerads|adsterra|exoclick|monetag|clickadu|hilltopads|outbrain|taboola|mgid|revcontent|\/adclick|\/click\.php|\/banner_click|\/out\.php\?|\/go\/bet|\/go\/casino|jaya9|babu88|krikya|baji(?:live|999|88)|bj88|crickex|jeebet|jeetbuzz|mcw\d*|nagad88|1xbet|melbet|mostbet|betwinner|parimatch|[?&](?:af|btag)=[a-z0-9_-]{4,})/i;
+    const FIRST_PARTY_AD_IMG_RE = /(\/ads\/|\/banners?\/|\/promo[-_]?banner|ad[-_]?banner|300x250|728x90|320x50|160x600|468x60|jaya9|babu88|krikya|baji|crickex|1xbet|melbet|mostbet|betwinner|casino[-_]?banner)/i;
     const AD_SLOT_PLACEHOLDER_SELECTOR = [
         "ins.adsbygoogle",
         "[id^='div-gpt-ad']",

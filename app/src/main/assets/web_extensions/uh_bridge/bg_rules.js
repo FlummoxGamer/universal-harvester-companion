@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
-// UH Bridge Background Module 1: Shared State & Lazy-RegExp Rule Indexer
+// UH Bridge Background Module 1: Shared State, Smart JS Engine & Rule Indexer
 // -----------------------------------------------------------------------------
 (function () {
     const api = typeof browser !== "undefined" ? browser : chrome;
@@ -25,6 +25,11 @@
     const FLAG_POPUP = 32;
     const FLAG_IMPORTANT = 64;
 
+    // Unified Gecko crowd identity shared 100% across HTTP headers & synchronous JS guards
+    const UNIFIED_GECKO_UA = "Mozilla/5.0 (Android 14; Mobile; rv:132.0) Gecko/132.0 Firefox/132.0";
+    const UNIFIED_ACCEPT_LANG = "en-US,en;q=0.5";
+    const UNIFIED_HTML_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+
     const REDIRECT_DATA_URLS = {
         js: "data:application/javascript;base64,KGZ1bmN0aW9uKCl7fSkoKTs=",
         noopjs: "data:application/javascript;base64,KGZ1bmN0aW9uKCl7fSkoKTs=",
@@ -39,6 +44,55 @@
         css: "data:text/css;base64,Lyogbm9vcCAqLw==",
         empty: "data:text/plain;base64,"
     };
+
+    // Tier-1 Smart JavaScript Dependency Allowlist (core CDNs, frameworks, auth, captcha, payments, media)
+    // Evaluated AFTER UH Shield ad/tracker filtering so trackers hosted on shared CDNs are still blocked.
+    const ESSENTIAL_JS_ALLOW_DOMAINS = new Set([
+        // Framework & Library CDNs
+        "cdnjs.cloudflare.com", "cdn.jsdelivr.net", "jsdelivr.net", "unpkg.com", "esm.sh",
+        "cdn.skypack.dev", "ajax.googleapis.com", "fonts.googleapis.com", "apis.google.com",
+        "gstatic.com", "code.jquery.com", "jquery.com", "bootstrapcdn.com", "maxcdn.bootstrapcdn.com",
+        "stackpath.bootstrapcdn.com", "cdn.tailwindcss.com", "ajax.aspnetcdn.com", "aspnetcdn.com",
+        "use.fontawesome.com", "kit.fontawesome.com", "use.typekit.net", "polyfill.io",
+        "cdn.polyfill.io", "yastatic.net", "cdn.bootcdn.net", "lib.baomitu.com", "staticfile.org",
+        "ga.jspm.io", "cdn.unpkg.com",
+        // Security, Anti-Bot, Captcha & Auth/SSO
+        "challenges.cloudflare.com", "hcaptcha.com", "js.hcaptcha.com", "newassets.hcaptcha.com",
+        "recaptcha.net", "accounts.google.com", "appleid.cdn-apple.com", "auth0.com",
+        "cdn.auth0.com", "okta.com", "oktacdn.com", "clerk.accounts.dev", "clerk.com",
+        "login.microsoftonline.com", "msauth.net", "msftauth.net", "aadcdn.msftauth.net",
+        "arkoselabs.com", "funcaptcha.com", "geetest.com", "friendlycaptcha.com",
+        // Payments & Checkout
+        "js.stripe.com", "stripe.com", "m.stripe.network", "checkout.stripe.com",
+        "paypal.com", "paypalobjects.com", "braintreegateway.com", "js.braintreegateway.com",
+        "adyen.com", "checkoutshopper-live.adyen.com", "squareup.com", "squarecdn.com",
+        "razorpay.com", "checkout.razorpay.com", "pay.google.com", "cdn.shopify.com",
+        "shopifycdn.com", "klarnacdn.net",
+        // Media, Video Players & Major App Asset CDNs
+        "ytimg.com", "googlevideo.com", "ggpht.com", "vimeocdn.com", "jwpcdn.com",
+        "cdn.bitmovin.com", "vjs.zencdn.net", "players.brightcove.net", "twimg.com",
+        "fbcdn.net", "cdninstagram.com", "githubassets.com", "githubusercontent.com",
+        "reddstatic.com", "redditstatic.com", "media-amazon.com", "ssl-images-amazon.com",
+        "images-na.ssl-images-amazon.com", "nflxext.com", "nflxso.net", "scdn.co",
+        "twitchcdn.net", "jtvnw.net", "cdn.discordapp.com", "wikimedia.org", "wp.com",
+        "gravatar.com", "disquscdn.com", "s.imgur.com", "sndcdn.com", "tiktokcdn.com",
+        "alicdn.com", "akamaized.net", "edgekey.net", "cloudfront.net", "fastly.net",
+        "azureedge.net", "msecnd.net", "b-cdn.net", "bunny.net", "wixstatic.com",
+        "static1.squarespace.com", "assets-global.website-files.com", "cloudflare.com"
+    ]);
+
+    // Known popunder / gambling / betting redirector URL patterns & domains
+    const KNOWN_POPUNDER_PATH_HINTS = [
+        "/popunder", "/afu.php", "/redirect/pop", "/pops/",
+        "/interstitial/ad", "/pop.php", "/jump/next.php", "/adclick.php",
+        "/directlink", "/smartlink", "/onclick.php", "/pop.html"
+    ];
+
+    const BETTING_POPUNDER_HOST_RE = /(?:^|[.-])(jaya9\w*|babu88\w*|krikya\w*|baji(?:live|999|88)?\w*|bj88\w*|crickex\w*|jeebet\w*|jeetbuzz\w*|jeetwin\w*|mcw\d+\w*|casinomcw\w*|nagad88\w*|1xbet\w*|1xbit\w*|melbet\w*|mostbet\w*|betwinner\w*|parimatch\w*|linebet\w*|megapari\w*|4rabet\w*|22bet\w*|1win\w*|popads\w*|popcash\w*|propeller(?:ads|click)\w*|adsterra\w*|monetag\w*|clickadu\w*|hilltopads\w*|exoclick\w*|exosrv\w*|realsrv\w*|magsrv\w*|pemsrv\w*|admaven\w*|galaksion\w*|evadav\w*|richads\w*|pushame\w*|highperformanceformat\w*|profitablecpmrate\w*|effectivegatecpm\w*|topcreativeformat\w*|onclickalgo\w*|onclickperformance\w*|onclkds\w*|go2affise\w*|offergate\w*|wpadmngr\w*)\./i;
+
+    const AFFILIATE_TRAP_QUERY_RE = /[?&](?:af|aff|aff_id|btag|zoneid|subid|clickid|campaign_id)=[a-z0-9_-]{4,}/i;
+    const GAMBLING_OR_REDIRECT_HOST_RE = /(casino|bet\d*|888|999|777|365|win\d*|slot|spin|poker|ludo|rummy|bangla|bdt|cricketbet|jackpot|bonus|promo|pop|clk|trk|redir)/i;
+    const REDIRECT_PATH_RE = /^\/(?:click|go|out|track|visit|r|redir|redirect|offer|jump|link)\b/i;
 
     function createEmptyRuleEngine() {
         return {
@@ -80,6 +134,13 @@
         return last2;
     }
 
+    function extractBrandToken(host) {
+        const base = getRegistrableBase(host);
+        if (!base) return "";
+        const label = base.split(".")[0] || "";
+        return label.replace(/[^a-z0-9]/g, "");
+    }
+
     function matchesDomainSet(host, set) {
         if (!host || !set || set.size === 0) return false;
         let cur = host;
@@ -97,6 +158,83 @@
         for (let i = 0; i < list.length; i++) {
             const d = list[i];
             if (host === d || host.endsWith("." + d)) return true;
+        }
+        return false;
+    }
+
+    // 3-Tier Smart JavaScript Dependency Resolver:
+    // Allows core CDNs/auth/captcha/payment/media + same-brand companion asset hosts
+    // while blocking untrusted 3rd-party scripts cleanly without site breakage.
+    function isEssentialSmartJsHost(reqHost, pageHost, urlStr) {
+        if (!reqHost) return true;
+        // Tier 1: Core infrastructure allowlist
+        if (matchesDomainSet(reqHost, ESSENTIAL_JS_ALLOW_DOMAINS)) {
+            // Never exempt Google One-Tap or Cloudflare RUM telemetry scripts
+            if (reqHost === "accounts.google.com" && urlStr && urlStr.includes("/gsi/")) return false;
+            if (reqHost === "static.cloudflareinsights.com") return false;
+            return true;
+        }
+        // Google reCAPTCHA & YouTube iframe API hosted on google.com / youtube.com
+        if (reqHost === "google.com" && urlStr && urlStr.includes("/recaptcha/")) return true;
+        if (reqHost === "youtube.com" && urlStr && (urlStr.includes("/iframe_api") || urlStr.includes("/s/player/"))) return true;
+
+        // Tier 2: Same-brand companion asset host (e.g., site.com -> cdn-site.net / sitestatic.com)
+        if (pageHost) {
+            const pageBrand = extractBrandToken(pageHost);
+            const reqBrand = extractBrandToken(reqHost);
+            if (pageBrand.length >= 4 && reqBrand.length >= 4) {
+                if (reqBrand === pageBrand || reqBrand.includes(pageBrand) || pageBrand.includes(reqBrand)) {
+                    return true;
+                }
+            }
+            // Subdomain-labeled asset mirror (e.g., cdn.site.net, static.site.org, assets.site.io)
+            if (pageBrand.length >= 4 && /^(?:cdn|static|assets|media|js|s\d*|img|player)\./i.test(reqHost) && reqHost.includes(pageBrand)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function isConfirmedPopunderOrBettingTrap(urlStr, reqHost, sourceHost, rules) {
+        if (!urlStr || !reqHost) return false;
+        const lower = urlStr.toLowerCase();
+
+        // 1) Explicit $popup domain lists (EasyList, uAssets, IndianList + ALWAYS_POPUP_DOMAINS)
+        if (rules && matchesDomainSet(reqHost, rules.popupDomains)) {
+            return true;
+        }
+
+        // 2) Known betting / gambling / popunder redirector host families (catches rotating mirror domains)
+        if (BETTING_POPUNDER_HOST_RE.test(reqHost)) {
+            return true;
+        }
+
+        // 3) Confirmed popunder URL path signatures
+        for (let i = 0; i < KNOWN_POPUNDER_PATH_HINTS.length; i++) {
+            if (lower.includes(KNOWN_POPUNDER_PATH_HINTS[i])) return true;
+        }
+
+        // 4) Affiliate trap query (?af=, ?aff=, ?btag=, ?zoneid=, ?clickid=) paired with gambling/redirect host or path
+        if (AFFILIATE_TRAP_QUERY_RE.test(urlStr)) {
+            if (GAMBLING_OR_REDIRECT_HOST_RE.test(reqHost)) return true;
+            try {
+                const u = new URL(urlStr);
+                if (u.pathname === "/" || REDIRECT_PATH_RE.test(u.pathname)) {
+                    // Only treat bare-root ?af= / ?btag= as a trap when cross-origin from another site
+                    if (sourceHost && getRegistrableBase(reqHost) !== getRegistrableBase(sourceHost)) {
+                        if (/[?&](?:af|btag|zoneid)=/i.test(urlStr)) return true;
+                    }
+                }
+            } catch (_e) {}
+        }
+
+        // 5) Explicit $popup structured rules from compiled filter lists
+        if (rules && rules.popupRules && rules.popupRules.length > 0) {
+            for (let i = 0; i < rules.popupRules.length; i++) {
+                if (matchesStructuredRule(rules.popupRules[i], lower, sourceHost || "", true, TYPE_POPUP)) {
+                    return true;
+                }
+            }
         }
         return false;
     }
@@ -410,6 +548,9 @@
         TYPE_IMAGE,
         TYPE_SUBDOCUMENT,
         TYPE_POPUP,
+        UNIFIED_GECKO_UA,
+        UNIFIED_ACCEPT_LANG,
+        UNIFIED_HTML_ACCEPT,
         activeRules: createEmptyRuleEngine(),
         activeMainHost: "",
         cnameBlockedHosts: new Map(),
@@ -425,7 +566,7 @@
             deAmp: true,
             blockPopups: true,
             antiFingerprint: true,
-            strictFingerprint: false,
+            strictFingerprint: true,
             fpSessionSalt: "",
             refererTrim: true,
             lanGuard: true,
@@ -447,6 +588,8 @@
         getRegistrableBase,
         matchesDomainSet,
         matchesDomainList,
+        isEssentialSmartJsHost,
+        isConfirmedPopunderOrBettingTrap,
         mapDetailsTypeToBit,
         compileAbpPatternToRegex,
         tokenizeUrl,

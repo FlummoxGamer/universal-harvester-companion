@@ -1,10 +1,37 @@
 package app.harvester.companion.privacy
 
 /**
- * Bundled high-impact Day-0 offline bootstrap rules — ONLY applied when lists
- * are enabled and have not yet finished downloading to disk.
+ * Bundled high-impact Day-0 offline bootstrap rules & always-on popunder/betting redirector
+ * defenses so protection is instantaneous even before external lists finish syncing.
  */
 internal object UhShieldBootstrapRules {
+
+    /**
+     * Confirmed popunder, click-hijack & gambling/betting affiliate redirector domains.
+     * Merged into popupDomains whenever UH Shield is active so streaming/download redirect
+     * traps (such as mlsbd -> jaya9bangla.com) are neutralized on Day 0 and forever.
+     */
+    val ALWAYS_POPUP_DOMAINS: Set<String> = setOf(
+        // Gambling / betting affiliate popunder redirectors (South Asian & global streaming traps)
+        "jaya9bangla.com", "jaya9.com", "jaya9.live", "jaya9.bet", "jaya9bd.com", "jaya9win.com",
+        "babu88.com", "babu88.net", "babu88.live", "babu88bd.com",
+        "krikya.com", "krikya88.com", "krikya11.com", "krikyabd.com",
+        "baji.live", "baji999.live", "bj88.com", "bj888.live", "bajilive.net",
+        "crickex.com", "crickex.net", "crickex.in", "crickexbd.com",
+        "jeebet.com", "jeetbuzz.com", "jeetwin.com", "mcw19.com", "casinomcw.com", "nagad88.com",
+        "melbet.com", "1xbet.com", "1xbit.com", "mostbet.com", "betwinner.com",
+        "parimatch.com", "linebet.com", "megapari.com", "22bet.com", "4rabet.com", "1win.pro", "1win.com",
+        // Dedicated popunder & malvertising redirector networks
+        "popads.net", "popcash.net", "propellerads.com", "propellerclick.com",
+        "adsterra.com", "monetag.com", "clickadu.com", "hilltopads.net", "hilltopads.com",
+        "exoclick.com", "exosrv.com", "realsrv.com", "magsrv.com", "pemsrv.com",
+        "juicyads.com", "trafficjunky.net", "trafficstars.com", "tsyndicate.com",
+        "acscdn.com", "highperformanceformat.com", "profitablecpmrate.com",
+        "effectivegatecpm.com", "topcreativeformat.com", "onclickalgo.com",
+        "onclickperformance.com", "onclkds.com", "admaven.com", "galaksion.com",
+        "evadav.com", "richads.com", "pushame.com", "wpadmngr.com", "popunder.net",
+        "doublepimp.com", "go2affise.com", "trackwilltrk.com", "offergate.pro",
+    )
 
     val BOOTSTRAP_AD_DOMAINS: Set<String> = setOf(
         "doubleclick.net", "googlesyndication.com", "googleadservices.com", "adservice.google.com",
@@ -102,6 +129,7 @@ internal object UhShieldBootstrapRules {
     val fallbackRuleCount: Int
         get() = BOOTSTRAP_AD_DOMAINS.size +
             BOOTSTRAP_TRACKER_DOMAINS.size +
+            ALWAYS_POPUP_DOMAINS.size +
             BOOTSTRAP_URL_PATTERNS.size +
             BOOTSTRAP_GLOBAL_COSMETICS.size
 
@@ -109,6 +137,7 @@ internal object UhShieldBootstrapRules {
         val builder = UhAdblockRuleCompiler.Builder()
         builder.adDomains.addAll(BOOTSTRAP_AD_DOMAINS)
         builder.trackerDomains.addAll(BOOTSTRAP_TRACKER_DOMAINS)
+        builder.popupDomains.addAll(ALWAYS_POPUP_DOMAINS)
         BOOTSTRAP_URL_PATTERNS.forEach { pat ->
             builder.addNetworkRule(
                 UhAdblockRuleCompiler.CompiledNetworkRule(

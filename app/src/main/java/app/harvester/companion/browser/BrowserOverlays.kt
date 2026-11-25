@@ -20,13 +20,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import app.harvester.companion.SearchEnginePrefs
-import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.browser.menu.ContextMenuDialog
 import app.harvester.companion.browser.menu.OcrResultDialog
 import app.harvester.companion.browser.privacy.BlockedRedirectToast
 import app.harvester.companion.browser.privacy.HomographWarningBanner
 import app.harvester.companion.browser.privacy.HttpsFallbackBanner
-import app.harvester.companion.browser.privacy.JsBlockedBanner
 import app.harvester.companion.components.Components
 import app.harvester.companion.privacy.UhHomographDetector
 import app.harvester.companion.privacy.UhPrivacyController
@@ -47,8 +45,8 @@ private data class ActiveHitMenu(
 /**
  * Modular Compose overlay host mounted over the BrowserFragment viewport:
  * 1) Redesigned Long-Press Context Menu dialog + OCR Result dialog
- * 2) Slim Smart JavaScript Blocking banner (ONLY shown when scripts are blocked on current page)
- * 3) 1-Tap HTTPS-Only HTTP fallback banner (shown only when HTTPS fails on an HTTP-only/broken-TLS site)
+ * 2) Punycode/IDN homograph spoofing warning banner
+ * 3) 1-Tap HTTPS-Only HTTP fallback banner & confirmed blocked-redirect toast
  */
 @Composable
 fun BrowserOverlays(
@@ -58,7 +56,6 @@ fun BrowserOverlays(
     val context = LocalContext.current
     val browserState by components.store.stateFlow.collectAsState()
     val isBarBottom by isBarBottomFlow.collectAsState()
-    val jsTick by UhShieldEngine.jsBlockedTick.collectAsState()
     val httpExceptions by UhShieldEngine.httpExceptionHosts.collectAsState()
     val blockedRedirect by UhShieldEngine.blockedRedirectEvent.collectAsState()
 
@@ -88,25 +85,7 @@ fun BrowserOverlays(
         }
     }
 
-    // 2. Smart JavaScript Blocked banner state (strictly hidden unless scripts were blocked)
-    var dismissedJsHost by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(currentHost) {
-        if (dismissedJsHost != null && dismissedJsHost != currentHost) {
-            dismissedJsHost = null
-        }
-    }
-    val smartJsEnabled = remember(jsTick, currentHost) {
-        SettingsPrefs.getBool(context, SettingsPrefs.K_PG_SCRIPT, false)
-    }
-    val jsBlockedState = remember(jsTick, currentHost, smartJsEnabled) {
-        if (!smartJsEnabled || currentHost.isBlank()) null
-        else UhShieldEngine.getJsBlockedState(currentHost)
-    }
-    val showJsBanner = jsBlockedState != null &&
-        jsBlockedState.totalBlocked > 0 &&
-        dismissedJsHost != currentHost
-
-    // 3. HTTPS-Only 1-tap HTTP fallback banner (debounced so normal redirects never flicker)
+    // 2. HTTPS-Only 1-tap HTTP fallback banner (debounced so normal redirects never flicker)
     var dismissedHttpsHost by remember { mutableStateOf<String?>(null) }
     var showHttpsFallback by remember { mutableStateOf(false) }
 
@@ -198,41 +177,6 @@ fun BrowserOverlays(
                         showHttpsFallback = false
                     },
                 )
-            }
-
-            AnimatedVisibility(
-                visible = showJsBanner && jsBlockedState != null,
-                enter = fadeIn() + slideInVertically { if (isBarBottom) it / 2 else -it / 2 },
-                exit = fadeOut() + slideOutVertically { if (isBarBottom) it / 2 else -it / 2 },
-            ) {
-                jsBlockedState?.let { jsState ->
-                    JsBlockedBanner(
-                        state = jsState,
-                        onAllowOnce = {
-                            UhShieldEngine.allowJsOnce(currentUrl)
-                            if (tabId.isNotBlank()) {
-                                components.useCases.sessionUseCases.reload(tabId)
-                            }
-                        },
-                        onAllowAlways = {
-                            UhShieldEngine.allowJsAlways(currentUrl)
-                            if (tabId.isNotBlank()) {
-                                components.useCases.sessionUseCases.reload(tabId)
-                            }
-                        },
-                        onDisableGlobally = {
-                            SettingsPrefs.setBool(context, SettingsPrefs.K_PG_SCRIPT, false)
-                            UhShieldEngine.clearJsBlockedForHost(currentUrl)
-                            UhPrivacyController.applyAllToEngine(context)
-                            if (tabId.isNotBlank()) {
-                                components.useCases.sessionUseCases.reload(tabId)
-                            }
-                        },
-                        onDismiss = {
-                            dismissedJsHost = currentHost
-                        },
-                    )
-                }
             }
 
             AnimatedVisibility(

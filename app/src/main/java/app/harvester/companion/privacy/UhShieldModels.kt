@@ -4,8 +4,8 @@ import java.util.Locale
 
 enum class ShieldLevel(val code: Int, val label: String, val summary: String) {
     OFF(0, "Off", "Ad and tracker blocking disabled"),
-    STANDARD(1, "Standard", "Blocks third-party ads, trackers, and malware with minimal site impact"),
-    AGGRESSIVE(2, "Aggressive", "Blocks 1st & 3rd-party ads, CNAME trackers, cosmetics, and anti-adblock scripts");
+    STANDARD(1, "Standard", "Blocks 3rd-party ads, trackers, annoyances & LAN port scans with minimal site impact"),
+    AGGRESSIVE(2, "Aggressive", "Full-power ad, CNAME tracker, annoyance, LAN guard & anti-adblock defense");
 
     companion object {
         fun fromCode(code: Int): ShieldLevel = entries.firstOrNull { it.code == code } ?: AGGRESSIVE

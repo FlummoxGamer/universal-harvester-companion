@@ -19,6 +19,7 @@
         {
             "matches": ["<all_urls>"],
             "js": [
+                "cs_fp_sync.js",
                 "cs_cosmetics.js",
                 "cs_cookie_dark.js",
                 "cs_media_pip.js",

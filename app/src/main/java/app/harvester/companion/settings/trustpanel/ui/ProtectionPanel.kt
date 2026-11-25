@@ -47,6 +47,9 @@ internal fun ProtectionPanel(
     lifetimeStats: ShieldStatsSnapshot,
     shieldLevel: ShieldLevel,
     isShieldPausedForSite: Boolean,
+    showSmartJsToggle: Boolean,
+    isSmartJsAllowedForSite: Boolean,
+    smartJsBlockedCount: Int,
     showWebDarkToggle: Boolean,
     isWebDarkEnabledForSite: Boolean,
     numberOfGeckoTrackersBlocked: Int,
@@ -54,6 +57,7 @@ internal fun ProtectionPanel(
     requestLogBlockedCount: Int,
     websitePermissions: List<WebsitePermission>,
     onToggleShieldForSite: () -> Unit,
+    onToggleSmartJsForSite: () -> Unit,
     onToggleWebDarkForSite: () -> Unit,
     onBlockElementClick: () -> Unit,
     onRequestInspectorClick: () -> Unit,
@@ -128,6 +132,33 @@ internal fun ProtectionPanel(
                     }
                 },
             )
+        }
+
+        // Optional Per-Site Smart JavaScript Blocking control (only shown when Smart JS is enabled globally)
+        if (showSmartJsToggle && siteHost.isNotBlank()) {
+            MenuGroup {
+                val jsDesc = when {
+                    isSmartJsAllowedForSite -> "All scripts allowed on $siteHost"
+                    smartJsBlockedCount > 0 -> "$smartJsBlockedCount untrusted 3rd-party scripts blocked"
+                    else -> "Blocking untrusted 3rd-party scripts"
+                }
+                MenuItem(
+                    label = "Smart JS Filter on This Site",
+                    description = jsDesc,
+                    beforeIconPainter = painterResource(id = R.drawable.uh_ic_pg_js_block_24),
+                    onClick = onToggleSmartJsForSite,
+                    afterContent = {
+                        Switch(
+                            checked = !isSmartJsAllowedForSite,
+                            onCheckedChange = { onToggleSmartJsForSite() },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = MaterialTheme.colorScheme.background,
+                                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                            ),
+                        )
+                    },
+                )
+            }
         }
 
         // Quick Privacy Power Tools (Block Element, Live Request Inspector, 1-Tap Forget Site)

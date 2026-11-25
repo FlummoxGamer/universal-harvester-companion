@@ -40,6 +40,7 @@ import androidx.fragment.compose.content
 import androidx.lifecycle.lifecycleScope
 import android.widget.Toast
 import app.harvester.companion.GeckoWebExtensionBridge
+import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.UHApp
 import app.harvester.companion.components.PermissionStorage
 import app.harvester.companion.privacy.ShieldLevel
@@ -154,6 +155,8 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
             val shieldState by UhShieldEngine.state.collectAsState()
             val hostTick by UhShieldEngine.hostStatsTick.collectAsState()
             val requestLogTick by UhShieldEngine.requestLogTick.collectAsState()
+            val jsTick by UhShieldEngine.jsBlockedTick.collectAsState()
+            val jsAllowAlwaysHosts by UhShieldEngine.jsAllowAlwaysHosts.collectAsState()
             val darkBypassHosts by UhPrivacyController.darkBypassHosts.collectAsState()
             val trustState by store.stateFlow.collectAsState()
 
@@ -286,6 +289,15 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                                     )
                                 }
                                 val isShieldPausedForSite = siteHost.isNotBlank() && siteHost in shieldState.pausedHosts
+                                val showSmartJsToggle = remember {
+                                    SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_SCRIPT, false)
+                                }
+                                val isSmartJsAllowedForSite = remember(siteHost, jsAllowAlwaysHosts, jsTick) {
+                                    siteHost.isNotBlank() && UhShieldEngine.isJsAllowedForHost(siteHost)
+                                }
+                                val smartJsBlockedCount = remember(siteHost, jsTick) {
+                                    UhShieldEngine.getJsBlockedState(siteHost)?.totalBlocked ?: 0
+                                }
                                 val showWebDarkToggle = UhPrivacyController.isForceDarkWebEffectivelyEnabled(ctx)
                                 val isWebDarkBypassed = siteHost.isNotBlank() && siteHost in darkBypassHosts
                                 val requestLogs = remember(siteHost, requestLogTick) {
@@ -302,6 +314,9 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                                     lifetimeStats = shieldState.lifetimeStats,
                                     shieldLevel = shieldState.level,
                                     isShieldPausedForSite = isShieldPausedForSite,
+                                    showSmartJsToggle = showSmartJsToggle,
+                                    isSmartJsAllowedForSite = isSmartJsAllowedForSite,
+                                    smartJsBlockedCount = smartJsBlockedCount,
                                     showWebDarkToggle = showWebDarkToggle,
                                     isWebDarkEnabledForSite = !isWebDarkBypassed,
                                     numberOfGeckoTrackersBlocked = trackersBlockedCount,
@@ -324,6 +339,17 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                                                 }
                                             }
                                             UhPrivacyController.pushRuntimeConfigToExtension()
+                                        }
+                                    },
+                                    onToggleSmartJsForSite = {
+                                        if (isSmartJsAllowedForSite) {
+                                            UhShieldEngine.revokeJsAlways(siteHost)
+                                        } else {
+                                            UhShieldEngine.allowJsAlways(siteHost)
+                                        }
+                                        UhPrivacyController.pushLightweightSettingsToExtension()
+                                        store.state.sessionState?.let {
+                                            components.useCases.sessionUseCases.reload(it.id)
                                         }
                                     },
                                     onToggleWebDarkForSite = {
