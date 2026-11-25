@@ -230,6 +230,7 @@ class Components(val context: Context) {
         UhMediaController.init(context.applicationContext, browserStore)
         app.harvester.companion.browser.tabs.TabGroupStore.init(context.applicationContext)
         app.harvester.companion.browser.tabs.TabHistoryStore.init(context.applicationContext)
+        app.harvester.companion.browser.tabs.TabMetaStore.init(context.applicationContext)
         app.harvester.companion.browser.tabs.PrivateSessionNotificationManager.start(context.applicationContext, browserStore)
         registerNetworkResumeCallback(browserStore)
         browserStore

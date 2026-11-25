@@ -36,11 +36,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import mozilla.appservices.places.BookmarkRoot
+import mozilla.components.browser.state.action.TabListAction
 
 /**
  * Full-screen true edge-to-edge Tab Switcher DialogFragment.
- * Replaces the legacy BottomSheetDialogFragment so the Tab Switcher draws seamlessly
- * behind the status bar, display cutout, and navigation bar just like every other screen.
+ * Draws seamlessly behind the status bar, display cutout, and navigation bar.
  */
 class TabsTrayDialogFragment : DialogFragment() {
 
@@ -108,6 +108,7 @@ class TabsTrayDialogFragment : DialogFragment() {
         val components = app.components
         TabGroupStore.init(ctx)
         TabHistoryStore.init(ctx)
+        TabMetaStore.init(ctx)
 
         return ComposeView(ctx).apply {
             setContent {
@@ -138,308 +139,357 @@ class TabsTrayDialogFragment : DialogFragment() {
                     val tabs = browserState.tabs
                     val selectedTabId = browserState.selectedTabId
 
-                    TabsTrayScreen(
-                        tabs = tabs,
-                        groups = groups,
-                        selectedTabId = selectedTabId,
-                        onSelectTab = { tabId ->
-                            dismissAllowingStateLoss()
-                            browserViewModel.exitEditMode()
-                            components.useCases.tabsUseCases.selectTab(tabId)
-                            val targetTab = tabs.firstOrNull { it.id == tabId }
-                            if (targetTab != null && !targetTab.content.private) {
-                                TabHistoryStore.recordTabAccess(tabId)
-                            }
-                            if (targetTab != null && (targetTab.content.url.isBlank() || targetTab.content.url == "about:blank")) {
+                    val actions = remember(tabs, selectedTabId) {
+                        TabsTrayActions(
+                            onSelectTab = { tabId ->
+                                dismissAllowingStateLoss()
+                                browserViewModel.exitEditMode()
+                                components.useCases.tabsUseCases.selectTab(tabId)
+                                val targetTab = tabs.firstOrNull { it.id == tabId }
+                                if (targetTab != null && !targetTab.content.private) {
+                                    TabHistoryStore.recordTabAccess(tabId)
+                                }
+                                if (targetTab != null && (targetTab.content.url.isBlank() || targetTab.content.url == "about:blank")) {
+                                    navigateToHome()
+                                } else {
+                                    navigateToBrowserIfNeeded()
+                                }
+                            },
+                            onCloseTab = { tabId ->
+                                val target = tabs.firstOrNull { it.id == tabId }
+                                if (target != null) {
+                                    val grp = TabGroupStore.groupForTab(tabId)
+                                    val record = ClosedTabRecord(
+                                        url = target.content.url.ifBlank { "about:blank" },
+                                        title = target.content.title,
+                                        isPrivate = target.content.private,
+                                        groupSnapshot = grp
+                                    )
+                                    TabGroupStore.removeTabFromGroups(tabId)
+                                    TabMetaStore.unpinTab(tabId)
+                                    TabPreviewCache.remove(tabId)
+                                    val jumpToParent = SettingsPrefs.getBool(ctx, SettingsPrefs.K_TAB_JUMP_TO_PARENT, true)
+                                    components.useCases.tabsUseCases.removeTab(tabId, selectParentIfExists = jumpToParent)
+                                    TabHistoryStore.recordClosedBatch(
+                                        label = "Tab closed",
+                                        records = listOf(record),
+                                        wasPrivate = target.content.private,
+                                        allowUndo = true
+                                    )
+                                }
+                            },
+                            onCloseTabsBatch = { tabIds, label, isPrivate ->
+                                if (tabIds.isNotEmpty()) {
+                                    val targetMap = tabs.associateBy { it.id }
+                                    val records = tabIds.mapNotNull { id ->
+                                        val t = targetMap[id] ?: return@mapNotNull null
+                                        ClosedTabRecord(
+                                            url = t.content.url.ifBlank { "about:blank" },
+                                            title = t.content.title,
+                                            isPrivate = t.content.private,
+                                            groupSnapshot = TabGroupStore.groupForTab(id)
+                                        )
+                                    }
+                                    tabIds.forEach {
+                                        TabGroupStore.removeTabFromGroups(it)
+                                        TabMetaStore.unpinTab(it)
+                                        TabPreviewCache.remove(it)
+                                    }
+                                    components.store.dispatch(TabListAction.RemoveTabsAction(tabIds))
+                                    TabHistoryStore.recordClosedBatch(
+                                        label = label,
+                                        records = records,
+                                        wasPrivate = isPrivate,
+                                        allowUndo = true
+                                    )
+                                }
+                            },
+                            onCloseAllTabs = { isPrivate ->
+                                if (isPrivate) {
+                                    PrivateSessionNotificationManager.closeAllPrivateTabs(ctx, components)
+                                } else {
+                                    // Shield Pinned tabs from Close All Tabs just like Brave / Edge
+                                    val pinnedSet = TabMetaStore.pinnedIdsFlow.value.toSet()
+                                    val normalTargets = tabs.filter { !it.content.private && it.id !in pinnedSet }
+                                    if (normalTargets.isEmpty()) {
+                                        if (tabs.any { !it.content.private && it.id in pinnedSet }) {
+                                            Toast.makeText(ctx, "Pinned tabs are protected from Close All", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        val ids = normalTargets.map { it.id }
+                                        val records = normalTargets.map { t ->
+                                            ClosedTabRecord(
+                                                url = t.content.url.ifBlank { "about:blank" },
+                                                title = t.content.title,
+                                                isPrivate = false,
+                                                groupSnapshot = TabGroupStore.groupForTab(t.id)
+                                            )
+                                        }
+                                        ids.forEach {
+                                            TabGroupStore.removeTabFromGroups(it)
+                                            TabPreviewCache.remove(it)
+                                        }
+                                        components.store.dispatch(TabListAction.RemoveTabsAction(ids))
+                                        TabHistoryStore.recordClosedBatch(
+                                            label = "Closed ${ids.size} ${if (ids.size == 1) "tab" else "tabs"}",
+                                            records = records,
+                                            wasPrivate = false,
+                                            allowUndo = true
+                                        )
+                                    }
+                                }
+                            },
+                            onNewTab = { isPrivate ->
+                                dismissAllowingStateLoss()
+                                browserViewModel.exitEditMode()
+                                val anchorId = if (SettingsPrefs.getBool(ctx, SettingsPrefs.K_TAB_OPEN_NEXT_TO_CURRENT, false)) {
+                                    selectedTabId
+                                } else null
+                                val newId = components.useCases.tabsUseCases.addTab(
+                                    url = "about:blank",
+                                    selectTab = true,
+                                    private = isPrivate
+                                )
+                                if (anchorId != null) {
+                                    TabGroupStore.insertTabAfter(newId, anchorId, isPrivate)
+                                }
+                                if (!isPrivate) TabHistoryStore.recordTabAccess(newId)
+                                if (isPrivate) {
+                                    browserViewModel.enterEditMode("")
+                                }
                                 navigateToHome()
-                            } else {
-                                navigateToBrowserIfNeeded()
-                            }
-                        },
-                        onCloseTab = { tabId ->
-                            val target = tabs.firstOrNull { it.id == tabId }
-                            if (target != null) {
-                                val grp = TabGroupStore.groupForTab(tabId)
-                                val record = ClosedTabRecord(
-                                    url = target.content.url.ifBlank { "about:blank" },
-                                    title = target.content.title,
-                                    isPrivate = target.content.private,
-                                    groupSnapshot = grp
+                            },
+                            onNewTabInGroup = { groupId, isPrivate ->
+                                dismissAllowingStateLoss()
+                                browserViewModel.exitEditMode()
+                                val newId = components.useCases.tabsUseCases.addTab(
+                                    url = "about:blank",
+                                    selectTab = true,
+                                    private = isPrivate
                                 )
+                                TabGroupStore.addTabToGroup(groupId, newId)
+                                if (!isPrivate) TabHistoryStore.recordTabAccess(newId)
+                                if (isPrivate) {
+                                    browserViewModel.enterEditMode("")
+                                }
+                                navigateToHome()
+                            },
+                            onDuplicateTab = { sourceTab ->
+                                val targetUrl = sourceTab.content.url.ifBlank { "about:blank" }
+                                val dupId = components.useCases.tabsUseCases.addTab(
+                                    url = targetUrl,
+                                    selectTab = false,
+                                    private = sourceTab.content.private
+                                )
+                                TabGroupStore.insertTabAfter(dupId, sourceTab.id, sourceTab.content.private)
+                                TabGroupStore.groupForTab(sourceTab.id)?.let { grp ->
+                                    TabGroupStore.addTabToGroup(grp.id, dupId)
+                                }
+                                if (!sourceTab.content.private) {
+                                    TabHistoryStore.recordTabAccess(dupId)
+                                }
+                                Toast.makeText(ctx, "Tab duplicated", Toast.LENGTH_SHORT).show()
+                            },
+                            onTogglePinTab = { tab ->
+                                if (!tab.content.private) {
+                                    val nowPinned = TabMetaStore.togglePin(tab.id)
+                                    Toast.makeText(
+                                        ctx,
+                                        if (nowPinned) "Tab pinned" else "Tab unpinned",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            },
+                            onToggleMuteTab = { tab ->
+                                val nowMuted = TabMetaStore.toggleMute(tab)
+                                Toast.makeText(
+                                    ctx,
+                                    if (nowMuted) "Tab muted" else "Tab unmuted",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            onShareTabs = { selectedIds ->
+                                val selectedUrls = tabs.filter { it.id in selectedIds }
+                                    .map { it.content.url }
+                                    .filter { it.isNotBlank() && it != "about:blank" }
+                                if (selectedUrls.isNotEmpty()) {
+                                    val text = selectedUrls.joinToString("\n")
+                                    val intent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_TEXT, text)
+                                    }
+                                    startActivity(Intent.createChooser(intent, "Share Tabs"))
+                                } else {
+                                    Toast.makeText(ctx, "No shareable URLs selected", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            onBookmarkTabs = { selectedIds ->
+                                val targets = tabs.filter {
+                                    it.id in selectedIds && !it.content.private &&
+                                        it.content.url.isNotBlank() && it.content.url != "about:blank"
+                                }
+                                if (targets.isEmpty()) {
+                                    Toast.makeText(ctx, "No bookmarkable pages selected", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    lifecycleScope.launch(Dispatchers.IO) {
+                                        var saved = 0
+                                        for (t in targets) {
+                                            try {
+                                                val existing = components.placesBookmarksStorage
+                                                    .getBookmarksWithUrl(t.content.url).getOrNull().orEmpty()
+                                                if (existing.isEmpty()) {
+                                                    components.placesBookmarksStorage.addItem(
+                                                        BookmarkRoot.Mobile.id,
+                                                        t.content.url,
+                                                        t.content.title.ifBlank { t.content.url },
+                                                        null
+                                                    )
+                                                    saved++
+                                                }
+                                            } catch (e: Exception) {
+                                                UHLog.w("bookmark", "Batch bookmark skipped: ${e.message}")
+                                            }
+                                        }
+                                        withContext(Dispatchers.Main) {
+                                            val msg = if (saved > 0) {
+                                                "Bookmarked $saved ${if (saved == 1) "tab" else "tabs"}"
+                                            } else {
+                                                "Already bookmarked"
+                                            }
+                                            Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                            },
+                            onCreateGroup = { name, colorArgb, tabIds, isPrivate ->
+                                val finalIds = if (tabIds.isNotEmpty()) {
+                                    tabIds
+                                } else {
+                                    val createdId = components.useCases.tabsUseCases.addTab(
+                                        url = "about:blank",
+                                        selectTab = false,
+                                        private = isPrivate
+                                    )
+                                    if (!isPrivate) TabHistoryStore.recordTabAccess(createdId)
+                                    listOf(createdId)
+                                }
+                                TabGroupStore.createGroup(
+                                    name = name,
+                                    colorArgb = colorArgb,
+                                    tabIds = finalIds,
+                                    isPrivate = isPrivate
+                                )
+                            },
+                            onAddTabsToGroup = { groupId, tabIds ->
+                                tabIds.forEach { TabMetaStore.unpinTab(it) }
+                                TabGroupStore.addTabsToGroup(groupId, tabIds)
+                            },
+                            onRemoveTabFromGroup = { tabId ->
                                 TabGroupStore.removeTabFromGroups(tabId)
-                                TabPreviewCache.remove(tabId)
-                                components.useCases.tabsUseCases.removeTab(tabId)
-                                TabHistoryStore.recordClosedBatch(
-                                    label = "Tab closed",
-                                    records = listOf(record),
-                                    wasPrivate = target.content.private,
-                                    allowUndo = true
-                                )
-                            }
-                        },
-                        onCloseTabsBatch = { tabIds, label, isPrivate ->
-                            if (tabIds.isNotEmpty()) {
-                                val targetMap = tabs.associateBy { it.id }
-                                val records = tabIds.mapNotNull { id ->
-                                    val t = targetMap[id] ?: return@mapNotNull null
+                            },
+                            onRenameGroup = { groupId, name, colorArgb ->
+                                TabGroupStore.renameAndRecolor(groupId, name, colorArgb)
+                            },
+                            onUngroup = { groupId ->
+                                TabGroupStore.ungroup(groupId)
+                            },
+                            onCloseGroupTabs = { group ->
+                                val memberTabs = tabs.filter { it.id in group.tabIds }
+                                val ids = memberTabs.map { it.id }
+                                val records = memberTabs.map { t ->
                                     ClosedTabRecord(
                                         url = t.content.url.ifBlank { "about:blank" },
                                         title = t.content.title,
                                         isPrivate = t.content.private,
-                                        groupSnapshot = TabGroupStore.groupForTab(id)
+                                        groupSnapshot = group
                                     )
                                 }
-                                tabIds.forEach {
-                                    TabGroupStore.removeTabFromGroups(it)
-                                    TabPreviewCache.remove(it)
+                                TabGroupStore.ungroup(group.id)
+                                ids.forEach { TabPreviewCache.remove(it) }
+                                if (ids.isNotEmpty()) {
+                                    components.store.dispatch(TabListAction.RemoveTabsAction(ids))
                                 }
-                                components.useCases.tabsUseCases.removeTabs(tabIds)
                                 TabHistoryStore.recordClosedBatch(
-                                    label = label,
+                                    label = "Closed group \"${group.name}\"",
                                     records = records,
-                                    wasPrivate = isPrivate,
+                                    wasPrivate = group.isPrivate,
                                     allowUndo = true
                                 )
-                            }
-                        },
-                        onCloseAllTabs = { isPrivate ->
-                            if (isPrivate) {
-                                PrivateSessionNotificationManager.closeAllPrivateTabs(ctx, components)
-                            } else {
-                                val normalTargets = tabs.filter { !it.content.private }
-                                if (normalTargets.isNotEmpty()) {
-                                    val ids = normalTargets.map { it.id }
-                                    val records = normalTargets.map { t ->
-                                        ClosedTabRecord(
-                                            url = t.content.url.ifBlank { "about:blank" },
-                                            title = t.content.title,
-                                            isPrivate = false,
-                                            groupSnapshot = TabGroupStore.groupForTab(t.id)
+                            },
+                            onUndoClose = {
+                                TabHistoryStore.consumeUndo()?.let { batch ->
+                                    val restoredByGroup = linkedMapOf<String, Pair<TabGroup, MutableList<String>>>()
+                                    batch.tabs.forEachIndexed { idx, rec ->
+                                        val newId = components.useCases.tabsUseCases.addTab(
+                                            url = rec.url.ifBlank { "about:blank" },
+                                            selectTab = idx == batch.tabs.lastIndex,
+                                            private = rec.isPrivate
                                         )
-                                    }
-                                    ids.forEach {
-                                        TabGroupStore.removeTabFromGroups(it)
-                                        TabPreviewCache.remove(it)
-                                    }
-                                    components.useCases.tabsUseCases.removeTabs(ids)
-                                    TabHistoryStore.recordClosedBatch(
-                                        label = "Closed ${ids.size} tabs",
-                                        records = records,
-                                        wasPrivate = false,
-                                        allowUndo = true
-                                    )
-                                }
-                            }
-                        },
-                        onNewTab = { isPrivate ->
-                            dismissAllowingStateLoss()
-                            browserViewModel.exitEditMode()
-                            val newId = components.useCases.tabsUseCases.addTab(
-                                url = "about:blank",
-                                selectTab = true,
-                                private = isPrivate
-                            )
-                            if (!isPrivate) TabHistoryStore.recordTabAccess(newId)
-                            if (isPrivate) {
-                                browserViewModel.enterEditMode("")
-                                navigateToHome()
-                            } else {
-                                navigateToHome()
-                            }
-                        },
-                        onNewTabInGroup = { groupId, isPrivate ->
-                            dismissAllowingStateLoss()
-                            browserViewModel.exitEditMode()
-                            val newId = components.useCases.tabsUseCases.addTab(
-                                url = "about:blank",
-                                selectTab = true,
-                                private = isPrivate
-                            )
-                            TabGroupStore.addTabToGroup(groupId, newId)
-                            if (!isPrivate) TabHistoryStore.recordTabAccess(newId)
-                            if (isPrivate) {
-                                browserViewModel.enterEditMode("")
-                                navigateToHome()
-                            } else {
-                                navigateToHome()
-                            }
-                        },
-                        onDuplicateTab = { sourceTab ->
-                            val targetUrl = sourceTab.content.url.ifBlank { "about:blank" }
-                            val dupId = components.useCases.tabsUseCases.addTab(
-                                url = targetUrl,
-                                selectTab = false,
-                                private = sourceTab.content.private
-                            )
-                            TabGroupStore.groupForTab(sourceTab.id)?.let { grp ->
-                                TabGroupStore.addTabToGroup(grp.id, dupId)
-                            }
-                            if (!sourceTab.content.private) {
-                                TabHistoryStore.recordTabAccess(dupId)
-                            }
-                            Toast.makeText(ctx, "Tab duplicated", Toast.LENGTH_SHORT).show()
-                        },
-                        onShareTabs = { selectedIds ->
-                            val selectedUrls = tabs.filter { it.id in selectedIds }
-                                .map { it.content.url }
-                                .filter { it.isNotBlank() && it != "about:blank" }
-                            if (selectedUrls.isNotEmpty()) {
-                                val text = selectedUrls.joinToString("\n")
-                                val intent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_TEXT, text)
-                                }
-                                startActivity(Intent.createChooser(intent, "Share Tabs"))
-                            } else {
-                                Toast.makeText(ctx, "No shareable URLs selected", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        onBookmarkTabs = { selectedIds ->
-                            val targets = tabs.filter {
-                                it.id in selectedIds && !it.content.private &&
-                                    it.content.url.isNotBlank() && it.content.url != "about:blank"
-                            }
-                            if (targets.isEmpty()) {
-                                Toast.makeText(ctx, "No bookmarkable pages selected", Toast.LENGTH_SHORT).show()
-                            } else {
-                                lifecycleScope.launch(Dispatchers.IO) {
-                                    var saved = 0
-                                    for (t in targets) {
-                                        try {
-                                            val existing = components.placesBookmarksStorage
-                                                .getBookmarksWithUrl(t.content.url).getOrNull().orEmpty()
-                                            if (existing.isEmpty()) {
-                                                components.placesBookmarksStorage.addItem(
-                                                    BookmarkRoot.Mobile.id,
-                                                    t.content.url,
-                                                    t.content.title.ifBlank { t.content.url },
-                                                    null
-                                                )
-                                                saved++
+                                        if (!rec.isPrivate) TabHistoryStore.recordTabAccess(newId)
+                                        rec.groupSnapshot?.let { grpSnap ->
+                                            val entry = restoredByGroup.getOrPut(grpSnap.id) {
+                                                grpSnap to mutableListOf()
                                             }
-                                        } catch (e: Exception) {
-                                            UHLog.w("bookmark", "Batch bookmark skipped: ${e.message}")
+                                            entry.second.add(newId)
                                         }
                                     }
-                                    withContext(Dispatchers.Main) {
-                                        val msg = if (saved > 0) "Bookmarked $saved ${if (saved == 1) "tab" else "tabs"}" else "Already bookmarked"
+                                    for ((_, pair) in restoredByGroup) {
+                                        TabGroupStore.restoreGroup(pair.first, pair.second)
+                                    }
+                                }
+                            },
+                            onRestoreRecentlyClosed = { rec ->
+                                TabHistoryStore.removeRecentlyClosed(rec.id)
+                                val newId = components.useCases.tabsUseCases.addTab(
+                                    url = rec.url,
+                                    selectTab = true,
+                                    private = false
+                                )
+                                TabHistoryStore.recordTabAccess(newId)
+                                dismissAllowingStateLoss()
+                                browserViewModel.exitEditMode()
+                                navigateToBrowserIfNeeded()
+                            },
+                            onRestoreAllRecentlyClosed = {
+                                val list = TabHistoryStore.recentlyClosedFlow.value.toList()
+                                if (list.isNotEmpty()) {
+                                    TabHistoryStore.clearRecentlyClosed()
+                                    list.reversed().forEachIndexed { idx, rec ->
+                                        val newId = components.useCases.tabsUseCases.addTab(
+                                            url = rec.url,
+                                            selectTab = idx == list.lastIndex,
+                                            private = false
+                                        )
+                                        TabHistoryStore.recordTabAccess(newId)
+                                    }
+                                }
+                            },
+                            onClearRecentlyClosed = {
+                                TabHistoryStore.clearRecentlyClosed()
+                            },
+                            onUnlockPrivate = {
+                                PrivateLockManager.promptUnlock(
+                                    context = requireActivity(),
+                                    onError = { msg ->
                                         Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
                                     }
-                                }
-                            }
-                        },
-                        onCreateGroup = { name, colorArgb, tabIds, isPrivate ->
-                            val finalIds = if (tabIds.isNotEmpty()) {
-                                tabIds
-                            } else {
-                                // Creating a group with zero pre-selected tabs opens a fresh tab directly inside it!
-                                val createdId = components.useCases.tabsUseCases.addTab(
-                                    url = "about:blank",
-                                    selectTab = false,
-                                    private = isPrivate
                                 )
-                                if (!isPrivate) TabHistoryStore.recordTabAccess(createdId)
-                                listOf(createdId)
-                            }
-                            TabGroupStore.createGroup(
-                                name = name,
-                                colorArgb = colorArgb,
-                                tabIds = finalIds,
-                                isPrivate = isPrivate
-                            )
-                        },
-                        onAddTabsToGroup = { groupId, tabIds ->
-                            TabGroupStore.addTabsToGroup(groupId, tabIds)
-                        },
-                        onRemoveTabFromGroup = { tabId ->
-                            TabGroupStore.removeTabFromGroups(tabId)
-                        },
-                        onRenameGroup = { groupId, name, colorArgb ->
-                            TabGroupStore.renameAndRecolor(groupId, name, colorArgb)
-                        },
-                        onUngroup = { groupId ->
-                            TabGroupStore.ungroup(groupId)
-                        },
-                        onCloseGroupTabs = { group ->
-                            val memberTabs = tabs.filter { it.id in group.tabIds }
-                            val ids = memberTabs.map { it.id }
-                            val records = memberTabs.map { t ->
-                                ClosedTabRecord(
-                                    url = t.content.url.ifBlank { "about:blank" },
-                                    title = t.content.title,
-                                    isPrivate = t.content.private,
-                                    groupSnapshot = group
-                                )
-                            }
-                            TabGroupStore.ungroup(group.id)
-                            ids.forEach { TabPreviewCache.remove(it) }
-                            if (ids.isNotEmpty()) {
-                                components.useCases.tabsUseCases.removeTabs(ids)
-                            }
-                            TabHistoryStore.recordClosedBatch(
-                                label = "Closed group \"${group.name}\"",
-                                records = records,
-                                wasPrivate = group.isPrivate,
-                                allowUndo = true
-                            )
-                        },
-                        onUndoClose = {
-                            val batch = TabHistoryStore.consumeUndo() ?: return@TabsTrayScreen
-                            val restoredByGroup = linkedMapOf<String, Pair<TabGroup, MutableList<String>>>()
-                            batch.tabs.forEachIndexed { idx, rec ->
-                                val newId = components.useCases.tabsUseCases.addTab(
-                                    url = rec.url.ifBlank { "about:blank" },
-                                    selectTab = idx == batch.tabs.lastIndex,
-                                    private = rec.isPrivate
-                                )
-                                if (!rec.isPrivate) TabHistoryStore.recordTabAccess(newId)
-                                rec.groupSnapshot?.let { grpSnap ->
-                                    val entry = restoredByGroup.getOrPut(grpSnap.id) {
-                                        grpSnap to mutableListOf()
-                                    }
-                                    entry.second.add(newId)
-                                }
-                            }
-                            for ((_, pair) in restoredByGroup) {
-                                TabGroupStore.restoreGroup(pair.first, pair.second)
-                            }
-                        },
-                        onRestoreRecentlyClosed = { rec ->
-                            TabHistoryStore.removeRecentlyClosed(rec.id)
-                            val newId = components.useCases.tabsUseCases.addTab(
-                                url = rec.url,
-                                selectTab = true,
-                                private = false
-                            )
-                            TabHistoryStore.recordTabAccess(newId)
-                            dismissAllowingStateLoss()
-                            browserViewModel.exitEditMode()
-                            navigateToBrowserIfNeeded()
-                        },
-                        onRestoreAllRecentlyClosed = {
-                            val list = TabHistoryStore.recentlyClosedFlow.value.toList()
-                            if (list.isNotEmpty()) {
-                                TabHistoryStore.clearRecentlyClosed()
-                                list.reversed().forEachIndexed { idx, rec ->
-                                    val newId = components.useCases.tabsUseCases.addTab(
-                                        url = rec.url,
-                                        selectTab = idx == list.lastIndex,
-                                        private = false
-                                    )
-                                    TabHistoryStore.recordTabAccess(newId)
-                                }
-                            }
-                        },
-                        onClearRecentlyClosed = {
-                            TabHistoryStore.clearRecentlyClosed()
-                        },
-                        onPrivateSectionVisible = { isPriv ->
-                            isPrivateSectionVisible = isPriv
-                        },
-                        onPrivateSecurePrefChanged = { enabled ->
-                            blockPrivateScreenshots = enabled
-                        },
-                        onDismiss = { dismissAllowingStateLoss() }
+                            },
+                            onPrivateSectionVisible = { isPriv ->
+                                isPrivateSectionVisible = isPriv
+                            },
+                            onPrivateSecurePrefChanged = { enabled ->
+                                blockPrivateScreenshots = enabled
+                            },
+                            onDismiss = { dismissAllowingStateLoss() }
+                        )
+                    }
+
+                    TabsTrayScreen(
+                        tabs = tabs,
+                        groups = groups,
+                        selectedTabId = selectedTabId,
+                        actions = actions
                     )
                 }
             }

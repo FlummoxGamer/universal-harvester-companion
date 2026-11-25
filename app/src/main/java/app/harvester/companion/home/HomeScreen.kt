@@ -313,7 +313,7 @@ fun HomeScreen(
                 .statusBarsPadding()
                 .padding(
                     top = if (!isAddressBarBottom) {
-                        if (isLandscape) 56.dp else 64.dp
+                        if (isLandscape) 58.dp else 70.dp
                     } else {
                         12.dp
                     },

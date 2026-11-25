@@ -1,9 +1,11 @@
 package app.harvester.companion.browser.toolbar
 
 import android.content.res.Configuration
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,6 +27,9 @@ import androidx.compose.foundation.text.input.placeCursorAtEnd
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.TextSelectionColors
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -33,7 +38,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,8 +49,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -57,6 +67,7 @@ import app.harvester.companion.SettingsPrefs
 import coil.compose.AsyncImage
 import kotlinx.coroutines.flow.distinctUntilChanged
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun UHAddressBar(
     url: String,
@@ -71,6 +82,8 @@ fun UHAddressBar(
     isCaptureActive: Boolean = false,
     isDesktopMode: Boolean = false,
     isPrivate: Boolean = false,
+    isCurrentTabPinned: Boolean = false,
+    isCurrentTabMuted: Boolean = false,
     zoomPercent: Int = 100,
     onEditTextChanged: (String) -> Unit,
     onSubmit: (String) -> Unit,
@@ -83,15 +96,24 @@ fun UHAddressBar(
     onReloadStopClick: () -> Unit = {},
     onMenuClick: () -> Unit,
     onTabCountClick: () -> Unit,
+    onQuickNewTab: () -> Unit = {},
+    onQuickNewPrivateTab: () -> Unit = {},
+    onQuickDuplicateTab: () -> Unit = {},
+    onQuickTogglePinTab: () -> Unit = {},
+    onQuickToggleMuteTab: () -> Unit = {},
+    onQuickCloseCurrentTab: () -> Unit = {},
+    onQuickCloseAllTabs: () -> Unit = {},
     searchEngine: SearchEnginePrefs.Entry,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val barHeight = if (isLandscape) 50.dp else 58.dp
     val pillHeight = if (isLandscape) 40.dp else 46.dp
     val showFullUrl = SettingsPrefs.getBool(context, SettingsPrefs.K_SHOW_FULL_URL, false)
     val keyboardController = LocalSoftwareKeyboardController.current
+    var showTabQuickMenu by remember { mutableStateOf(false) }
 
     fun formatUrl(rawUrl: String): String {
         var cleanUrl = rawUrl
@@ -377,27 +399,174 @@ fun UHAddressBar(
                     }
                 }
 
-                // Tab Counter Badge (reflects Normal vs Private mode count & accent)
+                // Tab Counter Badge (tap opens Tab Switcher, long-press opens quick tab menu)
                 val tabBadgeColor = if (isPrivate) privateAccent else MaterialTheme.colorScheme.onSurface
-                Box(
-                    modifier = Modifier
-                        .padding(horizontal = 4.dp)
-                        .size(23.dp)
-                        .clip(RoundedCornerShape(7.dp))
-                        .background(if (isPrivate) privateAccent.copy(alpha = 0.16f) else Color.Transparent)
-                        .border(1.8.dp, tabBadgeColor, RoundedCornerShape(7.dp))
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) { onTabCountClick() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = if (tabCount > 99) "∞" else "$tabCount",
-                        color = tabBadgeColor,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                Box {
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = 4.dp)
+                            .size(23.dp)
+                            .clip(RoundedCornerShape(7.dp))
+                            .background(if (isPrivate) privateAccent.copy(alpha = 0.16f) else Color.Transparent)
+                            .border(1.8.dp, tabBadgeColor, RoundedCornerShape(7.dp))
+                            .combinedClickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = onTabCountClick,
+                                onLongClick = {
+                                    if (!isEditing) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        showTabQuickMenu = true
+                                    }
+                                }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (tabCount > 99) "∞" else "$tabCount",
+                            color = tabBadgeColor,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = showTabQuickMenu,
+                        onDismissRequest = { showTabQuickMenu = false },
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("New tab", fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+                            leadingIcon = {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.uh_ic_plus_24),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            onClick = {
+                                showTabQuickMenu = false
+                                onQuickNewTab()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("New private tab", fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+                            leadingIcon = {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.uh_ic_private_vibe_24),
+                                    contentDescription = null,
+                                    tint = privateAccent,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            onClick = {
+                                showTabQuickMenu = false
+                                onQuickNewPrivateTab()
+                            }
+                        )
+                        if (hasPageUrl) {
+                            DropdownMenuItem(
+                                text = { Text("Duplicate tab", fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+                                leadingIcon = {
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.uh_ic_copy_24),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                onClick = {
+                                    showTabQuickMenu = false
+                                    onQuickDuplicateTab()
+                                }
+                            )
+                        }
+                        if (!isPrivate && tabCount > 0) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = if (isCurrentTabPinned) "Unpin tab" else "Pin tab",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.uh_ic_pin_24),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                onClick = {
+                                    showTabQuickMenu = false
+                                    onQuickTogglePinTab()
+                                }
+                            )
+                        }
+                        if (hasPageUrl) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = if (isCurrentTabMuted) "Unmute tab" else "Mute tab",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        painter = painterResource(
+                                            id = if (isCurrentTabMuted) R.drawable.uh_ic_volume_on_24 else R.drawable.uh_ic_volume_off_24
+                                        ),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                onClick = {
+                                    showTabQuickMenu = false
+                                    onQuickToggleMuteTab()
+                                }
+                            )
+                        }
+                        if (tabCount > 0) {
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 3.dp))
+                            DropdownMenuItem(
+                                text = { Text("Close current tab", fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+                                leadingIcon = {
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.fx_ic_close_24),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                onClick = {
+                                    showTabQuickMenu = false
+                                    onQuickCloseCurrentTab()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = if (isPrivate) "Close all private tabs" else "Close all tabs",
+                                        color = MaterialTheme.colorScheme.error,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.fx_ic_delete_24),
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                onClick = {
+                                    showTabQuickMenu = false
+                                    onQuickCloseAllTabs()
+                                }
+                            )
+                        }
+                    }
                 }
 
                 // 3-Dot Menu

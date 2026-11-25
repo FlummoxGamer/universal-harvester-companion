@@ -9,7 +9,11 @@ import app.harvester.companion.SessionRecorder
 import app.harvester.companion.SessionService
 import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.UHLog
+import app.harvester.companion.browser.tabs.ClosedTabRecord
+import app.harvester.companion.browser.tabs.PrivateLockManager
 import app.harvester.companion.browser.tabs.TabGroupStore
+import app.harvester.companion.browser.tabs.TabHistoryStore
+import app.harvester.companion.browser.tabs.TabMetaStore
 import app.harvester.companion.browser.tabs.TabPreviewCache
 import app.harvester.companion.components.Components
 import coil.Coil
@@ -56,6 +60,8 @@ object AppSleepManager : Application.ActivityLifecycleCallbacks, ComponentCallba
         sessionStorage = SessionStorage(application, appComponents.engine)
         TabPreviewCache.init(application)
         TabGroupStore.init(application)
+        TabHistoryStore.init(application)
+        TabMetaStore.init(application)
         application.registerActivityLifecycleCallbacks(this)
         application.registerComponentCallbacks(this)
         restoreIfNeeded()
@@ -87,12 +93,14 @@ object AppSleepManager : Application.ActivityLifecycleCallbacks, ComponentCallba
                                         )
                                     )
                                     TabGroupStore.cleanupOrphanedTabs(validIds)
+                                    TabMetaStore.prunePinned(validIds)
                                     TabPreviewCache.pruneToValidIds(validIds)
                                     UHLog.d("lifecycle", "Lazy-restored ${normalTabs.size} normal tab(s) from SessionStorage.")
                                 }
                             }
                         } else {
                             TabGroupStore.cleanupOrphanedTabs(emptySet())
+                            TabMetaStore.prunePinned(emptySet())
                             TabPreviewCache.clear()
                         }
                     }
@@ -225,6 +233,46 @@ object AppSleepManager : Application.ActivityLifecycleCallbacks, ComponentCallba
         }
     }
 
+    private fun sweepAutoCloseOldTabs() {
+        val days = SettingsPrefs.getInt(app, SettingsPrefs.K_TAB_AUTO_CLOSE_DAYS, 0)
+        if (days <= 0) return
+        val state = components.store.state
+        val selectedId = state.selectedTabId
+        val pinnedSet = TabMetaStore.pinnedIdsFlow.value.toSet()
+        val groupedSet = TabGroupStore.groupsFlow.value.flatMap { it.tabIds }.toSet()
+        val lastAccessed = TabHistoryStore.lastAccessedFlow.value
+        val nowMs = System.currentTimeMillis()
+        val thresholdMs = days * 86_400_000L
+
+        val expired = state.tabs.filter { tab ->
+            !tab.content.private &&
+                tab.id != selectedId &&
+                tab.id !in pinnedSet &&
+                tab.id !in groupedSet &&
+                (nowMs - (lastAccessed[tab.id] ?: tab.createdAt)) >= thresholdMs
+        }
+        if (expired.isEmpty()) return
+
+        val ids = expired.map { it.id }
+        val records = expired.map { t ->
+            ClosedTabRecord(
+                url = t.content.url.ifBlank { "about:blank" },
+                title = t.content.title,
+                isPrivate = false,
+                groupSnapshot = null
+            )
+        }
+        ids.forEach { TabPreviewCache.remove(it) }
+        components.store.dispatch(TabListAction.RemoveTabsAction(ids))
+        TabHistoryStore.recordClosedBatch(
+            label = "Auto-closed ${ids.size} old ${if (ids.size == 1) "tab" else "tabs"}",
+            records = records,
+            wasPrivate = false,
+            allowUndo = false
+        )
+        UHLog.d("lifecycle", "Auto-closed ${ids.size} old normal tab(s) older than $days day(s).")
+    }
+
     private fun wakeFromSleepMode() {
         sleepJob?.cancel()
         sleepJob = null
@@ -237,7 +285,8 @@ object AppSleepManager : Application.ActivityLifecycleCallbacks, ComponentCallba
                 setGeckoSessionActive(selectedTab?.engineState?.engineSession, true)
                 UHLog.d("lifecycle", "Resumed from low-power sleep mode.")
             }
-            SessionService.startOrUpdate(app, isSleeping = false, hasTabs = state.tabs.isNotEmpty())
+            sweepAutoCloseOldTabs()
+            SessionService.startOrUpdate(app, isSleeping = false, hasTabs = components.store.state.tabs.isNotEmpty())
             components.resumePendingNetworkDownloads()
         }
     }
@@ -254,7 +303,10 @@ object AppSleepManager : Application.ActivityLifecycleCallbacks, ComponentCallba
         val next = (startedActivities - 1).coerceAtLeast(0)
         startedActivities = next
         if (next == 0) {
-            val hasTabs = components.store.state.tabs.isNotEmpty()
+            val state = components.store.state
+            val hasTabs = state.tabs.isNotEmpty()
+            val hasPrivateTabs = state.tabs.any { it.content.private }
+            PrivateLockManager.onAppBackgrounded(app, hasPrivateTabs)
             SessionService.startOrUpdate(app, isSleeping = false, hasTabs = hasTabs)
             scope.launch(Dispatchers.IO) {
                 saveNormalSnapshot(flushEngine = true)

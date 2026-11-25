@@ -1,6 +1,8 @@
 package app.harvester.companion.browser.toolbar
 
+import android.content.res.Configuration
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.animation.AnimatedVisibility
@@ -60,6 +62,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -76,6 +79,7 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import app.harvester.companion.R
 import app.harvester.companion.SessionRecorder
+import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
 import app.harvester.companion.UserscriptManager
@@ -86,6 +90,16 @@ import app.harvester.companion.browser.menu.ExtensionPopupSheet
 import app.harvester.companion.browser.menu.MainMenuDialogFragment
 import app.harvester.companion.browser.menu.ScriptsSheet
 import app.harvester.companion.browser.search.UHSearchEnginePicker
+import app.harvester.companion.browser.tabs.ClosedTabRecord
+import app.harvester.companion.browser.tabs.InBrowserGroupTabStrip
+import app.harvester.companion.browser.tabs.InBrowserPrivateLockOverlay
+import app.harvester.companion.browser.tabs.LandscapeTopTabStrip
+import app.harvester.companion.browser.tabs.PrivateLockManager
+import app.harvester.companion.browser.tabs.PrivateSessionNotificationManager
+import app.harvester.companion.browser.tabs.TabGroupStore
+import app.harvester.companion.browser.tabs.TabHistoryStore
+import app.harvester.companion.browser.tabs.TabMetaStore
+import app.harvester.companion.browser.tabs.TabPreviewCache
 import app.harvester.companion.browser.translate.TranslatePillPhase
 import app.harvester.companion.browser.translate.TranslateSheet
 import app.harvester.companion.browser.translate.UhTranslationManager
@@ -95,6 +109,7 @@ import app.harvester.companion.search.ui.UhSearchScreen
 import app.harvester.companion.settings.addons.UhExtensionManager
 import app.harvester.companion.settings.addons.ui.ExtensionPermissionPromptSheet
 import app.harvester.companion.settings.trustpanel.TrustPanelFragment
+import mozilla.components.browser.state.action.TabListAction
 import mozilla.components.browser.state.selector.selectedTab
 import java.net.URI
 import kotlin.math.roundToInt
@@ -145,6 +160,14 @@ fun UhGlobalToolbar(
 
     val browserState by components.store.stateFlow.collectAsState()
     val selectedTab = browserState.selectedTab
+    val allGroups by TabGroupStore.groupsFlow.collectAsState()
+    val pinnedTabIds by TabMetaStore.pinnedIdsFlow.collectAsState()
+    val mutedTabIds by TabMetaStore.mutedTabIdsFlow.collectAsState()
+    val isPrivateLocked by PrivateLockManager.isLockedFlow.collectAsState()
+    val groupStripEnabled by SettingsPrefs.tabGroupStripFlow(context).collectAsState()
+    val landscapeStripEnabled by SettingsPrefs.tabLandscapeStripFlow(context).collectAsState()
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+
     val activePopupExtension = browserState.extensions.values.firstOrNull { it.popupSession != null }
     val searchViewModel: UhSearchViewModel = viewModel()
     var showSearchEnginePicker by remember { mutableStateOf(false) }
@@ -183,6 +206,18 @@ fun UhGlobalToolbar(
     val isDesktopMode = isBrowser && (selectedTab?.content?.desktopMode == true)
     val isPrivateMode = selectedTab?.content?.private == true
     val modeTabCount = browserState.tabs.count { it.content.private == isPrivateMode }
+    val isCurrentTabPinned = selectedTab != null && !isPrivateMode && (selectedTab.id in pinnedTabIds)
+    val isCurrentTabMuted = selectedTab != null && (TabMetaStore.isTabMuted(selectedTab) || selectedTab.id in mutedTabIds)
+    val activeGroup = remember(selectedTab?.id, allGroups) {
+        val sid = selectedTab?.id ?: return@remember null
+        allGroups.firstOrNull { sid in it.tabIds }
+    }
+    val activeGroupMembers = remember(activeGroup, browserState.tabs) {
+        val grp = activeGroup ?: return@remember emptyList()
+        val byId = browserState.tabs.associateBy { it.id }
+        grp.tabIds.mapNotNull { byId[it] }
+    }
+    val showLandscapeStrip = isLandscape && landscapeStripEnabled && selectedTab?.content?.fullScreen != true
     val currentHost = remember(displayUrl) {
         try {
             URI(displayUrl).host?.removePrefix("www.").orEmpty()
@@ -281,6 +316,134 @@ fun UhGlobalToolbar(
         }
     }
 
+    val navigateToHomeSafe: () -> Unit = {
+        if (navController.currentDestination?.id != R.id.homeFragment) {
+            try {
+                navController.popBackStack(R.id.homeFragment, false)
+            } catch (_: Exception) {}
+        }
+    }
+
+    val navigateToBrowserSafe: () -> Unit = {
+        if (navController.currentDestination?.id != R.id.browserFragment) {
+            try {
+                navController.navigate(R.id.action_homeFragment_to_browserFragment)
+            } catch (_: Exception) {}
+        }
+    }
+
+    val openNewModeTab: (Boolean) -> Unit = { priv ->
+        viewModel.exitEditMode()
+        val anchorId = if (SettingsPrefs.getBool(context, SettingsPrefs.K_TAB_OPEN_NEXT_TO_CURRENT, false)) {
+            selectedTab?.id
+        } else null
+        val newId = components.useCases.tabsUseCases.addTab(
+            url = "about:blank",
+            selectTab = true,
+            private = priv
+        )
+        if (anchorId != null) TabGroupStore.insertTabAfter(newId, anchorId, priv)
+        if (!priv) TabHistoryStore.recordTabAccess(newId)
+        if (priv) viewModel.enterEditMode("")
+        navigateToHomeSafe()
+    }
+
+    val selectStripTab: (String) -> Unit = { tabId ->
+        val target = browserState.tabs.firstOrNull { it.id == tabId }
+        components.useCases.tabsUseCases.selectTab(tabId)
+        if (target != null && !target.content.private) {
+            TabHistoryStore.recordTabAccess(tabId)
+        }
+        if (target != null && (target.content.url.isBlank() || target.content.url == "about:blank")) {
+            navigateToHomeSafe()
+        } else {
+            navigateToBrowserSafe()
+        }
+    }
+
+    val closeStripTab: (String) -> Unit = { tabId ->
+        val target = browserState.tabs.firstOrNull { it.id == tabId }
+        if (target != null) {
+            val rec = ClosedTabRecord(
+                url = target.content.url.ifBlank { "about:blank" },
+                title = target.content.title,
+                isPrivate = target.content.private,
+                groupSnapshot = TabGroupStore.groupForTab(tabId)
+            )
+            TabGroupStore.removeTabFromGroups(tabId)
+            TabMetaStore.unpinTab(tabId)
+            TabPreviewCache.remove(tabId)
+            val jumpToParent = SettingsPrefs.getBool(context, SettingsPrefs.K_TAB_JUMP_TO_PARENT, true)
+            components.useCases.tabsUseCases.removeTab(tabId, selectParentIfExists = jumpToParent)
+            TabHistoryStore.recordClosedBatch("Tab closed", listOf(rec), target.content.private, allowUndo = true)
+            if (browserState.tabs.count { it.content.private == target.content.private } <= 1) {
+                navigateToHomeSafe()
+            }
+        }
+    }
+
+    val quickDuplicateCurrentTab: () -> Unit = {
+        selectedTab?.let { tab ->
+            val dupId = components.useCases.tabsUseCases.addTab(
+                url = tab.content.url.ifBlank { "about:blank" },
+                selectTab = true,
+                private = tab.content.private
+            )
+            TabGroupStore.insertTabAfter(dupId, tab.id, tab.content.private)
+            TabGroupStore.groupForTab(tab.id)?.let { grp ->
+                TabGroupStore.addTabToGroup(grp.id, dupId)
+            }
+            if (!tab.content.private) TabHistoryStore.recordTabAccess(dupId)
+            Toast.makeText(context, "Tab duplicated", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val quickTogglePinCurrentTab: () -> Unit = {
+        selectedTab?.let { tab ->
+            if (!tab.content.private) {
+                val nowPinned = TabMetaStore.togglePin(tab.id)
+                Toast.makeText(context, if (nowPinned) "Tab pinned" else "Tab unpinned", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val quickToggleMuteCurrentTab: () -> Unit = {
+        selectedTab?.let { tab ->
+            val nowMuted = TabMetaStore.toggleMute(tab)
+            Toast.makeText(context, if (nowMuted) "Tab muted" else "Tab unmuted", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val quickCloseAllModeTabs: () -> Unit = {
+        if (isPrivateMode) {
+            PrivateSessionNotificationManager.closeAllPrivateTabs(context, components)
+            navigateToHomeSafe()
+        } else {
+            val pinnedSet = TabMetaStore.pinnedIdsFlow.value.toSet()
+            val normalTargets = browserState.tabs.filter { !it.content.private && it.id !in pinnedSet }
+            if (normalTargets.isEmpty()) {
+                Toast.makeText(context, "Pinned tabs are protected", Toast.LENGTH_SHORT).show()
+            } else {
+                val ids = normalTargets.map { it.id }
+                val records = normalTargets.map { t ->
+                    ClosedTabRecord(
+                        url = t.content.url.ifBlank { "about:blank" },
+                        title = t.content.title,
+                        isPrivate = false,
+                        groupSnapshot = TabGroupStore.groupForTab(t.id)
+                    )
+                }
+                ids.forEach {
+                    TabGroupStore.removeTabFromGroups(it)
+                    TabPreviewCache.remove(it)
+                }
+                components.store.dispatch(TabListAction.RemoveTabsAction(ids))
+                TabHistoryStore.recordClosedBatch("Closed ${ids.size} tabs", records, false, allowUndo = true)
+                if (pinnedSet.isEmpty()) navigateToHomeSafe()
+            }
+        }
+    }
+
     Box(modifier = modifier) {
         if (isEditing) {
             UhSearchScreen(
@@ -322,12 +485,25 @@ fun UhGlobalToolbar(
                 onFillUrl = onFillUrl
             )
         } else {
-            val barPositionModifier = if (isBarBottom) {
-                Modifier.navigationBarsPadding()
-            } else {
-                Modifier.statusBarsPadding()
+            val barPositionModifier = when {
+                isBarBottom -> Modifier.navigationBarsPadding()
+                showLandscapeStrip -> Modifier
+                else -> Modifier.statusBarsPadding()
             }
-            if (isBrowser && isBarBottom && selectedTab?.content?.fullScreen != true) {
+            if (showLandscapeStrip && isBarBottom) {
+                LandscapeTopTabStrip(
+                    tabs = browserState.tabs,
+                    groups = allGroups,
+                    pinnedIds = pinnedTabIds,
+                    selectedTabId = selectedTab?.id,
+                    isPrivate = isPrivateMode,
+                    applyStatusBarPadding = true,
+                    onSelectTab = selectStripTab,
+                    onCloseTab = closeStripTab,
+                    onNewTab = { openNewModeTab(isPrivateMode) },
+                    modifier = Modifier.align(Alignment.TopCenter)
+                )
+            } else if (isBrowser && isBarBottom && selectedTab?.content?.fullScreen != true) {
                 // Paint continuous status bar backing matching Light / Dark / AMOLED theme
                 Box(
                     modifier = Modifier
@@ -345,6 +521,19 @@ fun UhGlobalToolbar(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    if (showLandscapeStrip && !isBarBottom) {
+                        LandscapeTopTabStrip(
+                            tabs = browserState.tabs,
+                            groups = allGroups,
+                            pinnedIds = pinnedTabIds,
+                            selectedTabId = selectedTab?.id,
+                            isPrivate = isPrivateMode,
+                            applyStatusBarPadding = true,
+                            onSelectTab = selectStripTab,
+                            onCloseTab = closeStripTab,
+                            onNewTab = { openNewModeTab(isPrivateMode) }
+                        )
+                    }
                     if (isBrowser && isBarBottom && !showFindInPage && !showZoomBar) {
                         TranslateStatusPill(
                             state = translateState,
@@ -379,6 +568,26 @@ fun UhGlobalToolbar(
                             onDone = { viewModel.closeZoomBar() }
                         )
                     }
+                    if (isBrowser && isBarBottom && groupStripEnabled && activeGroup != null && activeGroupMembers.isNotEmpty() && selectedTab?.content?.fullScreen != true) {
+                        InBrowserGroupTabStrip(
+                            group = activeGroup,
+                            members = activeGroupMembers,
+                            selectedTabId = selectedTab?.id,
+                            onSelectTab = selectStripTab,
+                            onCloseTab = closeStripTab,
+                            onAddTabInGroup = {
+                                val newId = components.useCases.tabsUseCases.addTab(
+                                    url = "about:blank",
+                                    selectTab = true,
+                                    private = activeGroup.isPrivate
+                                )
+                                TabGroupStore.addTabToGroup(activeGroup.id, newId)
+                                if (!activeGroup.isPrivate) TabHistoryStore.recordTabAccess(newId)
+                                if (activeGroup.isPrivate) viewModel.enterEditMode("")
+                                navigateToHomeSafe()
+                            }
+                        )
+                    }
 
                     UHAddressBar(
                         url = displayUrl,
@@ -393,6 +602,8 @@ fun UhGlobalToolbar(
                         isCaptureActive = isCaptureActive,
                         isDesktopMode = isDesktopMode,
                         isPrivate = isPrivateMode,
+                        isCurrentTabPinned = isCurrentTabPinned,
+                        isCurrentTabMuted = isCurrentTabMuted,
                         zoomPercent = zoomPercent,
                         onEditTextChanged = { viewModel.onTextChanged(it) },
                         onSubmit = onSearchSubmit,
@@ -408,10 +619,37 @@ fun UhGlobalToolbar(
                         onReloadStopClick = onReloadStop,
                         onMenuClick = openMainMenu,
                         onTabCountClick = openTabsTray,
+                        onQuickNewTab = { openNewModeTab(false) },
+                        onQuickNewPrivateTab = { openNewModeTab(true) },
+                        onQuickDuplicateTab = quickDuplicateCurrentTab,
+                        onQuickTogglePinTab = quickTogglePinCurrentTab,
+                        onQuickToggleMuteTab = quickToggleMuteCurrentTab,
+                        onQuickCloseCurrentTab = { selectedTab?.let { closeStripTab(it.id) } },
+                        onQuickCloseAllTabs = quickCloseAllModeTabs,
                         searchEngine = searchEngine,
                         modifier = barPositionModifier
                     )
 
+                    if (isBrowser && !isBarBottom && groupStripEnabled && activeGroup != null && activeGroupMembers.isNotEmpty() && selectedTab?.content?.fullScreen != true) {
+                        InBrowserGroupTabStrip(
+                            group = activeGroup,
+                            members = activeGroupMembers,
+                            selectedTabId = selectedTab?.id,
+                            onSelectTab = selectStripTab,
+                            onCloseTab = closeStripTab,
+                            onAddTabInGroup = {
+                                val newId = components.useCases.tabsUseCases.addTab(
+                                    url = "about:blank",
+                                    selectTab = true,
+                                    private = activeGroup.isPrivate
+                                )
+                                TabGroupStore.addTabToGroup(activeGroup.id, newId)
+                                if (!activeGroup.isPrivate) TabHistoryStore.recordTabAccess(newId)
+                                if (activeGroup.isPrivate) viewModel.enterEditMode("")
+                                navigateToHomeSafe()
+                            }
+                        )
+                    }
                     if (isBrowser && showFindInPage && !isBarBottom) {
                         FindInPageBar(
                             query = findQuery,
@@ -446,6 +684,24 @@ fun UhGlobalToolbar(
                         )
                     }
                 }
+            }
+
+            if (isPrivateMode && isPrivateLocked) {
+                InBrowserPrivateLockOverlay(
+                    onUnlock = {
+                        val activity = context as? AppCompatActivity
+                        if (activity != null) {
+                            PrivateLockManager.promptUnlock(
+                                context = activity,
+                                onError = { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
+                            )
+                        }
+                    },
+                    onCloseAllPrivate = {
+                        PrivateSessionNotificationManager.closeAllPrivateTabs(context, components)
+                        navigateToHomeSafe()
+                    }
+                )
             }
         }
     }

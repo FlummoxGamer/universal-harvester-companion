@@ -380,6 +380,37 @@ object TabGroupStore {
         }
     }
 
+    fun setExactOrder(orderedIds: List<String>, isPrivate: Boolean) {
+        val clean = orderedIds.distinct().filter { it.isNotBlank() }
+        synchronized(lock) {
+            if (isPrivate) {
+                _privateOrderFlow.value = clean
+            } else {
+                persistNormalOrderLocked(clean)
+            }
+        }
+    }
+
+    fun insertTabAfter(newTabId: String, anchorTabId: String?, isPrivate: Boolean) {
+        if (newTabId.isBlank()) return
+        synchronized(lock) {
+            val current = (if (isPrivate) _privateOrderFlow.value else _normalOrderFlow.value)
+                .filterNot { it == newTabId }
+                .toMutableList()
+            val anchorIdx = if (!anchorTabId.isNullOrBlank()) current.indexOf(anchorTabId) else -1
+            if (anchorIdx >= 0) {
+                current.add(anchorIdx + 1, newTabId)
+            } else {
+                current.add(newTabId)
+            }
+            if (isPrivate) {
+                _privateOrderFlow.value = current
+            } else {
+                persistNormalOrderLocked(current)
+            }
+        }
+    }
+
     fun cleanupOrphanedTabs(validNormalTabIds: Set<String>, validPrivateTabIds: Set<String>? = null) {
         synchronized(lock) {
             val updatedNormal = normalGroups.map { g ->

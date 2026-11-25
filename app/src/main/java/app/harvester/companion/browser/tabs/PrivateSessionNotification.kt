@@ -22,6 +22,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import mozilla.components.browser.state.action.TabListAction
 import mozilla.components.browser.state.store.BrowserStore
 
 /**
@@ -56,6 +57,7 @@ object PrivateSessionNotificationManager {
                         TabGroupStore.clearPrivateGroups()
                         TabPreviewCache.clearPrivate()
                         TabHistoryStore.clearPrivateUndo()
+                        PrivateLockManager.onAllPrivateClosed()
                         cancel(appContext)
                     }
                 }
@@ -150,11 +152,12 @@ object PrivateSessionNotificationManager {
         val privateIds = privateTabs.map { it.id }
 
         if (privateIds.isNotEmpty()) {
-            components.useCases.tabsUseCases.removeTabs(privateIds)
+            components.store.dispatch(TabListAction.RemoveAllPrivateTabsAction)
         }
         TabGroupStore.clearPrivateGroups()
         TabPreviewCache.clearPrivate(privateIds)
         TabHistoryStore.clearPrivateUndo()
+        PrivateLockManager.onAllPrivateClosed()
         cancel(context)
 
         // If no tab remains selected or the active tab was private, select the latest normal tab if available

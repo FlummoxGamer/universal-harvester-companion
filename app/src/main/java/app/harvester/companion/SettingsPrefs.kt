@@ -14,6 +14,9 @@ object SettingsPrefs {
     private val _homeStatsEnabledFlow = MutableStateFlow<Boolean?>(null)
     private val _forceDarkWebFlow = MutableStateFlow<Boolean?>(null)
     private val _enhanceDarkFlow = MutableStateFlow<Boolean?>(null)
+    private val _tabGroupStripFlow = MutableStateFlow<Boolean?>(null)
+    private val _tabLandscapeStripFlow = MutableStateFlow<Boolean?>(null)
+    private val _tabPrivateLockFlow = MutableStateFlow<Boolean?>(null)
 
     fun addressBarBottomFlow(ctx: Context): StateFlow<Boolean> {
         if (_addressBarBottomFlow.value == null) {
@@ -55,6 +58,30 @@ object SettingsPrefs {
         return _enhanceDarkFlow.asStateFlow() as StateFlow<Boolean>
     }
 
+    fun tabGroupStripFlow(ctx: Context): StateFlow<Boolean> {
+        if (_tabGroupStripFlow.value == null) {
+            _tabGroupStripFlow.value = getBool(ctx, K_TAB_GROUP_STRIP_ENABLED, true)
+        }
+        @Suppress("UNCHECKED_CAST")
+        return _tabGroupStripFlow.asStateFlow() as StateFlow<Boolean>
+    }
+
+    fun tabLandscapeStripFlow(ctx: Context): StateFlow<Boolean> {
+        if (_tabLandscapeStripFlow.value == null) {
+            _tabLandscapeStripFlow.value = getBool(ctx, K_TAB_LANDSCAPE_STRIP_ENABLED, false)
+        }
+        @Suppress("UNCHECKED_CAST")
+        return _tabLandscapeStripFlow.asStateFlow() as StateFlow<Boolean>
+    }
+
+    fun tabPrivateLockFlow(ctx: Context): StateFlow<Boolean> {
+        if (_tabPrivateLockFlow.value == null) {
+            _tabPrivateLockFlow.value = getBool(ctx, K_TAB_PRIVATE_LOCK_ENABLED, false)
+        }
+        @Suppress("UNCHECKED_CAST")
+        return _tabPrivateLockFlow.asStateFlow() as StateFlow<Boolean>
+    }
+
     fun getBool(ctx: Context, key: String, def: Boolean = false): Boolean =
         p(ctx).getBoolean(key, def)
 
@@ -64,6 +91,9 @@ object SettingsPrefs {
             K_HOME_SHOW_STATS -> _homeStatsEnabledFlow.value = v
             K_FORCE_DARK_SITES -> _forceDarkWebFlow.value = v
             K_ENHANCE_DARK -> _enhanceDarkFlow.value = v
+            K_TAB_GROUP_STRIP_ENABLED -> _tabGroupStripFlow.value = v
+            K_TAB_LANDSCAPE_STRIP_ENABLED -> _tabLandscapeStripFlow.value = v
+            K_TAB_PRIVATE_LOCK_ENABLED -> _tabPrivateLockFlow.value = v
         }
     }
 
@@ -155,4 +185,11 @@ object SettingsPrefs {
     const val K_TAB_VIEW_MODE = "tab_view_mode" // 0 = Grid, 1 = List
     const val K_TAB_INACTIVE_DAYS = "tab_inactive_days" // 0 = Off, 7, 14 (default), 30
     const val K_TAB_PRIVATE_SECURE_SCREEN = "tab_private_secure_screen" // true = FLAG_SECURE in Private mode
+    const val K_TAB_GROUP_STRIP_ENABLED = "tab_group_strip_enabled" // true = collapsible group strip near address bar
+    const val K_TAB_LANDSCAPE_STRIP_ENABLED = "tab_landscape_strip_enabled" // false = optional landscape horizontal tab strip
+    const val K_TAB_PRIVATE_LOCK_ENABLED = "tab_private_lock_enabled" // false = optional biometric/PIN lock on background
+    const val K_TAB_SORT_MODE = "tab_sort_mode" // 0=Manual, 1=Recent, 2=Oldest, 3=A-Z, 4=Domain
+    const val K_TAB_AUTO_CLOSE_DAYS = "tab_auto_close_days" // 0=Never, 1=1d, 7=1w, 30=1m
+    const val K_TAB_JUMP_TO_PARENT = "tab_jump_to_parent" // true = jump to opener/parent tab on close
+    const val K_TAB_OPEN_NEXT_TO_CURRENT = "tab_open_next_to_current" // false = at end, true = next to active tab
 }
