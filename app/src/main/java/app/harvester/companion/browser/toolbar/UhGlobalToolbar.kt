@@ -181,6 +181,8 @@ fun UhGlobalToolbar(
     val pageProgress = if (isBrowser) (selectedTab?.content?.progress ?: 0) else 0
     val isPageLoading = isBrowser && (selectedTab?.content?.loading == true)
     val isDesktopMode = isBrowser && (selectedTab?.content?.desktopMode == true)
+    val isPrivateMode = selectedTab?.content?.private == true
+    val modeTabCount = browserState.tabs.count { it.content.private == isPrivateMode }
     val currentHost = remember(displayUrl) {
         try {
             URI(displayUrl).host?.removePrefix("www.").orEmpty()
@@ -288,10 +290,11 @@ fun UhGlobalToolbar(
                     UHAddressBar(
                         url = displayUrl,
                         isEditing = true,
-                        tabCount = browserState.tabs.size,
+                        tabCount = modeTabCount,
                         iconState = iconState,
                         isWallpaperActive = false,
                         editText = editText,
+                        isPrivate = isPrivateMode,
                         progress = 0,
                         isLoading = false,
                         scriptMatchCount = scriptMatchCount,
@@ -380,7 +383,7 @@ fun UhGlobalToolbar(
                     UHAddressBar(
                         url = displayUrl,
                         isEditing = false,
-                        tabCount = browserState.tabs.size,
+                        tabCount = modeTabCount,
                         iconState = iconState,
                         isWallpaperActive = isHome,
                         editText = editText,
@@ -389,6 +392,7 @@ fun UhGlobalToolbar(
                         scriptMatchCount = scriptMatchCount,
                         isCaptureActive = isCaptureActive,
                         isDesktopMode = isDesktopMode,
+                        isPrivate = isPrivateMode,
                         zoomPercent = zoomPercent,
                         onEditTextChanged = { viewModel.onTextChanged(it) },
                         onSubmit = onSearchSubmit,

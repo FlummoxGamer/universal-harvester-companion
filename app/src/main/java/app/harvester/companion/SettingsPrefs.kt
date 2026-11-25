@@ -152,4 +152,7 @@ object SettingsPrefs {
     const val K_TAB_SLEEP_SECONDS = "tab_sleep_seconds"
     const val K_TAB_CONFIRM_SWIPE = "tab_confirm_swipe"
     const val K_TAB_AUTO_COLLAPSE_GROUPS = "tab_auto_collapse_groups"
+    const val K_TAB_VIEW_MODE = "tab_view_mode" // 0 = Grid, 1 = List
+    const val K_TAB_INACTIVE_DAYS = "tab_inactive_days" // 0 = Off, 7, 14 (default), 30
+    const val K_TAB_PRIVATE_SECURE_SCREEN = "tab_private_secure_screen" // true = FLAG_SECURE in Private mode
 }

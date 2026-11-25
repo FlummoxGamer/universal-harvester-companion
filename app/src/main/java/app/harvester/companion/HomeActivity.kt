@@ -11,6 +11,7 @@ import android.content.res.Configuration
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -76,6 +77,7 @@ class HomeActivity : AppCompatActivity() {
 
         registerPipActionReceiver()
         observeMediaStateForPip()
+        observeActiveTabPrivacyAndAccess()
 
         setContent {
             val controller = navControllerState
@@ -223,6 +225,35 @@ class HomeActivity : AppCompatActivity() {
         }
     }
 
+    private fun applyActiveTabSecureFlag(isPrivateTab: Boolean) {
+        val blockScreenshots = SettingsPrefs.getBool(
+            this,
+            SettingsPrefs.K_TAB_PRIVATE_SECURE_SCREEN,
+            true
+        )
+        try {
+            if (isPrivateTab && blockScreenshots) {
+                window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            } else {
+                window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun observeActiveTabPrivacyAndAccess() {
+        val store = (application as? UHApp)?.components?.store ?: return
+        lifecycleScope.launch {
+            store.stateFlow.collect { state ->
+                val tab = state.selectedTab
+                applyActiveTabSecureFlag(tab?.content?.private == true)
+
+                if (tab != null && !tab.content.private) {
+                    app.harvester.companion.browser.tabs.TabHistoryStore.recordTabAccess(tab.id)
+                }
+            }
+        }
+    }
+
     private fun buildPipParams(isPlaying: Boolean): PictureInPictureParams {
         val replayAction = RemoteAction(
             Icon.createWithResource(this, R.drawable.uh_ic_media_replay10_24),
@@ -329,7 +360,9 @@ class HomeActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        (application as? UHApp)?.components?.resumePendingNetworkDownloads()
+        val components = (application as? UHApp)?.components
+        components?.resumePendingNetworkDownloads()
+        applyActiveTabSecureFlag(components?.store?.state?.selectedTab?.content?.private == true)
     }
 
     override fun onUserLeaveHint() {

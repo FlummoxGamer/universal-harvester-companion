@@ -11,6 +11,7 @@ import java.util.concurrent.Executors
 
 object TabPreviewCache {
     private val cache = ConcurrentHashMap<String, Bitmap>()
+    private val privateTabIds = ConcurrentHashMap.newKeySet<String>()
     private val diskExecutor = Executors.newSingleThreadExecutor()
 
     @Volatile
@@ -25,11 +26,22 @@ object TabPreviewCache {
         }
     }
 
-    fun put(tabId: String, bitmap: Bitmap) {
+    /**
+     * Stores a tab preview bitmap.
+     * Private tab previews are kept strictly in RAM (never written to disk and never exposed as lastActiveTabBitmap).
+     */
+    fun put(tabId: String, bitmap: Bitmap, isPrivate: Boolean = false) {
         val old = cache.put(tabId, bitmap)
         if (old != null && old !== bitmap && !old.isRecycled) {
             old.recycle()
         }
+
+        if (isPrivate) {
+            privateTabIds.add(tabId)
+            return
+        }
+
+        privateTabIds.remove(tabId)
         setLastActiveBitmap(bitmap)
 
         val dir = previewDir ?: return
@@ -63,6 +75,8 @@ object TabPreviewCache {
         val mem = cache[tabId]
         if (mem != null && !mem.isRecycled) return mem
 
+        if (tabId in privateTabIds) return null
+
         val dir = previewDir ?: return null
         val file = File(dir, "$tabId.webp")
         if (!file.isFile || file.length() == 0L) return null
@@ -88,6 +102,7 @@ object TabPreviewCache {
     fun getLastActiveBitmap(): Bitmap? = lastActiveTabBitmap
 
     fun remove(tabId: String) {
+        privateTabIds.remove(tabId)
         val old = cache.remove(tabId)
         if (old != null && !old.isRecycled) {
             old.recycle()
@@ -95,6 +110,25 @@ object TabPreviewCache {
         val dir = previewDir ?: return
         diskExecutor.execute {
             try { File(dir, "$tabId.webp").delete() } catch (_: Exception) {}
+        }
+    }
+
+    fun clearPrivate(ids: Collection<String> = emptyList()) {
+        val targets = (privateTabIds + ids).toSet()
+        targets.forEach { id ->
+            privateTabIds.remove(id)
+            val old = cache.remove(id)
+            if (old != null && !old.isRecycled) {
+                old.recycle()
+            }
+        }
+        val dir = previewDir ?: return
+        if (targets.isNotEmpty()) {
+            diskExecutor.execute {
+                targets.forEach { id ->
+                    try { File(dir, "$id.webp").delete() } catch (_: Exception) {}
+                }
+            }
         }
     }
 
@@ -113,6 +147,7 @@ object TabPreviewCache {
     fun trimMemory() {
         cache.values.forEach { if (!it.isRecycled) it.recycle() }
         cache.clear()
+        privateTabIds.clear()
         val old = lastActiveTabBitmap
         lastActiveTabBitmap = null
         if (old != null && !old.isRecycled) {

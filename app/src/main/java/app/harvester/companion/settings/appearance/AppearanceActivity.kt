@@ -69,6 +69,10 @@ class AppearanceActivity : AppCompatActivity() {
                 var sleepSeconds by remember {
                     mutableIntStateOf(SettingsPrefs.getInt(context, SettingsPrefs.K_TAB_SLEEP_SECONDS, 120))
                 }
+                var showInactivePicker by remember { mutableStateOf(false) }
+                var inactiveDays by remember {
+                    mutableIntStateOf(SettingsPrefs.getInt(context, SettingsPrefs.K_TAB_INACTIVE_DAYS, 14))
+                }
 
                 if (showSleepPicker) {
                     val options = listOf(0 to "Never", 30 to "30 seconds", 120 to "2 minutes", 300 to "5 minutes")
@@ -105,6 +109,49 @@ class AppearanceActivity : AppCompatActivity() {
                         },
                         confirmButton = {
                             TextButton(onClick = { showSleepPicker = false }) {
+                                Text("Close")
+                            }
+                        },
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = RoundedCornerShape(20.dp),
+                    )
+                }
+
+                if (showInactivePicker) {
+                    val options = listOf(0 to "Off", 7 to "After 7 days", 14 to "After 14 days", 30 to "After 30 days")
+                    AlertDialog(
+                        onDismissRequest = { showInactivePicker = false },
+                        title = { Text("Move tabs to Inactive", color = MaterialTheme.colorScheme.onSurface) },
+                        text = {
+                            Column {
+                                options.forEach { (days, label) ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                inactiveDays = days
+                                                SettingsPrefs.setInt(context, SettingsPrefs.K_TAB_INACTIVE_DAYS, days)
+                                                showInactivePicker = false
+                                            }
+                                            .padding(vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        RadioButton(
+                                            selected = inactiveDays == days,
+                                            onClick = {
+                                                inactiveDays = days
+                                                SettingsPrefs.setInt(context, SettingsPrefs.K_TAB_INACTIVE_DAYS, days)
+                                                showInactivePicker = false
+                                            },
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(label, color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { showInactivePicker = false }) {
                                 Text("Close")
                             }
                         },
@@ -215,19 +262,24 @@ class AppearanceActivity : AppCompatActivity() {
                             onClick = { showSleepPicker = true },
                         )
                         UhSettingsDivider()
-                        SettingsSwitchRow(
-                            title = "Confirm swipe-to-close",
-                            subtitle = "Ask before closing tabs by swiping",
-                            key = SettingsPrefs.K_TAB_CONFIRM_SWIPE,
-                            default = false,
+                        val inactiveLabel = when (inactiveDays) {
+                            0 -> "Off"
+                            else -> "After $inactiveDays days"
+                        }
+                        SettingsRow(
+                            title = "Inactive tabs",
+                            subtitle = "Group untouched normal tabs ($inactiveLabel)",
+                            iconRes = R.drawable.ic_history,
+                            showChevron = true,
                             insideCard = true,
+                            onClick = { showInactivePicker = true },
                         )
                         UhSettingsDivider()
                         SettingsSwitchRow(
-                            title = "Auto-collapse inactive groups",
-                            subtitle = "Collapse tab groups when opening Tabs tray",
-                            key = SettingsPrefs.K_TAB_AUTO_COLLAPSE_GROUPS,
-                            default = false,
+                            title = "Block screenshots in Private mode",
+                            subtitle = "Hide Private tabs from screenshots and app recents",
+                            key = SettingsPrefs.K_TAB_PRIVATE_SECURE_SCREEN,
+                            default = true,
                             insideCard = true,
                         )
                     }

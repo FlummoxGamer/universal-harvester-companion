@@ -623,7 +623,11 @@ class BrowserFragment : Fragment() {
                 val bitmap = android.graphics.Bitmap.createBitmap(surfaceView.width, surfaceView.height, android.graphics.Bitmap.Config.ARGB_8888)
                 android.view.PixelCopy.request(surfaceView, bitmap, { result ->
                     if (result == android.view.PixelCopy.SUCCESS) {
-                        app.harvester.companion.browser.tabs.TabPreviewCache.put(currentTab.id, bitmap)
+                        app.harvester.companion.browser.tabs.TabPreviewCache.put(
+                            tabId = currentTab.id,
+                            bitmap = bitmap,
+                            isPrivate = currentTab.content.private
+                        )
                         onComplete?.invoke(bitmap)
                     } else {
                         onComplete?.invoke(null)
@@ -639,7 +643,11 @@ class BrowserFragment : Fragment() {
                 val bmp = android.graphics.Bitmap.createBitmap(engineView.width, engineView.height, android.graphics.Bitmap.Config.ARGB_8888)
                 val canvas = android.graphics.Canvas(bmp)
                 engineView.draw(canvas)
-                app.harvester.companion.browser.tabs.TabPreviewCache.put(currentTab.id, bmp)
+                app.harvester.companion.browser.tabs.TabPreviewCache.put(
+                    tabId = currentTab.id,
+                    bitmap = bmp,
+                    isPrivate = currentTab.content.private
+                )
                 onComplete?.invoke(bmp)
                 return
             }

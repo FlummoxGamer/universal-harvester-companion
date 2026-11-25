@@ -120,5 +120,12 @@
         <receiver android:name=".InstallReceiver" android:exported="true">
             <intent-filter><action android:name="android.intent.action.MY_PACKAGE_REPLACED" /></intent-filter>
         </receiver>
+        <receiver
+            android:name=".browser.tabs.ClosePrivateTabsReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="app.harvester.companion.action.CLOSE_ALL_PRIVATE_TABS" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

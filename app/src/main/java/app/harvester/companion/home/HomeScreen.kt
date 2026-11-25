@@ -128,6 +128,7 @@ fun HomeScreen(
 
     val context = LocalContext.current
     val showHomeStats by SettingsPrefs.homeStatsEnabledFlow(context).collectAsState()
+    val isAddressBarBottom by SettingsPrefs.addressBarBottomFlow(context).collectAsState()
     val shieldState by UhShieldEngine.state.collectAsState()
 
     val config = LocalConfiguration.current
@@ -160,7 +161,12 @@ fun HomeScreen(
                     .fillMaxSize()
                     .statusBarsPadding()
                     .navigationBarsPadding()
-                    .padding(start = 24.dp, end = 58.dp, top = 16.dp, bottom = 74.dp),
+                    .padding(
+                        start = 24.dp,
+                        end = 60.dp,
+                        top = if (!isAddressBarBottom) 62.dp else 16.dp,
+                        bottom = if (isAddressBarBottom) 74.dp else 16.dp
+                    ),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(20.dp)
             ) {
@@ -231,7 +237,10 @@ fun HomeScreen(
                     .fillMaxSize()
                     .statusBarsPadding()
                     .navigationBarsPadding()
-                    .padding(bottom = 82.dp),
+                    .padding(
+                        top = if (!isAddressBarBottom) 114.dp else 56.dp,
+                        bottom = if (isAddressBarBottom) 82.dp else 18.dp
+                    ),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Spacer(modifier = Modifier.weight(0.22f))
@@ -302,7 +311,14 @@ fun HomeScreen(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .statusBarsPadding()
-                .padding(top = 12.dp, end = 12.dp)
+                .padding(
+                    top = if (!isAddressBarBottom) {
+                        if (isLandscape) 56.dp else 64.dp
+                    } else {
+                        12.dp
+                    },
+                    end = 12.dp
+                )
         ) {
             ShadowedPencilIcon(
                 tint = textColor,

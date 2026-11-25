@@ -70,6 +70,7 @@ fun UHAddressBar(
     scriptMatchCount: Int = 0,
     isCaptureActive: Boolean = false,
     isDesktopMode: Boolean = false,
+    isPrivate: Boolean = false,
     zoomPercent: Int = 100,
     onEditTextChanged: (String) -> Unit,
     onSubmit: (String) -> Unit,
@@ -146,6 +147,13 @@ fun UHAddressBar(
     val outerBarColor = if (isWallpaperActive || isEditing) Color.Transparent else MaterialTheme.colorScheme.background
     val hasPageUrl = !isWallpaperActive && url.isNotBlank() && url != "about:blank"
 
+    val privateAccent = Color(0xFF9F7AEA)
+    val pillBorderColor = if (isPrivate) {
+        privateAccent.copy(alpha = 0.78f)
+    } else {
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -161,7 +169,7 @@ fun UHAddressBar(
                 .height(pillHeight)
                 .clip(pillShape)
                 .background(pillBackground)
-                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.55f), pillShape)
+                .border(1.dp, pillBorderColor, pillShape)
         ) {
             Row(
                 modifier = Modifier
@@ -369,12 +377,15 @@ fun UHAddressBar(
                     }
                 }
 
-                // Tab Counter Badge
+                // Tab Counter Badge (reflects Normal vs Private mode count & accent)
+                val tabBadgeColor = if (isPrivate) privateAccent else MaterialTheme.colorScheme.onSurface
                 Box(
                     modifier = Modifier
                         .padding(horizontal = 4.dp)
                         .size(23.dp)
-                        .border(1.8.dp, MaterialTheme.colorScheme.onSurface, RoundedCornerShape(7.dp))
+                        .clip(RoundedCornerShape(7.dp))
+                        .background(if (isPrivate) privateAccent.copy(alpha = 0.16f) else Color.Transparent)
+                        .border(1.8.dp, tabBadgeColor, RoundedCornerShape(7.dp))
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
@@ -383,7 +394,7 @@ fun UHAddressBar(
                 ) {
                     Text(
                         text = if (tabCount > 99) "∞" else "$tabCount",
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = tabBadgeColor,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
