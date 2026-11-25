@@ -195,7 +195,7 @@ class AdvancedActivity : AppCompatActivity() {
                     UhSettingsCardGroup {
                         SettingsSwitchRow(
                             title = "Safe Browsing",
-                            subtitle = "Block phishing, malware, and deceptive downloads",
+                            subtitle = "Warn against phishing, malware & deceptive downloads",
                             key = SettingsPrefs.K_ADV_SAFE_BROWSING,
                             default = true,
                             iconRes = R.drawable.uh_ic_pg_safe_browsing_24,
@@ -205,7 +205,7 @@ class AdvancedActivity : AppCompatActivity() {
                         UhSettingsDivider()
                         SettingsSwitchRow(
                             title = "Auto De-AMP",
-                            subtitle = "Bypass Google AMP wrappers and load canonical publisher pages",
+                            subtitle = "Open canonical pages instead of AMP wrappers",
                             key = SettingsPrefs.K_ADV_DEAMP,
                             default = true,
                             iconRes = R.drawable.uh_ic_pg_deamp_24,
@@ -215,7 +215,7 @@ class AdvancedActivity : AppCompatActivity() {
                         UhSettingsDivider()
                         SettingsSwitchRow(
                             title = "Global Privacy Control (GPC)",
-                            subtitle = "Send Sec-GPC: 1 header telling sites not to sell your data",
+                            subtitle = "Signal sites not to sell or share your data",
                             key = SettingsPrefs.K_ADV_GPC,
                             default = true,
                             iconRes = R.drawable.uh_ic_pg_gpc_24,
@@ -225,7 +225,7 @@ class AdvancedActivity : AppCompatActivity() {
                         UhSettingsDivider()
                         SettingsSwitchRow(
                             title = "Do Not Track (DNT)",
-                            subtitle = "Send legacy DNT: 1 request header to websites",
+                            subtitle = "Send legacy DNT header (auto-off with Anti-Fingerprinting)",
                             key = SettingsPrefs.K_ADV_DNT,
                             default = false,
                             iconRes = R.drawable.uh_ic_pg_dnt_24,

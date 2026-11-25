@@ -198,13 +198,13 @@ class SiteSettingsActivity : AppCompatActivity() {
                     UhSettingsCardGroup {
                         val pausedList = shieldState.pausedHosts.sorted()
                         if (pausedList.isEmpty()) {
-                            EmptyExceptionRow("No paused sites — UH Shield protects all websites.")
+                            EmptyExceptionRow("No paused sites — UH Shield is active everywhere.")
                         } else {
                             pausedList.forEachIndexed { idx, host ->
                                 if (idx > 0) UhSettingsDivider()
                                 HostExceptionRow(
                                     host = host,
-                                    subtitle = "UH Shield paused",
+                                    subtitle = "Shield paused",
                                     onRemove = {
                                         UhShieldEngine.removePausedHost(host)
                                         UhPrivacyController.pushRuntimeConfigToExtension()
@@ -218,13 +218,13 @@ class SiteSettingsActivity : AppCompatActivity() {
                     UhSettingsCardGroup {
                         val bypassedList = darkBypassHosts.sorted()
                         if (bypassedList.isEmpty()) {
-                            EmptyExceptionRow("No bypassed sites — Force Dark Mode applies automatically when enabled.")
+                            EmptyExceptionRow("No bypassed sites.")
                         } else {
                             bypassedList.forEachIndexed { idx, host ->
                                 if (idx > 0) UhSettingsDivider()
                                 HostExceptionRow(
                                     host = host,
-                                    subtitle = "Original light styling kept",
+                                    subtitle = "Original site theme kept",
                                     onRemove = { UhPrivacyController.removeSiteDarkBypass(context, host) },
                                 )
                             }
@@ -278,7 +278,7 @@ class SiteSettingsActivity : AppCompatActivity() {
                     UhSettingsCardGroup {
                         if (filteredSaved.isEmpty()) {
                             EmptyExceptionRow(
-                                if (savedPermissions.isEmpty()) "No per-site permission overrides saved yet."
+                                if (savedPermissions.isEmpty()) "No saved per-site permissions."
                                 else "No matching sites found.",
                             )
                         } else {

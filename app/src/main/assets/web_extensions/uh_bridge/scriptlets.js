@@ -7,15 +7,31 @@
 
     function isCloudflareChallengePage() {
         try {
-            const host = (window.location.hostname || "").toLowerCase();
-            if (host === "challenges.cloudflare.com") return true;
+            const host = (window.location.hostname || "").toLowerCase().replace(/^www\./, "");
             const path = (window.location.pathname || "").toLowerCase();
-            if (path.startsWith("/cdn-cgi/")) return true;
+            if (path.startsWith("/cdn-cgi/") && !path.startsWith("/cdn-cgi/rum")) return true;
+            if (
+                host === "challenges.cloudflare.com" ||
+                host === "hcaptcha.com" || host.endsWith(".hcaptcha.com") ||
+                host === "recaptcha.net" || host.endsWith(".recaptcha.net") ||
+                host === "arkoselabs.com" || host.endsWith(".arkoselabs.com") ||
+                host === "funcaptcha.com" || host.endsWith(".funcaptcha.com") ||
+                host === "geetest.com" || host.endsWith(".geetest.com") ||
+                host === "friendlycaptcha.com" || host.endsWith(".friendlycaptcha.com") ||
+                host === "frcapi.com" || host.endsWith(".frcapi.com") ||
+                host === "captcha-delivery.com" || host.endsWith(".captcha-delivery.com")
+            ) {
+                return true;
+            }
+            if ((host === "google.com" || host.endsWith(".google.com") || host === "gstatic.com" || host.endsWith(".gstatic.com")) &&
+                path.includes("/recaptcha/")) {
+                return true;
+            }
             const title = (document.title || "").toLowerCase();
             if (title.includes("just a moment") || title.includes("attention required") || title.includes("checking your browser")) {
                 return true;
             }
-            if (document.getElementById("challenge-running") || document.getElementById("cf-challenge-running") || document.querySelector(".cf-turnstile")) {
+            if (document.getElementById("challenge-running") || document.getElementById("cf-challenge-running") || document.querySelector(".cf-turnstile, .h-captcha, .g-recaptcha")) {
                 return true;
             }
         } catch (_e) {}
@@ -770,19 +786,13 @@
             return (h & 1) === 0 ? 1 : -1;
         };
 
-        // 1) Uniform Gecko-native hardware & screen properties (NEVER define Chrome-only deviceMemory on Gecko)
-        defineCloakedGetter(navigator, "hardwareConcurrency", function () { return 4; });
-        defineCloakedGetter(navigator, "maxTouchPoints", function () { return 5; });
-        defineCloakedGetter(screen, "colorDepth", function () { return 24; });
-        defineCloakedGetter(screen, "pixelDepth", function () { return 24; });
+        // 1) Prototype-level Gecko-native hardware & DNT hygiene (keep real PluginArray & real screen!)
         try {
-            const emptyPlugins = Object.assign([], {
-                item: cloakNative(function () { return null; }, "item"),
-                namedItem: cloakNative(function () { return null; }, "namedItem"),
-                refresh: cloakNative(function () {}, "refresh")
-            });
-            defineCloakedGetter(navigator, "plugins", function () { return emptyPlugins; });
-            defineCloakedGetter(navigator, "mimeTypes", function () { return emptyPlugins; });
+            const navProto = (typeof Navigator !== "undefined" && Navigator.prototype) || Object.getPrototypeOf(navigator);
+            if (navProto) {
+                defineCloakedGetter(navProto, "hardwareConcurrency", function () { return 4; });
+                defineCloakedGetter(navProto, "doNotTrack", function () { return "unspecified"; });
+            }
         } catch (_e) {}
 
         // 2) Standardized Battery & Network Information APIs
@@ -948,9 +958,7 @@
                 const origGetParam = proto.getParameter;
                 if (typeof origGetParam === "function") {
                     proto.getParameter = cloakNative(function getParameter(param) {
-                        if (param === 37445) return "Qualcomm";
-                        if (param === 37446) return "Adreno (TM) 640";
-                        if (param === 7936 || param === 7937) return "Mozilla";
+                        if (param === 37445 || param === 37446 || param === 7936 || param === 7937) return "Mozilla";
                         return origGetParam.apply(this, arguments);
                     }, "getParameter");
                 }
@@ -1019,21 +1027,21 @@
             }
         } catch (_e) {}
 
-        // 6) Deterministic AudioContext farbling (idempotent per AudioBuffer)
+        // 6) Full-buffer AudioContext farbling (fallback when cs_fp_sync didn't run)
         try {
             const patchedBuffers = new WeakSet();
             if (typeof AudioBuffer !== "undefined" && AudioBuffer.prototype && typeof AudioBuffer.prototype.getChannelData === "function") {
                 const origGetChannelData = AudioBuffer.prototype.getChannelData;
-                AudioBuffer.prototype.getChannelData = cloakNative(function getChannelData(channel) {
+                AudioBuffer.prototype.getChannelData = cloakNative(function getChannelData() {
                     const data = origGetChannelData.apply(this, arguments);
                     try {
                         if (data && data.length > 16 && !patchedBuffers.has(data)) {
                             patchedBuffers.add(data);
                             const s = getSeed();
-                            const step = Math.max(1, (data.length / 16) | 0);
-                            for (let i = 0; i < data.length; i += step) {
-                                const n = (((fnv1aHash(s + ":au:" + channel + ":" + i) & 255) / 255) - 0.5) * 1e-6;
-                                data[i] = data[i] + n;
+                            const gain = 1 + ((((fnv1aHash(s + ":augain") & 4095) / 4095) - 0.5) * 0.005);
+                            const bias = ((((fnv1aHash(s + ":aubias") & 2047) / 2047) - 0.5) * 1e-5);
+                            for (let i = 0; i < data.length; i++) {
+                                if (data[i] !== 0) data[i] = data[i] * gain + bias;
                             }
                         }
                     } catch (_e) {}
@@ -1101,43 +1109,9 @@
         } catch (_e) {}
     }
 
-    // Opt-in Strict Anti-Fingerprinting (UTC timezone, uniform en-US locale, screen/DPR bucketing)
+    // Legacy strict screen/UTC spoofing retired to preserve zero-captcha/zero-bot-block browsing
     function installStrictFingerprintHardening() {
-        if (window.__uhStrictFpInstalled) return;
-        if (isCloudflareChallengePage()) return;
         window.__uhStrictFpInstalled = true;
-
-        try {
-            Date.prototype.getTimezoneOffset = cloakNative(function getTimezoneOffset() {
-                return 0;
-            }, "getTimezoneOffset");
-        } catch (_e) {}
-
-        try {
-            if (typeof Intl !== "undefined" && Intl.DateTimeFormat && Intl.DateTimeFormat.prototype) {
-                const origResolved = Intl.DateTimeFormat.prototype.resolvedOptions;
-                if (typeof origResolved === "function") {
-                    Intl.DateTimeFormat.prototype.resolvedOptions = cloakNative(function resolvedOptions() {
-                        const res = origResolved.apply(this, arguments);
-                        if (res && typeof res === "object") {
-                            res.timeZone = "UTC";
-                            res.locale = "en-US";
-                        }
-                        return res;
-                    }, "resolvedOptions");
-                }
-            }
-        } catch (_e) {}
-
-        const uniformLangs = Object.freeze(["en-US", "en"]);
-        defineCloakedGetter(navigator, "language", function () { return "en-US"; });
-        defineCloakedGetter(navigator, "languages", function () { return uniformLangs; });
-
-        defineCloakedGetter(screen, "width", function () { return 390; });
-        defineCloakedGetter(screen, "height", function () { return 844; });
-        defineCloakedGetter(screen, "availWidth", function () { return 390; });
-        defineCloakedGetter(screen, "availHeight", function () { return 844; });
-        defineCloakedGetter(window, "devicePixelRatio", function () { return 2; });
     }
 
     function applyConfig(cfg) {

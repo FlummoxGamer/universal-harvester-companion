@@ -25,10 +25,38 @@
     const FLAG_POPUP = 32;
     const FLAG_IMPORTANT = 64;
 
-    // Unified Gecko crowd identity shared 100% across HTTP headers & synchronous JS guards
-    const UNIFIED_GECKO_UA = "Mozilla/5.0 (Android 14; Mobile; rv:132.0) Gecko/132.0 Firefox/132.0";
-    const UNIFIED_ACCEPT_LANG = "en-US,en;q=0.5";
-    const UNIFIED_HTML_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+    // Captcha & human-verification infrastructure hosts (auto-exempt from script hooks & blocking)
+    const CAPTCHA_VERIFICATION_DOMAINS = new Set([
+        "challenges.cloudflare.com",
+        "hcaptcha.com",
+        "recaptcha.net",
+        "arkoselabs.com",
+        "funcaptcha.com",
+        "geetest.com",
+        "friendlycaptcha.com",
+        "frcapi.com",
+        "captcha-delivery.com"
+    ]);
+
+    function isCaptchaOrChallengeUrl(urlStr, reqHost) {
+        const lowerUrl = String(urlStr || "").toLowerCase();
+        const host = (reqHost ? String(reqHost).toLowerCase().replace(/^www\./, "") : normalizeHost(urlStr));
+        if (lowerUrl.includes("/cdn-cgi/") && !lowerUrl.includes("/cdn-cgi/rum")) return true;
+        if (lowerUrl.includes("friendly-challenge")) return true;
+        if (!host) return false;
+        if (matchesDomainSet(host, CAPTCHA_VERIFICATION_DOMAINS)) return true;
+        if ((host === "google.com" || host.endsWith(".google.com") || host === "gstatic.com" || host.endsWith(".gstatic.com")) &&
+            lowerUrl.includes("/recaptcha/")) {
+            return true;
+        }
+        return false;
+    }
+
+    // Preserves genuine GeckoView release version (zero JA4/Turnstile mismatch) while stripping WebView "; wv" tokens
+    function sanitizeGeckoUserAgent(rawUa) {
+        if (!rawUa || typeof rawUa !== "string") return rawUa;
+        return rawUa.replace(/;\s*wv\b/gi, "").replace(/\s{2,}/g, " ").trim();
+    }
 
     const REDIRECT_DATA_URLS = {
         js: "data:application/javascript;base64,KGZ1bmN0aW9uKCl7fSkoKTs=",
@@ -548,9 +576,6 @@
         TYPE_IMAGE,
         TYPE_SUBDOCUMENT,
         TYPE_POPUP,
-        UNIFIED_GECKO_UA,
-        UNIFIED_ACCEPT_LANG,
-        UNIFIED_HTML_ACCEPT,
         activeRules: createEmptyRuleEngine(),
         activeMainHost: "",
         cnameBlockedHosts: new Map(),
@@ -566,7 +591,7 @@
             deAmp: true,
             blockPopups: true,
             antiFingerprint: true,
-            strictFingerprint: true,
+            strictFingerprint: false,
             fpSessionSalt: "",
             refererTrim: true,
             lanGuard: true,
@@ -588,6 +613,8 @@
         getRegistrableBase,
         matchesDomainSet,
         matchesDomainList,
+        isCaptchaOrChallengeUrl,
+        sanitizeGeckoUserAgent,
         isEssentialSmartJsHost,
         isConfirmedPopunderOrBettingTrap,
         mapDetailsTypeToBit,

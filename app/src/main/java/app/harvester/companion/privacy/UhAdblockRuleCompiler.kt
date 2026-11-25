@@ -433,15 +433,15 @@ object UhAdblockRuleCompiler {
         )
     }
 
-    private const val MAX_STRUCTURED_RULES = 36_000
-    private const val MAX_GLOBAL_COSMETICS = 1200
-    private const val MAX_DOMAIN_COSMETICS_PER_HOST = 90
-    private const val MAX_GLOBAL_PROCEDURAL = 120
-    private const val MAX_DOMAIN_PROCEDURAL_PER_HOST = 20
-    private const val MAX_SCRIPTLETS_PER_HOST = 16
-    private const val MAX_STYLE_RULES_PER_HOST = 20
-    private const val MAX_REMOVE_RULES_PER_HOST = 20
-    private const val MAX_REMOVE_PARAM_RULES = 1200
+    private const val MAX_STRUCTURED_RULES = 120_000
+    private const val MAX_GLOBAL_COSMETICS = 4_000
+    private const val MAX_DOMAIN_COSMETICS_PER_HOST = 180
+    private const val MAX_GLOBAL_PROCEDURAL = 250
+    private const val MAX_DOMAIN_PROCEDURAL_PER_HOST = 40
+    private const val MAX_SCRIPTLETS_PER_HOST = 24
+    private const val MAX_STYLE_RULES_PER_HOST = 40
+    private const val MAX_REMOVE_RULES_PER_HOST = 40
+    private const val MAX_REMOVE_PARAM_RULES = 3_000
 
     private val SUPPORTED_SCRIPTLET_ALIASES: Map<String, String> = mapOf(
         "abort-on-property-read" to "abort-on-property-read",

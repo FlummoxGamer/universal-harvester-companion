@@ -35,6 +35,8 @@ internal object UhShieldPayloadBuilder {
         val antiFingerprint = SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_FINGERPRINT, true)
         val clearUrls = SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_CLEAR_URLS, true)
         val shieldActive = state.level != ShieldLevel.OFF
+        // Suppress legacy DNT signal automatically while Anti-Fingerprinting is active (avoids +2.02 bit leak)
+        val effectiveDnt = !antiFingerprint && SettingsPrefs.getBool(ctx, SettingsPrefs.K_ADV_DNT, false)
 
         return JSONObject().apply {
             put("shieldLevel", state.level.code)
@@ -49,13 +51,13 @@ internal object UhShieldPayloadBuilder {
             put("deAmp", SettingsPrefs.getBool(ctx, SettingsPrefs.K_ADV_DEAMP, true))
             put("blockPopups", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_POPUP_BLOCK, true))
             put("antiFingerprint", antiFingerprint)
-            put("strictFingerprint", antiFingerprint)
+            put("strictFingerprint", false)
             put("fpSessionSalt", fpSessionSalt)
             put("refererTrim", antiFingerprint || clearUrls)
             put("lanGuard", shieldActive)
             put("annoyances", shieldActive)
             put("cnameUnmask", shieldActive)
-            put("dnt", SettingsPrefs.getBool(ctx, SettingsPrefs.K_ADV_DNT, false))
+            put("dnt", effectiveDnt)
             put("gpc", SettingsPrefs.getBool(ctx, SettingsPrefs.K_ADV_GPC, true))
             put("webrtcPolicy", SettingsPrefs.getInt(ctx, SettingsPrefs.K_ADV_WEBRTC_POLICY, 1))
             put("backgroundPlay", SettingsPrefs.getBool(ctx, SettingsPrefs.K_BACKGROUND_PLAY, true))
@@ -276,6 +278,8 @@ internal object UhShieldPayloadBuilder {
         }
 
         val antiFingerprintPref = SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_FINGERPRINT, true)
+        val antiFpActive = antiFingerprintPref && !paused
+        val effectiveDnt = !antiFpActive && SettingsPrefs.getBool(ctx, SettingsPrefs.K_ADV_DNT, false)
 
         return JSONObject().apply {
             put("shieldLevel", state.level.code)
@@ -288,9 +292,9 @@ internal object UhShieldPayloadBuilder {
             put("annoyances", shieldActive)
             put("cookieBanners", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_COOKIE_BANNERS, true) && !paused)
             put("blockPopups", SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_POPUP_BLOCK, true) && !paused)
-            put("antiFingerprint", antiFingerprintPref && !paused)
-            put("strictFingerprint", antiFingerprintPref && !paused)
-            put("dnt", SettingsPrefs.getBool(ctx, SettingsPrefs.K_ADV_DNT, false))
+            put("antiFingerprint", antiFpActive)
+            put("strictFingerprint", false)
+            put("dnt", effectiveDnt)
             put("fpSessionSalt", fpSessionSalt)
             put("backgroundPlay", SettingsPrefs.getBool(ctx, SettingsPrefs.K_BACKGROUND_PLAY, true))
             put("webrtcPolicy", SettingsPrefs.getInt(ctx, SettingsPrefs.K_ADV_WEBRTC_POLICY, 1))

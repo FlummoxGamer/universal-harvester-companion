@@ -90,8 +90,9 @@
                 backgroundPlay: true,
                 webrtcPolicy: 1,
                 antiFingerprint: true,
-                strictFingerprint: true,
+                strictFingerprint: false,
                 annoyances: true,
+                dnt: false,
                 fpSessionSalt: ""
             };
             try {
@@ -211,22 +212,51 @@
         "ins.adsbygoogle",
         "[id^='div-gpt-ad']",
         "[id^='google_ads_iframe']",
+        "[id*='advert' i]",
+        "[data-ad]",
         "[data-ad-slot]",
         "[data-ad-unit]",
+        "[data-ad-name]",
         "[data-google-query-id]",
+        "[data-testid*='ad-' i]",
+        "[data-testid*='advert' i]",
         "[class*='ad-slot' i]",
         "[class*='ad_slot' i]",
+        "[class*='adSlot' i]",
+        "[class*='adUnit' i]",
+        "[class*='ad-unit' i]",
         "[class*='ad-wrapper' i]",
         "[class*='ad_wrapper' i]",
         "[class*='ad-container' i]",
         "[class*='ad_container' i]",
         "[class*='ad-placeholder' i]",
         "[class*='ad-banner' i]",
+        "[class*='advert' i]",
         "[class*='leaderboard-ad' i]",
         "[class*='billboard-ad' i]",
         "[aria-label='Advertisement' i]",
         "[aria-label='Sponsored' i]"
     ].join(", ");
+
+    const ORPHAN_AD_LABEL_RE = /^(advertisement|advertising|sponsored|sponsored content|sponsored post|promoted|paid content|ad|ads|continue reading below|scroll to continue with content|story continues below)$/i;
+
+    function isCaptchaHost() {
+        try {
+            const h = currentNormalizedHost();
+            const p = (window.location.pathname || "").toLowerCase();
+            if (p.startsWith("/cdn-cgi/") && !p.startsWith("/cdn-cgi/rum")) return true;
+            return h === "challenges.cloudflare.com" ||
+                h === "hcaptcha.com" || h.endsWith(".hcaptcha.com") ||
+                h === "recaptcha.net" || h.endsWith(".recaptcha.net") ||
+                h === "arkoselabs.com" || h.endsWith(".arkoselabs.com") ||
+                h === "funcaptcha.com" || h.endsWith(".funcaptcha.com") ||
+                h === "geetest.com" || h.endsWith(".geetest.com") ||
+                h === "friendlycaptcha.com" || h.endsWith(".friendlycaptcha.com") ||
+                h === "captcha-delivery.com" || h.endsWith(".captcha-delivery.com");
+        } catch (_e) {
+            return false;
+        }
+    }
 
     function forceZeroBox(el) {
         el.dataset.uhCollapsed = "1";
@@ -266,10 +296,10 @@
         ) {
             return true;
         }
-        // Generic single-child DIV/SECTION wrapper that ONLY held collapsed ad element(s) or an "Advertisement" label
-        if ((tag === "DIV" || tag === "SECTION") && el.children.length <= 3) {
+        // Generic Tailwind/React DIV/SECTION wrapper holding ONLY collapsed ad slots or an "Advertisement" label
+        if ((tag === "DIV" || tag === "SECTION") && el.children.length <= 5) {
             const text = (el.textContent || "").trim();
-            if (text.length === 0 || /^(advertisement|sponsored|ad|ads|promoted|paid content)$/i.test(text)) {
+            if (text.length === 0 || ORPHAN_AD_LABEL_RE.test(text)) {
                 return true;
             }
         }
@@ -278,7 +308,10 @@
 
     function hasOtherVisibleContent(container) {
         const text = (container.textContent || "").trim();
-        if (text.length > 28 && !/^(advertisement|sponsored|ad|ads|promoted|paid content|scroll to continue with content)$/i.test(text)) {
+        if (text.length > 36 && !ORPHAN_AD_LABEL_RE.test(text)) {
+            return true;
+        }
+        if (container.querySelector("video, audio, form, input, textarea, select, canvas, .cf-turnstile, .h-captcha, .g-recaptcha")) {
             return true;
         }
         for (let i = 0; i < container.children.length; i++) {
@@ -286,14 +319,21 @@
             if (ch.dataset && ch.dataset.uhCollapsed === "1") continue;
             if (ch.tagName === "SCRIPT" || ch.tagName === "STYLE" || ch.tagName === "NOSCRIPT" || ch.tagName === "TEMPLATE") continue;
             const chText = (ch.textContent || "").trim();
-            if (chText.length > 0 && /^(advertisement|sponsored|ad|ads|promoted)$/i.test(chText) && !ch.querySelector("img, video, a[href], button")) {
+            if (chText.length > 0 && ORPHAN_AD_LABEL_RE.test(chText) && !ch.querySelector("img, video, a[href], button")) {
                 continue;
+            }
+            if (chText.length > 36 && !ORPHAN_AD_LABEL_RE.test(chText)) {
+                return true;
             }
             try {
                 const cs = getComputedStyle(ch);
-                if (cs.display === "none" || cs.visibility === "hidden") continue;
+                if (cs.display === "none" || cs.visibility === "hidden" || parseFloat(cs.opacity) === 0) continue;
                 const rect = ch.getBoundingClientRect();
-                if (rect.width > 4 && rect.height > 4) return true;
+                if (rect.width <= 4 || rect.height <= 4) continue;
+                // An empty tall box (no real text and no visible media/links) is an empty ad placeholder, not real content!
+                const hasRealMedia = !!ch.querySelector("img[src]:not([data-uh-collapsed='1']), video, picture, svg, a[href], button");
+                if (chText.length === 0 && !hasRealMedia) continue;
+                return true;
             } catch (_e) {}
         }
         return false;
@@ -311,21 +351,71 @@
         }
     }
 
+    // Collapses orphan "Advertisement" / "Sponsored" text labels and their empty Tailwind/React ad wrappers
+    // (fixes PCMag, Forbes, IGN & ad-test sites where ads are blocked but "Advertisement" captions stay behind)
+    function sweepOrphanAdLabels() {
+        const shieldOn = C.pageProtectState && (C.pageProtectState.shieldLevel || 0) > 0 && !C.pageProtectState.paused;
+        if (!shieldOn || !document.body || isCaptchaHost()) return;
+        try {
+            const candidates = document.querySelectorAll("span, p, div, small, label, strong, em, figcaption, h5, h6");
+            const limit = Math.min(candidates.length, 450);
+            for (let i = 0; i < limit; i++) {
+                const el = candidates[i];
+                if (!el || (el.dataset && el.dataset.uhCollapsed === "1")) continue;
+                if (el.children.length > 0) continue;
+                const txt = (el.textContent || "").trim();
+                if (txt.length < 2 || txt.length > 34) continue;
+                if (!ORPHAN_AD_LABEL_RE.test(txt)) continue;
+                if (el.closest("a[href], button, nav, header, footer")) continue;
+
+                // Walk up up to 4 wrapper levels to find the outer ad wrapper containing ONLY this label + empty/collapsed slots
+                let target = el;
+                let cur = el.parentElement;
+                let depth = 0;
+                while (cur && depth < 4 && cur !== document.body && cur !== document.documentElement) {
+                    const tag = cur.tagName;
+                    if (tag === "MAIN" || tag === "ARTICLE" || tag === "HEADER" || tag === "NAV" || tag === "FOOTER") break;
+                    if (hasOtherVisibleContent(cur)) break;
+                    target = cur;
+                    cur = cur.parentElement;
+                    depth++;
+                }
+                collapseElement(target);
+            }
+        } catch (_e) {}
+    }
+
     function sweepEmptyAdPlaceholders() {
         const shieldOn = C.pageProtectState && (C.pageProtectState.shieldLevel || 0) > 0 && !C.pageProtectState.paused;
-        if (!shieldOn || !document.body) return;
+        if (!shieldOn || !document.body || isCaptchaHost()) return;
         try {
             const slots = document.querySelectorAll(AD_SLOT_PLACEHOLDER_SELECTOR);
-            const limit = Math.min(slots.length, 160);
+            const limit = Math.min(slots.length, 220);
             for (let i = 0; i < limit; i++) {
                 const el = slots[i];
-                if (!el || (el.dataset && el.dataset.uhCollapsed === "1")) continue;
-                if (el === document.body || el === document.documentElement) continue;
-                // Only collapse if slot is empty or only holds broken/hidden/caption nodes
+                if (!el || el === document.body || el === document.documentElement) continue;
+                if (el.dataset && el.dataset.uhCollapsed === "1") {
+                    // Re-walk ancestors in case a CSS-hidden slot's outer wrapper still renders
+                    collapseEmptyAdAncestors(el.parentElement);
+                    continue;
+                }
+                // If already hidden by CSS cosmetic rules, walk up and collapse empty outer ad wrappers!
+                let cssHidden = false;
+                try {
+                    const cs = getComputedStyle(el);
+                    cssHidden = cs.display === "none" || cs.visibility === "hidden";
+                } catch (_e) {}
+                if (cssHidden) {
+                    el.dataset.uhCollapsed = "1";
+                    collapseEmptyAdAncestors(el.parentElement);
+                    continue;
+                }
+                // Otherwise collapse if slot is empty or only holds broken/hidden/caption nodes
                 if (!hasOtherVisibleContent(el)) {
                     collapseElement(el);
                 }
             }
+            sweepOrphanAdLabels();
         } catch (_e) {}
     }
 
@@ -422,7 +512,7 @@
     const SPONSORED_BADGE_RE = /^(sponsored|promoted|paid partner|paid post|partner content|advertisement|ad)$/i;
 
     function runAnnoyanceKillers() {
-        if (!isTopFrame || !document.body) return;
+        if (!isTopFrame || !document.body || isCaptchaHost()) return;
         const st = C.pageProtectState;
         const shieldOn = st && (st.shieldLevel || 0) > 0 && !st.paused;
         if (!shieldOn || st.annoyances === false) return;
@@ -548,7 +638,7 @@
     }
 
     function bustInterstitialAdWalls() {
-        if (!isTopFrame) return;
+        if (!isTopFrame || isCaptchaHost()) return;
         const shieldOn = C.pageProtectState && (C.pageProtectState.shieldLevel || 0) > 0 && !C.pageProtectState.paused;
         if (!shieldOn || !document.body) return;
         const vw = window.innerWidth || 0;

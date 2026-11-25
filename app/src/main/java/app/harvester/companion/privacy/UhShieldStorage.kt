@@ -26,7 +26,7 @@ internal object UhShieldStorage {
     const val KEY_LAST_SYNC_MS = "last_sync_ms"
     const val KEY_LIST_META_JSON = "list_meta_json"
     const val KEY_CATALOG_VERSION = "list_catalog_version"
-    const val CURRENT_CATALOG_VERSION = 2
+    const val CURRENT_CATALOG_VERSION = 3
 
     fun prefs(ctx: Context): SharedPreferences =
         ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -44,7 +44,12 @@ internal object UhShieldStorage {
             if (savedVersion < CURRENT_CATALOG_VERSION) {
                 val migrated = saved.toMutableSet()
                 if (migrated.isNotEmpty()) {
-                    migrated.addAll(UhShieldCatalog.CATALOG_V2_NEW_DEFAULTS)
+                    if (savedVersion < 2) {
+                        migrated.addAll(UhShieldCatalog.CATALOG_V2_NEW_DEFAULTS)
+                    }
+                    if (savedVersion < 3) {
+                        migrated.addAll(UhShieldCatalog.CATALOG_V3_NEW_DEFAULTS)
+                    }
                 }
                 p.edit()
                     .putStringSet(KEY_ENABLED_LISTS, migrated)

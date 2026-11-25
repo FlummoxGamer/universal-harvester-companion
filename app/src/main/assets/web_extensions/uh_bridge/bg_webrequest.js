@@ -23,9 +23,8 @@
     // by adDomains/trackerDomains so regular browsing and download links work on tap 1.
     function isMainFrameAdRedirect(urlStr, sourceHost) {
         if (!urlStr || (!urlStr.startsWith("http://") && !urlStr.startsWith("https://"))) return false;
-        if (urlStr.includes("/cdn-cgi/")) return false;
         const reqHost = B.normalizeHost(urlStr);
-        if (!reqHost || reqHost === "challenges.cloudflare.com") return false;
+        if (!reqHost || B.isCaptchaOrChallengeUrl(urlStr, reqHost)) return false;
         if (shieldState.redirectAllowOnceHosts && shieldState.redirectAllowOnceHosts.has(reqHost)) return false;
 
         const isThirdParty = !sourceHost || B.getRegistrableBase(reqHost) !== B.getRegistrableBase(sourceHost);
@@ -147,8 +146,8 @@
                     const isThirdParty = !pageHost || B.getRegistrableBase(reqHost) !== B.getRegistrableBase(pageHost);
                     const typeBit = B.mapDetailsTypeToBit(details.type);
 
-                    // Never block Cloudflare Turnstile / challenge assets
-                    if (reqHost === "challenges.cloudflare.com" || (details.url.includes("/cdn-cgi/") && !details.url.includes("/cdn-cgi/rum"))) {
+                    // Never block Cloudflare Turnstile, hCaptcha, reCAPTCHA, Arkose, GeeTest, or FriendlyCaptcha assets
+                    if (B.isCaptchaOrChallengeUrl(details.url, reqHost)) {
                         return {};
                     }
 
@@ -438,8 +437,9 @@
     }
 
     // -------------------------------------------------------------------------
-    // Privacy & Anti-Fingerprinting HTTP Header Alignment:
-    // Unified Gecko UA, Accept-Language, Accept, Client-Hints Scrub, GPC & Referer Trim
+    // Privacy & Anti-Fingerprinting HTTP Header Hygiene:
+    // Preserves genuine Gecko UA (zero Turnstile/DataDome mismatch), strips WebView/CH leaks,
+    // auto-suppresses DNT during Anti-Fingerprinting, sets GPC & trims cross-site Referer.
     // -------------------------------------------------------------------------
     if (api.webRequest && api.webRequest.onBeforeSendHeaders) {
         api.webRequest.onBeforeSendHeaders.addListener(
@@ -452,18 +452,17 @@
                     const tabUrl = (typeof details.tabId === "number" && details.tabId >= 0) ? (B.tabUrlMap.get(details.tabId) || "") : "";
                     const pageHost = details.type === "main_frame" ? reqHost : (B.normalizeHost(tabUrl) || B.activeMainHost || reqHost);
                     const isPaused = !!(pageHost && shieldState.pausedHosts.has(pageHost));
-                    const isCf = !!(details.url && (details.url.includes("/cdn-cgi/") || reqHost === "challenges.cloudflare.com"));
-                    const fpAlign = shieldState.antiFingerprint && !isPaused && !isCf;
+                    const isCaptcha = B.isCaptchaOrChallengeUrl(details.url, reqHost);
+                    const fpActive = shieldState.antiFingerprint && !isPaused;
+                    // Force DNT off when Anti-Fingerprinting is active so we never leak the +2.02 bit DNT flag
+                    const effectiveDnt = !fpActive && shieldState.dnt === true;
 
-                    if (!fpAlign && !shieldState.dnt && !shieldState.gpc && !shieldState.refererTrim) return {};
+                    if (!fpActive && !effectiveDnt && !shieldState.gpc && !shieldState.refererTrim) return {};
 
                     const headers = [];
                     let modified = false;
                     let hasDnt = false;
                     let hasGpc = false;
-                    let hasUa = false;
-                    let hasAcceptLang = false;
-                    let hasAccept = false;
                     const reqBase = reqHost ? B.getRegistrableBase(reqHost) : "";
 
                     for (let i = 0; i < rawHeaders.length; i++) {
@@ -471,36 +470,16 @@
                         const lname = h.name.toLowerCase();
 
                         // Strip any Chromium Client Hints or WebView X-Requested-With leaks
-                        if (fpAlign && CLIENT_HINT_HEADERS_TO_STRIP.has(lname)) {
+                        if (fpActive && CLIENT_HINT_HEADERS_TO_STRIP.has(lname)) {
                             modified = true;
                             continue;
                         }
 
-                        // Normalize User-Agent to clean Firefox/Gecko Android crowd profile (strips ; wv & OEM model)
-                        if (lname === "user-agent") {
-                            hasUa = true;
-                            if (fpAlign && h.value !== B.UNIFIED_GECKO_UA) {
-                                headers.push({ name: h.name, value: B.UNIFIED_GECKO_UA });
-                                modified = true;
-                                continue;
-                            }
-                        }
-
-                        // Normalize Accept-Language to match JS navigator.languages (en-US,en;q=0.5)
-                        if (lname === "accept-language") {
-                            hasAcceptLang = true;
-                            if (fpAlign && h.value !== B.UNIFIED_ACCEPT_LANG) {
-                                headers.push({ name: h.name, value: B.UNIFIED_ACCEPT_LANG });
-                                modified = true;
-                                continue;
-                            }
-                        }
-
-                        // Align navigation Accept header with standard Firefox 132 crowd value
-                        if (lname === "accept" && details.type === "main_frame") {
-                            hasAccept = true;
-                            if (fpAlign && h.value !== B.UNIFIED_HTML_ACCEPT) {
-                                headers.push({ name: h.name, value: B.UNIFIED_HTML_ACCEPT });
+                        // Keep genuine GeckoView User-Agent (identical on host & captcha frames); strip "; wv" only if present
+                        if (lname === "user-agent" && fpActive && h.value) {
+                            const cleanedUa = B.sanitizeGeckoUserAgent(h.value);
+                            if (cleanedUa && cleanedUa !== h.value) {
+                                headers.push({ name: h.name, value: cleanedUa });
                                 modified = true;
                                 continue;
                             }
@@ -508,15 +487,15 @@
 
                         if (lname === "dnt") {
                             hasDnt = true;
-                            if (!shieldState.dnt) {
+                            if (!effectiveDnt) {
                                 modified = true;
                                 continue;
                             }
                         }
                         if (lname === "sec-gpc") hasGpc = true;
 
-                        // Trim cross-site Referer down to origin-only to prevent path/search leakage
-                        if (lname === "referer" && shieldState.refererTrim && !isCf && reqBase && h.value) {
+                        // Trim cross-site Referer down to origin-only (never break captcha origin checks)
+                        if (lname === "referer" && shieldState.refererTrim && !isCaptcha && reqBase && h.value) {
                             try {
                                 const refUrl = new URL(h.value);
                                 const refHost = refUrl.hostname.toLowerCase().replace(/^www\./, "");
@@ -534,19 +513,7 @@
                         headers.push(h);
                     }
 
-                    if (fpAlign && !hasUa) {
-                        headers.push({ name: "User-Agent", value: B.UNIFIED_GECKO_UA });
-                        modified = true;
-                    }
-                    if (fpAlign && !hasAcceptLang) {
-                        headers.push({ name: "Accept-Language", value: B.UNIFIED_ACCEPT_LANG });
-                        modified = true;
-                    }
-                    if (fpAlign && details.type === "main_frame" && !hasAccept) {
-                        headers.push({ name: "Accept", value: B.UNIFIED_HTML_ACCEPT });
-                        modified = true;
-                    }
-                    if (shieldState.dnt && !hasDnt) {
+                    if (effectiveDnt && !hasDnt) {
                         headers.push({ name: "DNT", value: "1" });
                         modified = true;
                     }

@@ -191,8 +191,8 @@
             annoyances: shieldState.annoyances,
             blockPopups: shieldState.blockPopups,
             antiFingerprint: shieldState.antiFingerprint,
-            strictFingerprint: shieldState.strictFingerprint,
-            dnt: shieldState.dnt,
+            strictFingerprint: false,
+            dnt: shieldState.dnt === true && !shieldState.antiFingerprint,
             fpSessionSalt: shieldState.fpSessionSalt,
             backgroundPlay: shieldState.backgroundPlay,
             webrtcPolicy: shieldState.webrtcPolicy,
@@ -330,8 +330,8 @@
 
     function cleanTrackingUrl(urlStr, allowRedirectUnwrap) {
         if (!urlStr || (!urlStr.startsWith("http://") && !urlStr.startsWith("https://"))) return null;
-        // Never rewrite Cloudflare challenge or clearance URLs
-        if (urlStr.includes("/cdn-cgi/") || urlStr.includes("__cf_chl")) return null;
+        // Never rewrite Cloudflare, Turnstile, hCaptcha, reCAPTCHA, or verification URLs
+        if (urlStr.includes("/cdn-cgi/") || urlStr.includes("__cf_chl") || (B.isCaptchaOrChallengeUrl && B.isCaptchaOrChallengeUrl(urlStr))) return null;
 
         let next = urlStr;
         let changed = false;
@@ -391,7 +391,7 @@
 
     function applyRemoveParamRules(urlStr, pageHost) {
         if (!urlStr || !urlStr.includes("?")) return null;
-        if (urlStr.includes("/cdn-cgi/") || urlStr.includes("__cf_chl")) return null;
+        if (urlStr.includes("/cdn-cgi/") || urlStr.includes("__cf_chl") || (B.isCaptchaOrChallengeUrl && B.isCaptchaOrChallengeUrl(urlStr))) return null;
         const rules = B.activeRules && B.activeRules.removeParamRules;
         if (!rules || rules.length === 0) return null;
 

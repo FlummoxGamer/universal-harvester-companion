@@ -1,30 +1,45 @@
 // -----------------------------------------------------------------------------
 // UH Bridge Content Module 0: Zero-Race Synchronous document_start Guard
-// Arms Unified Anti-Fingerprinting (Brave Randomization + Tor Alignment) and
-// Precision Click-Hijack / Betting-Popunder Defuser BEFORE byte 1 of page JS.
+// Brave-Grade Stealth Farbling (Canvas, Masked+Farbled WebGL, Full-Buffer Audio,
+// Clean Fallback-Locked Fonts, Auto DNT Off) + Precision Click-Hijack Defuser
+// with Universal Captcha/Verification Exemption & Prototype-Level Stealth.
 // -----------------------------------------------------------------------------
 (function () {
     "use strict";
 
-    // This function is serialized and executed synchronously in the MAIN page world
-    // via inline <script>, with automatic Gecko wrappedJSObject fallback for strict CSP.
     function __uhSyncPageGuard(bootCfg) {
         if (window.__uhSyncArmed) return;
         window.__uhSyncArmed = true;
 
         var cfg = bootCfg || {};
-        var UNIFIED_UA = "Mozilla/5.0 (Android 14; Mobile; rv:132.0) Gecko/132.0 Firefox/132.0";
 
-        function isCfChallenge() {
+        // Auto-exempt all captcha & human-verification frames cleanly
+        function isCaptchaFrame() {
             try {
-                var h = (window.location.hostname || "").toLowerCase();
-                if (h === "challenges.cloudflare.com") return true;
+                var h = (window.location.hostname || "").toLowerCase().replace(/^www\./, "");
                 var p = (window.location.pathname || "").toLowerCase();
-                if (p.indexOf("/cdn-cgi/") === 0) return true;
+                if (p.indexOf("/cdn-cgi/") === 0 && p.indexOf("/cdn-cgi/rum") !== 0) return true;
+                if (
+                    h === "challenges.cloudflare.com" ||
+                    h === "hcaptcha.com" || h.endsWith(".hcaptcha.com") ||
+                    h === "recaptcha.net" || h.endsWith(".recaptcha.net") ||
+                    h === "arkoselabs.com" || h.endsWith(".arkoselabs.com") ||
+                    h === "funcaptcha.com" || h.endsWith(".funcaptcha.com") ||
+                    h === "geetest.com" || h.endsWith(".geetest.com") ||
+                    h === "friendlycaptcha.com" || h.endsWith(".friendlycaptcha.com") ||
+                    h === "frcapi.com" || h.endsWith(".frcapi.com") ||
+                    h === "captcha-delivery.com" || h.endsWith(".captcha-delivery.com")
+                ) {
+                    return true;
+                }
+                if ((h === "google.com" || h.endsWith(".google.com") || h === "gstatic.com" || h.endsWith(".gstatic.com")) &&
+                    p.indexOf("/recaptcha/") >= 0) {
+                    return true;
+                }
             } catch (_e) {}
             return false;
         }
-        if (isCfChallenge()) return;
+        if (isCaptchaFrame()) return;
 
         function getRegistrableBase(host) {
             var clean = String(host || "").toLowerCase().replace(/^www\./, "");
@@ -54,7 +69,7 @@
         }
 
         // ---------------------------------------------------------------------
-        // Native-Code Stealth Cloak (makes all patched APIs pass toString checks)
+        // Native-Code Stealth Cloak (Prototype-level descriptors, zero own-prop leaks)
         // ---------------------------------------------------------------------
         var nativeCloakMap = new WeakMap();
         var origFnToString = Function.prototype.toString;
@@ -84,11 +99,12 @@
             return fn;
         }
 
-        function defineGetter(target, prop, getter) {
-            if (!target) return;
+        // Always define getters on the PROTOTYPE (never instance own-properties) to pass anti-bot checks
+        function defineProtoGetter(proto, prop, getter) {
+            if (!proto) return;
             var cloaked = cloak(getter, "get " + prop);
             try {
-                Object.defineProperty(target, prop, {
+                Object.defineProperty(proto, prop, {
                     get: cloaked,
                     enumerable: true,
                     configurable: true
@@ -96,7 +112,6 @@
             } catch (_e) {}
         }
 
-        // Expose cloak helper so scriptlets.js shares the exact same WeakMap
         try {
             Object.defineProperty(window, "__uhCloakNative", {
                 value: cloak,
@@ -107,13 +122,14 @@
         } catch (_e) {}
 
         // ---------------------------------------------------------------------
-        // PART 1: Unified Anti-Fingerprinting (Brave Randomization + Tor Alignment)
+        // PART 1: Brave-Grade Stealth Anti-Fingerprinting (Zero Bot Flags)
+        // Preserves genuine Gecko UA, real screen/DPR, real PluginArray, and real timezone
+        // while masking GPU hardware and farbling Canvas, WebGL, Audio, Fonts & ClientRects.
         // ---------------------------------------------------------------------
         if (cfg.antiFingerprint !== false && !cfg.paused) {
             window.__uhFpHardened = true;
             window.__uhStrictFpInstalled = true;
 
-            // Per-session + per-origin cryptographic seed (rotates across sessions & sites)
             var originBase = getRegistrableBase(window.location.hostname || "local");
             var salt = cfg.fpSessionSalt || "";
             if (!salt) {
@@ -138,165 +154,32 @@
                 return (fnv1a(fpSeed + ":s:" + idx) & 1) === 0 ? 1 : -1;
             };
 
-            // 1) Gecko-Native Navigator & Hardware Alignment (100% consistent with HTTP headers)
-            // IMPORTANT: Leave navigator.deviceMemory, navigator.cpuClass, navigator.userAgentData undefined
-            // because real Firefox/Gecko does NOT expose them (defining them creates a unique contradiction).
-            var uniformLangs = Object.freeze(["en-US", "en"]);
-            defineGetter(navigator, "userAgent", function () { return UNIFIED_UA; });
-            defineGetter(navigator, "appVersion", function () { return "5.0 (Android 14)"; });
-            defineGetter(navigator, "platform", function () { return "Linux aarch64"; });
-            defineGetter(navigator, "oscpu", function () { return "Linux aarch64"; });
-            defineGetter(navigator, "vendor", function () { return ""; });
-            defineGetter(navigator, "productSub", function () { return "20100101"; });
-            defineGetter(navigator, "hardwareConcurrency", function () { return 4; });
-            defineGetter(navigator, "maxTouchPoints", function () { return 5; });
-            defineGetter(navigator, "language", function () { return "en-US"; });
-            defineGetter(navigator, "languages", function () { return uniformLangs; });
-            defineGetter(navigator, "doNotTrack", function () { return cfg.dnt === true ? "1" : "unspecified"; });
-
+            // 1) Prototype-Level Navigator Hygiene (NO fake UA/screen/plugins — zero Turnstile/DataDome flags!)
             try {
-                var emptyPlugins = Object.assign([], {
-                    item: cloak(function item() { return null; }, "item"),
-                    namedItem: cloak(function namedItem() { return null; }, "namedItem"),
-                    refresh: cloak(function refresh() {}, "refresh")
-                });
-                defineGetter(navigator, "plugins", function () { return emptyPlugins; });
-                defineGetter(navigator, "mimeTypes", function () { return emptyPlugins; });
-            } catch (_e) {}
-
-            // 2) Tor-Style Timezone (UTC) & Locale (en-US) Full Alignment
-            try {
-                Date.prototype.getTimezoneOffset = cloak(function getTimezoneOffset() {
-                    return 0;
-                }, "getTimezoneOffset");
-
-                var origDateToString = Date.prototype.toString;
-                var origDateToTimeString = Date.prototype.toTimeString;
-                var DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-                var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-                var pad2 = function (n) { return n < 10 ? "0" + n : String(n); };
-
-                Date.prototype.toString = cloak(function toString() {
-                    var t = this.getTime();
-                    if (isNaN(t)) return origDateToString.call(this);
-                    return (
-                        DAYS[this.getUTCDay()] + " " +
-                        MONTHS[this.getUTCMonth()] + " " +
-                        pad2(this.getUTCDate()) + " " +
-                        this.getUTCFullYear() + " " +
-                        pad2(this.getUTCHours()) + ":" +
-                        pad2(this.getUTCMinutes()) + ":" +
-                        pad2(this.getUTCSeconds()) + " GMT+0000 (Coordinated Universal Time)"
-                    );
-                }, "toString");
-
-                Date.prototype.toTimeString = cloak(function toTimeString() {
-                    var t = this.getTime();
-                    if (isNaN(t)) return origDateToTimeString.call(this);
-                    return (
-                        pad2(this.getUTCHours()) + ":" +
-                        pad2(this.getUTCMinutes()) + ":" +
-                        pad2(this.getUTCSeconds()) + " GMT+0000 (Coordinated Universal Time)"
-                    );
-                }, "toTimeString");
-            } catch (_e) {}
-
-            try {
-                if (typeof Intl !== "undefined" && Intl.DateTimeFormat && Intl.DateTimeFormat.prototype) {
-                    var origResolved = Intl.DateTimeFormat.prototype.resolvedOptions;
-                    if (typeof origResolved === "function") {
-                        Intl.DateTimeFormat.prototype.resolvedOptions = cloak(function resolvedOptions() {
-                            var res = origResolved.apply(this, arguments);
-                            if (res && typeof res === "object") {
-                                res.timeZone = "UTC";
-                                res.locale = "en-US";
-                            }
-                            return res;
-                        }, "resolvedOptions");
+                var navProto = (typeof Navigator !== "undefined" && Navigator.prototype) || Object.getPrototypeOf(navigator);
+                if (navProto) {
+                    // Strip "; wv" WebView token ONLY if ever present, keeping genuine Gecko version 100% intact
+                    var origUaDesc = Object.getOwnPropertyDescriptor(navProto, "userAgent");
+                    if (origUaDesc && typeof origUaDesc.get === "function") {
+                        var origUaGetter = origUaDesc.get;
+                        var rawUa = "";
+                        try { rawUa = String(origUaGetter.call(navigator) || ""); } catch (_e) {}
+                        if (/;\s*wv\b/i.test(rawUa)) {
+                            var cleanUa = rawUa.replace(/;\s*wv\b/gi, "").replace(/\s{2,}/g, " ").trim();
+                            defineProtoGetter(navProto, "userAgent", function () { return cleanUa; });
+                        }
                     }
+                    // Force DNT off when Anti-Fingerprinting is active (eliminates +2.02 bit leak)
+                    defineProtoGetter(navProto, "doNotTrack", function () { return "unspecified"; });
+                    // Bucket hardwareConcurrency to common mobile value (4) on prototype
+                    defineProtoGetter(navProto, "hardwareConcurrency", function () { return 4; });
                 }
             } catch (_e) {}
 
-            // 3) Tor-Style Screen, Window Outer Dimensions, DPR & CSS @media Alignment
-            var BUCKET_W = 390;
-            var BUCKET_H = 844;
-            var BUCKET_DPR = 2;
-            defineGetter(screen, "width", function () { return BUCKET_W; });
-            defineGetter(screen, "height", function () { return BUCKET_H; });
-            defineGetter(screen, "availWidth", function () { return BUCKET_W; });
-            defineGetter(screen, "availHeight", function () { return BUCKET_H; });
-            defineGetter(screen, "availLeft", function () { return 0; });
-            defineGetter(screen, "availTop", function () { return 0; });
-            defineGetter(screen, "left", function () { return 0; });
-            defineGetter(screen, "top", function () { return 0; });
-            defineGetter(screen, "colorDepth", function () { return 24; });
-            defineGetter(screen, "pixelDepth", function () { return 24; });
-            defineGetter(window, "outerWidth", function () { return BUCKET_W; });
-            defineGetter(window, "outerHeight", function () { return BUCKET_H; });
-            defineGetter(window, "screenX", function () { return 0; });
-            defineGetter(window, "screenY", function () { return 0; });
-            defineGetter(window, "screenLeft", function () { return 0; });
-            defineGetter(window, "screenTop", function () { return 0; });
-            defineGetter(window, "devicePixelRatio", function () { return BUCKET_DPR; });
-
+            // 2) Battery, MediaDevices, WebGPU & SpeechSynthesis Privacy Hardening
             try {
-                if (typeof window.matchMedia === "function") {
-                    var origMatchMedia = window.matchMedia.bind(window);
-                    var evalAlignedMedia = function (q) {
-                        var s = String(q || "").toLowerCase();
-                        var m;
-                        if ((m = s.match(/\(\s*(min-|max-)?device-width\s*:\s*([\d.]+)px\s*\)/))) {
-                            var v = parseFloat(m[2]);
-                            if (m[1] === "min-") return BUCKET_W >= v;
-                            if (m[1] === "max-") return BUCKET_W <= v;
-                            return BUCKET_W === v;
-                        }
-                        if ((m = s.match(/\(\s*(min-|max-)?device-height\s*:\s*([\d.]+)px\s*\)/))) {
-                            var vh = parseFloat(m[2]);
-                            if (m[1] === "min-") return BUCKET_H >= vh;
-                            if (m[1] === "max-") return BUCKET_H <= vh;
-                            return BUCKET_H === vh;
-                        }
-                        if ((m = s.match(/\(\s*(min-|max-)?(?:resolution|-webkit-(?:min-|max-)?device-pixel-ratio)\s*:\s*([\d.]+)(dppx|dpi|x)?\s*\)/))) {
-                            var val = parseFloat(m[2]);
-                            var unit = m[3] || "x";
-                            var dprVal = unit === "dpi" ? (val / 96) : val;
-                            var isMin = m[1] === "min-" || s.indexOf("-webkit-min-") >= 0;
-                            var isMax = m[1] === "max-" || s.indexOf("-webkit-max-") >= 0;
-                            if (isMin) return BUCKET_DPR >= dprVal - 0.001;
-                            if (isMax) return BUCKET_DPR <= dprVal + 0.001;
-                            return Math.abs(BUCKET_DPR - dprVal) < 0.01;
-                        }
-                        if ((m = s.match(/\(\s*(min-|max-)?color\s*:\s*(\d+)\s*\)/))) {
-                            var c = parseInt(m[2], 10);
-                            if (m[1] === "min-") return 8 >= c;
-                            if (m[1] === "max-") return 8 <= c;
-                            return 8 === c;
-                        }
-                        return null;
-                    };
-                    window.matchMedia = cloak(function matchMedia(query) {
-                        var mql = origMatchMedia(query);
-                        var override = evalAlignedMedia(query);
-                        if (override === null || !mql) return mql;
-                        try {
-                            return new Proxy(mql, {
-                                get: function (target, prop) {
-                                    if (prop === "matches") return override;
-                                    var val = Reflect.get(target, prop, target);
-                                    return typeof val === "function" ? val.bind(target) : val;
-                                }
-                            });
-                        } catch (_e) {
-                            return mql;
-                        }
-                    }, "matchMedia");
-                }
-            } catch (_e) {}
-
-            // 4) Battery, Network Info, MediaDevices, WebGPU & SpeechSynthesis
-            try {
-                if (typeof navigator.getBattery === "function") {
+                var nProto = (typeof Navigator !== "undefined" && Navigator.prototype) || Object.getPrototypeOf(navigator);
+                if (nProto && typeof nProto.getBattery === "function") {
                     var fakeBattery = {
                         charging: true, chargingTime: 0, dischargingTime: Infinity, level: 1.0,
                         onchargingchange: null, onchargingtimechange: null, ondischargingtimechange: null, onlevelchange: null,
@@ -304,27 +187,15 @@
                         removeEventListener: cloak(function removeEventListener() {}, "removeEventListener"),
                         dispatchEvent: cloak(function dispatchEvent() { return false; }, "dispatchEvent")
                     };
-                    navigator.getBattery = cloak(function getBattery() { return Promise.resolve(fakeBattery); }, "getBattery");
+                    nProto.getBattery = cloak(function getBattery() { return Promise.resolve(fakeBattery); }, "getBattery");
                 }
             } catch (_e) {}
 
             try {
-                if ("connection" in navigator) {
-                    var fakeConn = {
-                        effectiveType: "4g", rtt: 50, downlink: 10, saveData: false, onchange: null,
-                        addEventListener: cloak(function addEventListener() {}, "addEventListener"),
-                        removeEventListener: cloak(function removeEventListener() {}, "removeEventListener"),
-                        dispatchEvent: cloak(function dispatchEvent() { return false; }, "dispatchEvent")
-                    };
-                    defineGetter(navigator, "connection", function () { return fakeConn; });
-                }
-            } catch (_e) {}
-
-            try {
-                if (navigator.mediaDevices && typeof navigator.mediaDevices.enumerateDevices === "function") {
-                    var origEnum = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices);
-                    navigator.mediaDevices.enumerateDevices = cloak(function enumerateDevices() {
-                        return origEnum().then(function (list) {
+                if (typeof MediaDevices !== "undefined" && MediaDevices.prototype && typeof MediaDevices.prototype.enumerateDevices === "function") {
+                    var origEnum = MediaDevices.prototype.enumerateDevices;
+                    MediaDevices.prototype.enumerateDevices = cloak(function enumerateDevices() {
+                        return origEnum.apply(this, arguments).then(function (list) {
                             if (!Array.isArray(list)) return list;
                             return list.map(function (d) {
                                 return {
@@ -338,24 +209,24 @@
             } catch (_e) {}
 
             try {
-                if (typeof window.speechSynthesis !== "undefined" && typeof window.speechSynthesis.getVoices === "function") {
-                    window.speechSynthesis.getVoices = cloak(function getVoices() { return []; }, "getVoices");
+                if (typeof SpeechSynthesis !== "undefined" && SpeechSynthesis.prototype && typeof SpeechSynthesis.prototype.getVoices === "function") {
+                    SpeechSynthesis.prototype.getVoices = cloak(function getVoices() { return []; }, "getVoices");
                 }
             } catch (_e) {}
 
             try {
-                if (navigator.gpu && typeof navigator.gpu.requestAdapter === "function") {
-                    var origReqAdapter = navigator.gpu.requestAdapter.bind(navigator.gpu);
-                    var uniformGpuInfo = Object.freeze({ vendor: "qualcomm", architecture: "adreno", device: "", description: "" });
-                    navigator.gpu.requestAdapter = cloak(function requestAdapter() {
-                        return origReqAdapter.apply(navigator.gpu, arguments).then(function (adapter) {
+                if (typeof GPU !== "undefined" && GPU.prototype && typeof GPU.prototype.requestAdapter === "function") {
+                    var origReqAdapter = GPU.prototype.requestAdapter;
+                    var maskedGpuInfo = Object.freeze({ vendor: "mozilla", architecture: "", device: "", description: "" });
+                    GPU.prototype.requestAdapter = cloak(function requestAdapter() {
+                        return origReqAdapter.apply(this, arguments).then(function (adapter) {
                             if (!adapter) return adapter;
                             try {
                                 return new Proxy(adapter, {
                                     get: function (target, prop) {
-                                        if (prop === "info") return uniformGpuInfo;
+                                        if (prop === "info") return maskedGpuInfo;
                                         if (prop === "requestAdapterInfo") {
-                                            return cloak(function requestAdapterInfo() { return Promise.resolve(uniformGpuInfo); }, "requestAdapterInfo");
+                                            return cloak(function requestAdapterInfo() { return Promise.resolve(maskedGpuInfo); }, "requestAdapterInfo");
                                         }
                                         var val = Reflect.get(target, prop, target);
                                         return typeof val === "function" ? val.bind(target) : val;
@@ -369,7 +240,7 @@
                 }
             } catch (_e) {}
 
-            // 5) Canvas 2D + WebGL Canvas + OffscreenCanvas Brave-Style Farbling
+            // 3) Canvas 2D + WebGL Canvas + OffscreenCanvas Brave-Style Farbling
             var webglCanvases = new WeakMap();
             try {
                 var origGetContext = HTMLCanvasElement.prototype.getContext;
@@ -387,7 +258,7 @@
                 var farblePixels = function (data, tag) {
                     if (!data || data.length < 16) return;
                     var pixelCount = (data.length / 4) | 0;
-                    var steps = Math.min(8, pixelCount);
+                    var steps = Math.min(10, pixelCount);
                     for (var k = 0; k < steps; k++) {
                         var pIdx = (fnv1a(fpSeed + ":" + tag + ":" + k + ":" + pixelCount) % pixelCount) * 4;
                         var ch = k % 3;
@@ -459,47 +330,35 @@
                         return origConvertToBlob.apply(this, arguments);
                     }, "convertToBlob");
                 }
-
-                // Canvas measureText font-probe defense
-                var origMeasureText = CanvasRenderingContext2D.prototype.measureText;
-                if (typeof origMeasureText === "function") {
-                    CanvasRenderingContext2D.prototype.measureText = cloak(function measureText(text) {
-                        var metrics = origMeasureText.apply(this, arguments);
-                        try {
-                            if (metrics && typeof metrics.width === "number" && metrics.width > 0) {
-                                var fontKey = (this.font || "") + "|" + String(text || "").slice(0, 40);
-                                var jitter = (((fnv1a(fpSeed + ":ft:" + fontKey) & 1023) / 1023) - 0.5) * 0.002;
-                                var fakeW = metrics.width + jitter;
-                                return new Proxy(metrics, {
-                                    get: function (target, prop) {
-                                        if (prop === "width") return fakeW;
-                                        var val = Reflect.get(target, prop, target);
-                                        return typeof val === "function" ? val.bind(target) : val;
-                                    }
-                                });
-                            }
-                        } catch (_e) {}
-                        return metrics;
-                    }, "measureText");
-                }
             } catch (_e) {}
 
-            // 6) WebGL Gecko-Consistent Vendor/Renderer + Per-Origin Parameter/ReadPixels/Extension Farbling
+            // 4) WebGL: Mask Real GPU Hardware + Per-Origin/Per-Session Farbling On Top
+            // Real GPU vendor/renderer is 100% masked ("Mozilla" Firefox-crowd mask) while
+            // WebGL pixels, extensions, and shader precision/ranges are farbled per-origin & per-session.
             try {
                 var patchWebGL = function (proto) {
                     if (!proto) return;
                     var origGetParam = proto.getParameter;
                     if (typeof origGetParam === "function") {
                         proto.getParameter = cloak(function getParameter(param) {
-                            // Genuine Gecko Android Firefox GPU profile (NEVER Chrome's ANGLE string!)
-                            if (param === 37445) return "Qualcomm";
-                            if (param === 37446) return "Adreno (TM) 640";
-                            if (param === 7936) return "Mozilla";
-                            if (param === 7937) return "Mozilla";
-                            if (param === 3379) return 4096; // MAX_TEXTURE_SIZE
-                            if (param === 34024) return 4096; // MAX_RENDERBUFFER_SIZE
-                            if (param === 34921) return 16; // MAX_VERTEX_ATTRIBS
-                            return origGetParam.apply(this, arguments);
+                            // Mask real GPU hardware completely (never leak real Snapdragon/Mali or static Adreno 640)
+                            if (param === 37445) return "Mozilla"; // UNMASKED_VENDOR_WEBGL
+                            if (param === 37446) return "Mozilla"; // UNMASKED_RENDERER_WEBGL
+                            if (param === 7936) return "Mozilla";  // VENDOR
+                            if (param === 7937) return "Mozilla";  // RENDERER
+                            if (param === 3379) return 4096;       // MAX_TEXTURE_SIZE
+                            if (param === 34024) return 4096;      // MAX_RENDERBUFFER_SIZE
+                            if (param === 34921) return 16;        // MAX_VERTEX_ATTRIBS
+                            var val = origGetParam.apply(this, arguments);
+                            // Subtle per-origin farbling on WebGL numeric ranges/caps
+                            if (param === 33901 || param === 33902) { // ALIASED_POINT_SIZE_RANGE / ALIASED_LINE_WIDTH_RANGE
+                                if (val && val.length === 2) {
+                                    var copyRange = new Float32Array(val);
+                                    copyRange[1] = copyRange[1] + deltaSign(61) * ((fnv1a(fpSeed + ":glp:" + param) & 7) * 0.001);
+                                    return copyRange;
+                                }
+                            }
+                            return val;
                         }, "getParameter");
                     }
                     var origReadPixels = proto.readPixels;
@@ -509,15 +368,15 @@
                             try {
                                 if (pixels && pixels.length >= 16) {
                                     if (pixels instanceof Uint8Array || pixels instanceof Uint8ClampedArray) {
-                                        for (var k = 0; k < 6; k++) {
+                                        for (var k = 0; k < 8; k++) {
                                             var idx = fnv1a(fpSeed + ":glr:" + k + ":" + pixels.length) % pixels.length;
                                             var v = pixels[idx];
                                             pixels[idx] = v === 0 ? 1 : (v === 255 ? 254 : v + deltaSign(k + 41));
                                         }
                                     } else if (pixels instanceof Float32Array) {
-                                        for (var f = 0; f < 4; f++) {
+                                        for (var f = 0; f < 6; f++) {
                                             var fi = fnv1a(fpSeed + ":glf:" + f + ":" + pixels.length) % pixels.length;
-                                            pixels[fi] = pixels[fi] + deltaSign(f + 51) * 1e-5;
+                                            pixels[fi] = pixels[fi] + deltaSign(f + 51) * 1e-4;
                                         }
                                     }
                                 }
@@ -532,11 +391,15 @@
                             try {
                                 if (Array.isArray(exts) && exts.length > 4) {
                                     var copy = exts.slice();
-                                    // Deterministic per-origin permutation of non-critical extension order
-                                    var swapIdx = fnv1a(fpSeed + ":ext") % (copy.length - 1);
-                                    var tmp = copy[swapIdx];
-                                    copy[swapIdx] = copy[swapIdx + 1];
-                                    copy[swapIdx + 1] = tmp;
+                                    // Deterministic per-origin/per-session permutation on top of masked GPU
+                                    var swapA = fnv1a(fpSeed + ":extA") % (copy.length - 1);
+                                    var tmpA = copy[swapA];
+                                    copy[swapA] = copy[swapA + 1];
+                                    copy[swapA + 1] = tmpA;
+                                    var swapB = fnv1a(fpSeed + ":extB") % (copy.length - 1);
+                                    var tmpB = copy[swapB];
+                                    copy[swapB] = copy[swapB + 1];
+                                    copy[swapB + 1] = tmpB;
                                     return copy;
                                 }
                             } catch (_e) {}
@@ -548,25 +411,57 @@
                 if (typeof WebGL2RenderingContext !== "undefined") patchWebGL(WebGL2RenderingContext.prototype);
             } catch (_e) {}
 
-            // 7) Complete AudioContext Farbling (getChannelData, copyFromChannel, OfflineAudioContext, AnalyserNode)
+            // 5) Full-Buffer AudioContext Farbling (Kills Static 35.749966... Hash!)
+            // Applies deterministic per-origin/per-session micro-gain + dither across ALL samples
+            // (including tail indices 4500..5000 summed by Cover Your Tracks) via getChannelData,
+            // copyFromChannel, OfflineAudioContext (both Promise AND oncomplete event), & AnalyserNode.
             try {
                 var patchedAudioBufs = new WeakSet();
-                var farbleFloatSamples = function (arr, channelTag) {
+                // Imperceptible ±0.25% gain shift unique per site & session
+                var audioGain = 1 + ((((fnv1a(fpSeed + ":augain") & 4095) / 4095) - 0.5) * 0.005);
+                var audioBias = ((((fnv1a(fpSeed + ":aubias") & 2047) / 2047) - 0.5) * 1e-5);
+
+                var farbleAudioArray = function (arr, channelTag) {
                     if (!arr || arr.length <= 16 || patchedAudioBufs.has(arr)) return;
                     patchedAudioBufs.add(arr);
-                    var step = Math.max(1, (arr.length / 24) | 0);
-                    for (var i = 0; i < arr.length; i += step) {
-                        var n = (((fnv1a(fpSeed + ":au:" + channelTag + ":" + i) & 511) / 511) - 0.5) * 2e-6;
-                        arr[i] = arr[i] + n;
+                    var len = arr.length;
+                    for (var i = 0; i < len; i++) {
+                        var s = arr[i];
+                        if (s !== 0) {
+                            arr[i] = s * audioGain + audioBias;
+                        }
+                    }
+                    // Add deterministic sparse micro-dither in tail window
+                    var tailStart = Math.max(0, len - 600);
+                    for (var k = 0; k < 12; k++) {
+                        var ti = tailStart + (fnv1a(fpSeed + ":aut:" + channelTag + ":" + k) % Math.max(1, len - tailStart));
+                        if (ti < len && arr[ti] !== 0) {
+                            arr[ti] = arr[ti] + deltaSign(k + 71) * 1e-5;
+                        }
                     }
                 };
 
+                var farbleAudioBuffer = function (buf, tag) {
+                    if (!buf || patchedAudioBufs.has(buf)) return;
+                    patchedAudioBufs.add(buf);
+                    try {
+                        var chCount = typeof buf.numberOfChannels === "number" ? buf.numberOfChannels : 0;
+                        for (var c = 0; c < chCount; c++) {
+                            var chData = origGetChannelDataRef.call(buf, c);
+                            farbleAudioArray(chData, tag + "_" + c);
+                        }
+                    } catch (_e) {}
+                };
+
+                var origGetChannelDataRef = (typeof AudioBuffer !== "undefined" && AudioBuffer.prototype)
+                    ? AudioBuffer.prototype.getChannelData
+                    : null;
+
                 if (typeof AudioBuffer !== "undefined" && AudioBuffer.prototype) {
-                    if (typeof AudioBuffer.prototype.getChannelData === "function") {
-                        var origGetChannelData = AudioBuffer.prototype.getChannelData;
+                    if (typeof origGetChannelDataRef === "function") {
                         AudioBuffer.prototype.getChannelData = cloak(function getChannelData(ch) {
-                            var data = origGetChannelData.apply(this, arguments);
-                            try { farbleFloatSamples(data, ch || 0); } catch (_e) {}
+                            var data = origGetChannelDataRef.apply(this, arguments);
+                            try { farbleAudioArray(data, "ch" + (ch || 0)); } catch (_e) {}
                             return data;
                         }, "getChannelData");
                     }
@@ -574,30 +469,51 @@
                         var origCopyFromChannel = AudioBuffer.prototype.copyFromChannel;
                         AudioBuffer.prototype.copyFromChannel = cloak(function copyFromChannel(dest, ch) {
                             var res = origCopyFromChannel.apply(this, arguments);
-                            try { farbleFloatSamples(dest, "c" + (ch || 0)); } catch (_e) {}
+                            try { farbleAudioArray(dest, "cp" + (ch || 0)); } catch (_e) {}
                             return res;
                         }, "copyFromChannel");
                     }
                 }
 
-                if (typeof OfflineAudioContext !== "undefined" && OfflineAudioContext.prototype && typeof OfflineAudioContext.prototype.startRendering === "function") {
-                    var origStartRendering = OfflineAudioContext.prototype.startRendering;
-                    OfflineAudioContext.prototype.startRendering = cloak(function startRendering() {
-                        var p = origStartRendering.apply(this, arguments);
-                        if (p && typeof p.then === "function") {
-                            return p.then(function (renderedBuffer) {
-                                try {
-                                    if (renderedBuffer && typeof renderedBuffer.numberOfChannels === "number") {
-                                        for (var c = 0; c < renderedBuffer.numberOfChannels; c++) {
-                                            farbleFloatSamples(renderedBuffer.getChannelData(c), "off" + c);
+                if (typeof OfflineAudioContext !== "undefined" && OfflineAudioContext.prototype) {
+                    // Intercept BOTH Promise-based startRendering AND legacy oncomplete callback
+                    var origOnCompleteDesc = Object.getOwnPropertyDescriptor(OfflineAudioContext.prototype, "oncomplete");
+                    if (origOnCompleteDesc && typeof origOnCompleteDesc.set === "function") {
+                        var origSetOnComplete = origOnCompleteDesc.set;
+                        var origGetOnComplete = origOnCompleteDesc.get;
+                        Object.defineProperty(OfflineAudioContext.prototype, "oncomplete", {
+                            configurable: true,
+                            enumerable: true,
+                            get: origGetOnComplete ? cloak(function () { return origGetOnComplete.call(this); }, "get oncomplete") : undefined,
+                            set: cloak(function (handler) {
+                                if (typeof handler !== "function") {
+                                    return origSetOnComplete.call(this, handler);
+                                }
+                                var wrapped = function (ev) {
+                                    try {
+                                        if (ev && ev.renderedBuffer) {
+                                            farbleAudioBuffer(ev.renderedBuffer, "ev");
                                         }
-                                    }
-                                } catch (_e) {}
-                                return renderedBuffer;
-                            });
-                        }
-                        return p;
-                    }, "startRendering");
+                                    } catch (_e) {}
+                                    return handler.call(this, ev);
+                                };
+                                return origSetOnComplete.call(this, wrapped);
+                            }, "set oncomplete")
+                        });
+                    }
+                    if (typeof OfflineAudioContext.prototype.startRendering === "function") {
+                        var origStartRendering = OfflineAudioContext.prototype.startRendering;
+                        OfflineAudioContext.prototype.startRendering = cloak(function startRendering() {
+                            var p = origStartRendering.apply(this, arguments);
+                            if (p && typeof p.then === "function") {
+                                return p.then(function (renderedBuffer) {
+                                    try { farbleAudioBuffer(renderedBuffer, "pr"); } catch (_e) {}
+                                    return renderedBuffer;
+                                });
+                            }
+                            return p;
+                        }, "startRendering");
+                    }
                 }
 
                 if (typeof AnalyserNode !== "undefined" && AnalyserNode.prototype) {
@@ -608,8 +524,10 @@
                             orig.apply(this, arguments);
                             try {
                                 if (arr && arr.length > 4) {
-                                    var idx = fnv1a(fpSeed + ":" + tag) % arr.length;
-                                    if (isFinite(arr[idx])) arr[idx] += deltaSign(21) * 1e-4;
+                                    for (var k = 0; k < 4; k++) {
+                                        var idx = fnv1a(fpSeed + ":" + tag + ":" + k) % arr.length;
+                                        if (isFinite(arr[idx])) arr[idx] += deltaSign(21 + k) * 1e-3;
+                                    }
                                 }
                             } catch (_e) {}
                         }, methodName);
@@ -621,8 +539,10 @@
                             orig.apply(this, arguments);
                             try {
                                 if (arr && arr.length > 4) {
-                                    var idx = fnv1a(fpSeed + ":" + tag) % arr.length;
-                                    if (arr[idx] > 0 && arr[idx] < 255) arr[idx] += deltaSign(22);
+                                    for (var k = 0; k < 4; k++) {
+                                        var idx = fnv1a(fpSeed + ":" + tag + ":" + k) % arr.length;
+                                        if (arr[idx] > 0 && arr[idx] < 255) arr[idx] += deltaSign(26 + k);
+                                    }
                                 }
                             } catch (_e) {}
                         }, methodName);
@@ -634,13 +554,101 @@
                 }
             } catch (_e) {}
 
-            // 8) ClientRects & DOM System Font Enumeration Defense (Cover Your Tracks font test)
+            // 6) Clean Fallback-Locked System Font Probe Defense (ZERO Fake Windows Fonts!)
+            // Locks non-Android desktop font probes to their generic fallback baseline so
+            // Cover Your Tracks never hallucinates 60 Windows/Mac fonts on Android.
+            try {
+                var STANDARD_ANDROID_FONTS = {
+                    "roboto": 1, "noto sans": 1, "noto serif": 1, "noto color emoji": 1,
+                    "droid sans": 1, "droid serif": 1, "droid sans mono": 1,
+                    "sans-serif": 1, "serif": 1, "monospace": 1, "cursive": 1, "fantasy": 1,
+                    "system-ui": 1, "ui-sans-serif": 1, "ui-serif": 1, "ui-monospace": 1
+                };
+                var GENERIC_FALLBACKS = { "sans-serif": 1, "serif": 1, "monospace": 1, "cursive": 1, "fantasy": 1 };
+                var origOffsetWDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
+                var origOffsetHDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
+                var fallbackMetricCache = Object.create(null);
+
+                var parseFontProbeFallback = function (el) {
+                    if (!el || !el.style || el.children.length !== 0) return null;
+                    var ff = el.style.fontFamily || "";
+                    if (!ff || ff.indexOf(",") < 0) return null;
+                    var tag = el.tagName;
+                    if (tag !== "SPAN" && tag !== "DIV" && tag !== "P") return null;
+                    var fs = parseFloat(el.style.fontSize || "0");
+                    var isProbe = el.style.visibility === "hidden" || el.style.position === "absolute" || fs >= 32;
+                    if (!isProbe) return null;
+                    var parts = ff.split(",");
+                    if (parts.length < 2) return null;
+                    var primary = parts[0].trim().replace(/^['"]|['"]$/g, "").toLowerCase();
+                    var fallback = parts[parts.length - 1].trim().replace(/^['"]|['"]$/g, "").toLowerCase();
+                    if (!primary || STANDARD_ANDROID_FONTS[primary] || !GENERIC_FALLBACKS[fallback]) return null;
+                    return fallback;
+                };
+
+                var measureFallbackBaseline = function (el, fallbackFamily, origW, origH) {
+                    var txt = (el.textContent || "").slice(0, 80);
+                    var key = fallbackFamily + "|" + (el.style.fontSize || "") + "|" + (el.style.fontWeight || "") + "|" + txt;
+                    if (fallbackMetricCache[key]) return fallbackMetricCache[key];
+                    var prevFF = el.style.fontFamily;
+                    try {
+                        el.style.fontFamily = fallbackFamily;
+                        var m = { w: origW.call(el), h: origH.call(el) };
+                        fallbackMetricCache[key] = m;
+                        return m;
+                    } catch (_e) {
+                        return null;
+                    } finally {
+                        try { el.style.fontFamily = prevFF; } catch (_e) {}
+                    }
+                };
+
+                if (origOffsetWDesc && origOffsetHDesc && typeof origOffsetWDesc.get === "function" && typeof origOffsetHDesc.get === "function") {
+                    var origOW = origOffsetWDesc.get;
+                    var origOH = origOffsetHDesc.get;
+                    var inFontMeasure = false;
+                    defineProtoGetter(HTMLElement.prototype, "offsetWidth", function () {
+                        if (!inFontMeasure) {
+                            try {
+                                var fb = parseFontProbeFallback(this);
+                                if (fb) {
+                                    inFontMeasure = true;
+                                    var base = measureFallbackBaseline(this, fb, origOW, origOH);
+                                    inFontMeasure = false;
+                                    if (base) return base.w;
+                                }
+                            } catch (_e) {
+                                inFontMeasure = false;
+                            }
+                        }
+                        return origOW.call(this);
+                    });
+                    defineProtoGetter(HTMLElement.prototype, "offsetHeight", function () {
+                        if (!inFontMeasure) {
+                            try {
+                                var fb = parseFontProbeFallback(this);
+                                if (fb) {
+                                    inFontMeasure = true;
+                                    var base = measureFallbackBaseline(this, fb, origOW, origOH);
+                                    inFontMeasure = false;
+                                    if (base) return base.h;
+                                }
+                            } catch (_e) {
+                                inFontMeasure = false;
+                            }
+                        }
+                        return origOH.call(this);
+                    });
+                }
+            } catch (_e) {}
+
+            // 7) Subtle Sub-Pixel ClientRects Noise (defeats rect hashing without breaking layout)
             try {
                 var adjustRect = function (r, keyHint) {
                     if (!r || typeof r.width !== "number" || (r.width === 0 && r.height === 0)) return r;
                     try {
                         var h = fnv1a(fpSeed + ":rc:" + (keyHint || ""));
-                        var jitter = (((h & 1023) / 1023) - 0.5) * 0.0002;
+                        var jitter = (((h & 1023) / 1023) - 0.5) * 0.00015;
                         return new DOMRect(r.x + jitter, r.y + jitter, r.width + jitter, r.height + jitter);
                     } catch (_e) {
                         return r;
@@ -648,26 +656,9 @@
                 };
                 var origGetBCR = Element.prototype.getBoundingClientRect;
                 Element.prototype.getBoundingClientRect = cloak(function getBoundingClientRect() {
-                    var hint = (this.tagName || "") + "|" + ((this.style && this.style.fontFamily) || "");
+                    var hint = (this.tagName || "") + "|" + (this.id || "");
                     return adjustRect(origGetBCR.apply(this, arguments), hint);
                 }, "getBoundingClientRect");
-
-                var origElClientRects = Element.prototype.getClientRects;
-                if (typeof origElClientRects === "function") {
-                    Element.prototype.getClientRects = cloak(function getClientRects() {
-                        var list = origElClientRects.apply(this, arguments);
-                        try {
-                            if (!list || list.length === 0) return list;
-                            var hint = (this.tagName || "") + "|" + ((this.style && this.style.fontFamily) || "");
-                            var arr = [];
-                            for (var i = 0; i < list.length; i++) arr.push(adjustRect(list[i], hint + ":" + i));
-                            arr.item = cloak(function item(idx) { return arr[idx] || null; }, "item");
-                            return arr;
-                        } catch (_e) {
-                            return list;
-                        }
-                    }, "getClientRects");
-                }
 
                 if (typeof Range !== "undefined" && Range.prototype && typeof Range.prototype.getClientRects === "function") {
                     var origRangeClientRects = Range.prototype.getClientRects;
@@ -684,56 +675,13 @@
                         }
                     }, "getClientRects");
                 }
-
-                // Surgical DOM System Font Enumeration Probe Defense:
-                // Only perturbs offscreen/hidden font-probe spans that specify a font-family fallback list
-                var origOffsetWDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
-                var origOffsetHDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
-                var isFontProbeEl = function (el) {
-                    if (!el || !el.style) return false;
-                    var ff = el.style.fontFamily || "";
-                    if (!ff || ff.indexOf(",") < 0) return false;
-                    var tag = el.tagName;
-                    if (tag !== "SPAN" && tag !== "DIV" && tag !== "P") return false;
-                    var fs = parseFloat(el.style.fontSize || "0");
-                    var isHiddenProbe =
-                        el.style.visibility === "hidden" ||
-                        el.style.position === "absolute" ||
-                        fs >= 40;
-                    return isHiddenProbe && el.children.length === 0;
-                };
-                if (origOffsetWDesc && typeof origOffsetWDesc.get === "function") {
-                    var origOW = origOffsetWDesc.get;
-                    defineGetter(HTMLElement.prototype, "offsetWidth", function () {
-                        var val = origOW.call(this);
-                        try {
-                            if (val > 20 && isFontProbeEl(this)) {
-                                var fh = fnv1a(fpSeed + ":fow:" + this.style.fontFamily);
-                                return val + ((fh % 3) - 1);
-                            }
-                        } catch (_e) {}
-                        return val;
-                    });
-                }
-                if (origOffsetHDesc && typeof origOffsetHDesc.get === "function") {
-                    var origOH = origOffsetHDesc.get;
-                    defineGetter(HTMLElement.prototype, "offsetHeight", function () {
-                        var val = origOH.call(this);
-                        try {
-                            if (val > 10 && isFontProbeEl(this)) {
-                                var fh = fnv1a(fpSeed + ":foh:" + this.style.fontFamily);
-                                return val + ((fh & 1) === 0 ? 1 : 0);
-                            }
-                        } catch (_e) {}
-                        return val;
-                    });
-                }
             } catch (_e) {}
         }
 
         // ---------------------------------------------------------------------
-        // PART 2: Precision Click-Hijack & Betting-Popunder Defuser
-        // Neutralizes mlsbd -> jaya9bangla.com traps WITHOUT ever breaking normal sites
+        // PART 2: Surgical Click-Hijack & Betting-Popunder Defuser
+        // Zero global EventTarget.prototype.addEventListener monkey-patching so
+        // anti-bot verification (Turnstile / DataDome / PerimeterX) stays 100% clean.
         // ---------------------------------------------------------------------
         var shieldActive = !cfg.paused && (cfg.shieldLevel === undefined || cfg.shieldLevel > 0);
         if (cfg.blockPopups !== false && shieldActive) {
@@ -742,7 +690,6 @@
             var BETTING_POPUNDER_RE = /(?:jaya9|babu88|krikya|baji(?:live|999|88)|bj88|crickex|jeebet|jeetbuzz|jeetwin|mcw\d+|casinomcw|nagad88|1xbet|1xbit|melbet|mostbet|betwinner|parimatch|linebet|megapari|4rabet|22bet|1win\.|popads|popcash|propellerads|propellerclick|exoclick|exosrv|realsrv|magsrv|pemsrv|juicyads|trafficjunky|trafficstars|adsterra|hilltopads|clickadu|monetag|pushame|popunder|afu\.php|adclick\.php|admaven|galaksion|richads|evadav|onclickalgo|highperformanceformat|profitablecpmrate|acscdn|effectivegatecpm|topcreativeformat|directlink|smartlink|wpadmngr|go2affise|offergate)/i;
             var AFFILIATE_TRAP_RE = /[?&](?:af|btag|zoneid|aff_id|clickid)=[a-z0-9_-]{4,}/i;
             var GAMBLING_HINT_RE = /(casino|bet\d*|888|999|777|365|win\d*|slot|spin|bangla|bdt|bonus|pop|clk|trk|redir)/i;
-            var HIJACK_LISTENER_RE = /(?:window\.open|open\s*\(\s*['"]https?:\/\/|jaya9|babu88|krikya|1xbet|melbet|popunder|adsterra|monetag|propeller|onclickalgo|btag=|\?af=)/i;
 
             var isCrossOrigin = function (urlStr) {
                 try {
@@ -791,7 +738,7 @@
                     var rect = el.getBoundingClientRect();
                     var coversArea = rect.width > window.innerWidth * 0.45 && rect.height > window.innerHeight * 0.35;
                     var isTransparent = parseFloat(cs.opacity) < 0.08 || cs.backgroundColor === "rgba(0, 0, 0, 0)" || cs.backgroundColor === "transparent";
-                    var empty = (el.textContent || "").trim().length === 0 && !el.querySelector("video, input, form, img");
+                    var empty = (el.textContent || "").trim().length === 0 && !el.querySelector("video, input, form, img, iframe");
                     return z >= 50 && coversArea && isTransparent && empty;
                 } catch (_e) {
                     return false;
@@ -807,27 +754,7 @@
             window.addEventListener("pointerdown", trackTap, true);
             window.addEventListener("click", trackTap, true);
 
-            // A) Disarm global document/body/window first-click popunder hijack listeners BEFORE they attach
-            try {
-                var origAddEvent = EventTarget.prototype.addEventListener;
-                EventTarget.prototype.addEventListener = cloak(function addEventListener(type, listener, opts) {
-                    try {
-                        var t = String(type || "").toLowerCase();
-                        if (
-                            (t === "click" || t === "mousedown" || t === "mouseup" || t === "pointerdown" || t === "pointerup" || t === "touchstart" || t === "touchend") &&
-                            (this === window || this === document || this === document.documentElement || this === document.body)
-                        ) {
-                            var fnSrc = typeof listener === "function" ? origFnToString.call(listener) : "";
-                            if (fnSrc && HIJACK_LISTENER_RE.test(fnSrc)) {
-                                return;
-                            }
-                        }
-                    } catch (_e) {}
-                    return origAddEvent.apply(this, arguments);
-                }, "addEventListener");
-            } catch (_e) {}
-
-            // B) Surgical window.open guard (NO arbitrary timeout blocking legitimate links!)
+            // A) Surgical window.open guard (NO arbitrary timeout blocking legitimate links!)
             try {
                 var origOpen = window.open;
                 var createBlankProxy = function (target, features) {
@@ -882,7 +809,7 @@
                 }, "open");
             } catch (_e) {}
 
-            // C) Guard synthetic anchor.click() & form.submit() ONLY for confirmed popunder/betting traps
+            // B) Guard synthetic anchor.click() & form.submit() ONLY for confirmed popunder/betting traps
             try {
                 var origAnchorClick = HTMLAnchorElement.prototype.click;
                 HTMLAnchorElement.prototype.click = cloak(function click() {
@@ -911,7 +838,7 @@
                 }, "submit");
             } catch (_e) {}
 
-            // D) Capture-phase click guard for transparent clickjack overlays & betting anchors
+            // C) Capture-phase click guard for transparent clickjack overlays & betting anchors
             try {
                 document.addEventListener("click", function (ev) {
                     try {
@@ -933,7 +860,7 @@
                 }, true);
             } catch (_e) {}
 
-            // E) Defuse <meta http-equiv="refresh"> ONLY for confirmed popunder/betting traps
+            // D) Defuse <meta http-equiv="refresh"> ONLY for confirmed popunder/betting traps
             try {
                 var scrubMeta = function () {
                     var metas = document.querySelectorAll('meta[http-equiv="refresh" i]');
@@ -963,7 +890,7 @@
         paused: false,
         blockPopups: true,
         antiFingerprint: true,
-        strictFingerprint: true,
+        strictFingerprint: false,
         dnt: false,
         fpSessionSalt: ""
     };
@@ -974,6 +901,28 @@
             if (parsed && typeof parsed === "object") {
                 bootCfg = Object.assign(bootCfg, parsed);
             }
+        }
+    } catch (_e) {}
+
+    // Early outer bailout: never inject even a <script> node or flag into captcha/verification frames
+    try {
+        var outerHost = (window.location.hostname || "").toLowerCase().replace(/^www\./, "");
+        var outerPath = (window.location.pathname || "").toLowerCase();
+        if (
+            (outerPath.indexOf("/cdn-cgi/") === 0 && outerPath.indexOf("/cdn-cgi/rum") !== 0) ||
+            outerHost === "challenges.cloudflare.com" ||
+            outerHost === "hcaptcha.com" || outerHost.endsWith(".hcaptcha.com") ||
+            outerHost === "recaptcha.net" || outerHost.endsWith(".recaptcha.net") ||
+            outerHost === "arkoselabs.com" || outerHost.endsWith(".arkoselabs.com") ||
+            outerHost === "funcaptcha.com" || outerHost.endsWith(".funcaptcha.com") ||
+            outerHost === "geetest.com" || outerHost.endsWith(".geetest.com") ||
+            outerHost === "friendlycaptcha.com" || outerHost.endsWith(".friendlycaptcha.com") ||
+            outerHost === "frcapi.com" || outerHost.endsWith(".frcapi.com") ||
+            outerHost === "captcha-delivery.com" || outerHost.endsWith(".captcha-delivery.com") ||
+            ((outerHost === "google.com" || outerHost.endsWith(".google.com") || outerHost === "gstatic.com" || outerHost.endsWith(".gstatic.com")) &&
+                outerPath.indexOf("/recaptcha/") >= 0)
+        ) {
+            return;
         }
     } catch (_e) {}
 
@@ -993,15 +942,29 @@
     } catch (_e) {}
 
     // 2) Strict-CSP Fallback: Gecko wrappedJSObject direct synchronous injection
-    // Ensures even pages with strict script-src CSP (no unsafe-inline) get full Randomized Anti-FP!
+    // Keeps genuine Gecko UA/screen/plugins while arming Canvas, Masked+Farbled WebGL,
+    // Full-Buffer AudioContext & Auto DNT Off on strict-CSP pages.
     try {
         var pageWin = window.wrappedJSObject;
         if (pageWin && !pageWin.__uhSyncArmed && typeof exportFunction === "function") {
+            var cspHost = (window.location.hostname || "").toLowerCase().replace(/^www\./, "");
+            var cspPath = (window.location.pathname || "").toLowerCase();
+            var isCspCaptcha = (cspPath.indexOf("/cdn-cgi/") === 0 && cspPath.indexOf("/cdn-cgi/rum") !== 0) ||
+                cspHost === "challenges.cloudflare.com" ||
+                cspHost === "hcaptcha.com" || cspHost.endsWith(".hcaptcha.com") ||
+                cspHost === "recaptcha.net" || cspHost.endsWith(".recaptcha.net") ||
+                cspHost === "arkoselabs.com" || cspHost.endsWith(".arkoselabs.com") ||
+                cspHost === "funcaptcha.com" || cspHost.endsWith(".funcaptcha.com") ||
+                cspHost === "geetest.com" || cspHost.endsWith(".geetest.com") ||
+                cspHost === "friendlycaptcha.com" || cspHost.endsWith(".friendlycaptcha.com") ||
+                cspHost === "captcha-delivery.com" || cspHost.endsWith(".captcha-delivery.com") ||
+                ((cspHost === "google.com" || cspHost.endsWith(".google.com")) && cspPath.indexOf("/recaptcha/") >= 0);
+
             pageWin.__uhSyncArmed = true;
-            if (bootCfg.antiFingerprint !== false && !bootCfg.paused) {
+            if (!isCspCaptcha && bootCfg.antiFingerprint !== false && !bootCfg.paused) {
                 pageWin.__uhFpHardened = true;
                 pageWin.__uhStrictFpInstalled = true;
-                var UA = "Mozilla/5.0 (Android 14; Mobile; rv:132.0) Gecko/132.0 Firefox/132.0";
+
                 var cspSalt = bootCfg.fpSessionSalt || "";
                 if (!cspSalt) {
                     try {
@@ -1020,65 +983,26 @@
                     return h >>> 0;
                 };
                 var cspSeed = cspHash(cspSalt + "|" + (window.location.hostname || "local"));
-                var defProp = function (obj, prop, getterFn) {
+                var cspNavProto = pageWin.Navigator && pageWin.Navigator.prototype;
+                if (cspNavProto) {
                     try {
-                        Object.defineProperty(obj, prop, {
-                            get: exportFunction(getterFn, pageWin),
+                        Object.defineProperty(cspNavProto, "doNotTrack", {
+                            get: exportFunction(function () { return "unspecified"; }, pageWin),
+                            enumerable: true,
+                            configurable: true
+                        });
+                        Object.defineProperty(cspNavProto, "hardwareConcurrency", {
+                            get: exportFunction(function () { return 4; }, pageWin),
                             enumerable: true,
                             configurable: true
                         });
                     } catch (_e) {}
-                };
-                var pNav = pageWin.navigator;
-                var pScr = pageWin.screen;
-                if (pNav) {
-                    defProp(pNav, "userAgent", function () { return UA; });
-                    defProp(pNav, "appVersion", function () { return "5.0 (Android 14)"; });
-                    defProp(pNav, "platform", function () { return "Linux aarch64"; });
-                    defProp(pNav, "oscpu", function () { return "Linux aarch64"; });
-                    defProp(pNav, "vendor", function () { return ""; });
-                    defProp(pNav, "productSub", function () { return "20100101"; });
-                    defProp(pNav, "hardwareConcurrency", function () { return 4; });
-                    defProp(pNav, "maxTouchPoints", function () { return 5; });
-                    defProp(pNav, "language", function () { return "en-US"; });
-                    defProp(pNav, "doNotTrack", function () { return bootCfg.dnt === true ? "1" : "unspecified"; });
-                    if (typeof cloneInto === "function") {
-                        var langs = cloneInto(["en-US", "en"], pageWin);
-                        defProp(pNav, "languages", function () { return langs; });
-                    }
-                }
-                if (pScr) {
-                    defProp(pScr, "width", function () { return 390; });
-                    defProp(pScr, "height", function () { return 844; });
-                    defProp(pScr, "availWidth", function () { return 390; });
-                    defProp(pScr, "availHeight", function () { return 844; });
-                    defProp(pScr, "colorDepth", function () { return 24; });
-                    defProp(pScr, "pixelDepth", function () { return 24; });
-                }
-                defProp(pageWin, "outerWidth", function () { return 390; });
-                defProp(pageWin, "outerHeight", function () { return 844; });
-                defProp(pageWin, "devicePixelRatio", function () { return 2; });
-                if (pageWin.Date && pageWin.Date.prototype) {
-                    pageWin.Date.prototype.getTimezoneOffset = exportFunction(function () { return 0; }, pageWin);
-                }
-                if (pageWin.Intl && pageWin.Intl.DateTimeFormat && pageWin.Intl.DateTimeFormat.prototype) {
-                    var origCspResolved = pageWin.Intl.DateTimeFormat.prototype.resolvedOptions;
-                    pageWin.Intl.DateTimeFormat.prototype.resolvedOptions = exportFunction(function () {
-                        var res = origCspResolved.apply(this, arguments);
-                        try {
-                            if (res) {
-                                res.timeZone = "UTC";
-                                res.locale = "en-US";
-                            }
-                        } catch (_e) {}
-                        return res;
-                    }, pageWin);
                 }
                 // Canvas 2D + WebGL farbling under strict CSP
                 var cspFarble = function (data, tag) {
                     if (!data || data.length < 16) return;
                     var pxCount = (data.length / 4) | 0;
-                    var steps = Math.min(8, pxCount);
+                    var steps = Math.min(10, pxCount);
                     for (var k = 0; k < steps; k++) {
                         var idx = (cspHash(cspSeed + ":" + tag + ":" + k + ":" + pxCount) % pxCount) * 4 + (k % 3);
                         var v = data[idx];
@@ -1131,9 +1055,7 @@
                     var origP = proto.getParameter;
                     if (typeof origP === "function") {
                         proto.getParameter = exportFunction(function (p) {
-                            if (p === 37445) return "Qualcomm";
-                            if (p === 37446) return "Adreno (TM) 640";
-                            if (p === 7936 || p === 7937) return "Mozilla";
+                            if (p === 37445 || p === 37446 || p === 7936 || p === 7937) return "Mozilla";
                             return origP.apply(this, arguments);
                         }, pageWin);
                     }
@@ -1151,14 +1073,15 @@
                 if (pageWin.AudioBuffer && pageWin.AudioBuffer.prototype && typeof pageWin.AudioBuffer.prototype.getChannelData === "function") {
                     var origCspAudio = pageWin.AudioBuffer.prototype.getChannelData;
                     var cspAudioSeen = new WeakSet();
-                    pageWin.AudioBuffer.prototype.getChannelData = exportFunction(function (ch) {
+                    var cspAudioGain = 1 + ((((cspHash(cspSeed + ":augain") & 4095) / 4095) - 0.5) * 0.005);
+                    var cspAudioBias = ((((cspHash(cspSeed + ":aubias") & 2047) / 2047) - 0.5) * 1e-5);
+                    pageWin.AudioBuffer.prototype.getChannelData = exportFunction(function () {
                         var arr = origCspAudio.apply(this, arguments);
                         try {
                             if (arr && arr.length > 16 && !cspAudioSeen.has(arr)) {
                                 cspAudioSeen.add(arr);
-                                var step = Math.max(1, (arr.length / 24) | 0);
-                                for (var i = 0; i < arr.length; i += step) {
-                                    arr[i] = arr[i] + ((((cspHash(cspSeed + ":au:" + (ch || 0) + ":" + i) & 511) / 511) - 0.5) * 2e-6);
+                                for (var i = 0; i < arr.length; i++) {
+                                    if (arr[i] !== 0) arr[i] = arr[i] * cspAudioGain + cspAudioBias;
                                 }
                             }
                         } catch (_e) {}

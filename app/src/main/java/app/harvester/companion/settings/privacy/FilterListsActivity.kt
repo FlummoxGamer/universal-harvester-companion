@@ -401,23 +401,13 @@ private fun FilterCategoryRow(
             modifier = Modifier
                 .size(36.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(
-                    if (status.enabled) {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerHigh
-                    }
-                ),
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 painter = painterResource(id = status.def.iconRes),
                 contentDescription = null,
-                tint = if (status.enabled) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp),
             )
         }
@@ -446,11 +436,7 @@ private fun FilterCategoryRow(
                     } else {
                         "${numberFmt.format(status.ruleCount)} rules ready"
                     },
-                    color = if (status.enabled) {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                     fontSize = 11.sp,
                 )
             }

@@ -186,9 +186,9 @@ class PrivacyGuardActivity : AppCompatActivity() {
                 val enabledCategoriesCount = shieldState.categories.count { it.enabled }
                 val numberFmt = remember { java.text.NumberFormat.getIntegerInstance() }
                 val activeRulesText = if (shieldState.totalCompiledRules > 0) {
-                    "$enabledCategoriesCount active packs • ${numberFmt.format(shieldState.totalCompiledRules)} rules"
+                    "$enabledCategoriesCount packs • ${numberFmt.format(shieldState.totalCompiledRules)} rules"
                 } else {
-                    "$enabledCategoriesCount active protection packs"
+                    "$enabledCategoriesCount active filter packs"
                 }
 
                 UhSettingsScaffold(
@@ -237,7 +237,7 @@ class PrivacyGuardActivity : AppCompatActivity() {
                         UhSettingsDivider()
                         SettingsSwitchRow(
                             title = "Auto-Reject Cookie Banners",
-                            subtitle = "Automatically dismiss and reject intrusive consent popups",
+                            subtitle = "Dismiss and reject cookie consent popups",
                             key = SettingsPrefs.K_PG_COOKIE_BANNERS,
                             default = true,
                             iconRes = R.drawable.uh_ic_pg_cookie_banner_24,
@@ -256,7 +256,7 @@ class PrivacyGuardActivity : AppCompatActivity() {
                         UhSettingsDivider()
                         SettingsSwitchRow(
                             title = "Anti-Fingerprinting",
-                            subtitle = "Randomizes canvas, WebGL, audio & fonts with unified timezone, locale & header alignment",
+                            subtitle = "Mask and randomize canvas, WebGL, audio & font signals",
                             key = SettingsPrefs.K_PG_FINGERPRINT,
                             default = true,
                             iconRes = R.drawable.uh_ic_pg_fingerprint_24,
@@ -266,7 +266,7 @@ class PrivacyGuardActivity : AppCompatActivity() {
                         UhSettingsDivider()
                         SettingsSwitchRow(
                             title = "Auto-Shred Closed Sites",
-                            subtitle = "Automatically wipe cookies & site storage when you close a site's last tab",
+                            subtitle = "Clear cookies and storage when a site's last tab closes",
                             key = SettingsPrefs.K_PG_AUTO_SHRED,
                             default = false,
                             iconRes = R.drawable.uh_ic_pg_cookie_jar_24,
@@ -276,7 +276,7 @@ class PrivacyGuardActivity : AppCompatActivity() {
                         UhSettingsDivider()
                         SettingsSwitchRow(
                             title = "Strip URL Trackers",
-                            subtitle = "Remove utm, fbclid, gclid & tracking params on browse and copy",
+                            subtitle = "Remove tracking parameters when browsing or copying links",
                             key = SettingsPrefs.K_PG_CLEAR_URLS,
                             default = true,
                             iconRes = R.drawable.uh_ic_pg_url_clean_24,
@@ -286,7 +286,7 @@ class PrivacyGuardActivity : AppCompatActivity() {
                         UhSettingsDivider()
                         SettingsSwitchRow(
                             title = "Popup & Ad-Tab Blocker",
-                            subtitle = "Blocks popunders, click-hijack overlays & betting redirects without breaking normal sites",
+                            subtitle = "Stop popunders, click-hijacks & malicious redirects",
                             key = SettingsPrefs.K_PG_POPUP_BLOCK,
                             default = true,
                             iconRes = R.drawable.uh_ic_pg_popup_block_24,
@@ -305,7 +305,7 @@ class PrivacyGuardActivity : AppCompatActivity() {
                         UhSettingsDivider()
                         SettingsSwitchRow(
                             title = "Smart JavaScript Blocking",
-                            subtitle = "Silently blocks untrusted 3rd-party scripts while keeping CDNs, logins & media smooth",
+                            subtitle = "Block untrusted third-party scripts while keeping sites smooth",
                             key = SettingsPrefs.K_PG_SCRIPT,
                             default = false,
                             iconRes = R.drawable.uh_ic_pg_js_block_24,
@@ -318,7 +318,7 @@ class PrivacyGuardActivity : AppCompatActivity() {
                     UhSettingsCardGroup {
                         SettingsRow(
                             title = "Site Settings",
-                            subtitle = "Default permissions, paused Shield sites & per-site rules",
+                            subtitle = "Permissions, paused Shield sites & per-site rules",
                             iconRes = R.drawable.uh_ic_pg_site_controls_24,
                             showChevron = true,
                             insideCard = true,

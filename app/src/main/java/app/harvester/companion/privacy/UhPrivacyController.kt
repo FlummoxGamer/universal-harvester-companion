@@ -44,19 +44,19 @@ enum class WebRtcPolicy(val code: Int, val label: String, val summary: String, v
     DISABLE_NON_PROXIED_UDP(
         1,
         "Protect Local IP (Recommended)",
-        "Hide local LAN IP and route through public interface or proxy",
+        "Hide local LAN IP on public networks",
         "default_public_interface_only",
     ),
     PROXY_ONLY(
         2,
-        "Strict Proxy / Relay Only",
-        "Disable non-proxied UDP completely (best with VPN)",
+        "Proxy / Relay Only",
+        "Disable non-proxied UDP (best with VPN)",
         "disable_non_proxied_udp",
     ),
     BLOCK_ALL(
         3,
         "Block WebRTC Completely",
-        "Disable RTCPeerConnection to prevent all IP leaks",
+        "Disable RTCPeerConnection on all sites",
         "disable_non_proxied_udp",
     );
 
