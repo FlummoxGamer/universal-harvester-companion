@@ -1,6 +1,5 @@
 package app.harvester.companion.browser.tabs
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,11 +15,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -45,6 +41,8 @@ import app.harvester.companion.R
 @Composable
 internal fun RecentlyClosedSheet(
     records: List<ClosedTabRecord>,
+    isEnabled: Boolean,
+    onToggleEnabled: (Boolean) -> Unit,
     onRestoreRecord: (ClosedTabRecord) -> Unit,
     onRestoreAll: () -> Unit,
     onClearAll: () -> Unit,
@@ -83,29 +81,79 @@ internal fun RecentlyClosedSheet(
                         Text("Restore all", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                     TextButton(onClick = onClearAll) {
-                        Text("Clear", color = MaterialTheme.colorScheme.error, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            text = "Clear",
+                            color = MaterialTheme.colorScheme.error,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Inline ON/OFF switch for Recently Closed history
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable { onToggleEnabled(!isEnabled) }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Save recently closed tabs",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = if (isEnabled) {
+                                "Closed normal tabs are saved here (private tabs are never saved)"
+                            } else {
+                                "Paused — newly closed tabs will not be recorded"
+                            },
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.5.sp,
+                            lineHeight = 15.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Switch(
+                        checked = isEnabled,
+                        onCheckedChange = onToggleEnabled
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             if (records.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 32.dp),
+                        .padding(vertical = 28.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "No recently closed tabs",
+                        text = if (isEnabled) "No recently closed tabs" else "Recently closed history is turned off",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 14.sp
+                        fontSize = 13.5.sp
                     )
                 }
             } else {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 420.dp),
+                        .heightIn(max = 400.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     items(records, key = { it.id }) { rec ->
@@ -156,271 +204,5 @@ internal fun RecentlyClosedSheet(
                 }
             }
         }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-internal fun TabSettingsSheet(
-    isListView: Boolean,
-    inactiveDays: Int,
-    autoCloseDays: Int,
-    sleepSeconds: Int,
-    jumpToParent: Boolean,
-    openNextToCurrent: Boolean,
-    groupStripEnabled: Boolean,
-    landscapeStripEnabled: Boolean,
-    blockPrivateScreenshots: Boolean,
-    privateLockEnabled: Boolean,
-    canUseBiometricLock: Boolean,
-    onViewModeChange: (Boolean) -> Unit,
-    onInactiveDaysChange: (Int) -> Unit,
-    onAutoCloseDaysChange: (Int) -> Unit,
-    onSleepSecondsChange: (Int) -> Unit,
-    onJumpToParentChange: (Boolean) -> Unit,
-    onOpenNextToCurrentChange: (Boolean) -> Unit,
-    onGroupStripChange: (Boolean) -> Unit,
-    onLandscapeStripChange: (Boolean) -> Unit,
-    onBlockPrivateScreenshotsChange: (Boolean) -> Unit,
-    onPrivateLockChange: (Boolean) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .navigationBarsPadding()
-                .padding(horizontal = 18.dp)
-                .padding(bottom = 26.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Text(
-                text = "Tab Settings",
-                color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 19.sp,
-                fontWeight = FontWeight.Bold
-            )
-
-            // Layout mode
-            SettingsChipGroupCard(
-                title = "Tab Switcher Layout",
-                subtitle = "Choose how open tabs are displayed",
-                options = listOf(false to "Grid", true to "List"),
-                selected = isListView,
-                onSelect = onViewModeChange
-            )
-
-            // In-Browser Bars & Navigation
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surface,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    TabSettingToggleRow(
-                        title = "Group tab strip",
-                        subtitle = "Show quick group switcher strip near address bar",
-                        checked = groupStripEnabled,
-                        onCheckedChange = onGroupStripChange
-                    )
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)
-                    )
-                    TabSettingToggleRow(
-                        title = "Landscape horizontal tab strip",
-                        subtitle = "Show a compact desktop-style tab bar in landscape",
-                        checked = landscapeStripEnabled,
-                        onCheckedChange = onLandscapeStripChange
-                    )
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)
-                    )
-                    TabSettingToggleRow(
-                        title = "Jump to opener tab on close",
-                        subtitle = "Return to the parent tab when closing a child tab",
-                        checked = jumpToParent,
-                        onCheckedChange = onJumpToParentChange
-                    )
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)
-                    )
-                    TabSettingToggleRow(
-                        title = "Open new tabs next to current",
-                        subtitle = if (openNextToCurrent) "Inserted right beside active tab" else "Appended to the end of your tabs",
-                        checked = openNextToCurrent,
-                        onCheckedChange = onOpenNextToCurrentChange
-                    )
-                }
-            }
-
-            // Lifecycle Thresholds
-            SettingsChipGroupCard(
-                title = "Inactive Tabs",
-                subtitle = "Tuck untouched normal tabs into the collapsible Inactive section",
-                options = listOf(0 to "Off", 7 to "7 days", 14 to "14 days", 30 to "30 days"),
-                selected = inactiveDays,
-                onSelect = onInactiveDaysChange
-            )
-
-            SettingsChipGroupCard(
-                title = "Auto-Close Old Tabs",
-                subtitle = "Automatically archive unpinned, ungrouped tabs to Recently Closed",
-                options = listOf(0 to "Never", 1 to "1 day", 7 to "1 week", 30 to "1 month"),
-                selected = autoCloseDays,
-                onSelect = onAutoCloseDaysChange
-            )
-
-            SettingsChipGroupCard(
-                title = "Auto-Sleep Background Tabs",
-                subtitle = "Suspend background tab engines to save RAM & battery",
-                options = listOf(0 to "Never", 30 to "30s", 120 to "2m", 300 to "5m"),
-                selected = sleepSeconds,
-                onSelect = onSleepSecondsChange
-            )
-
-            // Private Browsing Security
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surface,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    TabSettingToggleRow(
-                        title = "Block screenshots in Private mode",
-                        subtitle = "Prevent screenshots and hide preview in Android recents",
-                        checked = blockPrivateScreenshots,
-                        onCheckedChange = onBlockPrivateScreenshotsChange
-                    )
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)
-                    )
-                    TabSettingToggleRow(
-                        title = "Lock Private tabs when leaving app",
-                        subtitle = if (canUseBiometricLock) {
-                            "Require fingerprint, face, or device PIN to reopen Private tabs"
-                        } else {
-                            "Set up a device screen lock in Android Settings to enable"
-                        },
-                        checked = privateLockEnabled && canUseBiometricLock,
-                        enabled = canUseBiometricLock,
-                        onCheckedChange = onPrivateLockChange
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(4.dp))
-        }
-    }
-}
-
-@Composable
-private fun <T> SettingsChipGroupCard(
-    title: String,
-    subtitle: String,
-    options: List<Pair<T, String>>,
-    selected: T,
-    onSelect: (T) -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surface,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Column {
-                Text(
-                    text = title,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = subtitle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                options.forEach { (value, label) ->
-                    val isSelected = value == selected
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(11.dp))
-                            .background(
-                                if (isSelected) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.surfaceContainerHigh
-                            )
-                            .clickable { onSelect(value) }
-                            .padding(vertical = 8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = label,
-                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TabSettingToggleRow(
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    enabled: Boolean = true,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = enabled) { onCheckedChange(!checked) }
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                text = subtitle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.6f),
-                fontSize = 12.sp
-            )
-        }
-        Spacer(modifier = Modifier.width(10.dp))
-        Switch(
-            checked = checked,
-            enabled = enabled,
-            onCheckedChange = onCheckedChange
-        )
     }
 }

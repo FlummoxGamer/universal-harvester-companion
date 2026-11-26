@@ -4,6 +4,10 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Build
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.ConcurrentHashMap
@@ -11,8 +15,13 @@ import java.util.concurrent.Executors
 
 object TabPreviewCache {
     private val cache = ConcurrentHashMap<String, Bitmap>()
+    private val loadingFromDisk = ConcurrentHashMap.newKeySet<String>()
+    private val missingOnDisk = ConcurrentHashMap.newKeySet<String>()
     private val privateTabIds = ConcurrentHashMap.newKeySet<String>()
     private val diskExecutor = Executors.newSingleThreadExecutor()
+
+    private val _versionFlow = MutableStateFlow(0L)
+    val versionFlow: StateFlow<Long> = _versionFlow.asStateFlow()
 
     @Volatile
     private var previewDir: File? = null
@@ -20,33 +29,67 @@ object TabPreviewCache {
     @Volatile
     private var lastActiveTabBitmap: Bitmap? = null
 
+    private const val MAX_PREVIEW_WIDTH = 540
+
     fun init(context: Context) {
         if (previewDir == null) {
             previewDir = File(context.applicationContext.cacheDir, "tab_previews").apply { mkdirs() }
         }
     }
 
+    private fun bumpVersion() {
+        _versionFlow.update { it + 1L }
+    }
+
+    private fun scaleForPreview(source: Bitmap): Bitmap {
+        if (source.isRecycled) return source
+        val w = source.width
+        val h = source.height
+        if (w <= MAX_PREVIEW_WIDTH || w <= 0 || h <= 0) {
+            return try {
+                source.copy(Bitmap.Config.ARGB_8888, false) ?: source
+            } catch (_: Exception) {
+                source
+            }
+        }
+        val targetH = (h.toFloat() * MAX_PREVIEW_WIDTH / w.toFloat()).toInt().coerceAtLeast(1)
+        return try {
+            Bitmap.createScaledBitmap(source, MAX_PREVIEW_WIDTH, targetH, true)
+        } catch (_: Exception) {
+            source
+        }
+    }
+
     /**
      * Stores a tab preview bitmap.
-     * Private tab previews are kept strictly in RAM (never written to disk and never exposed as lastActiveTabBitmap).
+     * Private tab previews live strictly in RAM (zero disk writes, never exposed as lastActiveTabBitmap).
      */
     fun put(tabId: String, bitmap: Bitmap, isPrivate: Boolean = false) {
-        val old = cache.put(tabId, bitmap)
-        if (old != null && old !== bitmap && !old.isRecycled) {
+        if (tabId.isBlank() || bitmap.isRecycled) return
+        val stored = scaleForPreview(bitmap)
+        if (stored !== bitmap && !bitmap.isRecycled) {
+            // Leave caller's bitmap lifecycle alone unless we own it, store compact scaled copy
+        }
+
+        val old = cache.put(tabId, stored)
+        missingOnDisk.remove(tabId)
+        if (old != null && old !== stored && old !== lastActiveTabBitmap && !old.isRecycled) {
             old.recycle()
         }
 
         if (isPrivate) {
             privateTabIds.add(tabId)
+            bumpVersion()
             return
         }
 
         privateTabIds.remove(tabId)
-        setLastActiveBitmap(bitmap)
+        setLastActiveBitmap(stored)
+        bumpVersion()
 
         val dir = previewDir ?: return
         val copy = try {
-            bitmap.copy(Bitmap.Config.ARGB_8888, false)
+            stored.copy(Bitmap.Config.ARGB_8888, false)
         } catch (_: Exception) {
             null
         } ?: return
@@ -62,7 +105,7 @@ object TabPreviewCache {
                     Bitmap.CompressFormat.WEBP
                 }
                 FileOutputStream(file).use { out ->
-                    copy.compress(fmt, 78, out)
+                    copy.compress(fmt, 80, out)
                 }
             } catch (_: Exception) {
             } finally {
@@ -71,22 +114,49 @@ object TabPreviewCache {
         }
     }
 
-    fun get(tabId: String): Bitmap? {
+    /**
+     * Fast non-blocking lookup: returns RAM bitmap immediately if present,
+     * otherwise schedules a single background disk decode that bumps [versionFlow] when ready.
+     */
+    fun getOrLoadAsync(tabId: String, isPrivate: Boolean = false): Bitmap? {
         val mem = cache[tabId]
         if (mem != null && !mem.isRecycled) return mem
 
-        if (tabId in privateTabIds) return null
+        if (isPrivate || tabId in privateTabIds || tabId in missingOnDisk) return null
 
         val dir = previewDir ?: return null
-        val file = File(dir, "$tabId.webp")
-        if (!file.isFile || file.length() == 0L) return null
-        return try {
-            BitmapFactory.decodeFile(file.absolutePath)?.also { decoded ->
-                cache[tabId] = decoded
+        if (!loadingFromDisk.add(tabId)) return null
+
+        diskExecutor.execute {
+            try {
+                val file = File(dir, "$tabId.webp")
+                if (!file.isFile || file.length() == 0L) {
+                    missingOnDisk.add(tabId)
+                } else {
+                    val decoded = BitmapFactory.decodeFile(file.absolutePath)
+                    if (decoded != null) {
+                        val prev = cache.put(tabId, decoded)
+                        if (prev != null && prev !== decoded && prev !== lastActiveTabBitmap && !prev.isRecycled) {
+                            prev.recycle()
+                        }
+                        bumpVersion()
+                    } else {
+                        missingOnDisk.add(tabId)
+                    }
+                }
+            } catch (_: Exception) {
+                missingOnDisk.add(tabId)
+            } finally {
+                loadingFromDisk.remove(tabId)
             }
-        } catch (_: Exception) {
-            null
         }
+        return null
+    }
+
+    fun get(tabId: String): Bitmap? {
+        val mem = cache[tabId]
+        if (mem != null && !mem.isRecycled) return mem
+        return getOrLoadAsync(tabId, isPrivate = tabId in privateTabIds)
     }
 
     fun setLastActiveBitmap(bitmap: Bitmap?) {
@@ -99,14 +169,23 @@ object TabPreviewCache {
         }
     }
 
-    fun getLastActiveBitmap(): Bitmap? = lastActiveTabBitmap
+    fun getLastActiveBitmap(): Bitmap? {
+        val bmp = lastActiveTabBitmap
+        return if (bmp != null && !bmp.isRecycled) bmp else null
+    }
 
     fun remove(tabId: String) {
         privateTabIds.remove(tabId)
+        missingOnDisk.remove(tabId)
+        loadingFromDisk.remove(tabId)
         val old = cache.remove(tabId)
+        if (old != null && old === lastActiveTabBitmap) {
+            lastActiveTabBitmap = null
+        }
         if (old != null && !old.isRecycled) {
             old.recycle()
         }
+        bumpVersion()
         val dir = previewDir ?: return
         diskExecutor.execute {
             try { File(dir, "$tabId.webp").delete() } catch (_: Exception) {}
@@ -117,10 +196,18 @@ object TabPreviewCache {
         val targets = (privateTabIds + ids).toSet()
         targets.forEach { id ->
             privateTabIds.remove(id)
+            missingOnDisk.remove(id)
+            loadingFromDisk.remove(id)
             val old = cache.remove(id)
+            if (old != null && old === lastActiveTabBitmap) {
+                lastActiveTabBitmap = null
+            }
             if (old != null && !old.isRecycled) {
                 old.recycle()
             }
+        }
+        if (targets.isNotEmpty()) {
+            bumpVersion()
         }
         val dir = previewDir ?: return
         if (targets.isNotEmpty()) {
@@ -148,11 +235,14 @@ object TabPreviewCache {
         cache.values.forEach { if (!it.isRecycled) it.recycle() }
         cache.clear()
         privateTabIds.clear()
+        loadingFromDisk.clear()
+        missingOnDisk.clear()
         val old = lastActiveTabBitmap
         lastActiveTabBitmap = null
         if (old != null && !old.isRecycled) {
             old.recycle()
         }
+        bumpVersion()
     }
 
     fun clear() {

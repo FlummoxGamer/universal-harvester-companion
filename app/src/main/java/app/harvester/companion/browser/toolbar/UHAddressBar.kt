@@ -49,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -278,10 +279,11 @@ fun UHAddressBar(
                     contentAlignment = Alignment.CenterStart
                 ) {
                     if (isEditing) {
+                        val cursorAccent = if (isPrivate) privateAccent else MaterialTheme.colorScheme.primary
                         CompositionLocalProvider(
                             LocalTextSelectionColors provides TextSelectionColors(
-                                handleColor = Color.Transparent,
-                                backgroundColor = Color.Transparent
+                                handleColor = cursorAccent,
+                                backgroundColor = cursorAccent.copy(alpha = 0.28f)
                             )
                         ) {
                             BasicTextField(
@@ -292,6 +294,7 @@ fun UHAddressBar(
                                     .focusRequester(focusRequester)
                                     .background(Color.Transparent),
                                 textStyle = TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp),
+                                cursorBrush = SolidColor(cursorAccent),
                                 lineLimits = TextFieldLineLimits.SingleLine,
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                                 onKeyboardAction = KeyboardActionHandler {

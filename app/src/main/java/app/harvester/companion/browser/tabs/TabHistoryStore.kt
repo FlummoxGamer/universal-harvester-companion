@@ -144,7 +144,14 @@ object TabHistoryStore {
     ) {
         if (records.isEmpty()) return
         synchronized(lock) {
-            if (!wasPrivate) {
+            val saveRecentlyClosed = appContext?.let { ctx ->
+                app.harvester.companion.SettingsPrefs.getBool(
+                    ctx,
+                    app.harvester.companion.SettingsPrefs.K_TAB_RECENTLY_CLOSED_ENABLED,
+                    true
+                )
+            } ?: true
+            if (!wasPrivate && saveRecentlyClosed) {
                 val restorable = records.filter { it.url.isNotBlank() && it.url != "about:blank" }
                 if (restorable.isNotEmpty()) {
                     val existing = _recentlyClosedFlow.value.filterNot { prev ->

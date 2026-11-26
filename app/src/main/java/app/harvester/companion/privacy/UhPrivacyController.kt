@@ -85,6 +85,9 @@ object UhPrivacyController {
     @Volatile
     private var activeTabUrl: String = ""
 
+    @Volatile
+    private var activeTabIsPrivate: Boolean = false
+
     private val _darkBypassHosts = MutableStateFlow<Set<String>>(emptySet())
     val darkBypassHosts: StateFlow<Set<String>> = _darkBypassHosts.asStateFlow()
 
@@ -98,7 +101,7 @@ object UhPrivacyController {
                 pushRuntimeConfigToExtension()
                 appContext?.let { app ->
                     if (activeTabUrl.isNotBlank()) {
-                        syncPerSiteEngineProtections(app, activeTabUrl)
+                        syncPerSiteEngineProtections(app, activeTabUrl, isPrivate = activeTabIsPrivate)
                     }
                 }
             }
@@ -172,13 +175,24 @@ object UhPrivacyController {
         val effective = if (rawMode >= 0) {
             rawMode
         } else {
-            if (SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_HTTPS, true)) 2 else 0
+            if (SettingsPrefs.getBool(ctx, SettingsPrefs.K_PG_HTTPS, true)) 2 else 1
         }
         return when (effective) {
             2 -> Engine.HttpsOnlyMode.ENABLED
-            1 -> Engine.HttpsOnlyMode.ENABLED_PRIVATE_ONLY
-            else -> Engine.HttpsOnlyMode.DISABLED
+            // Hardened Private Mode: always enforce HTTPS-Only in private tabs by default
+            else -> Engine.HttpsOnlyMode.ENABLED_PRIVATE_ONLY
         }
+    }
+
+    fun buildStrictPrivateTrackingPolicy(): TrackingProtectionPolicy {
+        return TrackingProtectionPolicy.select(
+            trackingCategories = arrayOf(TrackingCategory.STRICT),
+            cookiePolicy = CookiePolicy.ACCEPT_FIRST_PARTY_AND_ISOLATE_OTHERS,
+            strictSocialTrackingProtection = true,
+            cookiePurging = true,
+            allowListBaselineTrackingProtection = true,
+            allowListConvenienceTrackingProtection = false,
+        )
     }
 
     fun buildTrackingProtectionPolicy(ctx: Context): TrackingProtectionPolicy {
@@ -270,7 +284,7 @@ object UhPrivacyController {
             fingerprintingProtection = antiFingerprint,
             fingerprintingProtectionPrivateBrowsing = true,
             queryParameterStripping = clearUrls,
-            queryParameterStrippingPrivateBrowsing = clearUrls,
+            queryParameterStrippingPrivateBrowsing = true,
             dohSettingsMode = dohMode,
             dohProviderUrl = dohUrl,
             emailTrackerBlockingPrivateBrowsing = true,
@@ -283,15 +297,25 @@ object UhPrivacyController {
      * 1) Relaxes GeckoView fingerprinting protection when UH Shield is paused on this host.
      * 2) Relaxes HTTPS-Only when the user granted a 1-tap HTTP exception for this host.
      */
-    fun syncPerSiteEngineProtections(ctx: Context, url: String) {
+    fun syncPerSiteEngineProtections(ctx: Context, url: String, isPrivate: Boolean = false) {
         activeTabUrl = url
+        activeTabIsPrivate = isPrivate
         val app = ctx.applicationContext
         val engine = engineRef ?: return
-        val paused = url.isNotBlank() && UhShieldEngine.isSitePaused(url)
-        val httpExc = url.isNotBlank() && UhShieldEngine.isHttpException(url)
+        val paused = !isPrivate && url.isNotBlank() && UhShieldEngine.isSitePaused(url)
+        val httpExc = !isPrivate && url.isNotBlank() && UhShieldEngine.isHttpException(url)
         val baseFingerprint = SettingsPrefs.getBool(app, SettingsPrefs.K_PG_FINGERPRINT, true)
-        val targetFingerprint = baseFingerprint && !paused
-        val targetHttpsMode = if (httpExc) Engine.HttpsOnlyMode.DISABLED else buildHttpsOnlyMode(app)
+        val targetFingerprint = if (isPrivate) true else (baseFingerprint && !paused)
+        val targetHttpsMode = when {
+            isPrivate -> Engine.HttpsOnlyMode.ENABLED
+            httpExc -> Engine.HttpsOnlyMode.ENABLED_PRIVATE_ONLY
+            else -> buildHttpsOnlyMode(app)
+        }
+        val targetTrackingPolicy = if (isPrivate) {
+            buildStrictPrivateTrackingPolicy()
+        } else {
+            buildTrackingProtectionPolicy(app)
+        }
 
         mainHandler.post {
             try {
@@ -299,9 +323,12 @@ object UhPrivacyController {
                 if (s.fingerprintingProtection != targetFingerprint) {
                     s.fingerprintingProtection = targetFingerprint
                 }
+                s.fingerprintingProtectionPrivateBrowsing = true
+                s.queryParameterStrippingPrivateBrowsing = true
                 if (s.httpsOnlyMode != targetHttpsMode) {
                     s.httpsOnlyMode = targetHttpsMode
                 }
+                s.trackingProtectionPolicy = targetTrackingPolicy
             } catch (e: Exception) {
                 UHLog.w("privacy", "Error syncing per-site engine protections: ${e.message}")
             }
@@ -336,17 +363,25 @@ object UhPrivacyController {
                     val backgroundPlay = SettingsPrefs.getBool(app, SettingsPrefs.K_BACKGROUND_PLAY, true)
                     val gpc = SettingsPrefs.getBool(app, SettingsPrefs.K_ADV_GPC, true)
 
-                    val pausedActive = activeTabUrl.isNotBlank() && UhShieldEngine.isSitePaused(activeTabUrl)
-                    val httpExcActive = activeTabUrl.isNotBlank() && UhShieldEngine.isHttpException(activeTabUrl)
+                    val pausedActive = !activeTabIsPrivate && activeTabUrl.isNotBlank() && UhShieldEngine.isSitePaused(activeTabUrl)
+                    val httpExcActive = !activeTabIsPrivate && activeTabUrl.isNotBlank() && UhShieldEngine.isHttpException(activeTabUrl)
 
-                    s.trackingProtectionPolicy = buildTrackingProtectionPolicy(app)
+                    s.trackingProtectionPolicy = if (activeTabIsPrivate) {
+                        buildStrictPrivateTrackingPolicy()
+                    } else {
+                        buildTrackingProtectionPolicy(app)
+                    }
                     s.safeBrowsingPolicy = buildSafeBrowsingPolicy(app)
-                    s.httpsOnlyMode = if (httpExcActive) Engine.HttpsOnlyMode.DISABLED else buildHttpsOnlyMode(app)
+                    s.httpsOnlyMode = when {
+                        activeTabIsPrivate -> Engine.HttpsOnlyMode.ENABLED
+                        httpExcActive -> Engine.HttpsOnlyMode.ENABLED_PRIVATE_ONLY
+                        else -> buildHttpsOnlyMode(app)
+                    }
                     s.globalPrivacyControlEnabled = gpc
-                    s.fingerprintingProtection = antiFingerprint && !pausedActive
+                    s.fingerprintingProtection = if (activeTabIsPrivate) true else (antiFingerprint && !pausedActive)
                     s.fingerprintingProtectionPrivateBrowsing = true
                     s.queryParameterStripping = clearUrls
-                    s.queryParameterStrippingPrivateBrowsing = clearUrls
+                    s.queryParameterStrippingPrivateBrowsing = true
                     // Smart JS blocking runs selectively in uh_bridge (never deadlocks pages globally)
                     s.javascriptEnabled = true
                     s.suspendMediaWhenInactive = !backgroundPlay
@@ -428,6 +463,27 @@ object UhPrivacyController {
                 onComplete?.invoke()
             }
         }
+    }
+
+    /**
+     * Purges ephemeral auth sessions & caches when the last Private tab closes,
+     * keeping normal-mode logins intact while ensuring zero leftover private traces.
+     */
+    fun purgePrivateSessionData(ctx: Context) {
+        activeTabIsPrivate = false
+        mainHandler.post {
+            try {
+                engineRef?.clearData(
+                    data = Engine.BrowsingData.select(
+                        Engine.BrowsingData.AUTH_SESSIONS,
+                        Engine.BrowsingData.ALL_CACHES,
+                    )
+                )
+            } catch (e: Exception) {
+                UHLog.w("privacy", "Failed purging private session caches: ${e.message}")
+            }
+        }
+        applyAllToEngine(ctx)
     }
 
     /**

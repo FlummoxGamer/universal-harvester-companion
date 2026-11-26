@@ -31,12 +31,14 @@ import app.harvester.companion.ThemePrefs
 import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
 import app.harvester.companion.browser.BrowserViewModel
+import app.harvester.companion.settings.appearance.TabSettingsActivity
 import app.harvester.companion.theme.UHTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import mozilla.appservices.places.BookmarkRoot
 import mozilla.components.browser.state.action.TabListAction
+import mozilla.components.browser.state.state.TabSessionState
 
 /**
  * Full-screen true edge-to-edge Tab Switcher DialogFragment.
@@ -86,13 +88,18 @@ class TabsTrayDialogFragment : DialogFragment() {
         dialog?.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
     }
 
-    private fun applyWindowSystemBarsAndPrivacy(isPrivateSection: Boolean, isDarkTheme: Boolean, blockScreenshots: Boolean) {
+    private fun applyWindowSystemBarsAndPrivacy(
+        isPrivateSection: Boolean,
+        isDarkTheme: Boolean,
+        blockScreenshots: Boolean
+    ) {
         val w = dialog?.window ?: return
         try {
-            val useLightIcons = !isDarkTheme
+            // Private section always uses Deep Obsidian dark surface, so system bar icons must be light (white).
+            val useDarkSystemBarIcons = !isDarkTheme && !isPrivateSection
             val controller = WindowInsetsControllerCompat(w, w.decorView)
-            controller.isAppearanceLightStatusBars = useLightIcons
-            controller.isAppearanceLightNavigationBars = useLightIcons
+            controller.isAppearanceLightStatusBars = useDarkSystemBarIcons
+            controller.isAppearanceLightNavigationBars = useDarkSystemBarIcons
 
             if (isPrivateSection && blockScreenshots) {
                 w.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
@@ -165,6 +172,8 @@ class TabsTrayDialogFragment : DialogFragment() {
                                         isPrivate = target.content.private,
                                         groupSnapshot = grp
                                     )
+                                    val remaining = tabs.filter { it.id != tabId }
+                                    val wasSelected = tabId == selectedTabId
                                     TabGroupStore.removeTabFromGroups(tabId)
                                     TabMetaStore.unpinTab(tabId)
                                     TabPreviewCache.remove(tabId)
@@ -176,10 +185,16 @@ class TabsTrayDialogFragment : DialogFragment() {
                                         wasPrivate = target.content.private,
                                         allowUndo = true
                                     )
+                                    handlePostCloseNavigation(
+                                        remainingTabs = remaining,
+                                        wasSelectedClosed = wasSelected,
+                                        wasPrivateClosed = target.content.private
+                                    )
                                 }
                             },
                             onCloseTabsBatch = { tabIds, label, isPrivate ->
                                 if (tabIds.isNotEmpty()) {
+                                    val closedSet = tabIds.toSet()
                                     val targetMap = tabs.associateBy { it.id }
                                     val records = tabIds.mapNotNull { id ->
                                         val t = targetMap[id] ?: return@mapNotNull null
@@ -190,6 +205,8 @@ class TabsTrayDialogFragment : DialogFragment() {
                                             groupSnapshot = TabGroupStore.groupForTab(id)
                                         )
                                     }
+                                    val remaining = tabs.filter { it.id !in closedSet }
+                                    val wasSelected = selectedTabId != null && selectedTabId in closedSet
                                     tabIds.forEach {
                                         TabGroupStore.removeTabFromGroups(it)
                                         TabMetaStore.unpinTab(it)
@@ -202,11 +219,23 @@ class TabsTrayDialogFragment : DialogFragment() {
                                         wasPrivate = isPrivate,
                                         allowUndo = true
                                     )
+                                    handlePostCloseNavigation(
+                                        remainingTabs = remaining,
+                                        wasSelectedClosed = wasSelected,
+                                        wasPrivateClosed = isPrivate
+                                    )
                                 }
                             },
                             onCloseAllTabs = { isPrivate ->
                                 if (isPrivate) {
+                                    val remaining = tabs.filter { !it.content.private }
+                                    val wasSelectedPrivate = tabs.any { it.id == selectedTabId && it.content.private }
                                     PrivateSessionNotificationManager.closeAllPrivateTabs(ctx, components)
+                                    handlePostCloseNavigation(
+                                        remainingTabs = remaining,
+                                        wasSelectedClosed = wasSelectedPrivate,
+                                        wasPrivateClosed = true
+                                    )
                                 } else {
                                     // Shield Pinned tabs from Close All Tabs just like Brave / Edge
                                     val pinnedSet = TabMetaStore.pinnedIdsFlow.value.toSet()
@@ -217,6 +246,9 @@ class TabsTrayDialogFragment : DialogFragment() {
                                         }
                                     } else {
                                         val ids = normalTargets.map { it.id }
+                                        val closedSet = ids.toSet()
+                                        val remaining = tabs.filter { it.id !in closedSet }
+                                        val wasSelected = selectedTabId != null && selectedTabId in closedSet
                                         val records = normalTargets.map { t ->
                                             ClosedTabRecord(
                                                 url = t.content.url.ifBlank { "about:blank" },
@@ -236,13 +268,18 @@ class TabsTrayDialogFragment : DialogFragment() {
                                             wasPrivate = false,
                                             allowUndo = true
                                         )
+                                        handlePostCloseNavigation(
+                                            remainingTabs = remaining,
+                                            wasSelectedClosed = wasSelected,
+                                            wasPrivateClosed = false
+                                        )
                                     }
                                 }
                             },
                             onNewTab = { isPrivate ->
                                 dismissAllowingStateLoss()
                                 browserViewModel.exitEditMode()
-                                val anchorId = if (SettingsPrefs.getBool(ctx, SettingsPrefs.K_TAB_OPEN_NEXT_TO_CURRENT, false)) {
+                                val anchorId = if (SettingsPrefs.getBool(ctx, SettingsPrefs.K_TAB_OPEN_NEXT_TO_CURRENT, true)) {
                                     selectedTabId
                                 } else null
                                 val newId = components.useCases.tabsUseCases.addTab(
@@ -396,6 +433,9 @@ class TabsTrayDialogFragment : DialogFragment() {
                             onCloseGroupTabs = { group ->
                                 val memberTabs = tabs.filter { it.id in group.tabIds }
                                 val ids = memberTabs.map { it.id }
+                                val closedSet = ids.toSet()
+                                val remaining = tabs.filter { it.id !in closedSet }
+                                val wasSelected = selectedTabId != null && selectedTabId in closedSet
                                 val records = memberTabs.map { t ->
                                     ClosedTabRecord(
                                         url = t.content.url.ifBlank { "about:blank" },
@@ -415,6 +455,23 @@ class TabsTrayDialogFragment : DialogFragment() {
                                     wasPrivate = group.isPrivate,
                                     allowUndo = true
                                 )
+                                handlePostCloseNavigation(
+                                    remainingTabs = remaining,
+                                    wasSelectedClosed = wasSelected,
+                                    wasPrivateClosed = group.isPrivate
+                                )
+                            },
+                            onAutoGroupByDomain = { isPrivate ->
+                                autoGroupByDomain(tabs, isPrivate)
+                            },
+                            onReorderGroupMembers = { groupId, orderedTabIds ->
+                                TabGroupStore.reorderGroupMembers(groupId, orderedTabIds)
+                            },
+                            onReorderGroupsDirectory = { orderedGroupIds, isPrivate ->
+                                TabGroupStore.reorderGroupsDirectory(orderedGroupIds, isPrivate)
+                            },
+                            onOpenTabSettings = {
+                                startActivity(Intent(ctx, TabSettingsActivity::class.java))
                             },
                             onUndoClose = {
                                 TabHistoryStore.consumeUndo()?.let { batch ->
@@ -494,6 +551,76 @@ class TabsTrayDialogFragment : DialogFragment() {
                 }
             }
         }
+    }
+
+    /**
+     * Ensures closing the last tab (especially the last private tab when 0 normal tabs exist)
+     * never leaves a stale ghost webpage rendered behind the tray.
+     */
+    private fun handlePostCloseNavigation(
+        remainingTabs: List<TabSessionState>,
+        wasSelectedClosed: Boolean,
+        wasPrivateClosed: Boolean
+    ) {
+        if (wasSelectedClosed || remainingTabs.isEmpty()) {
+            TabPreviewCache.setLastActiveBitmap(null)
+        }
+        val remainingPrivateCount = remainingTabs.count { it.content.private }
+        if (remainingTabs.isEmpty() || (wasSelectedClosed && wasPrivateClosed && remainingPrivateCount == 0)) {
+            browserViewModel.exitEditMode()
+            navigateToHome()
+        }
+    }
+
+    /**
+     * Groups ungrouped, unpinned tabs of the active mode that share a host (2+ tabs per domain).
+     */
+    private fun autoGroupByDomain(tabs: List<TabSessionState>, isPrivate: Boolean) {
+        val ctx = context ?: return
+        val pinnedSet = if (isPrivate) emptySet() else TabMetaStore.pinnedIdsFlow.value.toSet()
+        val alreadyGrouped = TabGroupStore.groupsFlow.value
+            .filter { it.isPrivate == isPrivate }
+            .flatMap { it.tabIds }
+            .toSet()
+
+        val candidates = tabs.filter { t ->
+            t.content.private == isPrivate && t.id !in pinnedSet && t.id !in alreadyGrouped
+        }
+
+        val byHost = linkedMapOf<String, MutableList<TabSessionState>>()
+        for (tab in candidates) {
+            val host = extractHostLabel(tab.content.url).lowercase()
+            if (host.isBlank() || host == "about:blank") continue
+            byHost.getOrPut(host) { mutableListOf() }.add(tab)
+        }
+
+        val existingCount = TabGroupStore.groupsFlow.value.count { it.isPrivate == isPrivate }
+        var createdGroups = 0
+        var groupedTabs = 0
+
+        for ((host, bucket) in byHost) {
+            if (bucket.size < 2) continue
+            val cleanName = host.substringBeforeLast('.')
+                .takeIf { it.length >= 2 && '.' !in it }
+                ?.replaceFirstChar { it.uppercase() }
+                ?: host.replaceFirstChar { it.uppercase() }
+            val color = TabGroupStore.GROUP_COLORS[(existingCount + createdGroups) % TabGroupStore.GROUP_COLORS.size]
+            TabGroupStore.createGroup(
+                name = cleanName,
+                colorArgb = color,
+                tabIds = bucket.map { it.id },
+                isPrivate = isPrivate
+            )
+            createdGroups++
+            groupedTabs += bucket.size
+        }
+
+        val msg = if (createdGroups > 0) {
+            "Grouped $groupedTabs tabs into $createdGroups ${if (createdGroups == 1) "group" else "groups"}"
+        } else {
+            "No ungrouped tabs share a domain"
+        }
+        Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
     }
 
     private fun navigateToHome() {

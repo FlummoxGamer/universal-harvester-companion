@@ -47,17 +47,23 @@ object PrivateSessionNotificationManager {
         ensureChannel(appContext)
 
         scope.launch {
+            var hadPrivateTabs = false
             store.stateFlow
                 .map { state -> state.tabs.count { it.content.private } }
                 .distinctUntilChanged()
                 .collect { privateCount ->
                     if (privateCount > 0) {
+                        hadPrivateTabs = true
                         postOrUpdate(appContext, privateCount)
                     } else {
                         TabGroupStore.clearPrivateGroups()
                         TabPreviewCache.clearPrivate()
                         TabHistoryStore.clearPrivateUndo()
                         PrivateLockManager.onAllPrivateClosed()
+                        if (hadPrivateTabs) {
+                            hadPrivateTabs = false
+                            app.harvester.companion.privacy.UhPrivacyController.purgePrivateSessionData(appContext)
+                        }
                         cancel(appContext)
                     }
                 }
@@ -114,7 +120,7 @@ object PrivateSessionNotificationManager {
             val notification = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.uh_ic_private_vibe_24)
                 .setContentTitle(title)
-                .setContentText("Tap to close all private tabs")
+                .setContentText("Tap to close all private tabs & wipe session")
                 .setColor(0xFF7C3AED.toInt())
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
@@ -124,11 +130,6 @@ object PrivateSessionNotificationManager {
                 .setCategory(NotificationCompat.CATEGORY_STATUS)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setContentIntent(closePendingIntent)
-                .addAction(
-                    R.drawable.fx_ic_delete_24,
-                    "Close all",
-                    closePendingIntent
-                )
                 .build()
 
             NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
@@ -156,8 +157,12 @@ object PrivateSessionNotificationManager {
         }
         TabGroupStore.clearPrivateGroups()
         TabPreviewCache.clearPrivate(privateIds)
+        if (state.selectedTabId in privateIds) {
+            TabPreviewCache.setLastActiveBitmap(null)
+        }
         TabHistoryStore.clearPrivateUndo()
         PrivateLockManager.onAllPrivateClosed()
+        app.harvester.companion.privacy.UhPrivacyController.purgePrivateSessionData(context)
         cancel(context)
 
         // If no tab remains selected or the active tab was private, select the latest normal tab if available

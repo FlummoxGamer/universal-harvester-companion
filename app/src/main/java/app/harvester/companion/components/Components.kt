@@ -228,6 +228,7 @@ class Components(val context: Context) {
             store = browserStore,
         )
         UhMediaController.init(context.applicationContext, browserStore)
+        app.harvester.companion.browser.tabs.TabPreviewCache.init(context.applicationContext)
         app.harvester.companion.browser.tabs.TabGroupStore.init(context.applicationContext)
         app.harvester.companion.browser.tabs.TabHistoryStore.init(context.applicationContext)
         app.harvester.companion.browser.tabs.TabMetaStore.init(context.applicationContext)

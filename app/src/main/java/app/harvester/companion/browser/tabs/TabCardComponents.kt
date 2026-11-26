@@ -1,9 +1,13 @@
 package app.harvester.companion.browser.tabs
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +18,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,21 +36,39 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.harvester.companion.R
+import app.harvester.companion.UHBrand
+import kotlinx.coroutines.launch
 import mozilla.components.browser.state.state.TabSessionState
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
+/**
+ * Elevated glassmorphic tab card with full-bleed reactive live preview,
+ * frosted top header overlay, Home mini-preview for blank tabs, and clean selection ring.
+ */
 @Composable
 internal fun TabGridCard(
     tab: TabSessionState,
@@ -70,242 +93,259 @@ internal fun TabGridCard(
     onBookmark: () -> Unit,
     onDuplicate: () -> Unit,
     onShare: () -> Unit,
+    showGroupAccent: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val groupColor = group?.colorArgb?.let { Color(it) }
+    val groupColor = if (showGroupAccent) group?.colorArgb?.let { Color(it) } else null
     val borderColor = when {
         isDropTarget -> palette.accent
         isChecked -> palette.accent
         isSelected -> palette.accent
-        groupColor != null -> groupColor.copy(alpha = 0.62f)
+        groupColor != null -> groupColor.copy(alpha = 0.55f)
         else -> palette.subtleBorder
     }
-    val borderWidth = if (isDropTarget || isSelected || isChecked) 2.2.dp else 1.dp
+    val borderWidth = if (isDropTarget || isSelected || isChecked) 2.dp else 0.9.dp
 
     val host = remember(tab.content.url) { extractHostLabel(tab.content.url) }
+    val isBlankTab = tab.content.url.isBlank() || tab.content.url == "about:blank"
     val titleText = tab.content.title.ifBlank {
         host.ifBlank { if (tab.content.private) "Private Tab" else "New Tab" }
     }
-    val previewBitmap = remember(tab.id, tab.content.url, tab.content.title) { TabPreviewCache.get(tab.id) }
+
+    val previewVersion by TabPreviewCache.versionFlow.collectAsState()
+    val previewBitmap = remember(tab.id, tab.content.url, previewVersion) {
+        if (isBlankTab) null
+        else TabPreviewCache.getOrLoadAsync(tab.id, isPrivate = tab.content.private)
+    }
+
     val hasMedia = TabMetaStore.hasMediaSession(tab) || isMuted
     val isPlaying = TabMetaStore.isTabPlayingAudio(tab)
     val isLoading = tab.content.loading && tab.content.progress in 1..99
+    val cardShape = RoundedCornerShape(20.dp)
 
     Box(modifier = modifier.fillMaxWidth()) {
         Surface(
-            shape = RoundedCornerShape(18.dp),
+            shape = cardShape,
             color = palette.cardBg,
-            shadowElevation = if (isBeingDragged) 14.dp else if (isSelected) 3.dp else 1.dp,
+            shadowElevation = if (isBeingDragged) 16.dp else if (isSelected) 6.dp else 2.dp,
             modifier = Modifier
                 .fillMaxWidth()
-                .border(borderWidth, borderColor, RoundedCornerShape(18.dp))
-                .clip(RoundedCornerShape(18.dp))
+                .aspectRatio(0.78f)
+                .border(borderWidth, borderColor, cardShape)
+                .clip(cardShape)
                 .clickable(onClick = onClick)
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // Top color accent strip if member of a group
-                if (groupColor != null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(3.dp)
-                            .background(groupColor)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(palette.previewBg)
+            ) {
+                // 1. Full-bleed Preview Canvas (live screenshot, Home Mini-Preview, or clean domain card)
+                if (isBlankTab) {
+                    BlankTabMiniPreview(
+                        isPrivate = tab.content.private,
+                        palette = palette,
+                        compact = false,
+                        modifier = Modifier.fillMaxSize()
                     )
-                }
-
-                // Card Header: Favicon + Title + Close/Checkbox
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 10.dp, end = 4.dp, top = 7.dp, bottom = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TabFaviconBox(
+                } else if (previewBitmap != null && !previewBitmap.isRecycled) {
+                    Image(
+                        bitmap = previewBitmap.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        alignment = Alignment.TopCenter,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    UnrenderedSitePreview(
                         tab = tab,
-                        accentColor = palette.accent,
-                        sizeDp = 18
+                        host = host,
+                        palette = palette,
+                        modifier = Modifier.fillMaxSize()
                     )
-                    Spacer(modifier = Modifier.width(7.dp))
-                    Text(
-                        text = titleText,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 12.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                    if (isMultiSelect) {
-                        Checkbox(
-                            checked = isChecked,
-                            onCheckedChange = { onClick() },
-                            colors = CheckboxDefaults.colors(
-                                checkedColor = palette.accent,
-                                uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            ),
-                            modifier = Modifier.size(26.dp)
-                        )
-                    } else {
-                        IconButton(
-                            onClick = onClose,
-                            modifier = Modifier.size(26.dp)
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.fx_ic_close_24),
-                                contentDescription = "Close tab",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(14.dp)
-                            )
-                        }
-                    }
                 }
 
-                // Preview Canvas
+                // Subtle bottom glass vignette for elevated depth
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 6.dp, end = 6.dp, bottom = 6.dp)
-                        .aspectRatio(0.92f)
-                        .clip(RoundedCornerShape(13.dp))
-                        .background(palette.previewBg)
-                ) {
-                    if (previewBitmap != null && !previewBitmap.isRecycled) {
-                        Image(
-                            bitmap = previewBitmap.asImageBitmap(),
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            alignment = Alignment.TopCenter,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(12.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            TabFaviconBox(
-                                tab = tab,
-                                accentColor = palette.accent,
-                                sizeDp = 34
+                        .height(32.dp)
+                        .align(Alignment.BottomCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    Color.Transparent,
+                                    Color.Black.copy(alpha = if (palette.isDark) 0.34f else 0.12f)
+                                )
                             )
-                            if (host.isNotBlank()) {
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = host,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 11.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                        )
+                )
+
+                // 2. Frosted Translucent Glass Top Header Overlay
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.TopCenter)
+                        .background(palette.headerFrostBg)
+                ) {
+                    if (groupColor != null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(2.5.dp)
+                                .background(groupColor)
+                        )
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 9.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TabFaviconBox(
+                            tab = tab,
+                            accentColor = palette.accent,
+                            sizeDp = 17
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = titleText,
+                            color = palette.onSurface,
+                            fontSize = 11.5.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (isMultiSelect) {
+                            Checkbox(
+                                checked = isChecked,
+                                onCheckedChange = { onClick() },
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = palette.accent,
+                                    uncheckedColor = palette.onSurfaceSubtle
+                                ),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        } else {
+                            IconButton(
+                                onClick = onClose,
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.fx_ic_close_24),
+                                    contentDescription = "Close tab",
+                                    tint = palette.onSurfaceSubtle,
+                                    modifier = Modifier.size(13.dp)
                                 )
                             }
                         }
                     }
-
-                    // Mini loading progress bar along top edge of preview
+                    HorizontalDivider(
+                        thickness = 0.5.dp,
+                        color = palette.subtleBorder.copy(alpha = 0.55f)
+                    )
                     if (isLoading) {
                         LinearProgressIndicator(
                             progress = { (tab.content.progress / 100f).coerceIn(0f, 1f) },
                             modifier = Modifier
-                                .align(Alignment.TopCenter)
                                 .fillMaxWidth()
-                                .height(2.5.dp),
+                                .height(2.dp),
                             color = palette.accent,
                             trackColor = Color.Transparent
                         )
                     }
+                }
 
-                    // Top-right Live Audio / Mute one-tap interactive pill
-                    if (hasMedia && !isMultiSelect) {
-                        val audioBg = if (isMuted) Color(0xCC27272A) else palette.accent.copy(alpha = 0.92f)
-                        val audioIcon = if (isMuted) R.drawable.uh_ic_volume_off_24 else R.drawable.uh_ic_volume_on_24
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(6.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(audioBg)
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                    onClick = onToggleMute
-                                )
-                                .padding(horizontal = 6.dp, vertical = 4.dp)
+                // 3. Live Audio / Mute one-tap interactive pill (bottom-end)
+                if (hasMedia && !isMultiSelect) {
+                    val audioBg = if (isMuted) Color(0xCC27272A) else palette.accentStrong.copy(alpha = 0.92f)
+                    val audioIcon = if (isMuted) R.drawable.uh_ic_volume_off_24 else R.drawable.uh_ic_volume_on_24
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(8.dp)
+                            .clip(CircleShape)
+                            .background(audioBg)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = onToggleMute
+                            )
+                            .padding(horizontal = 7.dp, vertical = 4.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(3.dp)
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = audioIcon),
-                                    contentDescription = if (isMuted) "Unmute tab" else "Mute tab",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(13.dp)
-                                )
-                                if (isPlaying && !isMuted) {
-                                    Text(
-                                        text = "LIVE",
-                                        color = Color.White,
-                                        fontSize = 8.sp,
-                                        fontWeight = FontWeight.ExtraBold
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // Bottom-start Sleeping tab moon badge (suspended background session)
-                    if (isSleeping && !isDropTarget) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .padding(6.dp)
-                                .clip(RoundedCornerShape(9.dp))
-                                .background(Color(0xB818181B))
-                                .padding(horizontal = 6.dp, vertical = 3.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(3.dp)
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.uh_ic_sleep_moon_24),
-                                    contentDescription = "Sleeping tab",
-                                    tint = Color(0xFF93C5FD),
-                                    modifier = Modifier.size(11.dp)
-                                )
+                            Icon(
+                                painter = painterResource(id = audioIcon),
+                                contentDescription = if (isMuted) "Unmute tab" else "Mute tab",
+                                tint = Color.White,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            if (isPlaying && !isMuted) {
                                 Text(
-                                    text = "Sleep",
-                                    color = Color.White.copy(alpha = 0.90f),
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    text = "LIVE",
+                                    color = Color.White,
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.ExtraBold
                                 )
                             }
                         }
                     }
+                }
 
-                    // Magnetic Drop-to-Group overlay when dragging another card over center
-                    if (isDropTarget) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(palette.accent.copy(alpha = 0.24f)),
-                            contentAlignment = Alignment.Center
+                // 4. Sleeping tab moon badge (bottom-start)
+                if (isSleeping && !isDropTarget) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(8.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xC2141222))
+                            .padding(horizontal = 7.dp, vertical = 3.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = palette.accent,
-                                shadowElevation = 4.dp
-                            ) {
-                                Text(
-                                    text = "Drop to group",
-                                    color = palette.onAccent,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                                )
-                            }
+                            Icon(
+                                painter = painterResource(id = R.drawable.uh_ic_sleep_moon_24),
+                                contentDescription = "Sleeping tab",
+                                tint = Color(0xFF93C5FD),
+                                modifier = Modifier.size(10.dp)
+                            )
+                            Text(
+                                text = "Sleep",
+                                color = Color.White.copy(alpha = 0.92f),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+
+                // 5. Dwell-armed Drop-to-Group Glass Overlay
+                if (isDropTarget) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(palette.accentStrong.copy(alpha = 0.28f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = palette.accentStrong,
+                            shadowElevation = 6.dp
+                        ) {
+                            Text(
+                                text = "Drop to group",
+                                color = palette.onAccent,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            )
                         }
                     }
                 }
@@ -318,7 +358,7 @@ internal fun TabGridCard(
             isPinned = isPinned,
             isMuted = isMuted,
             isGrouped = group != null,
-            hasUrl = tab.content.url.isNotBlank() && tab.content.url != "about:blank",
+            hasUrl = !isBlankTab,
             onDismiss = onDismissContextMenu,
             onTogglePin = onTogglePin,
             onToggleMute = onToggleMute,
@@ -329,6 +369,282 @@ internal fun TabGridCard(
             onShare = onShare,
             onClose = onClose
         )
+    }
+}
+
+/**
+ * Bespoke Home Mini-Preview rendered inside blank/new tab cards and 2x2 group collage tiles
+ * instead of a dull fallback globe icon.
+ */
+@Composable
+internal fun BlankTabMiniPreview(
+    isPrivate: Boolean,
+    palette: TabsTrayPalette,
+    compact: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val bgBrush = if (isPrivate) {
+        Brush.radialGradient(
+            colors = listOf(
+                Color(0xFF2D1B54),
+                Color(0xFF140D26),
+                Color(0xFF0A0714)
+            )
+        )
+    } else if (palette.isDark) {
+        Brush.verticalGradient(
+            colors = listOf(
+                Color(0xFF1A1E2B),
+                Color(0xFF11141E)
+            )
+        )
+    } else {
+        Brush.verticalGradient(
+            colors = listOf(
+                Color(0xFFF3F6FC),
+                Color(0xFFE6ECF7)
+            )
+        )
+    }
+
+    Box(
+        modifier = modifier.background(bgBrush),
+        contentAlignment = Alignment.Center
+    ) {
+        if (compact) {
+            if (isPrivate) {
+                Icon(
+                    painter = painterResource(id = R.drawable.uh_ic_private_vibe_24),
+                    contentDescription = null,
+                    tint = PrivateAccentColor.copy(alpha = 0.85f),
+                    modifier = Modifier.size(18.dp)
+                )
+            } else {
+                Text(
+                    text = UHBrand.NAME,
+                    color = palette.accent.copy(alpha = 0.85f),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 1.sp
+                )
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = 42.dp, bottom = 14.dp, start = 14.dp, end = 14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                if (isPrivate) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(PrivateAccentColor.copy(alpha = 0.16f))
+                            .border(1.dp, PrivateAccentColor.copy(alpha = 0.42f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.uh_ic_private_vibe_24),
+                            contentDescription = null,
+                            tint = PrivateAccentColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Stealth Mode",
+                        color = Color(0xFFE9E2FF),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.76f)
+                            .height(10.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.08f))
+                            .border(0.6.dp, PrivateAccentColor.copy(alpha = 0.30f), CircleShape)
+                    )
+                } else {
+                    Text(
+                        text = UHBrand.NAME,
+                        color = palette.onSurface.copy(alpha = 0.88f),
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 1.8.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .width(22.dp)
+                            .height(2.dp)
+                            .clip(CircleShape)
+                            .background(palette.accent.copy(alpha = 0.72f))
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    // Mini 4-tile shortcut preview grid
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        repeat(4) { idx ->
+                            Box(
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .clip(RoundedCornerShape(5.dp))
+                                    .background(
+                                        if (idx == 0) palette.accent.copy(alpha = 0.25f)
+                                        else palette.onSurface.copy(alpha = if (palette.isDark) 0.10f else 0.08f)
+                                    )
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
+                    // Mini pill address bar silhouette
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.78f)
+                            .height(12.dp)
+                            .clip(CircleShape)
+                            .background(palette.onSurface.copy(alpha = if (palette.isDark) 0.10f else 0.08f))
+                            .border(0.6.dp, palette.subtleBorder, CircleShape)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UnrenderedSitePreview(
+    tab: TabSessionState,
+    host: String,
+    palette: TabsTrayPalette,
+    modifier: Modifier = Modifier
+) {
+    val bgBrush = if (tab.content.private) {
+        Brush.verticalGradient(
+            listOf(Color(0xFF1A1230), Color(0xFF0E0A1B))
+        )
+    } else if (palette.isDark) {
+        Brush.verticalGradient(
+            listOf(Color(0xFF1C202C), Color(0xFF131620))
+        )
+    } else {
+        Brush.verticalGradient(
+            listOf(Color(0xFFF6F8FC), Color(0xFFEAEEF6))
+        )
+    }
+
+    Column(
+        modifier = modifier
+            .background(bgBrush)
+            .padding(top = 42.dp, start = 12.dp, end = 12.dp, bottom = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(palette.accent.copy(alpha = 0.14f))
+                .border(0.8.dp, palette.subtleBorder, RoundedCornerShape(14.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            TabFaviconBox(
+                tab = tab,
+                accentColor = palette.accent,
+                sizeDp = 28
+            )
+        }
+        if (host.isNotBlank()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Box(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(palette.onSurface.copy(alpha = 0.06f))
+                    .padding(horizontal = 9.dp, vertical = 3.dp)
+            ) {
+                Text(
+                    text = host,
+                    color = palette.onSurfaceSubtle,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Smooth horizontal swipe-to-close wrapper with spring bounce-back physics.
+ * Automatically disabled during multi-select or active drag-to-reorder.
+ */
+@Composable
+internal fun SwipeToCloseTabBox(
+    enabled: Boolean,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
+    val density = LocalDensity.current
+    val dismissThresholdPx = with(density) { 108.dp.toPx() }
+    val offsetX = remember { Animatable(0f) }
+
+    Box(
+        modifier = modifier
+            .offset { IntOffset(offsetX.value.roundToInt(), 0) }
+            .graphicsLayer {
+                val progress = (abs(offsetX.value) / (dismissThresholdPx * 1.4f)).coerceIn(0f, 1f)
+                alpha = 1f - (progress * 0.55f)
+            }
+            .then(
+                if (enabled) {
+                    Modifier.pointerInput(onClose) {
+                        detectHorizontalDragGestures(
+                            onDragEnd = {
+                                scope.launch {
+                                    if (abs(offsetX.value) >= dismissThresholdPx) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        val target = if (offsetX.value > 0f) dismissThresholdPx * 2.5f else -dismissThresholdPx * 2.5f
+                                        offsetX.animateTo(target, spring(stiffness = Spring.StiffnessMediumLow))
+                                        onClose()
+                                    } else {
+                                        offsetX.animateTo(
+                                            0f,
+                                            spring(
+                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                stiffness = Spring.StiffnessMedium
+                                            )
+                                        )
+                                    }
+                                }
+                            },
+                            onDragCancel = {
+                                scope.launch {
+                                    offsetX.animateTo(0f, spring(stiffness = Spring.StiffnessMedium))
+                                }
+                            },
+                            onHorizontalDrag = { _, dragAmount ->
+                                scope.launch {
+                                    offsetX.snapTo(offsetX.value + dragAmount)
+                                }
+                            }
+                        )
+                    }
+                } else {
+                    Modifier
+                }
+            )
+    ) {
+        content()
     }
 }
 
@@ -356,30 +672,33 @@ internal fun TabListRow(
     onBookmark: () -> Unit,
     onDuplicate: () -> Unit,
     onShare: () -> Unit,
+    showGroupAccent: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val host = remember(tab.content.url) { extractHostLabel(tab.content.url) }
+    val isBlankTab = tab.content.url.isBlank() || tab.content.url == "about:blank"
     val titleText = tab.content.title.ifBlank {
         host.ifBlank { if (tab.content.private) "Private Tab" else "New Tab" }
     }
     val hasMedia = TabMetaStore.hasMediaSession(tab) || isMuted
     val isLoading = tab.content.loading && tab.content.progress in 1..99
+    val groupColor = if (showGroupAccent) group?.colorArgb?.let { Color(it) } else null
     val borderColor = when {
         isDropTarget -> palette.accent
         isChecked || isSelected -> palette.accent
-        group != null -> Color(group.colorArgb).copy(alpha = 0.55f)
+        groupColor != null -> groupColor.copy(alpha = 0.55f)
         else -> palette.subtleBorder
     }
 
     Box(modifier = modifier.fillMaxWidth()) {
         Surface(
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(18.dp),
             color = palette.cardBg,
-            shadowElevation = if (isBeingDragged) 10.dp else 0.dp,
+            shadowElevation = if (isBeingDragged) 12.dp else if (isSelected) 3.dp else 1.dp,
             modifier = Modifier
                 .fillMaxWidth()
-                .border(if (isSelected || isChecked || isDropTarget) 1.8.dp else 1.dp, borderColor, RoundedCornerShape(16.dp))
-                .clip(RoundedCornerShape(16.dp))
+                .border(if (isSelected || isChecked || isDropTarget) 1.8.dp else 0.9.dp, borderColor, RoundedCornerShape(18.dp))
+                .clip(RoundedCornerShape(18.dp))
                 .clickable(onClick = onClick)
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -389,7 +708,7 @@ internal fun TabListRow(
                         .padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TabFaviconBox(tab = tab, accentColor = palette.accent, sizeDp = 26)
+                    TabFaviconBox(tab = tab, accentColor = palette.accent, sizeDp = 28)
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Row(
@@ -398,7 +717,7 @@ internal fun TabListRow(
                         ) {
                             Text(
                                 text = titleText,
-                                color = MaterialTheme.colorScheme.onSurface,
+                                color = palette.onSurface,
                                 fontSize = 14.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
                                 maxLines = 1,
@@ -417,7 +736,7 @@ internal fun TabListRow(
                         if (host.isNotBlank()) {
                             Text(
                                 text = host,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = palette.onSurfaceSubtle,
                                 fontSize = 12.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -435,7 +754,7 @@ internal fun TabListRow(
                                     id = if (isMuted) R.drawable.uh_ic_volume_off_24 else R.drawable.uh_ic_volume_on_24
                                 ),
                                 contentDescription = if (isMuted) "Unmute" else "Mute",
-                                tint = if (isMuted) MaterialTheme.colorScheme.onSurfaceVariant else palette.accent,
+                                tint = if (isMuted) palette.onSurfaceSubtle else palette.accent,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -445,15 +764,18 @@ internal fun TabListRow(
                         Checkbox(
                             checked = isChecked,
                             onCheckedChange = { onClick() },
-                            colors = CheckboxDefaults.colors(checkedColor = palette.accent)
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = palette.accent,
+                                uncheckedColor = palette.onSurfaceSubtle
+                            )
                         )
                     } else {
                         IconButton(onClick = onClose, modifier = Modifier.size(32.dp)) {
                             Icon(
                                 painter = painterResource(id = R.drawable.fx_ic_close_24),
                                 contentDescription = "Close tab",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
+                                tint = palette.onSurfaceSubtle,
+                                modifier = Modifier.size(15.dp)
                             )
                         }
                     }
@@ -478,7 +800,7 @@ internal fun TabListRow(
             isPinned = isPinned,
             isMuted = isMuted,
             isGrouped = group != null,
-            hasUrl = tab.content.url.isNotBlank() && tab.content.url != "about:blank",
+            hasUrl = !isBlankTab,
             onDismiss = onDismissContextMenu,
             onTogglePin = onTogglePin,
             onToggleMute = onToggleMute,
@@ -510,19 +832,24 @@ internal fun TabCardContextMenu(
     onShare: () -> Unit,
     onClose: () -> Unit
 ) {
+    val menuBg = if (isPrivate) Color(0xFF1A142D) else MaterialTheme.colorScheme.surfaceContainerHigh
+    val itemColor = if (isPrivate) Color(0xFFF3EEFF) else MaterialTheme.colorScheme.onSurface
+    val dangerColor = if (isPrivate) Color(0xFFF87171) else MaterialTheme.colorScheme.error
+
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(16.dp)
+        containerColor = menuBg,
+        shape = RoundedCornerShape(18.dp)
     ) {
         if (!isPrivate) {
             DropdownMenuItem(
-                text = { Text(if (isPinned) "Unpin tab" else "Pin tab", fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+                text = { Text(if (isPinned) "Unpin tab" else "Pin tab", color = itemColor, fontSize = 14.sp, fontWeight = FontWeight.Medium) },
                 leadingIcon = {
                     Icon(
                         painter = painterResource(id = R.drawable.uh_ic_pin_24),
                         contentDescription = null,
+                        tint = itemColor,
                         modifier = Modifier.size(18.dp)
                     )
                 },
@@ -534,13 +861,14 @@ internal fun TabCardContextMenu(
         }
 
         DropdownMenuItem(
-            text = { Text(if (isMuted) "Unmute tab" else "Mute tab", fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+            text = { Text(if (isMuted) "Unmute tab" else "Mute tab", color = itemColor, fontSize = 14.sp, fontWeight = FontWeight.Medium) },
             leadingIcon = {
                 Icon(
                     painter = painterResource(
                         id = if (isMuted) R.drawable.uh_ic_volume_on_24 else R.drawable.uh_ic_volume_off_24
                     ),
                     contentDescription = null,
+                    tint = itemColor,
                     modifier = Modifier.size(18.dp)
                 )
             },
@@ -551,11 +879,12 @@ internal fun TabCardContextMenu(
         )
 
         DropdownMenuItem(
-            text = { Text(if (isGrouped) "Move to another group" else "Add to group", fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+            text = { Text(if (isGrouped) "Move to another group" else "Add to group", color = itemColor, fontSize = 14.sp, fontWeight = FontWeight.Medium) },
             leadingIcon = {
                 Icon(
-                    painter = painterResource(id = R.drawable.ic_grid_view),
+                    painter = painterResource(id = R.drawable.uh_ic_tab_groups_24),
                     contentDescription = null,
+                    tint = itemColor,
                     modifier = Modifier.size(18.dp)
                 )
             },
@@ -567,11 +896,12 @@ internal fun TabCardContextMenu(
 
         if (isGrouped && onRemoveFromGroup != null) {
             DropdownMenuItem(
-                text = { Text("Remove from group", fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+                text = { Text("Remove from group", color = itemColor, fontSize = 14.sp, fontWeight = FontWeight.Medium) },
                 leadingIcon = {
                     Icon(
                         painter = painterResource(id = R.drawable.ic_arrow_out),
                         contentDescription = null,
+                        tint = itemColor,
                         modifier = Modifier.size(18.dp)
                     )
                 },
@@ -584,11 +914,12 @@ internal fun TabCardContextMenu(
 
         if (!isPrivate && hasUrl) {
             DropdownMenuItem(
-                text = { Text("Bookmark tab", fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+                text = { Text("Bookmark tab", color = itemColor, fontSize = 14.sp, fontWeight = FontWeight.Medium) },
                 leadingIcon = {
                     Icon(
                         painter = painterResource(id = R.drawable.uh_ic_bookmark_24),
                         contentDescription = null,
+                        tint = itemColor,
                         modifier = Modifier.size(18.dp)
                     )
                 },
@@ -600,11 +931,12 @@ internal fun TabCardContextMenu(
         }
 
         DropdownMenuItem(
-            text = { Text("Duplicate tab", fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+            text = { Text("Duplicate tab", color = itemColor, fontSize = 14.sp, fontWeight = FontWeight.Medium) },
             leadingIcon = {
                 Icon(
                     painter = painterResource(id = R.drawable.uh_ic_copy_24),
                     contentDescription = null,
+                    tint = itemColor,
                     modifier = Modifier.size(18.dp)
                 )
             },
@@ -616,11 +948,12 @@ internal fun TabCardContextMenu(
 
         if (hasUrl) {
             DropdownMenuItem(
-                text = { Text("Share tab", fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+                text = { Text("Share tab", color = itemColor, fontSize = 14.sp, fontWeight = FontWeight.Medium) },
                 leadingIcon = {
                     Icon(
                         painter = painterResource(id = R.drawable.uh_ic_share_24),
                         contentDescription = null,
+                        tint = itemColor,
                         modifier = Modifier.size(18.dp)
                     )
                 },
@@ -637,7 +970,7 @@ internal fun TabCardContextMenu(
             text = {
                 Text(
                     text = "Close tab",
-                    color = MaterialTheme.colorScheme.error,
+                    color = dangerColor,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -646,7 +979,7 @@ internal fun TabCardContextMenu(
                 Icon(
                     painter = painterResource(id = R.drawable.fx_ic_delete_24),
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
+                    tint = dangerColor,
                     modifier = Modifier.size(18.dp)
                 )
             },
@@ -682,7 +1015,7 @@ internal fun TabFaviconBox(
         } else {
             Icon(
                 painter = painterResource(
-                    id = if (tab.content.private) R.drawable.uh_ic_private_vibe_24 else R.drawable.ic_globe
+                    id = if (tab.content.private) R.drawable.uh_ic_private_vibe_24 else R.drawable.uh_ic_tab_modern_24
                 ),
                 contentDescription = null,
                 tint = accentColor,

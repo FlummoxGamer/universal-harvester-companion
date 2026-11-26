@@ -38,6 +38,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -98,7 +99,7 @@ internal fun PinnedTabsStrip(
             )
             Text(
                 text = "PINNED (${pinnedTabs.size})",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = palette.onSurfaceSubtle,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.6.sp
@@ -147,7 +148,7 @@ internal fun PinnedTabsStrip(
                             TabFaviconBox(tab = tab, accentColor = palette.accent, sizeDp = 18)
                             Text(
                                 text = label,
-                                color = MaterialTheme.colorScheme.onSurface,
+                                color = palette.onSurface,
                                 fontSize = 12.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                 maxLines = 1,
@@ -160,7 +161,7 @@ internal fun PinnedTabsStrip(
                                         id = if (isMuted) R.drawable.uh_ic_volume_off_24 else R.drawable.uh_ic_volume_on_24
                                     ),
                                     contentDescription = if (isMuted) "Muted" else "Playing audio",
-                                    tint = if (isMuted) MaterialTheme.colorScheme.onSurfaceVariant else palette.accent,
+                                    tint = if (isMuted) palette.onSurfaceSubtle else palette.accent,
                                     modifier = Modifier
                                         .size(14.dp)
                                         .clickable { onToggleMuteTab(tab) }
@@ -261,6 +262,10 @@ internal fun PinnedTabsStrip(
     }
 }
 
+/**
+ * Elevated glassmorphic 2x2 Collage Tab Group card supporting both drag-to-reorder
+ * and long-press context menu seamlessly in Normal, Private, and Groups Directory grids.
+ */
 @Composable
 internal fun TabGroupGridCard(
     group: TabGroup,
@@ -275,201 +280,213 @@ internal fun TabGroupGridCard(
     onShareGroup: () -> Unit,
     onUngroup: () -> Unit,
     onCloseGroup: () -> Unit,
+    isBeingDragged: Boolean = false,
+    showContextMenu: Boolean = false,
+    onDismissContextMenu: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val groupColor = Color(group.colorArgb)
     val containsSelected = members.any { it.id == selectedTabId }
-    var showOverflow by remember(group.id) { mutableStateOf(false) }
+    var showLocalOverflow by remember(group.id) { mutableStateOf(false) }
+    val menuExpanded = showLocalOverflow || showContextMenu
 
     val borderColor = when {
         isDropTarget -> groupColor
         containsSelected -> groupColor
         else -> groupColor.copy(alpha = 0.48f)
     }
+    val cardShape = RoundedCornerShape(20.dp)
 
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = palette.cardBg,
-        shadowElevation = if (isDropTarget || containsSelected) 4.dp else 1.dp,
-        modifier = modifier
-            .fillMaxWidth()
-            .border(if (isDropTarget || containsSelected) 2.2.dp else 1.2.dp, borderColor, RoundedCornerShape(18.dp))
-            .clip(RoundedCornerShape(18.dp))
-            .clickable(onClick = onOpenGroup)
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            // Color accent header bar
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .background(groupColor)
-            )
-
-            // Header row: Color dot + Group name + Count badge + Overflow
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 10.dp, end = 4.dp, top = 7.dp, bottom = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+    Box(modifier = modifier.fillMaxWidth()) {
+        Surface(
+            shape = cardShape,
+            color = palette.cardBg,
+            shadowElevation = if (isBeingDragged) 16.dp else if (isDropTarget || containsSelected) 6.dp else 2.dp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(0.78f)
+                .border(if (isDropTarget || containsSelected) 2.dp else 1.dp, borderColor, cardShape)
+                .clip(cardShape)
+                .clickable(onClick = onOpenGroup)
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Sleek top group color ribbon
                 Box(
                     modifier = Modifier
-                        .size(10.dp)
-                        .clip(CircleShape)
+                        .fillMaxWidth()
+                        .height(3.dp)
                         .background(groupColor)
                 )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = group.name,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
+
+                // Frosted Header row: Color dot + Group name + Count pill + Overflow
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(palette.headerFrostBg)
+                        .padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(9.dp)
+                            .clip(CircleShape)
+                            .background(groupColor)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = group.name,
+                        color = palette.onSurface,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(groupColor.copy(alpha = 0.18f))
+                            .padding(horizontal = 6.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            text = "${members.size}",
+                            color = groupColor,
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                    Box {
+                        IconButton(
+                            onClick = { showLocalOverflow = true },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.fx_ic_more_24),
+                                contentDescription = "Group options",
+                                tint = palette.onSurfaceSubtle,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                        GroupCardOverflowMenu(
+                            expanded = menuExpanded,
+                            isPrivate = group.isPrivate,
+                            onDismiss = {
+                                showLocalOverflow = false
+                                onDismissContextMenu()
+                            },
+                            onOpenGroup = onOpenGroup,
+                            onAddNewTabInGroup = onAddNewTabInGroup,
+                            onEditGroup = onEditGroup,
+                            onBookmarkGroup = onBookmarkGroup,
+                            onShareGroup = onShareGroup,
+                            onUngroup = onUngroup,
+                            onCloseGroup = onCloseGroup
+                        )
+                    }
+                }
+
+                // Clean 2x2 Mini-Preview Collage filling the card
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(groupColor.copy(alpha = 0.18f))
-                        .padding(horizontal = 6.dp, vertical = 1.dp)
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(groupColor.copy(alpha = if (palette.isDark) 0.10f else 0.06f))
+                        .padding(5.dp)
                 ) {
-                    Text(
-                        text = "${members.size}",
-                        color = groupColor,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Box {
-                    IconButton(
-                        onClick = { showOverflow = true },
-                        modifier = Modifier.size(26.dp)
+                    val previewSlots = members.take(4)
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.fx_ic_more_24),
-                            contentDescription = "Group options",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(15.dp)
-                        )
-                    }
-                    GroupCardOverflowMenu(
-                        expanded = showOverflow,
-                        isPrivate = group.isPrivate,
-                        onDismiss = { showOverflow = false },
-                        onOpenGroup = onOpenGroup,
-                        onAddNewTabInGroup = onAddNewTabInGroup,
-                        onEditGroup = onEditGroup,
-                        onBookmarkGroup = onBookmarkGroup,
-                        onShareGroup = onShareGroup,
-                        onUngroup = onUngroup,
-                        onCloseGroup = onCloseGroup
-                    )
-                }
-            }
-
-            // 2x2 Mini-Preview Collage
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 6.dp, end = 6.dp, bottom = 6.dp)
-                    .aspectRatio(0.92f)
-                    .clip(RoundedCornerShape(13.dp))
-                    .background(groupColor.copy(alpha = if (palette.isDark) 0.12f else 0.08f))
-                    .padding(5.dp)
-            ) {
-                val previewSlots = members.take(4)
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        GroupMiniTile(
-                            tab = previewSlots.getOrNull(0),
-                            groupColor = groupColor,
-                            tileBg = palette.previewBg,
+                        Row(
                             modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                        )
-                        GroupMiniTile(
-                            tab = previewSlots.getOrNull(1),
-                            groupColor = groupColor,
-                            tileBg = palette.previewBg,
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                        )
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        GroupMiniTile(
-                            tab = previewSlots.getOrNull(2),
-                            groupColor = groupColor,
-                            tileBg = palette.previewBg,
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                        )
-                        if (members.size > 4) {
-                            Box(
+                                .fillMaxWidth()
+                                .weight(1f),
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            GroupMiniTile(
+                                tab = previewSlots.getOrNull(0),
+                                groupColor = groupColor,
+                                palette = palette,
                                 modifier = Modifier
                                     .weight(1f)
                                     .fillMaxHeight()
-                                    .clip(RoundedCornerShape(9.dp))
-                                    .background(groupColor.copy(alpha = 0.22f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "+${members.size - 3}",
-                                    color = groupColor,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.ExtraBold
-                                )
-                            }
-                        } else {
+                            )
                             GroupMiniTile(
-                                tab = previewSlots.getOrNull(3),
+                                tab = previewSlots.getOrNull(1),
                                 groupColor = groupColor,
-                                tileBg = palette.previewBg,
+                                palette = palette,
                                 modifier = Modifier
                                     .weight(1f)
                                     .fillMaxHeight()
                             )
                         }
-                    }
-                }
-
-                if (isDropTarget) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(groupColor.copy(alpha = 0.28f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = groupColor,
-                            shadowElevation = 4.dp
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
                         ) {
-                            Text(
-                                text = "Add to group",
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            GroupMiniTile(
+                                tab = previewSlots.getOrNull(2),
+                                groupColor = groupColor,
+                                palette = palette,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
                             )
+                            if (members.size > 4) {
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(groupColor.copy(alpha = 0.22f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "+${members.size - 3}",
+                                        color = groupColor,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+                            } else {
+                                GroupMiniTile(
+                                    tab = previewSlots.getOrNull(3),
+                                    groupColor = groupColor,
+                                    palette = palette,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                )
+                            }
+                        }
+                    }
+
+                    if (isDropTarget) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(groupColor.copy(alpha = 0.28f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = groupColor,
+                                shadowElevation = 6.dp
+                            ) {
+                                Text(
+                                    text = "Add to group",
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -482,18 +499,31 @@ internal fun TabGroupGridCard(
 private fun GroupMiniTile(
     tab: TabSessionState?,
     groupColor: Color,
-    tileBg: Color,
+    palette: TabsTrayPalette,
     modifier: Modifier = Modifier
 ) {
+    val previewVersion by TabPreviewCache.versionFlow.collectAsState()
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(9.dp))
-            .background(tileBg),
+            .clip(RoundedCornerShape(10.dp))
+            .background(palette.previewBg)
+            .border(0.5.dp, palette.subtleBorder.copy(alpha = 0.4f), RoundedCornerShape(10.dp)),
         contentAlignment = Alignment.Center
     ) {
         if (tab != null) {
-            val bmp = remember(tab.id, tab.content.url) { TabPreviewCache.get(tab.id) }
-            if (bmp != null && !bmp.isRecycled) {
+            val isBlank = tab.content.url.isBlank() || tab.content.url == "about:blank"
+            val bmp = remember(tab.id, tab.content.url, previewVersion) {
+                if (isBlank) null
+                else TabPreviewCache.getOrLoadAsync(tab.id, isPrivate = tab.content.private)
+            }
+            if (isBlank) {
+                BlankTabMiniPreview(
+                    isPrivate = tab.content.private,
+                    palette = palette,
+                    compact = true,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else if (bmp != null && !bmp.isRecycled) {
                 Image(
                     bitmap = bmp.asImageBitmap(),
                     contentDescription = null,
@@ -522,23 +552,28 @@ internal fun TabGroupListCard(
     onShareGroup: () -> Unit,
     onUngroup: () -> Unit,
     onCloseGroup: () -> Unit,
+    isBeingDragged: Boolean = false,
+    showContextMenu: Boolean = false,
+    onDismissContextMenu: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val groupColor = Color(group.colorArgb)
     val containsSelected = members.any { it.id == selectedTabId }
-    var showOverflow by remember(group.id) { mutableStateOf(false) }
+    var showLocalOverflow by remember(group.id) { mutableStateOf(false) }
+    val menuExpanded = showLocalOverflow || showContextMenu
 
     Surface(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(18.dp),
         color = palette.cardBg,
+        shadowElevation = if (isBeingDragged) 12.dp else if (containsSelected) 3.dp else 1.dp,
         modifier = modifier
             .fillMaxWidth()
             .border(
                 width = if (isDropTarget || containsSelected) 1.8.dp else 1.dp,
                 color = if (isDropTarget || containsSelected) groupColor else groupColor.copy(alpha = 0.45f),
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(18.dp)
             )
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(18.dp))
             .clickable(onClick = onOpenGroup)
     ) {
         Row(
@@ -549,16 +584,16 @@ internal fun TabGroupListCard(
         ) {
             Box(
                 modifier = Modifier
-                    .size(34.dp)
-                    .clip(RoundedCornerShape(11.dp))
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(12.dp))
                     .background(groupColor.copy(alpha = 0.18f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    painter = painterResource(id = R.drawable.ic_grid_view),
+                    painter = painterResource(id = R.drawable.uh_ic_tab_groups_24),
                     contentDescription = null,
                     tint = groupColor,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(19.dp)
                 )
             }
             Spacer(modifier = Modifier.width(12.dp))
@@ -569,7 +604,7 @@ internal fun TabGroupListCard(
                 ) {
                     Text(
                         text = group.name,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = palette.onSurface,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
@@ -598,25 +633,28 @@ internal fun TabGroupListCard(
                 Text(
                     text = "${members.size} ${if (members.size == 1) "tab" else "tabs"}" +
                         if (previewTitles.isNotBlank()) " — $previewTitles" else "",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = palette.onSurfaceSubtle,
                     fontSize = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
             Box {
-                IconButton(onClick = { showOverflow = true }, modifier = Modifier.size(32.dp)) {
+                IconButton(onClick = { showLocalOverflow = true }, modifier = Modifier.size(32.dp)) {
                     Icon(
                         painter = painterResource(id = R.drawable.fx_ic_more_24),
                         contentDescription = "Group options",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = palette.onSurfaceSubtle,
                         modifier = Modifier.size(18.dp)
                     )
                 }
                 GroupCardOverflowMenu(
-                    expanded = showOverflow,
+                    expanded = menuExpanded,
                     isPrivate = group.isPrivate,
-                    onDismiss = { showOverflow = false },
+                    onDismiss = {
+                        showLocalOverflow = false
+                        onDismissContextMenu()
+                    },
                     onOpenGroup = onOpenGroup,
                     onAddNewTabInGroup = onAddNewTabInGroup,
                     onEditGroup = onEditGroup,
@@ -643,31 +681,35 @@ internal fun GroupCardOverflowMenu(
     onUngroup: () -> Unit,
     onCloseGroup: () -> Unit
 ) {
+    val menuBg = if (isPrivate) Color(0xFF1A142D) else MaterialTheme.colorScheme.surfaceContainerHigh
+    val itemColor = if (isPrivate) Color(0xFFF3EEFF) else MaterialTheme.colorScheme.onSurface
+    val dangerColor = if (isPrivate) Color(0xFFF87171) else MaterialTheme.colorScheme.error
+
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(16.dp)
+        containerColor = menuBg,
+        shape = RoundedCornerShape(18.dp)
     ) {
         DropdownMenuItem(
-            text = { Text("Open group", fontSize = 14.sp, fontWeight = FontWeight.Medium) },
-            leadingIcon = { Icon(painterResource(id = R.drawable.ic_grid_view), null, modifier = Modifier.size(18.dp)) },
+            text = { Text("Open group", color = itemColor, fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+            leadingIcon = { Icon(painterResource(id = R.drawable.uh_ic_tab_groups_24), null, tint = itemColor, modifier = Modifier.size(18.dp)) },
             onClick = {
                 onDismiss()
                 onOpenGroup()
             }
         )
         DropdownMenuItem(
-            text = { Text("Add new tab", fontSize = 14.sp, fontWeight = FontWeight.Medium) },
-            leadingIcon = { Icon(painterResource(id = R.drawable.uh_ic_plus_24), null, modifier = Modifier.size(18.dp)) },
+            text = { Text("Add new tab", color = itemColor, fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+            leadingIcon = { Icon(painterResource(id = R.drawable.uh_ic_plus_24), null, tint = itemColor, modifier = Modifier.size(18.dp)) },
             onClick = {
                 onDismiss()
                 onAddNewTabInGroup()
             }
         )
         DropdownMenuItem(
-            text = { Text("Edit name & color", fontSize = 14.sp, fontWeight = FontWeight.Medium) },
-            leadingIcon = { Icon(painterResource(id = R.drawable.fx_ic_edit_24), null, modifier = Modifier.size(18.dp)) },
+            text = { Text("Edit name & color", color = itemColor, fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+            leadingIcon = { Icon(painterResource(id = R.drawable.fx_ic_edit_24), null, tint = itemColor, modifier = Modifier.size(18.dp)) },
             onClick = {
                 onDismiss()
                 onEditGroup()
@@ -675,8 +717,8 @@ internal fun GroupCardOverflowMenu(
         )
         if (!isPrivate) {
             DropdownMenuItem(
-                text = { Text("Bookmark group", fontSize = 14.sp, fontWeight = FontWeight.Medium) },
-                leadingIcon = { Icon(painterResource(id = R.drawable.uh_ic_bookmark_24), null, modifier = Modifier.size(18.dp)) },
+                text = { Text("Bookmark group", color = itemColor, fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+                leadingIcon = { Icon(painterResource(id = R.drawable.uh_ic_bookmark_24), null, tint = itemColor, modifier = Modifier.size(18.dp)) },
                 onClick = {
                     onDismiss()
                     onBookmarkGroup()
@@ -684,16 +726,16 @@ internal fun GroupCardOverflowMenu(
             )
         }
         DropdownMenuItem(
-            text = { Text("Share group", fontSize = 14.sp, fontWeight = FontWeight.Medium) },
-            leadingIcon = { Icon(painterResource(id = R.drawable.uh_ic_share_24), null, modifier = Modifier.size(18.dp)) },
+            text = { Text("Share group", color = itemColor, fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+            leadingIcon = { Icon(painterResource(id = R.drawable.uh_ic_share_24), null, tint = itemColor, modifier = Modifier.size(18.dp)) },
             onClick = {
                 onDismiss()
                 onShareGroup()
             }
         )
         DropdownMenuItem(
-            text = { Text("Ungroup tabs", fontSize = 14.sp, fontWeight = FontWeight.Medium) },
-            leadingIcon = { Icon(painterResource(id = R.drawable.ic_arrow_out), null, modifier = Modifier.size(18.dp)) },
+            text = { Text("Ungroup tabs", color = itemColor, fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+            leadingIcon = { Icon(painterResource(id = R.drawable.ic_arrow_out), null, tint = itemColor, modifier = Modifier.size(18.dp)) },
             onClick = {
                 onDismiss()
                 onUngroup()
@@ -704,7 +746,7 @@ internal fun GroupCardOverflowMenu(
             text = {
                 Text(
                     "Close group",
-                    color = MaterialTheme.colorScheme.error,
+                    color = dangerColor,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -713,7 +755,7 @@ internal fun GroupCardOverflowMenu(
                 Icon(
                     painterResource(id = R.drawable.fx_ic_delete_24),
                     null,
-                    tint = MaterialTheme.colorScheme.error,
+                    tint = dangerColor,
                     modifier = Modifier.size(18.dp)
                 )
             },
@@ -763,13 +805,13 @@ internal fun InactiveTabsSection(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Inactive tabs (${inactiveTabs.size})",
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = palette.onSurface,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = "Not viewed recently",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = palette.onSurfaceSubtle,
                         fontSize = 11.sp
                     )
                 }
@@ -786,7 +828,7 @@ internal fun InactiveTabsSection(
                         id = if (expanded) R.drawable.ic_triangle_down else R.drawable.fx_ic_chevron_right_24
                     ),
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = palette.onSurfaceSubtle,
                     modifier = Modifier.size(16.dp)
                 )
             }
@@ -819,7 +861,7 @@ internal fun InactiveTabsSection(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = title,
-                                    color = MaterialTheme.colorScheme.onSurface,
+                                    color = palette.onSurface,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Medium,
                                     maxLines = 1,
@@ -828,7 +870,7 @@ internal fun InactiveTabsSection(
                                 if (host.isNotBlank()) {
                                     Text(
                                         text = host,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        color = palette.onSurfaceSubtle,
                                         fontSize = 11.sp,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
@@ -842,7 +884,7 @@ internal fun InactiveTabsSection(
                                 Icon(
                                     painter = painterResource(id = R.drawable.fx_ic_close_24),
                                     contentDescription = "Close inactive tab",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    tint = palette.onSurfaceSubtle,
                                     modifier = Modifier.size(15.dp)
                                 )
                             }

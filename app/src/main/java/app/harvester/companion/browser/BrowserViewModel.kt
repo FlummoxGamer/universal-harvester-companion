@@ -28,8 +28,11 @@ import app.harvester.companion.browser.tools.PdfPrintHelper
 import app.harvester.companion.components.appstate.AppAction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -50,6 +53,11 @@ data class ExternalAppPrompt(
     val host: String,
 )
 
+data class BrowserChromeExtraDp(
+    val topDp: Int = 0,
+    val bottomDp: Int = 0,
+)
+
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
     val context: Context = application.applicationContext
     val components = (application as UHApp).components
@@ -68,6 +76,23 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     val isBarBottom: StateFlow<Boolean> = SettingsPrefs.addressBarBottomFlow(context)
     val searchEngine: StateFlow<SearchEnginePrefs.Entry> = SearchEnginePrefs.activeEngineFlow(context)
+
+    private val _chromeExtraDp = MutableStateFlow(BrowserChromeExtraDp())
+    val chromeExtraDp: StateFlow<BrowserChromeExtraDp> = _chromeExtraDp.asStateFlow()
+
+    private val _capturePreviewSignal = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val capturePreviewSignal: SharedFlow<Unit> = _capturePreviewSignal.asSharedFlow()
+
+    fun updateChromeExtraDp(topDp: Int, bottomDp: Int) {
+        val next = BrowserChromeExtraDp(topDp = topDp.coerceAtLeast(0), bottomDp = bottomDp.coerceAtLeast(0))
+        if (_chromeExtraDp.value != next) {
+            _chromeExtraDp.value = next
+        }
+    }
+
+    fun requestPreviewCapture() {
+        _capturePreviewSignal.tryEmit(Unit)
+    }
 
     fun setPendingUrl(url: String) {
         _pendingUrl.value = url
@@ -179,6 +204,13 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private fun refreshSuggestions(typed: String) {
         suggestJob?.cancel()
         suggestJob = viewModelScope.launch {
+            val isPrivate = browsingModeManager.mode == BrowsingMode.Private ||
+                components.store.state.selectedTab?.content?.private == true
+            if (isPrivate) {
+                // Strict zero-leak private search: no history lookup and no remote keystroke transmission
+                _suggestions.value = emptyList()
+                return@launch
+            }
             val showSuggestions = SettingsPrefs.getBool(context, SettingsPrefs.K_SEARCH_SUGGESTIONS, true)
             if (!showSuggestions) {
                 _suggestions.value = emptyList()
@@ -465,8 +497,13 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun openNewPrivateTab() {
+        val currentTab = components.store.state.selectedTab
+        val anchorId = currentTab?.takeIf { it.content.private }?.id
         browsingModeManager.mode = BrowsingMode.Private
-        components.useCases.tabsUseCases.addTab("about:blank", selectTab = true, private = true)
+        val newId = components.useCases.tabsUseCases.addTab("about:blank", selectTab = true, private = true)
+        if (anchorId != null && SettingsPrefs.getBool(context, SettingsPrefs.K_TAB_OPEN_NEXT_TO_CURRENT, true)) {
+            app.harvester.companion.browser.tabs.TabGroupStore.insertTabAfter(newId, anchorId, isPrivate = true)
+        }
         enterEditMode("")
     }
 

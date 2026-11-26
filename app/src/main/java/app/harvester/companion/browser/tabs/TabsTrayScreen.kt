@@ -5,9 +5,11 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -19,6 +21,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.ThemePrefs
 import kotlinx.coroutines.delay
@@ -34,6 +39,7 @@ fun TabsTrayScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
 
     val themeMode by ThemePrefs.modeFlow(context).collectAsState()
@@ -55,7 +61,7 @@ fun TabsTrayScreen(
         isPrivateSection = activeSection == TraySection.PRIVATE
     )
 
-    // Store & Settings flows
+    // Store & reactive Settings flows
     val pinnedIds by TabMetaStore.pinnedIdsFlow.collectAsState()
     val pinnedIdSet = remember(pinnedIds) { pinnedIds.toSet() }
     val sortMode by TabMetaStore.sortModeFlow.collectAsState()
@@ -64,36 +70,39 @@ fun TabsTrayScreen(
 
     val normalOrder by TabGroupStore.normalOrderFlow.collectAsState()
     val privateOrder by TabGroupStore.privateOrderFlow.collectAsState()
+    val normalTrayOrder by TabGroupStore.normalTrayOrderFlow.collectAsState()
+    val privateTrayOrder by TabGroupStore.privateTrayOrderFlow.collectAsState()
     val lastAccessedMap by TabHistoryStore.lastAccessedFlow.collectAsState()
     val recentlyClosed by TabHistoryStore.recentlyClosedFlow.collectAsState()
     val activeUndo by TabHistoryStore.activeUndoFlow.collectAsState()
 
+    val tabViewMode by SettingsPrefs.tabViewModeFlow(context).collectAsState()
+    val isListView = tabViewMode == 1
     val groupStripEnabled by SettingsPrefs.tabGroupStripFlow(context).collectAsState()
-    val landscapeStripEnabled by SettingsPrefs.tabLandscapeStripFlow(context).collectAsState()
-    val privateLockEnabled by SettingsPrefs.tabPrivateLockFlow(context).collectAsState()
+    val recentlyClosedEnabled by SettingsPrefs.tabRecentlyClosedEnabledFlow(context).collectAsState()
 
-    var isListView by remember {
-        mutableStateOf(SettingsPrefs.getInt(context, SettingsPrefs.K_TAB_VIEW_MODE, 0) == 1)
-    }
     var inactiveDays by remember {
         mutableIntStateOf(SettingsPrefs.getInt(context, SettingsPrefs.K_TAB_INACTIVE_DAYS, 14))
-    }
-    var autoCloseDays by remember {
-        mutableIntStateOf(SettingsPrefs.getInt(context, SettingsPrefs.K_TAB_AUTO_CLOSE_DAYS, 0))
-    }
-    var sleepSeconds by remember {
-        mutableIntStateOf(SettingsPrefs.getInt(context, SettingsPrefs.K_TAB_SLEEP_SECONDS, 90))
-    }
-    var jumpToParent by remember {
-        mutableStateOf(SettingsPrefs.getBool(context, SettingsPrefs.K_TAB_JUMP_TO_PARENT, true))
-    }
-    var openNextToCurrent by remember {
-        mutableStateOf(SettingsPrefs.getBool(context, SettingsPrefs.K_TAB_OPEN_NEXT_TO_CURRENT, false))
     }
     var blockPrivateScreenshots by remember {
         mutableStateOf(SettingsPrefs.getBool(context, SettingsPrefs.K_TAB_PRIVATE_SECURE_SCREEN, true))
     }
-    val canUseBiometricLock = remember { PrivateLockManager.isDeviceAuthAvailable(context) }
+
+    // Re-sync prefs whenever user returns from unified TabSettingsActivity
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                inactiveDays = SettingsPrefs.getInt(context, SettingsPrefs.K_TAB_INACTIVE_DAYS, 14)
+                val secureNow = SettingsPrefs.getBool(context, SettingsPrefs.K_TAB_PRIVATE_SECURE_SCREEN, true)
+                if (secureNow != blockPrivateScreenshots) {
+                    blockPrivateScreenshots = secureNow
+                    actions.onPrivateSecurePrefChanged(secureNow)
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // UI overlay & selection states
     var isSearchOpen by remember { mutableStateOf(false) }
@@ -108,7 +117,6 @@ fun TabsTrayScreen(
     var addToGroupTabIds by remember { mutableStateOf<Pair<List<String>, Boolean>?>(null) }
     var showSortSheet by remember { mutableStateOf(false) }
     var showRecentlyClosed by remember { mutableStateOf(false) }
-    var showTabSettings by remember { mutableStateOf(false) }
 
     // Sync stores cleanly with current tab list
     val normalTabs = remember(tabs) { tabs.filter { !it.content.private } }
@@ -143,15 +151,16 @@ fun TabsTrayScreen(
         }
     }
 
-    // Build Normal page collections (Pinned, Active TrayItems, Inactive Tabs)
+    // Build Normal page collections (Pinned, naturally ordered mixed TrayItems, Inactive Tabs)
     val normalData = remember(
-        normalTabs, groups, normalOrder, pinnedIds, pinnedIdSet,
+        normalTabs, groups, normalOrder, normalTrayOrder, pinnedIds, pinnedIdSet,
         sortMode, lastAccessedMap, inactiveDays, selectedTabId, searchQuery
     ) {
         buildCollectionData(
             modeTabs = normalTabs,
             modeGroups = groups.filter { !it.isPrivate },
             manualOrder = normalOrder,
+            trayOrder = normalTrayOrder,
             pinnedOrder = pinnedIds,
             pinnedSet = pinnedIdSet,
             sortMode = sortMode,
@@ -163,14 +172,15 @@ fun TabsTrayScreen(
         )
     }
 
-    // Build Private page collections
+    // Build Private page collections (naturally ordered mixed TrayItems)
     val privateData = remember(
-        privateTabs, groups, privateOrder, sortMode, lastAccessedMap, selectedTabId, searchQuery
+        privateTabs, groups, privateOrder, privateTrayOrder, sortMode, lastAccessedMap, selectedTabId, searchQuery
     ) {
         buildCollectionData(
             modeTabs = privateTabs,
             modeGroups = groups.filter { it.isPrivate },
             manualOrder = privateOrder,
+            trayOrder = privateTrayOrder,
             pinnedOrder = emptyList(),
             pinnedSet = emptySet(),
             sortMode = sortMode,
@@ -198,7 +208,7 @@ fun TabsTrayScreen(
             .background(palette.pageBg)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Top Chrome: Multi-Select / Search / Default Segmented Switcher
+            // Top Chrome: Multi-Select / Search / Compact Centered Icon-Only Switcher
             when {
                 isMultiSelect -> {
                     val selectableIds = remember(activeSection, normalData, privateData) {
@@ -237,9 +247,7 @@ fun TabsTrayScreen(
                         palette = palette,
                         onSelectSection = { section ->
                             scope.launch { pagerState.animateScrollToPage(section.ordinal) }
-                        },
-                        onOpenSearch = { isSearchOpen = true },
-                        onCloseTray = actions.onDismiss
+                        }
                     )
                 }
             }
@@ -297,7 +305,9 @@ fun TabsTrayScreen(
                                     )
                                 }
                             },
-                            onResetSortToManual = {}
+                            onResetSortToManual = {
+                                TabMetaStore.setSortMode(context, TabSortMode.MANUAL)
+                            }
                         )
                     }
 
@@ -338,7 +348,9 @@ fun TabsTrayScreen(
                                 createGroupDraft = CreateGroupDraft(tabIds = ids, isPrivate = isPriv)
                             },
                             onCloseAllInactive = {},
-                            onResetSortToManual = {}
+                            onResetSortToManual = {
+                                TabMetaStore.setSortMode(context, TabSortMode.MANUAL)
+                            }
                         )
                     }
 
@@ -348,6 +360,7 @@ fun TabsTrayScreen(
                             groups = groups,
                             tabsById = tabsById,
                             selectedTabId = selectedTabId,
+                            isListView = isListView,
                             isPrivateLocked = isPrivateLocked,
                             searchQuery = searchQuery,
                             palette = groupsPalette,
@@ -359,16 +372,26 @@ fun TabsTrayScreen(
                                     isPrivate = grp.isPrivate,
                                     editingGroup = grp
                                 )
-                            },
-                            onCreateNewGroup = {
-                                createGroupDraft = CreateGroupDraft(tabIds = emptyList(), isPrivate = false)
                             }
                         )
                     }
                 }
             }
+        }
 
-            // Bottom Dock: Multi-Select Actions or Standard Bottom Dock
+        // Floating Bottom Overlay: Undo Snackbar stacked cleanly above the Floating Frosted Pill Dock
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+        ) {
+            TabsUndoSnackbar(
+                batch = activeUndo,
+                palette = palette,
+                onUndo = actions.onUndoClose,
+                onDismiss = { TabHistoryStore.dismissUndo() }
+            )
+
             if (isMultiSelect) {
                 val isPrivateMulti = activeSection == TraySection.PRIVATE
                 MultiSelectBottomDock(
@@ -425,9 +448,9 @@ fun TabsTrayScreen(
                     showOverflowMenu = showOverflowMenu,
                     palette = palette,
                     onToggleOverflowMenu = { showOverflowMenu = it },
+                    onOpenSearch = { isSearchOpen = true },
                     onToggleViewMode = {
-                        isListView = !isListView
-                        SettingsPrefs.setInt(context, SettingsPrefs.K_TAB_VIEW_MODE, if (isListView) 1 else 0)
+                        SettingsPrefs.setInt(context, SettingsPrefs.K_TAB_VIEW_MODE, if (isListView) 0 else 1)
                     },
                     onPrimaryCta = {
                         when (activeSection) {
@@ -454,6 +477,9 @@ fun TabsTrayScreen(
                             isPrivate = activeSection == TraySection.PRIVATE
                         )
                     },
+                    onAutoGroupByDomain = {
+                        actions.onAutoGroupByDomain(activeSection == TraySection.PRIVATE)
+                    },
                     onOpenSortSheet = { showSortSheet = true },
                     onToggleGroupStrip = { enabled ->
                         SettingsPrefs.setBool(context, SettingsPrefs.K_TAB_GROUP_STRIP_ENABLED, enabled)
@@ -475,22 +501,13 @@ fun TabsTrayScreen(
                             )
                         }
                     },
-                    onOpenSettings = { showTabSettings = true },
+                    onOpenSettings = actions.onOpenTabSettings,
                     onCloseAllInSection = {
                         actions.onCloseAllTabs(activeSection == TraySection.PRIVATE)
                     }
                 )
             }
         }
-
-        // Floating Undo Snackbar anchored above the bottom dock
-        TabsUndoSnackbar(
-            batch = activeUndo,
-            palette = palette,
-            onUndo = actions.onUndoClose,
-            onDismiss = { TabHistoryStore.dismissUndo() },
-            modifier = Modifier.align(Alignment.BottomCenter)
-        )
     }
 
     // Expandable Group Detail Sheet
@@ -572,10 +589,14 @@ fun TabsTrayScreen(
         )
     }
 
-    // Recently Closed Sheet
+    // Recently Closed Sheet with inline ON/OFF toggle
     if (showRecentlyClosed) {
         RecentlyClosedSheet(
             records = recentlyClosed,
+            isEnabled = recentlyClosedEnabled,
+            onToggleEnabled = { enabled ->
+                SettingsPrefs.setBool(context, SettingsPrefs.K_TAB_RECENTLY_CLOSED_ENABLED, enabled)
+            },
             onRestoreRecord = { rec ->
                 showRecentlyClosed = false
                 actions.onRestoreRecentlyClosed(rec)
@@ -583,63 +604,6 @@ fun TabsTrayScreen(
             onRestoreAll = actions.onRestoreAllRecentlyClosed,
             onClearAll = actions.onClearRecentlyClosed,
             onDismiss = { showRecentlyClosed = false }
-        )
-    }
-
-    // Tab Settings Sheet
-    if (showTabSettings) {
-        TabSettingsSheet(
-            isListView = isListView,
-            inactiveDays = inactiveDays,
-            autoCloseDays = autoCloseDays,
-            sleepSeconds = sleepSeconds,
-            jumpToParent = jumpToParent,
-            openNextToCurrent = openNextToCurrent,
-            groupStripEnabled = groupStripEnabled,
-            landscapeStripEnabled = landscapeStripEnabled,
-            blockPrivateScreenshots = blockPrivateScreenshots,
-            privateLockEnabled = privateLockEnabled,
-            canUseBiometricLock = canUseBiometricLock,
-            onViewModeChange = { list ->
-                isListView = list
-                SettingsPrefs.setInt(context, SettingsPrefs.K_TAB_VIEW_MODE, if (list) 1 else 0)
-            },
-            onInactiveDaysChange = { days ->
-                inactiveDays = days
-                SettingsPrefs.setInt(context, SettingsPrefs.K_TAB_INACTIVE_DAYS, days)
-            },
-            onAutoCloseDaysChange = { days ->
-                autoCloseDays = days
-                SettingsPrefs.setInt(context, SettingsPrefs.K_TAB_AUTO_CLOSE_DAYS, days)
-            },
-            onSleepSecondsChange = { sec ->
-                sleepSeconds = sec
-                SettingsPrefs.setInt(context, SettingsPrefs.K_TAB_SLEEP_SECONDS, sec)
-            },
-            onJumpToParentChange = { enabled ->
-                jumpToParent = enabled
-                SettingsPrefs.setBool(context, SettingsPrefs.K_TAB_JUMP_TO_PARENT, enabled)
-            },
-            onOpenNextToCurrentChange = { enabled ->
-                openNextToCurrent = enabled
-                SettingsPrefs.setBool(context, SettingsPrefs.K_TAB_OPEN_NEXT_TO_CURRENT, enabled)
-            },
-            onGroupStripChange = { enabled ->
-                SettingsPrefs.setBool(context, SettingsPrefs.K_TAB_GROUP_STRIP_ENABLED, enabled)
-            },
-            onLandscapeStripChange = { enabled ->
-                SettingsPrefs.setBool(context, SettingsPrefs.K_TAB_LANDSCAPE_STRIP_ENABLED, enabled)
-            },
-            onBlockPrivateScreenshotsChange = { enabled ->
-                blockPrivateScreenshots = enabled
-                SettingsPrefs.setBool(context, SettingsPrefs.K_TAB_PRIVATE_SECURE_SCREEN, enabled)
-                actions.onPrivateSecurePrefChanged(enabled)
-            },
-            onPrivateLockChange = { enabled ->
-                SettingsPrefs.setBool(context, SettingsPrefs.K_TAB_PRIVATE_LOCK_ENABLED, enabled)
-                PrivateLockManager.onLockSettingChanged(enabled)
-            },
-            onDismiss = { showTabSettings = false }
         )
     }
 }
@@ -654,6 +618,7 @@ private fun buildCollectionData(
     modeTabs: List<TabSessionState>,
     modeGroups: List<TabGroup>,
     manualOrder: List<String>,
+    trayOrder: List<String>,
     pinnedOrder: List<String>,
     pinnedSet: Set<String>,
     sortMode: TabSortMode,
@@ -699,20 +664,6 @@ private fun buildCollectionData(
         }
     }
 
-    // Sort active ungrouped tabs according to selected TabSortMode
-    val orderIndex = manualOrder.withIndex().associate { (i, id) -> id to i }
-    val sortedSingles = when (sortMode) {
-        TabSortMode.MANUAL -> activeUngrouped.sortedBy { orderIndex[it.id] ?: Int.MAX_VALUE }
-        TabSortMode.RECENT -> activeUngrouped.sortedByDescending { lastAccessedMap[it.id] ?: it.createdAt }
-        TabSortMode.OLDEST -> activeUngrouped.sortedBy { it.createdAt }
-        TabSortMode.TITLE_AZ -> activeUngrouped.sortedBy {
-            it.content.title.ifBlank { extractHostLabel(it.content.url) }.lowercase()
-        }
-        TabSortMode.DOMAIN -> activeUngrouped.sortedBy {
-            extractHostLabel(it.content.url).lowercase().ifBlank { "zzz" }
-        }
-    }
-
     // Build GroupCardItems
     val groupItems = modeGroups.mapNotNull { grp ->
         val members = grp.tabIds.mapNotNull { tabsById[it] }
@@ -723,11 +674,60 @@ private fun buildCollectionData(
         TrayItem.GroupCardItem(group = grp, members = members)
     }
 
-    val singleItems = sortedSingles.map { TrayItem.SingleTabItem(it) }
+    val orderIndex = manualOrder.withIndex().associate { (i, id) -> id to i }
+    val trayOrderIndex = trayOrder.withIndex().associate { (i, key) -> key to i }
+
+    val orderedTrayItems: List<TrayItem> = when (sortMode) {
+        TabSortMode.MANUAL -> {
+            // Preserve true natural mixed ordering between tabs and groups — groups NEVER jump to #1!
+            val singleItems = activeUngrouped.map { TrayItem.SingleTabItem(it) }
+            (singleItems + groupItems).sortedWith(
+                compareBy<TrayItem>(
+                    { trayOrderIndex[it.key] ?: Int.MAX_VALUE },
+                    {
+                        when (it) {
+                            is TrayItem.SingleTabItem -> orderIndex[it.tab.id] ?: Int.MAX_VALUE
+                            is TrayItem.GroupCardItem -> Int.MAX_VALUE
+                        }
+                    }
+                )
+            )
+        }
+        TabSortMode.RECENT -> {
+            val sortedSingles = activeUngrouped.sortedByDescending { lastAccessedMap[it.id] ?: it.createdAt }
+            val sortedGroups = groupItems.sortedByDescending { grp ->
+                grp.members.maxOfOrNull { lastAccessedMap[it.id] ?: it.createdAt } ?: 0L
+            }
+            sortedGroups + sortedSingles.map { TrayItem.SingleTabItem(it) }
+        }
+        TabSortMode.OLDEST -> {
+            val sortedSingles = activeUngrouped.sortedBy { it.createdAt }
+            val sortedGroups = groupItems.sortedBy { grp ->
+                grp.members.minOfOrNull { it.createdAt } ?: Long.MAX_VALUE
+            }
+            sortedGroups + sortedSingles.map { TrayItem.SingleTabItem(it) }
+        }
+        TabSortMode.TITLE_AZ -> {
+            val sortedSingles = activeUngrouped.sortedBy {
+                it.content.title.ifBlank { extractHostLabel(it.content.url) }.lowercase()
+            }
+            val sortedGroups = groupItems.sortedBy { it.group.name.lowercase() }
+            sortedGroups + sortedSingles.map { TrayItem.SingleTabItem(it) }
+        }
+        TabSortMode.DOMAIN -> {
+            val sortedSingles = activeUngrouped.sortedBy {
+                extractHostLabel(it.content.url).lowercase().ifBlank { "zzz" }
+            }
+            val sortedGroups = groupItems.sortedBy { grp ->
+                grp.members.firstOrNull()?.let { extractHostLabel(it.content.url).lowercase() } ?: "zzz"
+            }
+            sortedGroups + sortedSingles.map { TrayItem.SingleTabItem(it) }
+        }
+    }
 
     return TabCollectionData(
         pinnedTabs = pinnedTabs,
-        trayItems = groupItems + singleItems,
+        trayItems = orderedTrayItems,
         inactiveTabs = inactiveTabs
     )
 }

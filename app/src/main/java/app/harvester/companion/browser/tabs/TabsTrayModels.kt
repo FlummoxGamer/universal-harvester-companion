@@ -39,12 +39,19 @@ internal data class TabsTrayPalette(
     val chromeBg: Color,
     val cardBg: Color,
     val previewBg: Color,
+    val headerFrostBg: Color,
     val accent: Color,
+    val accentStrong: Color,
     val onAccent: Color,
-    val subtleBorder: Color
+    val onSurface: Color,
+    val onSurfaceSubtle: Color,
+    val subtleBorder: Color,
+    val glassHighlight: Color,
 )
 
-internal val PrivateAccentColor = Color(0xFF9F7AEA)
+internal val PrivateAccentColor = Color(0xFFA78BFA)
+internal val PrivateAccentStrongColor = Color(0xFF7C3AED)
+internal val PrivateObsidianBg = Color(0xFF090711)
 
 @Composable
 internal fun rememberTabsTrayPalette(
@@ -53,28 +60,39 @@ internal fun rememberTabsTrayPalette(
 ): TabsTrayPalette {
     val scheme = MaterialTheme.colorScheme
     return if (isPrivateSection) {
+        // Always Deep Obsidian + subtle violet stealth glow for Private Browsing
         TabsTrayPalette(
-            isDark = isDark,
+            isDark = true,
             isPrivateTheme = true,
-            pageBg = if (isDark) Color(0xFF0E0A17) else Color(0xFFF6F2FF),
-            chromeBg = if (isDark) Color(0xFF171126) else Color(0xFFEDE6FF),
-            cardBg = if (isDark) Color(0xFF1E1730) else Color(0xFFFFFFFF),
-            previewBg = if (isDark) Color(0xFF140F22) else Color(0xFFF3EEFF),
+            pageBg = PrivateObsidianBg,
+            chromeBg = Color(0xEE140F24),
+            cardBg = Color(0xFF140F24),
+            previewBg = Color(0xFF0E0A1B),
+            headerFrostBg = Color(0xD9151026),
             accent = PrivateAccentColor,
+            accentStrong = PrivateAccentStrongColor,
             onAccent = Color.White,
-            subtleBorder = PrivateAccentColor.copy(alpha = if (isDark) 0.30f else 0.28f)
+            onSurface = Color(0xFFF3EEFF),
+            onSurfaceSubtle = Color(0xFFA89BC8),
+            subtleBorder = PrivateAccentColor.copy(alpha = 0.24f),
+            glassHighlight = Color(0xFFC4B5FD).copy(alpha = 0.14f),
         )
     } else {
         TabsTrayPalette(
             isDark = isDark,
             isPrivateTheme = false,
             pageBg = scheme.background,
-            chromeBg = scheme.surfaceContainerHigh,
+            chromeBg = if (isDark) scheme.surfaceContainerHigh.copy(alpha = 0.92f) else scheme.surface.copy(alpha = 0.94f),
             cardBg = scheme.surfaceContainerLow,
             previewBg = scheme.surfaceVariant,
+            headerFrostBg = if (isDark) scheme.surfaceContainer.copy(alpha = 0.88f) else scheme.surface.copy(alpha = 0.90f),
             accent = scheme.primary,
+            accentStrong = scheme.primary,
             onAccent = scheme.onPrimary,
-            subtleBorder = scheme.outline.copy(alpha = 0.20f)
+            onSurface = scheme.onSurface,
+            onSurfaceSubtle = scheme.onSurfaceVariant,
+            subtleBorder = scheme.outline.copy(alpha = if (isDark) 0.22f else 0.16f),
+            glassHighlight = if (isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.65f),
         )
     }
 }
@@ -98,6 +116,9 @@ data class TabsTrayActions(
     val onRenameGroup: (groupId: String, name: String, colorArgb: Long) -> Unit,
     val onUngroup: (groupId: String) -> Unit,
     val onCloseGroupTabs: (group: TabGroup) -> Unit,
+    val onAutoGroupByDomain: (isPrivate: Boolean) -> Unit,
+    val onReorderGroupMembers: (groupId: String, orderedTabIds: List<String>) -> Unit,
+    val onReorderGroupsDirectory: (orderedGroupIds: List<String>, isPrivate: Boolean) -> Unit,
     val onUndoClose: () -> Unit,
     val onRestoreRecentlyClosed: (ClosedTabRecord) -> Unit,
     val onRestoreAllRecentlyClosed: () -> Unit,
@@ -105,5 +126,6 @@ data class TabsTrayActions(
     val onUnlockPrivate: () -> Unit,
     val onPrivateSectionVisible: (Boolean) -> Unit,
     val onPrivateSecurePrefChanged: (Boolean) -> Unit,
+    val onOpenTabSettings: () -> Unit,
     val onDismiss: () -> Unit
 )

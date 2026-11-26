@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -45,6 +46,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.painterResource
@@ -55,6 +57,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.harvester.companion.R
 
+/**
+ * Compact, centered, icon-only frosted section switcher (Normal | Private | Groups).
+ * Zero bloat: no top X close button and no redundant text labels.
+ */
 @Composable
 internal fun TabsTrayTopHeader(
     activeSection: TraySection,
@@ -63,93 +69,61 @@ internal fun TabsTrayTopHeader(
     groupsCount: Int,
     palette: TabsTrayPalette,
     onSelectSection: (TraySection) -> Unit,
-    onOpenSearch: () -> Unit,
-    onCloseTray: () -> Unit
 ) {
-    Surface(
-        color = palette.pageBg,
-        modifier = Modifier.fillMaxWidth()
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Row(
+        Surface(
+            color = palette.chromeBg,
+            shape = CircleShape,
+            shadowElevation = if (palette.isDark) 6.dp else 3.dp,
             modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            // Segmented section switcher (Normal | Private | Groups)
-            Surface(
-                color = palette.chromeBg,
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier
-                    .weight(1f)
-                    .border(1.dp, palette.subtleBorder, RoundedCornerShape(18.dp))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(3.dp),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    SectionPill(
-                        label = "$normalCount",
-                        iconRes = R.drawable.uh_ic_tab_modern_24,
-                        selected = activeSection == TraySection.NORMAL,
-                        accent = MaterialTheme.colorScheme.primary,
-                        onAccent = MaterialTheme.colorScheme.onPrimary,
-                        onClick = { onSelectSection(TraySection.NORMAL) },
-                        modifier = Modifier.weight(1f)
-                    )
-                    SectionPill(
-                        label = "$privateCount",
-                        iconRes = R.drawable.uh_ic_private_vibe_24,
-                        selected = activeSection == TraySection.PRIVATE,
-                        accent = PrivateAccentColor,
-                        onAccent = Color.White,
-                        onClick = { onSelectSection(TraySection.PRIVATE) },
-                        modifier = Modifier.weight(1f)
-                    )
-                    SectionPill(
-                        label = if (groupsCount > 0) "Groups ($groupsCount)" else "Groups",
-                        iconRes = R.drawable.ic_grid_view,
-                        selected = activeSection == TraySection.GROUPS,
-                        accent = MaterialTheme.colorScheme.primary,
-                        onAccent = MaterialTheme.colorScheme.onPrimary,
-                        onClick = { onSelectSection(TraySection.GROUPS) },
-                        modifier = Modifier.weight(1.25f)
-                    )
-                }
-            }
-
-            IconButton(
-                onClick = onOpenSearch,
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(palette.chromeBg)
-            ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.fx_ic_search_24),
-                    contentDescription = "Search tabs",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(19.dp)
+                .border(
+                    width = 1.dp,
+                    brush = Brush.verticalGradient(
+                        listOf(palette.glassHighlight, palette.subtleBorder)
+                    ),
+                    shape = CircleShape
                 )
-            }
-
-            IconButton(
-                onClick = onCloseTray,
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(palette.chromeBg)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 5.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.fx_ic_close_24),
-                    contentDescription = "Close tab switcher",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(19.dp)
+                CompactIconSectionPill(
+                    iconRes = R.drawable.uh_ic_tab_modern_24,
+                    contentDesc = "Normal tabs",
+                    count = normalCount,
+                    selected = activeSection == TraySection.NORMAL,
+                    accent = MaterialTheme.colorScheme.primary,
+                    onAccent = MaterialTheme.colorScheme.onPrimary,
+                    inactiveTint = palette.onSurfaceSubtle,
+                    onClick = { onSelectSection(TraySection.NORMAL) }
+                )
+                CompactIconSectionPill(
+                    iconRes = R.drawable.uh_ic_private_vibe_24,
+                    contentDesc = "Private tabs",
+                    count = privateCount,
+                    selected = activeSection == TraySection.PRIVATE,
+                    accent = PrivateAccentStrongColor,
+                    onAccent = Color.White,
+                    inactiveTint = palette.onSurfaceSubtle,
+                    onClick = { onSelectSection(TraySection.PRIVATE) }
+                )
+                CompactIconSectionPill(
+                    iconRes = R.drawable.uh_ic_tab_groups_24,
+                    contentDesc = "Tab groups",
+                    count = groupsCount,
+                    selected = activeSection == TraySection.GROUPS,
+                    accent = MaterialTheme.colorScheme.primary,
+                    onAccent = MaterialTheme.colorScheme.onPrimary,
+                    inactiveTint = palette.onSurfaceSubtle,
+                    onClick = { onSelectSection(TraySection.GROUPS) }
                 )
             }
         }
@@ -157,54 +131,65 @@ internal fun TabsTrayTopHeader(
 }
 
 @Composable
-private fun SectionPill(
-    label: String,
+private fun CompactIconSectionPill(
     iconRes: Int,
+    contentDesc: String,
+    count: Int,
     selected: Boolean,
     accent: Color,
     onAccent: Color,
+    inactiveTint: Color,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
 ) {
     val bg by animateColorAsState(
         targetValue = if (selected) accent else Color.Transparent,
-        label = "section_pill_bg"
+        label = "compact_pill_bg"
     )
     val fg by animateColorAsState(
-        targetValue = if (selected) onAccent else MaterialTheme.colorScheme.onSurfaceVariant,
-        label = "section_pill_fg"
+        targetValue = if (selected) onAccent else inactiveTint,
+        label = "compact_pill_fg"
     )
 
-    Row(
-        modifier = modifier
+    Box(
+        modifier = Modifier
             .height(36.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .width(58.dp)
+            .clip(CircleShape)
             .background(bg)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onClick
-            )
-            .padding(horizontal = 8.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
+            ),
+        contentAlignment = Alignment.Center
     ) {
         Icon(
             painter = painterResource(id = iconRes),
-            contentDescription = null,
+            contentDescription = contentDesc,
             tint = fg,
-            modifier = Modifier.size(16.dp)
+            modifier = Modifier.size(19.dp)
         )
-        Spacer(modifier = Modifier.width(5.dp))
-        Text(
-            text = label,
-            color = fg,
-            fontSize = 12.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Ellipsis
-        )
+        if (count > 0) {
+            val badgeText = if (count > 99) "99+" else "$count"
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = (-6).dp, y = 3.dp)
+                    .clip(CircleShape)
+                    .background(if (selected) Color.Black.copy(alpha = 0.28f) else accent.copy(alpha = 0.18f))
+                    .padding(horizontal = 4.dp, vertical = 0.5.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = badgeText,
+                    color = if (selected) onAccent else accent,
+                    fontSize = 8.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    lineHeight = 9.sp,
+                    maxLines = 1
+                )
+            }
+        }
     }
 }
 
@@ -220,94 +205,90 @@ internal fun TabsSearchTopBar(
         try { focusRequester.requestFocus() } catch (_: Exception) {}
     }
 
-    Surface(
-        color = palette.pageBg,
-        modifier = Modifier.fillMaxWidth()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                .weight(1f)
+                .height(42.dp)
+                .clip(CircleShape)
+                .background(palette.chromeBg)
+                .border(1.dp, palette.accent.copy(alpha = 0.50f), CircleShape)
+                .padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
+            Icon(
+                painter = painterResource(id = R.drawable.fx_ic_search_24),
+                contentDescription = null,
+                tint = palette.accent,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                singleLine = true,
+                cursorBrush = SolidColor(palette.accent),
+                textStyle = TextStyle(
+                    color = palette.onSurface,
+                    fontSize = 14.sp
+                ),
                 modifier = Modifier
                     .weight(1f)
-                    .height(42.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(palette.chromeBg)
-                    .border(1.dp, palette.accent.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
-                    .padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.fx_ic_search_24),
-                    contentDescription = null,
-                    tint = palette.accent,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                BasicTextField(
-                    value = query,
-                    onValueChange = onQueryChange,
-                    singleLine = true,
-                    cursorBrush = SolidColor(palette.accent),
-                    textStyle = TextStyle(
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 14.sp
-                    ),
-                    modifier = Modifier
-                        .weight(1f)
-                        .focusRequester(focusRequester),
-                    decorationBox = { inner ->
-                        if (query.isEmpty()) {
-                            Text(
-                                text = "Search open tabs...",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 14.sp,
-                                maxLines = 1
-                            )
-                        }
-                        inner()
-                    }
-                )
-                if (query.isNotEmpty()) {
-                    IconButton(
-                        onClick = { onQueryChange("") },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.fx_ic_close_24),
-                            contentDescription = "Clear search",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(16.dp)
+                    .focusRequester(focusRequester),
+                decorationBox = { inner ->
+                    if (query.isEmpty()) {
+                        Text(
+                            text = "Search open tabs...",
+                            color = palette.onSurfaceSubtle,
+                            fontSize = 14.sp,
+                            maxLines = 1
                         )
                     }
+                    inner()
                 }
-            }
-
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = palette.chromeBg,
-                modifier = Modifier
-                    .height(42.dp)
-                    .clickable(onClick = onCloseSearch)
-            ) {
-                Box(
-                    modifier = Modifier.padding(horizontal = 14.dp),
-                    contentAlignment = Alignment.Center
+            )
+            if (query.isNotEmpty()) {
+                IconButton(
+                    onClick = { onQueryChange("") },
+                    modifier = Modifier.size(28.dp)
                 ) {
-                    Text(
-                        text = "Cancel",
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        softWrap = false
+                    Icon(
+                        painter = painterResource(id = R.drawable.fx_ic_close_24),
+                        contentDescription = "Clear search",
+                        tint = palette.onSurfaceSubtle,
+                        modifier = Modifier.size(16.dp)
                     )
                 }
+            }
+        }
+
+        Surface(
+            shape = CircleShape,
+            color = palette.chromeBg,
+            modifier = Modifier
+                .height(42.dp)
+                .border(1.dp, palette.subtleBorder, CircleShape)
+                .clickable(onClick = onCloseSearch)
+        ) {
+            Box(
+                modifier = Modifier.padding(horizontal = 14.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Cancel",
+                    color = palette.onSurface,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    softWrap = false
+                )
             }
         }
     }
@@ -340,7 +321,7 @@ internal fun MultiSelectTopBar(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = if (selectedCount == 0) "Select tabs" else "$selectedCount selected",
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = palette.onSurface,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
@@ -349,7 +330,7 @@ internal fun MultiSelectTopBar(
                 )
                 Text(
                     text = "Tap tabs to include or exclude",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = palette.onSurfaceSubtle,
                     fontSize = 11.sp,
                     maxLines = 1,
                     softWrap = false,
@@ -358,19 +339,20 @@ internal fun MultiSelectTopBar(
             }
 
             Surface(
-                shape = RoundedCornerShape(12.dp),
+                shape = CircleShape,
                 color = palette.cardBg,
                 modifier = Modifier
                     .height(36.dp)
+                    .border(1.dp, palette.subtleBorder, CircleShape)
                     .clickable(onClick = if (allSelected) onClearSelection else onSelectAll)
             ) {
                 Box(
-                    modifier = Modifier.padding(horizontal = 12.dp),
+                    modifier = Modifier.padding(horizontal = 13.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = if (allSelected) "Clear" else "Select all",
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = palette.onSurface,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
@@ -380,8 +362,8 @@ internal fun MultiSelectTopBar(
             }
 
             Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = palette.accent,
+                shape = CircleShape,
+                color = palette.accentStrong,
                 modifier = Modifier
                     .height(36.dp)
                     .clickable(onClick = onDone)
@@ -418,7 +400,7 @@ internal fun MultiSelectBottomDock(
     Surface(
         color = palette.chromeBg,
         tonalElevation = 6.dp,
-        shadowElevation = 8.dp,
+        shadowElevation = 10.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -427,12 +409,12 @@ internal fun MultiSelectBottomDock(
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    .padding(horizontal = 10.dp, vertical = 10.dp),
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 MultiSelectActionButton(
-                    iconRes = R.drawable.ic_grid_view,
+                    iconRes = R.drawable.uh_ic_tab_groups_24,
                     label = "Group",
                     tint = palette.accent,
                     enabled = enabled,
@@ -443,7 +425,7 @@ internal fun MultiSelectBottomDock(
                     MultiSelectActionButton(
                         iconRes = R.drawable.uh_ic_bookmark_24,
                         label = "Bookmark",
-                        tint = MaterialTheme.colorScheme.onSurface,
+                        tint = palette.onSurface,
                         enabled = enabled,
                         onClick = onBookmarkSelected,
                         modifier = Modifier.weight(1f)
@@ -452,7 +434,7 @@ internal fun MultiSelectBottomDock(
                 MultiSelectActionButton(
                     iconRes = R.drawable.uh_ic_share_24,
                     label = "Share",
-                    tint = MaterialTheme.colorScheme.onSurface,
+                    tint = palette.onSurface,
                     enabled = enabled,
                     onClick = onShareSelected,
                     modifier = Modifier.weight(1f)
@@ -483,7 +465,7 @@ private fun MultiSelectActionButton(
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = if (enabled) 0.55f else 0.25f))
+            .background(Color.White.copy(alpha = if (enabled) 0.06f else 0.02f))
             .clickable(enabled = enabled, onClick = onClick)
             .padding(vertical = 9.dp, horizontal = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -507,6 +489,10 @@ private fun MultiSelectActionButton(
     }
 }
 
+/**
+ * Floating frosted pill dock: Search (left) | + icon-only (center) | 3-dot Menu (right).
+ * Grid/List lives cleanly inside the 3-dot menu with zero dock clutter.
+ */
 @Composable
 internal fun TabsTrayBottomDock(
     activeSection: TraySection,
@@ -520,10 +506,12 @@ internal fun TabsTrayBottomDock(
     showOverflowMenu: Boolean,
     palette: TabsTrayPalette,
     onToggleOverflowMenu: (Boolean) -> Unit,
+    onOpenSearch: () -> Unit,
     onToggleViewMode: () -> Unit,
     onPrimaryCta: () -> Unit,
     onStartMultiSelect: () -> Unit,
     onOpenNewGroupDialog: () -> Unit,
+    onAutoGroupByDomain: () -> Unit,
     onOpenSortSheet: () -> Unit,
     onToggleGroupStrip: (Boolean) -> Unit,
     onOpenRecentlyClosed: () -> Unit,
@@ -533,93 +521,86 @@ internal fun TabsTrayBottomDock(
     onOpenSettings: () -> Unit,
     onCloseAllInSection: () -> Unit
 ) {
-    val ctaLabel = when (activeSection) {
-        TraySection.NORMAL -> "New tab"
-        TraySection.PRIVATE -> "New private tab"
-        TraySection.GROUPS -> "New group"
-    }
+    val menuBg = if (palette.isPrivateTheme) Color(0xFF1A142D) else MaterialTheme.colorScheme.surfaceContainerHigh
+    val menuText = palette.onSurface
+    val menuSubtle = palette.onSurfaceSubtle
 
-    Surface(
-        color = palette.chromeBg,
-        tonalElevation = 6.dp,
-        shadowElevation = 8.dp,
-        modifier = Modifier.fillMaxWidth()
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 24.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            HorizontalDivider(color = palette.subtleBorder)
+        Surface(
+            color = palette.chromeBg,
+            shape = CircleShape,
+            shadowElevation = if (palette.isDark) 14.dp else 8.dp,
+            modifier = Modifier
+                .border(
+                    width = 1.dp,
+                    brush = Brush.verticalGradient(
+                        listOf(palette.glassHighlight, palette.subtleBorder)
+                    ),
+                    shape = CircleShape
+                )
+        ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(18.dp)
             ) {
-                // Left: View layout toggle (Grid / List) or Sort quick button
+                // Left: Search
                 IconButton(
-                    onClick = onToggleViewMode,
+                    onClick = onOpenSearch,
                     modifier = Modifier
                         .size(44.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(palette.cardBg)
+                        .clip(CircleShape)
                 ) {
                     Icon(
-                        painter = painterResource(
-                            id = if (isListView) R.drawable.ic_grid_view else R.drawable.uh_ic_list_view_24
-                        ),
-                        contentDescription = if (isListView) "Switch to grid view" else "Switch to list view",
-                        tint = MaterialTheme.colorScheme.onSurface,
+                        painter = painterResource(id = R.drawable.fx_ic_search_24),
+                        contentDescription = "Search tabs",
+                        tint = palette.onSurface,
                         modifier = Modifier.size(20.dp)
                     )
                 }
 
-                // Center: Prominent primary pill CTA
+                // Center: Clean icon-only "+" button
                 Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = palette.accent,
-                    shadowElevation = 3.dp,
+                    shape = CircleShape,
+                    color = palette.accentStrong,
+                    shadowElevation = 4.dp,
                     modifier = Modifier
-                        .height(44.dp)
-                        .clip(RoundedCornerShape(18.dp))
+                        .size(48.dp)
+                        .clip(CircleShape)
                         .clickable(onClick = onPrimaryCta)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 22.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
+                    Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            painter = painterResource(
-                                id = if (activeSection == TraySection.PRIVATE) R.drawable.uh_ic_private_vibe_24 else R.drawable.uh_ic_plus_24
-                            ),
-                            contentDescription = null,
+                            painter = painterResource(id = R.drawable.uh_ic_plus_24),
+                            contentDescription = when (activeSection) {
+                                TraySection.NORMAL -> "New tab"
+                                TraySection.PRIVATE -> "New private tab"
+                                TraySection.GROUPS -> "New group"
+                            },
                             tint = palette.onAccent,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            text = ctaLabel,
-                            color = palette.onAccent,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            softWrap = false
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }
 
-                // Right: 3-dot comprehensive tab settings & organization menu
+                // Right: 3-dot Menu
                 Box {
                     IconButton(
                         onClick = { onToggleOverflowMenu(true) },
                         modifier = Modifier
                             .size(44.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(palette.cardBg)
+                            .clip(CircleShape)
                     ) {
                         Icon(
                             painter = painterResource(id = R.drawable.fx_ic_more_24),
                             contentDescription = "Tab options",
-                            tint = MaterialTheme.colorScheme.onSurface,
+                            tint = palette.onSurface,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -627,7 +608,7 @@ internal fun TabsTrayBottomDock(
                     DropdownMenu(
                         expanded = showOverflowMenu,
                         onDismissRequest = { onToggleOverflowMenu(false) },
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        containerColor = menuBg,
                         shape = RoundedCornerShape(18.dp)
                     ) {
                         val isPrivate = activeSection == TraySection.PRIVATE
@@ -635,11 +616,12 @@ internal fun TabsTrayBottomDock(
 
                         if (activeSection != TraySection.GROUPS && canOperateOnTabs) {
                             DropdownMenuItem(
-                                text = { Text("Select tabs", fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+                                text = { Text("Select tabs", color = menuText, fontSize = 14.sp, fontWeight = FontWeight.Medium) },
                                 leadingIcon = {
                                     Icon(
                                         painter = painterResource(id = R.drawable.fx_ic_check_24),
                                         contentDescription = null,
+                                        tint = menuText,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 },
@@ -652,11 +634,12 @@ internal fun TabsTrayBottomDock(
 
                         if (!(isPrivate && isPrivateLocked)) {
                             DropdownMenuItem(
-                                text = { Text("New tab group", fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+                                text = { Text("New tab group", color = menuText, fontSize = 14.sp, fontWeight = FontWeight.Medium) },
                                 leadingIcon = {
                                     Icon(
-                                        painter = painterResource(id = R.drawable.ic_grid_view),
+                                        painter = painterResource(id = R.drawable.uh_ic_tab_groups_24),
                                         contentDescription = null,
+                                        tint = menuText,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 },
@@ -667,15 +650,33 @@ internal fun TabsTrayBottomDock(
                             )
                         }
 
+                        if (activeSection != TraySection.GROUPS && canOperateOnTabs) {
+                            DropdownMenuItem(
+                                text = { Text("Auto-group by domain", color = menuText, fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+                                leadingIcon = {
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.uh_ic_tab_groups_24),
+                                        contentDescription = null,
+                                        tint = palette.accent,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                onClick = {
+                                    onToggleOverflowMenu(false)
+                                    onAutoGroupByDomain()
+                                }
+                            )
+                        }
+
                         if (activeSection != TraySection.GROUPS) {
                             DropdownMenuItem(
                                 text = {
                                     Column {
-                                        Text("Sort tabs", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                        Text("Sort tabs", color = menuText, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                                         Text(
                                             text = sortMode.label,
                                             fontSize = 11.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = menuSubtle
                                         )
                                     }
                                 },
@@ -683,6 +684,7 @@ internal fun TabsTrayBottomDock(
                                     Icon(
                                         painter = painterResource(id = R.drawable.uh_ic_sort_24),
                                         contentDescription = null,
+                                        tint = menuText,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 },
@@ -697,6 +699,7 @@ internal fun TabsTrayBottomDock(
                             text = {
                                 Text(
                                     text = if (isListView) "Grid view" else "List view",
+                                    color = menuText,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Medium
                                 )
@@ -704,9 +707,10 @@ internal fun TabsTrayBottomDock(
                             leadingIcon = {
                                 Icon(
                                     painter = painterResource(
-                                        id = if (isListView) R.drawable.ic_grid_view else R.drawable.uh_ic_list_view_24
+                                        id = if (isListView) R.drawable.uh_ic_tab_groups_24 else R.drawable.uh_ic_list_view_24
                                     ),
                                     contentDescription = null,
+                                    tint = menuText,
                                     modifier = Modifier.size(18.dp)
                                 )
                             },
@@ -716,7 +720,6 @@ internal fun TabsTrayBottomDock(
                             }
                         )
 
-                        // Inline Group Tab Strip ON/OFF toggle right inside the tabs menu
                         DropdownMenuItem(
                             text = {
                                 Row(
@@ -724,11 +727,11 @@ internal fun TabsTrayBottomDock(
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
                                     Column(modifier = Modifier.weight(1f, fill = false)) {
-                                        Text("Group tab strip", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                        Text("Group tab strip", color = menuText, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                                         Text(
                                             text = if (groupStripEnabled) "Shown near address bar" else "Hidden",
                                             fontSize = 11.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = menuSubtle
                                         )
                                     }
                                     Switch(
@@ -742,19 +745,21 @@ internal fun TabsTrayBottomDock(
                                 Icon(
                                     painter = painterResource(id = R.drawable.uh_ic_tab_modern_24),
                                     contentDescription = null,
+                                    tint = menuText,
                                     modifier = Modifier.size(18.dp)
                                 )
                             },
                             onClick = { onToggleGroupStrip(!groupStripEnabled) }
                         )
 
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                        HorizontalDivider(color = palette.subtleBorder, modifier = Modifier.padding(vertical = 4.dp))
 
                         if (!isPrivate) {
                             DropdownMenuItem(
                                 text = {
                                     Text(
                                         text = if (recentlyClosedCount > 0) "Recently closed ($recentlyClosedCount)" else "Recently closed",
+                                        color = menuText,
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Medium
                                     )
@@ -763,6 +768,7 @@ internal fun TabsTrayBottomDock(
                                     Icon(
                                         painter = painterResource(id = R.drawable.ic_history),
                                         contentDescription = null,
+                                        tint = menuText,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 },
@@ -775,11 +781,12 @@ internal fun TabsTrayBottomDock(
 
                         if (activeSection == TraySection.NORMAL && hasModeTabs) {
                             DropdownMenuItem(
-                                text = { Text("Bookmark all tabs", fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+                                text = { Text("Bookmark all tabs", color = menuText, fontSize = 14.sp, fontWeight = FontWeight.Medium) },
                                 leadingIcon = {
                                     Icon(
                                         painter = painterResource(id = R.drawable.uh_ic_bookmark_24),
                                         contentDescription = null,
+                                        tint = menuText,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 },
@@ -792,11 +799,12 @@ internal fun TabsTrayBottomDock(
 
                         if (activeSection != TraySection.GROUPS && canOperateOnTabs) {
                             DropdownMenuItem(
-                                text = { Text("Share all tabs", fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+                                text = { Text("Share all tabs", color = menuText, fontSize = 14.sp, fontWeight = FontWeight.Medium) },
                                 leadingIcon = {
                                     Icon(
                                         painter = painterResource(id = R.drawable.uh_ic_share_24),
                                         contentDescription = null,
+                                        tint = menuText,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 },
@@ -812,6 +820,7 @@ internal fun TabsTrayBottomDock(
                                 text = {
                                     Text(
                                         text = "Close $duplicateCount duplicate ${if (duplicateCount == 1) "tab" else "tabs"}",
+                                        color = menuText,
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Medium
                                     )
@@ -820,6 +829,7 @@ internal fun TabsTrayBottomDock(
                                     Icon(
                                         painter = painterResource(id = R.drawable.uh_ic_copy_24),
                                         contentDescription = null,
+                                        tint = menuText,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 },
@@ -831,11 +841,12 @@ internal fun TabsTrayBottomDock(
                         }
 
                         DropdownMenuItem(
-                            text = { Text("Tab settings", fontSize = 14.sp, fontWeight = FontWeight.Medium) },
+                            text = { Text("Tab settings", color = menuText, fontSize = 14.sp, fontWeight = FontWeight.Medium) },
                             leadingIcon = {
                                 Icon(
                                     painter = painterResource(id = R.drawable.fx_ic_settings_24),
                                     contentDescription = null,
+                                    tint = menuText,
                                     modifier = Modifier.size(18.dp)
                                 )
                             },
@@ -846,12 +857,12 @@ internal fun TabsTrayBottomDock(
                         )
 
                         if (activeSection != TraySection.GROUPS && hasModeTabs) {
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                            HorizontalDivider(color = palette.subtleBorder, modifier = Modifier.padding(vertical = 4.dp))
                             DropdownMenuItem(
                                 text = {
                                     Text(
                                         text = if (isPrivate) "Close all private tabs" else "Close all tabs",
-                                        color = MaterialTheme.colorScheme.error,
+                                        color = Color(0xFFF87171),
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.SemiBold
                                     )
@@ -860,7 +871,7 @@ internal fun TabsTrayBottomDock(
                                     Icon(
                                         painter = painterResource(id = R.drawable.fx_ic_delete_24),
                                         contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error,
+                                        tint = Color(0xFFF87171),
                                         modifier = Modifier.size(18.dp)
                                     )
                                 },
@@ -893,12 +904,13 @@ internal fun TabsUndoSnackbar(
     ) {
         if (batch != null) {
             Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = if (palette.isDark) Color(0xFF282436) else Color(0xFF1F232B),
-                shadowElevation = 8.dp,
+                shape = RoundedCornerShape(18.dp),
+                color = if (palette.isDark) Color(0xFF211B33) else Color(0xFF1F232B),
+                shadowElevation = 10.dp,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                    .border(1.dp, palette.subtleBorder, RoundedCornerShape(18.dp))
             ) {
                 Row(
                     modifier = Modifier

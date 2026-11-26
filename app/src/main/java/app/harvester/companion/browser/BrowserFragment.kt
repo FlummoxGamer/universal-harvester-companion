@@ -56,6 +56,8 @@ class BrowserFragment : Fragment() {
     private val viewModel: BrowserViewModel by activityViewModels()
     private var initialUrl: String? = null
     private var hasLoadedInitialUrl = false
+    private var engineViewRef: mozilla.components.concept.engine.EngineView? = null
+    private var loadCaptureJob: kotlinx.coroutines.Job? = null
 
     private val downloadsFeature = ViewBoundFeatureWrapper<mozilla.components.feature.downloads.DownloadsFeature>()
     private var downloadDialog: androidx.appcompat.app.AlertDialog? = null
@@ -238,6 +240,7 @@ class BrowserFragment : Fragment() {
         downloadsFeature.set(downloadFeature, owner = this, view = view)
 
         val engineView = components.engine.createView(context, null)
+        engineViewRef = engineView
         binding.swipeRefresh.addView(engineView.asView())
 
         // Mount modular Compose overlay for Long-Press Context Menu, Smart JS & HTTPS Fallback banners
@@ -293,11 +296,14 @@ class BrowserFragment : Fragment() {
             )
             val density = v.resources.displayMetrics.density
             val isLandscape = v.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-            // Exact match with UHAddressBar barHeight (50dp landscape, 58dp portrait) to eliminate 4dp gap strip
+            // Exact match with UHAddressBar barHeight (50dp landscape, 58dp portrait) + docked strips
             val toolbarClearancePx = ((if (isLandscape) 50f else 58f) * density).toInt()
+            val extra = viewModel.chromeExtraDp.value
+            val extraTopPx = (extra.topDp * density).toInt()
+            val extraBottomPx = (extra.bottomDp * density).toInt()
             val isBottom = viewModel.isBarBottom.value
-            val topPadding = bars.top + if (!isBottom) toolbarClearancePx else 0
-            val bottomPadding = bars.bottom + if (isBottom) toolbarClearancePx else 0
+            val topPadding = bars.top + (if (!isBottom) toolbarClearancePx else 0) + extraTopPx
+            val bottomPadding = bars.bottom + (if (isBottom) toolbarClearancePx else 0) + extraBottomPx
             v.setPadding(bars.left, topPadding, bars.right, bottomPadding)
             insets
         }
@@ -337,6 +343,16 @@ class BrowserFragment : Fragment() {
                 launch {
                     viewModel.isBarBottom.collect {
                         ViewCompat.requestApplyInsets(binding.browserLayout)
+                    }
+                }
+                launch {
+                    viewModel.chromeExtraDp.collect {
+                        ViewCompat.requestApplyInsets(binding.browserLayout)
+                    }
+                }
+                launch {
+                    viewModel.capturePreviewSignal.collect {
+                        captureCurrentTabPreview()
                     }
                 }
                 launch {
@@ -506,6 +522,11 @@ class BrowserFragment : Fragment() {
     private fun setupLogging(components: app.harvester.companion.components.Components) {
         var lastTabId: String? = null
         var lastNormalizedHost: String? = null
+        var lastTabPrivate: Boolean? = null
+        var lastTabLoading = false
+        var lastFullScreen = false
+        var hadSelectedTab = components.store.state.selectedTab != null
+        var navigatedHomeOnEmpty = false
         var prevTabUrls = mapOf<String, String>()
 
         viewLifecycleOwner.lifecycleScope.launch {
@@ -525,19 +546,65 @@ class BrowserFragment : Fragment() {
                     }
                     prevTabUrls = currentTabUrls
 
-                    val tab = state.selectedTab ?: return@collect
+                    val tab = state.selectedTab
+                    if (tab == null) {
+                        if (hadSelectedTab || initialUrl.isNullOrBlank()) {
+                            app.harvester.companion.browser.tabs.TabPreviewCache.setLastActiveBitmap(null)
+                            try {
+                                engineViewRef?.release()
+                            } catch (_: Exception) {}
+                            if (!navigatedHomeOnEmpty && isAdded) {
+                                navigatedHomeOnEmpty = true
+                                val nav = try {
+                                    androidx.navigation.fragment.NavHostFragment.findNavController(this@BrowserFragment)
+                                } catch (_: Exception) {
+                                    null
+                                }
+                                if (nav != null && nav.currentDestination?.id == R.id.browserFragment) {
+                                    if (!nav.popBackStack(R.id.homeFragment, false)) {
+                                        nav.navigate(R.id.homeFragment)
+                                    }
+                                }
+                            }
+                        }
+                        return@collect
+                    }
+
+                    hadSelectedTab = true
+                    navigatedHomeOnEmpty = false
+
                     val content = tab.content
                     viewModel.refreshBookmarkState(content.url)
 
+                    if (content.fullScreen != lastFullScreen) {
+                        lastFullScreen = content.fullScreen
+                        _binding?.browserLayout?.let { ViewCompat.requestApplyInsets(it) }
+                    }
+
                     val host = UhShieldEngine.normalizeHost(content.url)
-                    if (tab.id != lastTabId || host != lastNormalizedHost) {
+                    val tabChanged = tab.id != lastTabId
+                    if (tabChanged || host != lastNormalizedHost || tab.content.private != lastTabPrivate) {
                         lastTabId = tab.id
                         lastNormalizedHost = host
+                        lastTabPrivate = tab.content.private
                         UhShieldEngine.onTabNavigated(tab.id, content.url)
                         context?.let { ctx ->
-                            UhPrivacyController.syncPerSiteEngineProtections(ctx, content.url)
+                            UhPrivacyController.syncPerSiteEngineProtections(
+                                ctx = ctx,
+                                url = content.url,
+                                isPrivate = tab.content.private,
+                            )
+                        }
+                        if (tabChanged && !content.loading && content.url.isNotBlank() && content.url != "about:blank") {
+                            schedulePreviewCapture(350L)
                         }
                     }
+
+                    // Capture a fresh live thumbnail shortly after page load completes
+                    if (lastTabLoading && !content.loading && content.url.isNotBlank() && content.url != "about:blank") {
+                        schedulePreviewCapture(280L)
+                    }
+                    lastTabLoading = content.loading
 
                     // Sync GeckoView native ETP blocked trackers into UH Shield live stats (delta-based)
                     val geckoBlocked = tab.trackingProtection.blockedTrackers.size
@@ -555,6 +622,14 @@ class BrowserFragment : Fragment() {
                     }
                 }
             }
+        }
+    }
+
+    private fun schedulePreviewCapture(delayMs: Long) {
+        loadCaptureJob?.cancel()
+        loadCaptureJob = viewLifecycleOwner.lifecycleScope.launch {
+            kotlinx.coroutines.delay(delayMs)
+            captureCurrentTabPreview()
         }
     }
 
@@ -611,7 +686,50 @@ class BrowserFragment : Fragment() {
             onComplete?.invoke(null)
             return
         }
-        val currentTab = (requireContext().applicationContext as? UHApp)?.components?.store?.state?.selectedTab ?: return
+        val currentTab = (requireContext().applicationContext as? UHApp)?.components?.store?.state?.selectedTab
+        if (currentTab == null) {
+            onComplete?.invoke(null)
+            return
+        }
+        val tabUrl = currentTab.content.url
+        if (tabUrl.isBlank() || tabUrl == "about:blank") {
+            onComplete?.invoke(null)
+            return
+        }
+
+        // Primary path: GeckoEngineView's native hardware-composited thumbnail capture
+        val geckoView = engineViewRef
+        if (geckoView != null) {
+            try {
+                geckoView.captureThumbnail { bmp ->
+                    if (bmp != null && !bmp.isRecycled && bmp.width > 0 && bmp.height > 0) {
+                        app.harvester.companion.browser.tabs.TabPreviewCache.put(
+                            tabId = currentTab.id,
+                            bitmap = bmp,
+                            isPrivate = currentTab.content.private
+                        )
+                        onComplete?.invoke(bmp)
+                    } else {
+                        captureFallbackSurfaceOrView(currentTab.id, currentTab.content.private, onComplete)
+                    }
+                }
+                return
+            } catch (e: Exception) {
+                UHLog.w("preview_warn", "Native captureThumbnail failed: ${e.message}")
+            }
+        }
+        captureFallbackSurfaceOrView(currentTab.id, currentTab.content.private, onComplete)
+    }
+
+    private fun captureFallbackSurfaceOrView(
+        tabId: String,
+        isPrivate: Boolean,
+        onComplete: ((android.graphics.Bitmap?) -> Unit)? = null,
+    ) {
+        if (!isAdded || _binding == null) {
+            onComplete?.invoke(null)
+            return
+        }
         val engineView = if (binding.swipeRefresh.childCount > 0) binding.swipeRefresh.getChildAt(0) else null
         if (engineView == null) {
             onComplete?.invoke(null)
@@ -620,13 +738,17 @@ class BrowserFragment : Fragment() {
         val surfaceView = findSurfaceView(engineView)
         if (surfaceView != null && surfaceView.width > 0 && surfaceView.height > 0) {
             try {
-                val bitmap = android.graphics.Bitmap.createBitmap(surfaceView.width, surfaceView.height, android.graphics.Bitmap.Config.ARGB_8888)
+                val bitmap = android.graphics.Bitmap.createBitmap(
+                    surfaceView.width,
+                    surfaceView.height,
+                    android.graphics.Bitmap.Config.ARGB_8888
+                )
                 android.view.PixelCopy.request(surfaceView, bitmap, { result ->
                     if (result == android.view.PixelCopy.SUCCESS) {
                         app.harvester.companion.browser.tabs.TabPreviewCache.put(
-                            tabId = currentTab.id,
+                            tabId = tabId,
                             bitmap = bitmap,
-                            isPrivate = currentTab.content.private
+                            isPrivate = isPrivate
                         )
                         onComplete?.invoke(bitmap)
                     } else {
@@ -640,13 +762,17 @@ class BrowserFragment : Fragment() {
         }
         try {
             if (engineView.width > 0 && engineView.height > 0) {
-                val bmp = android.graphics.Bitmap.createBitmap(engineView.width, engineView.height, android.graphics.Bitmap.Config.ARGB_8888)
+                val bmp = android.graphics.Bitmap.createBitmap(
+                    engineView.width,
+                    engineView.height,
+                    android.graphics.Bitmap.Config.ARGB_8888
+                )
                 val canvas = android.graphics.Canvas(bmp)
                 engineView.draw(canvas)
                 app.harvester.companion.browser.tabs.TabPreviewCache.put(
-                    tabId = currentTab.id,
+                    tabId = tabId,
                     bitmap = bmp,
-                    isPrivate = currentTab.content.private
+                    isPrivate = isPrivate
                 )
                 onComplete?.invoke(bmp)
                 return
@@ -747,6 +873,9 @@ class BrowserFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        loadCaptureJob?.cancel()
+        loadCaptureJob = null
+        engineViewRef = null
         _binding = null
         super.onDestroyView()
     }

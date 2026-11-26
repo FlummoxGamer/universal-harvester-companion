@@ -217,7 +217,21 @@ fun UhGlobalToolbar(
         val byId = browserState.tabs.associateBy { it.id }
         grp.tabIds.mapNotNull { byId[it] }
     }
-    val showLandscapeStrip = isLandscape && landscapeStripEnabled && selectedTab?.content?.fullScreen != true
+    val showGroupStrip = isBrowser && groupStripEnabled && activeGroup != null && activeGroupMembers.isNotEmpty() && selectedTab?.content?.fullScreen != true
+    val showLandscapeStrip = isLandscape && landscapeStripEnabled && browserState.tabs.any { it.content.private == isPrivateMode } && selectedTab?.content?.fullScreen != true
+
+    LaunchedEffect(isBrowser, isBarBottom, showLandscapeStrip, showGroupStrip) {
+        if (!isBrowser) {
+            viewModel.updateChromeExtraDp(0, 0)
+        } else {
+            val topExtra = (if (showLandscapeStrip) app.harvester.companion.browser.tabs.LANDSCAPE_TAB_STRIP_HEIGHT_DP else 0) +
+                (if (showGroupStrip && !isBarBottom) app.harvester.companion.browser.tabs.GROUP_STRIP_HEIGHT_DP else 0)
+            val bottomExtra = if (showGroupStrip && isBarBottom) {
+                app.harvester.companion.browser.tabs.GROUP_STRIP_HEIGHT_DP
+            } else 0
+            viewModel.updateChromeExtraDp(topExtra, bottomExtra)
+        }
+    }
     val currentHost = remember(displayUrl) {
         try {
             URI(displayUrl).host?.removePrefix("www.").orEmpty()
@@ -270,6 +284,7 @@ fun UhGlobalToolbar(
     }
 
     val openTabsTray = {
+        viewModel.requestPreviewCapture()
         val activity = context as? AppCompatActivity
         if (activity != null) {
             try {
@@ -333,9 +348,10 @@ fun UhGlobalToolbar(
     }
 
     val openNewModeTab: (Boolean) -> Unit = { priv ->
+        viewModel.requestPreviewCapture()
         viewModel.exitEditMode()
-        val anchorId = if (SettingsPrefs.getBool(context, SettingsPrefs.K_TAB_OPEN_NEXT_TO_CURRENT, false)) {
-            selectedTab?.id
+        val anchorId = if (SettingsPrefs.getBool(context, SettingsPrefs.K_TAB_OPEN_NEXT_TO_CURRENT, true)) {
+            selectedTab?.takeIf { it.content.private == priv }?.id
         } else null
         val newId = components.useCases.tabsUseCases.addTab(
             url = "about:blank",
@@ -349,6 +365,9 @@ fun UhGlobalToolbar(
     }
 
     val selectStripTab: (String) -> Unit = { tabId ->
+        if (tabId != selectedTab?.id) {
+            viewModel.requestPreviewCapture()
+        }
         val target = browserState.tabs.firstOrNull { it.id == tabId }
         components.useCases.tabsUseCases.selectTab(tabId)
         if (target != null && !target.content.private) {
@@ -568,7 +587,7 @@ fun UhGlobalToolbar(
                             onDone = { viewModel.closeZoomBar() }
                         )
                     }
-                    if (isBrowser && isBarBottom && groupStripEnabled && activeGroup != null && activeGroupMembers.isNotEmpty() && selectedTab?.content?.fullScreen != true) {
+                    if (showGroupStrip && isBarBottom && activeGroup != null) {
                         InBrowserGroupTabStrip(
                             group = activeGroup,
                             members = activeGroupMembers,
@@ -630,7 +649,7 @@ fun UhGlobalToolbar(
                         modifier = barPositionModifier
                     )
 
-                    if (isBrowser && !isBarBottom && groupStripEnabled && activeGroup != null && activeGroupMembers.isNotEmpty() && selectedTab?.content?.fullScreen != true) {
+                    if (showGroupStrip && !isBarBottom && activeGroup != null) {
                         InBrowserGroupTabStrip(
                             group = activeGroup,
                             members = activeGroupMembers,

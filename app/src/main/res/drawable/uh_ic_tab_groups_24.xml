@@ -1,0 +1,34 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Rear stacked card outline -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M7.5,4.2H17.8C19.1,4.2 20.2,5.3 20.2,6.6V15.4" />
+    <!-- Front layered group card -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.9"
+        android:strokeLineJoin="round"
+        android:pathData="M5.8,7.4H15.2C16.4,7.4 17.4,8.4 17.4,9.6V17.6C17.4,18.8 16.4,19.8 15.2,19.8H5.8C4.6,19.8 3.6,18.8 3.6,17.6V9.6C3.6,8.4 4.6,7.4 5.8,7.4Z" />
+    <!-- Inner 2x2 group collage tiles -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M6.4,10.2H9.6V13.0H6.4Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M11.4,10.2H14.6V13.0H11.4Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M6.4,14.4H9.6V17.2H6.4Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M11.4,14.4H14.6V17.2H11.4Z" />
+</vector>

@@ -231,19 +231,19 @@ fun HomeScreen(
                 }
             }
         } else {
-            // Portrait Layout: Balanced UH Wordmark + Invisible Bounded Scrollable Widget Container
+            // Portrait Layout: Balanced UH Wordmark / Stats Panel + Bounded Scrollable Shortcuts Grid
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .statusBarsPadding()
                     .navigationBarsPadding()
                     .padding(
-                        top = if (!isAddressBarBottom) 114.dp else 56.dp,
-                        bottom = if (isAddressBarBottom) 82.dp else 18.dp
+                        top = if (!isAddressBarBottom) 68.dp else 18.dp,
+                        bottom = if (isAddressBarBottom) 76.dp else 18.dp
                     ),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Spacer(modifier = Modifier.weight(0.22f))
+                Spacer(modifier = Modifier.weight(0.08f))
 
                 if (showHomeStats) {
                     HomeProtectionStatsBar(
@@ -267,7 +267,7 @@ fun HomeScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(18.dp))
 
                 BoxWithConstraints(
                     modifier = Modifier
@@ -302,7 +302,7 @@ fun HomeScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.weight(0.38f))
+                Spacer(modifier = Modifier.weight(0.36f))
             }
         }
 
@@ -313,12 +313,13 @@ fun HomeScreen(
                 .statusBarsPadding()
                 .padding(
                     top = if (!isAddressBarBottom) {
-                        if (isLandscape) 58.dp else 70.dp
+                        if (isLandscape) 52.dp else 60.dp
                     } else {
-                        12.dp
+                        8.dp
                     },
-                    end = 12.dp
+                    end = 10.dp
                 )
+                .size(40.dp)
         ) {
             ShadowedPencilIcon(
                 tint = textColor,

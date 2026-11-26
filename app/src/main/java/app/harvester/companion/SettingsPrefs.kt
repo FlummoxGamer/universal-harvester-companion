@@ -17,6 +17,8 @@ object SettingsPrefs {
     private val _tabGroupStripFlow = MutableStateFlow<Boolean?>(null)
     private val _tabLandscapeStripFlow = MutableStateFlow<Boolean?>(null)
     private val _tabPrivateLockFlow = MutableStateFlow<Boolean?>(null)
+    private val _tabViewModeFlow = MutableStateFlow<Int?>(null)
+    private val _tabRecentlyClosedEnabledFlow = MutableStateFlow<Boolean?>(null)
 
     fun addressBarBottomFlow(ctx: Context): StateFlow<Boolean> {
         if (_addressBarBottomFlow.value == null) {
@@ -82,6 +84,22 @@ object SettingsPrefs {
         return _tabPrivateLockFlow.asStateFlow() as StateFlow<Boolean>
     }
 
+    fun tabViewModeFlow(ctx: Context): StateFlow<Int> {
+        if (_tabViewModeFlow.value == null) {
+            _tabViewModeFlow.value = getInt(ctx, K_TAB_VIEW_MODE, 0)
+        }
+        @Suppress("UNCHECKED_CAST")
+        return _tabViewModeFlow.asStateFlow() as StateFlow<Int>
+    }
+
+    fun tabRecentlyClosedEnabledFlow(ctx: Context): StateFlow<Boolean> {
+        if (_tabRecentlyClosedEnabledFlow.value == null) {
+            _tabRecentlyClosedEnabledFlow.value = getBool(ctx, K_TAB_RECENTLY_CLOSED_ENABLED, true)
+        }
+        @Suppress("UNCHECKED_CAST")
+        return _tabRecentlyClosedEnabledFlow.asStateFlow() as StateFlow<Boolean>
+    }
+
     fun getBool(ctx: Context, key: String, def: Boolean = false): Boolean =
         p(ctx).getBoolean(key, def)
 
@@ -94,6 +112,7 @@ object SettingsPrefs {
             K_TAB_GROUP_STRIP_ENABLED -> _tabGroupStripFlow.value = v
             K_TAB_LANDSCAPE_STRIP_ENABLED -> _tabLandscapeStripFlow.value = v
             K_TAB_PRIVATE_LOCK_ENABLED -> _tabPrivateLockFlow.value = v
+            K_TAB_RECENTLY_CLOSED_ENABLED -> _tabRecentlyClosedEnabledFlow.value = v
         }
     }
 
@@ -101,8 +120,9 @@ object SettingsPrefs {
 
     fun setInt(ctx: Context, key: String, v: Int) {
         p(ctx).edit().putInt(key, v).apply()
-        if (key == K_ADDRESS_BAR_POSITION) {
-            _addressBarBottomFlow.value = (v == 1)
+        when (key) {
+            K_ADDRESS_BAR_POSITION -> _addressBarBottomFlow.value = (v == 1)
+            K_TAB_VIEW_MODE -> _tabViewModeFlow.value = v
         }
     }
 
@@ -191,5 +211,6 @@ object SettingsPrefs {
     const val K_TAB_SORT_MODE = "tab_sort_mode" // 0=Manual, 1=Recent, 2=Oldest, 3=A-Z, 4=Domain
     const val K_TAB_AUTO_CLOSE_DAYS = "tab_auto_close_days" // 0=Never, 1=1d, 7=1w, 30=1m
     const val K_TAB_JUMP_TO_PARENT = "tab_jump_to_parent" // true = jump to opener/parent tab on close
-    const val K_TAB_OPEN_NEXT_TO_CURRENT = "tab_open_next_to_current" // false = at end, true = next to active tab
+    const val K_TAB_OPEN_NEXT_TO_CURRENT = "tab_open_next_to_current" // true (default) = next to active tab
+    const val K_TAB_RECENTLY_CLOSED_ENABLED = "tab_recently_closed_enabled" // true (default) = save recently closed normal tabs
 }

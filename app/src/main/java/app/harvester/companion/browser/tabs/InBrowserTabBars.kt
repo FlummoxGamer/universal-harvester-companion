@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -37,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -47,9 +50,12 @@ import androidx.compose.ui.unit.sp
 import app.harvester.companion.R
 import mozilla.components.browser.state.state.TabSessionState
 
+const val GROUP_STRIP_HEIGHT_DP = 38
+const val LANDSCAPE_TAB_STRIP_HEIGHT_DP = 38
+
 /**
- * Slim collapsible Chrome/Brave-style Group Tab Strip rendered near the address bar
- * when browsing inside a Tab Group (Normal or Private) and enabled in Tab settings / 3-dot menu.
+ * Sleek docked pill Group Tab Strip rendered cleanly above/below the address bar
+ * with exact layout reservation in BrowserFragment so it never overlaps webpage content.
  */
 @Composable
 fun InBrowserGroupTabStrip(
@@ -65,135 +71,153 @@ fun InBrowserGroupTabStrip(
     val groupColor = Color(group.colorArgb)
     var isCollapsed by remember(group.id) { mutableStateOf(false) }
 
+    val barBg = if (group.isPrivate) {
+        Color(0xFF100C1E)
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    }
+    val onBarColor = if (group.isPrivate) Color(0xFFF3EEFF) else MaterialTheme.colorScheme.onSurface
+    val subBarColor = if (group.isPrivate) Color(0xFFA799C9) else MaterialTheme.colorScheme.onSurfaceVariant
+    val hairline = if (group.isPrivate) PrivateAccentColor.copy(alpha = 0.20f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.40f)
+
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
-        tonalElevation = 2.dp,
-        modifier = modifier.fillMaxWidth()
+        color = barBg,
+        modifier = modifier
+            .fillMaxWidth()
+            .height(GROUP_STRIP_HEIGHT_DP.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(38.dp)
-                .padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            // Group color tag (tapping collapses/expands the strip)
+        Column(modifier = Modifier.fillMaxSize()) {
+            HorizontalDivider(thickness = 0.6.dp, color = hairline)
             Row(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(groupColor.copy(alpha = 0.18f))
-                    .border(1.dp, groupColor.copy(alpha = 0.50f), RoundedCornerShape(10.dp))
-                    .clickable { isCollapsed = !isCollapsed }
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Box(
+                // Sleek group pill chip (tap to collapse/expand strip)
+                Row(
                     modifier = Modifier
-                        .size(8.dp)
+                        .height(26.dp)
                         .clip(CircleShape)
-                        .background(groupColor)
-                )
-                Text(
-                    text = group.name,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = 86.dp)
-                )
-                Text(
-                    text = "${members.size}",
-                    color = groupColor,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
-            }
-
-            if (!isCollapsed) {
-                LazyRow(
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                    contentPadding = PaddingValues(end = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .background(groupColor.copy(alpha = 0.18f))
+                        .border(1.dp, groupColor.copy(alpha = 0.55f), CircleShape)
+                        .clickable { isCollapsed = !isCollapsed }
+                        .padding(horizontal = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
-                    items(members, key = { "gstrip_${it.id}" }) { tab ->
-                        val active = tab.id == selectedTabId
-                        val host = remember(tab.content.url) { extractHostLabel(tab.content.url) }
-                        val label = tab.content.title.ifBlank { host.ifBlank { "New Tab" } }
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .clip(CircleShape)
+                            .background(groupColor)
+                    )
+                    Text(
+                        text = group.name,
+                        color = onBarColor,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.widthIn(max = 84.dp)
+                    )
+                    Text(
+                        text = "${members.size}",
+                        color = groupColor,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
 
-                        Row(
-                            modifier = Modifier
-                                .height(28.dp)
-                                .widthIn(min = 56.dp, max = 140.dp)
-                                .clip(RoundedCornerShape(9.dp))
-                                .background(
-                                    if (active) groupColor.copy(alpha = 0.22f)
-                                    else MaterialTheme.colorScheme.surface
-                                )
-                                .border(
-                                    width = if (active) 1.3.dp else 0.8.dp,
-                                    color = if (active) groupColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
-                                    shape = RoundedCornerShape(9.dp)
-                                )
-                                .clickable { onSelectTab(tab.id) }
-                                .padding(start = 7.dp, end = if (active) 3.dp else 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(5.dp)
-                        ) {
-                            TabFaviconBox(tab = tab, accentColor = groupColor, sizeDp = 14)
-                            Text(
-                                text = label,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 11.sp,
-                                fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false)
-                            )
-                            if (active) {
-                                IconButton(
-                                    onClick = { onCloseTab(tab.id) },
-                                    modifier = Modifier.size(20.dp)
-                                ) {
-                                    Icon(
-                                        painter = painterResource(id = R.drawable.fx_ic_close_24),
-                                        contentDescription = "Close tab",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(11.dp)
+                if (!isCollapsed) {
+                    LazyRow(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        contentPadding = PaddingValues(end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        items(members, key = { "gstrip_${it.id}" }) { tab ->
+                            val active = tab.id == selectedTabId
+                            val host = remember(tab.content.url) { extractHostLabel(tab.content.url) }
+                            val label = tab.content.title.ifBlank { host.ifBlank { "New Tab" } }
+                            val pillBg = when {
+                                active && group.isPrivate -> groupColor.copy(alpha = 0.24f)
+                                active -> groupColor.copy(alpha = 0.16f)
+                                group.isPrivate -> Color(0xFF1A142D)
+                                else -> MaterialTheme.colorScheme.surface
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .height(27.dp)
+                                    .widthIn(min = 58.dp, max = 148.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(pillBg)
+                                    .border(
+                                        width = if (active) 1.3.dp else 0.7.dp,
+                                        color = if (active) groupColor else hairline,
+                                        shape = RoundedCornerShape(12.dp)
                                     )
+                                    .clickable { onSelectTab(tab.id) }
+                                    .padding(start = 7.dp, end = if (active) 3.dp else 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                TabFaviconBox(tab = tab, accentColor = groupColor, sizeDp = 14)
+                                Text(
+                                    text = label,
+                                    color = onBarColor,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                if (active) {
+                                    IconButton(
+                                        onClick = { onCloseTab(tab.id) },
+                                        modifier = Modifier.size(19.dp)
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(id = R.drawable.fx_ic_close_24),
+                                            contentDescription = "Close tab",
+                                            tint = subBarColor,
+                                            modifier = Modifier.size(10.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
+                } else {
+                    Spacer(modifier = Modifier.weight(1f))
                 }
-            } else {
-                Spacer(modifier = Modifier.weight(1f))
-            }
 
-            IconButton(
-                onClick = onAddTabInGroup,
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(RoundedCornerShape(9.dp))
-                    .background(groupColor.copy(alpha = 0.16f))
-            ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.uh_ic_plus_24),
-                    contentDescription = "New tab in group",
-                    tint = groupColor,
-                    modifier = Modifier.size(15.dp)
-                )
+                IconButton(
+                    onClick = onAddTabInGroup,
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(CircleShape)
+                        .background(groupColor.copy(alpha = 0.16f))
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.uh_ic_plus_24),
+                        contentDescription = "New tab in group",
+                        tint = groupColor,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
             }
+            HorizontalDivider(thickness = 0.6.dp, color = hairline)
         }
     }
 }
 
 /**
- * Compact desktop/tablet-style horizontal Tab Strip shown at the top in Landscape mode
- * when enabled in Tab Settings.
+ * Clean docked Desktop/Tablet-style top Tab Bar for Landscape mode.
+ * Respects status bars & camera cutouts and reserves exact height in BrowserFragment so nothing overlaps.
  */
 @Composable
 fun LandscapeTopTabStrip(
@@ -212,6 +236,12 @@ fun LandscapeTopTabStrip(
     if (modeTabs.isEmpty()) return
 
     val accent = if (isPrivate) PrivateAccentColor else MaterialTheme.colorScheme.primary
+    val barBg = if (isPrivate) Color(0xFF0C0917) else MaterialTheme.colorScheme.background
+    val inactiveTabBg = if (isPrivate) Color(0xFF18132B) else MaterialTheme.colorScheme.surfaceContainerLow
+    val onBarColor = if (isPrivate) Color(0xFFF3EEFF) else MaterialTheme.colorScheme.onSurface
+    val subBarColor = if (isPrivate) Color(0xFFA799C9) else MaterialTheme.colorScheme.onSurfaceVariant
+    val hairline = if (isPrivate) PrivateAccentColor.copy(alpha = 0.22f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f)
+
     val pinnedSet = remember(pinnedIds, isPrivate) { if (isPrivate) emptySet() else pinnedIds.toSet() }
     val orderedTabs = remember(modeTabs, pinnedIds, pinnedSet) {
         val byId = modeTabs.associateBy { it.id }
@@ -228,105 +258,128 @@ fun LandscapeTopTabStrip(
     }
 
     Surface(
-        color = MaterialTheme.colorScheme.background,
-        tonalElevation = 1.dp,
+        color = barBg,
         modifier = modifier.fillMaxWidth()
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .then(if (applyStatusBarPadding) Modifier.statusBarsPadding() else Modifier)
-                .height(36.dp)
-                .padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp)
         ) {
-            LazyRow(
-                modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .displayCutoutPadding()
+                    .height(LANDSCAPE_TAB_STRIP_HEIGHT_DP.dp)
+                    .padding(horizontal = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                items(orderedTabs, key = { "lstrip_${it.id}" }) { tab ->
-                    val active = tab.id == selectedTabId
-                    val isPinned = tab.id in pinnedSet
-                    val grpColor = groupColorByTabId[tab.id]
-                    val chipAccent = grpColor ?: accent
-                    val host = remember(tab.content.url) { extractHostLabel(tab.content.url) }
-                    val label = tab.content.title.ifBlank { host.ifBlank { if (isPrivate) "Private" else "New Tab" } }
-
-                    Row(
+                if (isPrivate) {
+                    Box(
                         modifier = Modifier
-                            .height(28.dp)
-                            .then(
-                                if (isPinned) Modifier.widthIn(min = 38.dp, max = 96.dp)
-                                else Modifier.widthIn(min = 96.dp, max = 164.dp)
-                            )
-                            .clip(RoundedCornerShape(9.dp))
-                            .background(
-                                if (active) chipAccent.copy(alpha = 0.18f)
-                                else MaterialTheme.colorScheme.surfaceContainerLow
-                            )
-                            .border(
-                                width = if (active) 1.4.dp else 0.8.dp,
-                                color = if (active) chipAccent else MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
-                                shape = RoundedCornerShape(9.dp)
-                            )
-                            .clickable { onSelectTab(tab.id) }
-                            .padding(start = 7.dp, end = if (isPinned) 7.dp else 3.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .background(PrivateAccentColor.copy(alpha = 0.16f)),
+                        contentAlignment = Alignment.Center
                     ) {
-                        if (grpColor != null) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(grpColor)
-                            )
-                        }
-                        TabFaviconBox(tab = tab, accentColor = chipAccent, sizeDp = 14)
-                        if (!isPinned || active) {
-                            Text(
-                                text = label,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 11.sp,
-                                fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false)
-                            )
-                        }
-                        if (!isPinned) {
-                            IconButton(
-                                onClick = { onCloseTab(tab.id) },
-                                modifier = Modifier.size(20.dp)
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.fx_ic_close_24),
-                                    contentDescription = "Close tab",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(11.dp)
+                        Icon(
+                            painter = painterResource(id = R.drawable.uh_ic_private_vibe_24),
+                            contentDescription = "Private",
+                            tint = PrivateAccentColor,
+                            modifier = Modifier.size(13.dp)
+                        )
+                    }
+                }
+
+                LazyRow(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    items(orderedTabs, key = { "lstrip_${it.id}" }) { tab ->
+                        val active = tab.id == selectedTabId
+                        val isPinned = tab.id in pinnedSet
+                        val grpColor = groupColorByTabId[tab.id]
+                        val chipAccent = grpColor ?: accent
+                        val host = remember(tab.content.url) { extractHostLabel(tab.content.url) }
+                        val label = tab.content.title.ifBlank { host.ifBlank { if (isPrivate) "Private" else "New Tab" } }
+
+                        Row(
+                            modifier = Modifier
+                                .height(29.dp)
+                                .then(
+                                    if (isPinned) Modifier.widthIn(min = 36.dp, max = 96.dp)
+                                    else Modifier.widthIn(min = 104.dp, max = 180.dp)
                                 )
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    if (active) chipAccent.copy(alpha = if (isPrivate) 0.24f else 0.16f)
+                                    else inactiveTabBg
+                                )
+                                .border(
+                                    width = if (active) 1.3.dp else 0.7.dp,
+                                    color = if (active) chipAccent else hairline,
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .clickable { onSelectTab(tab.id) }
+                                .padding(start = 8.dp, end = if (isPinned) 8.dp else 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            if (grpColor != null) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(grpColor)
+                                )
+                            }
+                            TabFaviconBox(tab = tab, accentColor = chipAccent, sizeDp = 14)
+                            if (!isPinned || active) {
+                                Text(
+                                    text = label,
+                                    color = onBarColor,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                            }
+                            if (!isPinned) {
+                                IconButton(
+                                    onClick = { onCloseTab(tab.id) },
+                                    modifier = Modifier.size(20.dp)
+                                ) {
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.fx_ic_close_24),
+                                        contentDescription = "Close tab",
+                                        tint = subBarColor,
+                                        modifier = Modifier.size(10.dp)
+                                    )
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            IconButton(
-                onClick = onNewTab,
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(RoundedCornerShape(9.dp))
-                    .background(accent.copy(alpha = 0.15f))
-            ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.uh_ic_plus_24),
-                    contentDescription = "New tab",
-                    tint = accent,
-                    modifier = Modifier.size(15.dp)
-                )
+                IconButton(
+                    onClick = onNewTab,
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(accent.copy(alpha = 0.16f))
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.uh_ic_plus_24),
+                        contentDescription = "New tab",
+                        tint = accent,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
             }
+            HorizontalDivider(thickness = 0.6.dp, color = hairline)
         }
     }
 }
@@ -342,7 +395,7 @@ fun InBrowserPrivateLockOverlay(
     modifier: Modifier = Modifier
 ) {
     Surface(
-        color = Color(0xF50E0A17),
+        color = Color(0xFA090711),
         modifier = modifier
             .fillMaxSize()
             .clickable(enabled = true, onClick = {})
@@ -350,6 +403,14 @@ fun InBrowserPrivateLockOverlay(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFF7C3AED).copy(alpha = 0.22f),
+                            Color.Transparent
+                        )
+                    )
+                )
                 .padding(horizontal = 32.dp),
             contentAlignment = Alignment.Center
         ) {
@@ -359,28 +420,28 @@ fun InBrowserPrivateLockOverlay(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(76.dp)
+                        .size(78.dp)
                         .clip(CircleShape)
-                        .background(PrivateAccentColor.copy(alpha = 0.20f))
-                        .border(1.5.dp, PrivateAccentColor.copy(alpha = 0.55f), CircleShape),
+                        .background(PrivateAccentColor.copy(alpha = 0.18f))
+                        .border(1.4.dp, PrivateAccentColor.copy(alpha = 0.52f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        painter = painterResource(id = R.drawable.uh_ic_pg_fingerprint_24),
+                        painter = painterResource(id = R.drawable.uh_ic_private_vibe_24),
                         contentDescription = "Private tabs locked",
                         tint = PrivateAccentColor,
                         modifier = Modifier.size(36.dp)
                     )
                 }
                 Text(
-                    text = "Private Browsing Locked",
+                    text = "Private Session Locked",
                     color = Color.White,
                     fontSize = 21.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
                     text = "Verify your fingerprint, face, or device PIN to resume your private session.",
-                    color = Color.White.copy(alpha = 0.72f),
+                    color = Color(0xFFB7A9DA),
                     fontSize = 13.sp,
                     textAlign = TextAlign.Center
                 )
@@ -389,7 +450,7 @@ fun InBrowserPrivateLockOverlay(
                     onClick = onUnlock,
                     shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = PrivateAccentColor,
+                        containerColor = Color(0xFF7C3AED),
                         contentColor = Color.White
                     ),
                     modifier = Modifier.height(48.dp)

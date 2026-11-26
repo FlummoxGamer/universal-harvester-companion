@@ -65,6 +65,7 @@ object UhSearchDataProvider {
             }
 
             val selectedTab = components.store.state.selectedTab
+            val isPrivate = selectedTab?.content?.private == true
             val currentTabItem = if (
                 selectedTab != null &&
                 selectedTab.content.url != "about:blank" &&
@@ -79,7 +80,13 @@ object UhSearchDataProvider {
 
             val items = mutableListOf<UhSearchListItem>()
 
-            if (query.isBlank()) {
+            if (isPrivate) {
+                // Hardened Private Search: zero history, zero recent searches, zero external trending/autocomplete leaks
+                if (query.isNotBlank()) {
+                    items.add(UhSearchListItem.Header("Private Search"))
+                    items.add(UhSearchListItem.Suggestion(query, SuggestionType.SEARCH))
+                }
+            } else if (query.isBlank()) {
                 val recentDeferred = async { fetchRecentSearchTerms(appCtx, components) }
                 val trendsDeferred = async { fetchTrendingWithFallback(activeEngine.trendingUrl) }
 
