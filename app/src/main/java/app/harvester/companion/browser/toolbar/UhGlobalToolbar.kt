@@ -62,6 +62,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -246,7 +247,25 @@ fun UhGlobalToolbar(
     }
     val isCaptureActive = SessionRecorder.isActive()
     val readerState by app.harvester.companion.browser.reader.ReaderModeManager.state.collectAsState()
+    val isAutoHideEnabled by viewModel.isAutoHideBarEnabled.collectAsState()
+    val isToolbarAutoHidden by viewModel.isToolbarAutoHidden.collectAsState()
+    val shouldHideToolbar = isBrowser && isAutoHideEnabled && isToolbarAutoHidden &&
+        !isEditing && !showFindInPage && !showZoomBar && selectedTab?.content?.fullScreen != true
+    val toolbarHideProgress by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (shouldHideToolbar) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(
+            durationMillis = 220,
+            easing = androidx.compose.animation.core.FastOutSlowInEasing
+        ),
+        label = "toolbarAutoHide"
+    )
     val isTabSecure = selectedTab?.content?.securityInfo?.isSecure == true
+
+    LaunchedEffect(isBrowser, isEditing, showFindInPage, showZoomBar) {
+        if (!isBrowser || isEditing || showFindInPage || showZoomBar) {
+            viewModel.setToolbarAutoHidden(false)
+        }
+    }
 
     val iconState = if (isBrowser) {
         when {
@@ -276,6 +295,7 @@ fun UhGlobalToolbar(
     }
 
     val openMainMenu = {
+        viewModel.setToolbarAutoHidden(false)
         val activity = context as? AppCompatActivity
         if (activity != null) {
             try {
@@ -287,6 +307,7 @@ fun UhGlobalToolbar(
     }
 
     val openTabsTray = {
+        viewModel.setToolbarAutoHidden(false)
         viewModel.requestPreviewCapture()
         val activity = context as? AppCompatActivity
         if (activity != null) {
@@ -354,35 +375,42 @@ fun UhGlobalToolbar(
     }
 
     val openNewModeTab: (Boolean) -> Unit = { priv ->
-        viewModel.requestPreviewCapture()
+        viewModel.setToolbarAutoHidden(false)
         viewModel.exitEditMode()
-        val anchorId = if (SettingsPrefs.getBool(context, SettingsPrefs.K_TAB_OPEN_NEXT_TO_CURRENT, true)) {
-            selectedTab?.takeIf { it.content.private == priv }?.id
-        } else null
-        val newId = components.useCases.tabsUseCases.addTab(
-            url = "about:blank",
-            selectTab = true,
-            private = priv
-        )
-        if (anchorId != null) TabGroupStore.insertTabAfter(newId, anchorId, priv)
-        if (!priv) TabHistoryStore.recordTabAccess(newId)
-        if (priv) viewModel.enterEditMode("")
-        navigateToHomeSafe()
+        val runOpen = {
+            val anchorId = if (SettingsPrefs.getBool(context, SettingsPrefs.K_TAB_OPEN_NEXT_TO_CURRENT, true)) {
+                selectedTab?.takeIf { it.content.private == priv }?.id
+            } else null
+            val newId = components.useCases.tabsUseCases.addTab(
+                url = "about:blank",
+                selectTab = true,
+                private = priv
+            )
+            if (anchorId != null) TabGroupStore.insertTabAfter(newId, anchorId, priv)
+            if (!priv) TabHistoryStore.recordTabAccess(newId)
+            navigateToHomeSafe()
+        }
+        if (isBrowser) viewModel.capturePreviewThen(runOpen) else runOpen()
     }
 
     val selectStripTab: (String) -> Unit = { tabId ->
-        if (tabId != selectedTab?.id) {
-            viewModel.requestPreviewCapture()
+        viewModel.setToolbarAutoHidden(false)
+        val runSelect = {
+            val target = browserState.tabs.firstOrNull { it.id == tabId }
+            components.useCases.tabsUseCases.selectTab(tabId)
+            if (target != null && !target.content.private) {
+                TabHistoryStore.recordTabAccess(tabId)
+            }
+            if (target != null && (target.content.url.isBlank() || target.content.url == "about:blank")) {
+                navigateToHomeSafe()
+            } else {
+                navigateToBrowserSafe()
+            }
         }
-        val target = browserState.tabs.firstOrNull { it.id == tabId }
-        components.useCases.tabsUseCases.selectTab(tabId)
-        if (target != null && !target.content.private) {
-            TabHistoryStore.recordTabAccess(tabId)
-        }
-        if (target != null && (target.content.url.isBlank() || target.content.url == "about:blank")) {
-            navigateToHomeSafe()
+        if (isBrowser && tabId != selectedTab?.id) {
+            viewModel.capturePreviewThen(runSelect)
         } else {
-            navigateToBrowserSafe()
+            runSelect()
         }
     }
 
@@ -543,7 +571,13 @@ fun UhGlobalToolbar(
                 contentAlignment = if (isBarBottom) Alignment.BottomCenter else Alignment.TopCenter
             ) {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer {
+                            val dir = if (isBarBottom) 1f else -1f
+                            translationY = dir * size.height * toolbarHideProgress
+                            alpha = (1f - toolbarHideProgress * 0.92f).coerceIn(0f, 1f)
+                        },
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     if (showLandscapeStrip && !isBarBottom) {
@@ -667,15 +701,17 @@ fun UhGlobalToolbar(
                             onSelectTab = selectStripTab,
                             onCloseTab = closeStripTab,
                             onAddTabInGroup = {
-                                val newId = components.useCases.tabsUseCases.addTab(
-                                    url = "about:blank",
-                                    selectTab = true,
-                                    private = activeGroup.isPrivate
-                                )
-                                TabGroupStore.addTabToGroup(activeGroup.id, newId)
-                                if (!activeGroup.isPrivate) TabHistoryStore.recordTabAccess(newId)
-                                if (activeGroup.isPrivate) viewModel.enterEditMode("")
-                                navigateToHomeSafe()
+                                val runAdd = {
+                                    val newId = components.useCases.tabsUseCases.addTab(
+                                        url = "about:blank",
+                                        selectTab = true,
+                                        private = activeGroup.isPrivate
+                                    )
+                                    TabGroupStore.addTabToGroup(activeGroup.id, newId)
+                                    if (!activeGroup.isPrivate) TabHistoryStore.recordTabAccess(newId)
+                                    navigateToHomeSafe()
+                                }
+                                if (isBrowser) viewModel.capturePreviewThen(runAdd) else runAdd()
                             }
                         )
                     }

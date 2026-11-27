@@ -52,14 +52,48 @@ object ContextMenuActions {
         val extension: String,
     )
 
-    fun copyText(context: Context, label: String, text: String, toastMessage: String = "Copied to clipboard") {
+    fun copyText(
+        context: Context,
+        label: String,
+        text: String,
+        toastMessage: String = "Copied to clipboard",
+        isPrivate: Boolean = false
+    ) {
         try {
             val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            cm.setPrimaryClip(ClipData.newPlainText(label, text))
+            val clip = ClipData.newPlainText(label, text)
+            if (isPrivate && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                clip.description.extras = android.os.PersistableBundle().apply {
+                    putBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE, true)
+                }
+            }
+            cm.setPrimaryClip(clip)
             Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             UHLog.w("context", "copyText failed: ${e.message}")
         }
+    }
+
+    fun copyCleanLink(
+        context: Context,
+        label: String,
+        rawUrl: String,
+        isPrivate: Boolean = false,
+        defaultToast: String = "Link copied"
+    ) {
+        val clean = UhShieldEngine.cleanTrackingUrl(
+            rawUrl = rawUrl,
+            stripTrackers = true,
+            deAmp = true
+        )
+        val toastMsg = if (clean != rawUrl) "Clean link copied" else defaultToast
+        copyText(
+            context = context,
+            label = label,
+            text = clean,
+            toastMessage = toastMsg,
+            isPrivate = isPrivate
+        )
     }
 
     fun shareText(context: Context, text: String, title: String = "Share link") {

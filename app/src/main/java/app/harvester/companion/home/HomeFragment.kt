@@ -2,6 +2,10 @@ package app.harvester.companion.home
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color as AndroidColor
+import android.graphics.Paint
+import android.graphics.RectF
+import android.media.MediaMetadataRetriever
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -24,12 +28,15 @@ import androidx.navigation.fragment.findNavController
 import app.harvester.companion.R
 import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
+import app.harvester.companion.WallpaperStore
 import app.harvester.companion.browser.BrowserViewModel
 import app.harvester.companion.browser.tabs.PrivateSessionNotificationManager
 import app.harvester.companion.browser.tabs.TabPreviewCache
 import app.harvester.companion.search.PrivateSearchHistoryStore
 import app.harvester.companion.theme.UHTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import mozilla.components.browser.state.selector.selectedTab
 
 class HomeFragment : Fragment() {
@@ -89,10 +96,19 @@ class HomeFragment : Fragment() {
 
             // Capture an authentic live Home screen snapshot whenever wallpaper or shortcuts change
             val hostView = LocalView.current
-            LaunchedEffect(isHomeDestination, isPrivateHome, isEditing, wallpaperState.path, wallpaperState.textColor, shortcuts) {
+            LaunchedEffect(
+                isHomeDestination,
+                isPrivateHome,
+                isEditing,
+                wallpaperState.path,
+                wallpaperState.isVideo,
+                wallpaperState.dimAlpha,
+                wallpaperState.textColor,
+                shortcuts
+            ) {
                 if (isHomeDestination && !isPrivateHome && !isEditing) {
                     delay(550L)
-                    captureRealHomeSnapshot(hostView)
+                    captureRealHomeSnapshot(hostView, wallpaperState)
                 }
             }
 
@@ -135,7 +151,10 @@ class HomeFragment : Fragment() {
         }
     }
 
-    private fun captureRealHomeSnapshot(view: View) {
+    private var cachedVideoFramePath: String? = null
+    private var cachedVideoFrameBitmap: Bitmap? = null
+
+    private suspend fun captureRealHomeSnapshot(view: View, wallpaperState: WallpaperStore.WallpaperState) {
         val w = view.width
         val h = view.height
         if (w <= 0 || h <= 0 || !view.isLaidOut) return
@@ -143,13 +162,94 @@ class HomeFragment : Fragment() {
             val scale = (540f / w.toFloat()).coerceAtMost(1f)
             val targetW = (w * scale).toInt().coerceAtLeast(1)
             val targetH = (h * scale).toInt().coerceAtLeast(1)
+
+            // For live video wallpapers (TextureView), extract a crisp scaled frame off the main thread
+            // so we NEVER stall ExoPlayer playback and NEVER capture a black video background.
+            val videoBackdrop: Bitmap? = if (wallpaperState.isVideo && !wallpaperState.path.isNullOrBlank()) {
+                getOrExtractVideoFrame(
+                    path = wallpaperState.path,
+                    startMs = wallpaperState.clipBounds?.startMs ?: 0L,
+                    targetW = targetW,
+                    targetH = targetH
+                )
+            } else null
+
             val bmp = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bmp)
+
+            if (videoBackdrop != null && !videoBackdrop.isRecycled) {
+                drawCenterCrop(canvas, videoBackdrop, targetW.toFloat(), targetH.toFloat())
+                if (wallpaperState.dimAlpha > 0.01f) {
+                    val dimPaint = Paint().apply {
+                        color = AndroidColor.argb((wallpaperState.dimAlpha.coerceIn(0f, 0.85f) * 255f).toInt(), 0, 0, 0)
+                    }
+                    canvas.drawRect(0f, 0f, targetW.toFloat(), targetH.toFloat(), dimPaint)
+                }
+            }
+
+            canvas.save()
             canvas.scale(scale, scale)
             view.draw(canvas)
+            canvas.restore()
+
             TabPreviewCache.putHomeSnapshot(bmp)
         } catch (_: Exception) {
         }
+    }
+
+    private suspend fun getOrExtractVideoFrame(
+        path: String,
+        startMs: Long,
+        targetW: Int,
+        targetH: Int
+    ): Bitmap? {
+        val existing = cachedVideoFrameBitmap
+        if (cachedVideoFramePath == path && existing != null && !existing.isRecycled) {
+            return existing
+        }
+        return withContext(Dispatchers.IO) {
+            val retriever = MediaMetadataRetriever()
+            try {
+                if (path.startsWith("content://")) {
+                    val ctx = context ?: return@withContext null
+                    retriever.setDataSource(ctx, android.net.Uri.parse(path))
+                } else {
+                    retriever.setDataSource(path)
+                }
+                val timeUs = (startMs.coerceAtLeast(0L)) * 1000L
+                val frame = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
+                    retriever.getScaledFrameAtTime(
+                        timeUs,
+                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                        targetW,
+                        targetH
+                    )
+                } else {
+                    retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                }
+                if (frame != null) {
+                    cachedVideoFramePath = path
+                    cachedVideoFrameBitmap = frame
+                }
+                frame
+            } catch (_: Exception) {
+                null
+            } finally {
+                try { retriever.release() } catch (_: Exception) {}
+            }
+        }
+    }
+
+    private fun drawCenterCrop(canvas: Canvas, src: Bitmap, dstW: Float, dstH: Float) {
+        val srcW = src.width.toFloat().coerceAtLeast(1f)
+        val srcH = src.height.toFloat().coerceAtLeast(1f)
+        val scale = maxOf(dstW / srcW, dstH / srcH)
+        val scaledW = srcW * scale
+        val scaledH = srcH * scale
+        val left = (dstW - scaledW) / 2f
+        val top = (dstH - scaledH) / 2f
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        canvas.drawBitmap(src, null, RectF(left, top, left + scaledW, top + scaledH), paint)
     }
 
     override fun onResume() {

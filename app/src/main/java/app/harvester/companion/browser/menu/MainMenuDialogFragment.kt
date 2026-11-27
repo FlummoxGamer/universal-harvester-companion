@@ -57,6 +57,7 @@ import app.harvester.companion.SettingsPrefs
 import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
 import app.harvester.companion.browser.BrowserViewModel
+import app.harvester.companion.browser.reader.ReaderModeManager
 import app.harvester.companion.browser.webapp.WebAppStore
 import app.harvester.companion.privacy.UhShieldEngine
 import app.harvester.companion.settings.SettingsActivity
@@ -134,7 +135,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                     val devToolsActiveTabIds by browserViewModel.devToolsActiveTabIds.collectAsState()
                     val isDevToolsActive = selectedTab?.id != null && selectedTab.id in devToolsActiveTabIds
                     val isCaptureActive = SessionRecorder.isActive()
-                    val readerState by app.harvester.companion.browser.reader.ReaderModeManager.state.collectAsState()
+                    val readerState by ReaderModeManager.state.collectAsState()
                     val isPrivateTab = selectedTab?.content?.private == true
 
                     Box(
@@ -298,7 +299,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                                         },
                                         onToggleReaderMode = {
                                             dismissAllowingStateLoss()
-                                            app.harvester.companion.browser.reader.ReaderModeManager.toggleReader()
+                                            ReaderModeManager.toggleReader()
                                         },
                                         onCopyLink = {
                                             dismissAllowingStateLoss()

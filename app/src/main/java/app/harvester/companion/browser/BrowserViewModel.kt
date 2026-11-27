@@ -75,13 +75,24 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val isInPipMode: StateFlow<Boolean> = _isInPipMode.asStateFlow()
 
     val isBarBottom: StateFlow<Boolean> = SettingsPrefs.addressBarBottomFlow(context)
+    val isAutoHideBarEnabled: StateFlow<Boolean> = SettingsPrefs.autoHideBarFlow(context)
     val searchEngine: StateFlow<SearchEnginePrefs.Entry> = SearchEnginePrefs.activeEngineFlow(context)
+
+    private val _isToolbarAutoHidden = MutableStateFlow(false)
+    val isToolbarAutoHidden: StateFlow<Boolean> = _isToolbarAutoHidden.asStateFlow()
 
     private val _chromeExtraDp = MutableStateFlow(BrowserChromeExtraDp())
     val chromeExtraDp: StateFlow<BrowserChromeExtraDp> = _chromeExtraDp.asStateFlow()
 
-    private val _capturePreviewSignal = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-    val capturePreviewSignal: SharedFlow<Unit> = _capturePreviewSignal.asSharedFlow()
+    private val _capturePreviewSignal = MutableSharedFlow<(() -> Unit)?>(extraBufferCapacity = 4)
+    val capturePreviewSignal: SharedFlow<(() -> Unit)?> = _capturePreviewSignal.asSharedFlow()
+
+    fun setToolbarAutoHidden(hidden: Boolean) {
+        val next = hidden && isAutoHideBarEnabled.value && !_isEditing.value && !_showFindInPage.value && !_showZoomBar.value
+        if (_isToolbarAutoHidden.value != next) {
+            _isToolbarAutoHidden.value = next
+        }
+    }
 
     fun updateChromeExtraDp(topDp: Int, bottomDp: Int) {
         val next = BrowserChromeExtraDp(topDp = topDp.coerceAtLeast(0), bottomDp = bottomDp.coerceAtLeast(0))
@@ -91,7 +102,27 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun requestPreviewCapture() {
-        _capturePreviewSignal.tryEmit(Unit)
+        _capturePreviewSignal.tryEmit(null)
+    }
+
+    /**
+     * Captures a fresh live preview of the currently visible tab before executing [onReady]
+     * (e.g., switching tabs or opening a new tab), with a 110ms failsafe so navigation never stalls.
+     */
+    fun capturePreviewThen(onReady: () -> Unit) {
+        val fired = java.util.concurrent.atomic.AtomicBoolean(false)
+        val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        val done = {
+            if (fired.compareAndSet(false, true)) {
+                mainHandler.post(onReady)
+            }
+        }
+        val emitted = _capturePreviewSignal.tryEmit(done)
+        if (!emitted) {
+            done()
+        } else {
+            mainHandler.postDelayed({ done() }, 110L)
+        }
     }
 
     fun setPendingUrl(url: String) {

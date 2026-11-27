@@ -122,8 +122,8 @@ fun ReaderControlsSheet(
                 }
             }
 
-            // Read Aloud (Android TTS) Player Card
-            if (state.paragraphs.isNotEmpty()) {
+            // Read Aloud (Android TTS) Player Card (shown only when Read Aloud toggle is enabled)
+            if (prefs.ttsEnabled && state.paragraphs.isNotEmpty()) {
                 Surface(
                     shape = RoundedCornerShape(18.dp),
                     color = MaterialTheme.colorScheme.surface,
@@ -502,6 +502,41 @@ fun ReaderControlsSheet(
                             checked = prefs.showImages,
                             onCheckedChange = { show ->
                                 ReaderModeManager.updatePrefs { it.copy(showImages = show) }
+                            }
+                        )
+                    }
+
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 14.dp),
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                ReaderModeManager.setTtsEnabled(!prefs.ttsEnabled)
+                            }
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Read Aloud (TTS)",
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Show voice playback controls in Reader Mode",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Switch(
+                            checked = prefs.ttsEnabled,
+                            onCheckedChange = { enabled ->
+                                ReaderModeManager.setTtsEnabled(enabled)
                             }
                         )
                     }

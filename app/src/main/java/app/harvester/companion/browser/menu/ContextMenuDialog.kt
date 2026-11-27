@@ -201,8 +201,13 @@ fun ContextMenuDialog(
                                 label = "Copy link address",
                                 onClick = {
                                     onDismiss()
-                                    val clean = UhShieldEngine.cleanTrackingUrl(linkUrl, stripTrackers = true, deAmp = true)
-                                    ContextMenuActions.copyText(context, "Link URL", clean, "Link copied")
+                                    ContextMenuActions.copyCleanLink(
+                                        context = context,
+                                        label = "Link URL",
+                                        rawUrl = linkUrl,
+                                        isPrivate = isPrivate,
+                                        defaultToast = "Link copied"
+                                    )
                                 },
                             )
                             ContextActionRow(
@@ -284,7 +289,13 @@ fun ContextMenuDialog(
                                 label = "Copy image link",
                                 onClick = {
                                     onDismiss()
-                                    ContextMenuActions.copyText(context, "Image URL", imageUrl, "Image link copied")
+                                    ContextMenuActions.copyCleanLink(
+                                        context = context,
+                                        label = "Image URL",
+                                        rawUrl = imageUrl,
+                                        isPrivate = isPrivate,
+                                        defaultToast = "Image link copied"
+                                    )
                                 },
                             )
                             if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {

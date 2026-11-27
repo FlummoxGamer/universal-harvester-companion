@@ -49,6 +49,7 @@ data class ReaderPrefsState(
     val lineSpacing: ReaderLineSpacing = ReaderLineSpacing.COMFORTABLE,
     val margin: ReaderMargin = ReaderMargin.MEDIUM,
     val showImages: Boolean = true,
+    val ttsEnabled: Boolean = true,
     val ttsSpeed: Float = 1.0f
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
@@ -93,6 +94,7 @@ object ReaderModeManager {
     private const val K_LINE_SPACING = "line_spacing"
     private const val K_MARGIN = "margin"
     private const val K_SHOW_IMAGES = "show_images"
+    private const val K_TTS_ENABLED = "tts_enabled"
     private const val K_TTS_SPEED = "tts_speed"
     private const val K_AUTO_HOSTS = "auto_reader_hosts"
 
@@ -127,6 +129,7 @@ object ReaderModeManager {
         val marginPx = sp.getInt(K_MARGIN, 22)
         val margin = ReaderMargin.entries.minByOrNull { kotlin.math.abs(it.px - marginPx) } ?: ReaderMargin.MEDIUM
         val showImages = sp.getBoolean(K_SHOW_IMAGES, true)
+        val ttsEnabled = sp.getBoolean(K_TTS_ENABLED, true)
         val ttsSpeed = sp.getFloat(K_TTS_SPEED, 1.0f).coerceIn(0.75f, 2.0f)
         val autoHosts = sp.getStringSet(K_AUTO_HOSTS, emptySet())?.toSet() ?: emptySet()
 
@@ -140,6 +143,7 @@ object ReaderModeManager {
                     lineSpacing = lineSpacing,
                     margin = margin,
                     showImages = showImages,
+                    ttsEnabled = ttsEnabled,
                     ttsSpeed = ttsSpeed
                 )
             )
@@ -282,9 +286,17 @@ object ReaderModeManager {
 
     // ---- Android TextToSpeech Read Aloud Engine ----
 
+    fun setTtsEnabled(enabled: Boolean) {
+        if (!enabled) {
+            stopTts()
+        }
+        updatePrefs { it.copy(ttsEnabled = enabled) }
+    }
+
     fun togglePlayPauseTts(ctx: Context) {
         init(ctx)
         val s = _state.value
+        if (!s.prefs.ttsEnabled) return
         if (s.ttsPlaying) {
             pauseTts()
             return
@@ -408,6 +420,7 @@ object ReaderModeManager {
             ?.putFloat(K_LINE_SPACING, p.lineSpacing.value)
             ?.putInt(K_MARGIN, p.margin.px)
             ?.putBoolean(K_SHOW_IMAGES, p.showImages)
+            ?.putBoolean(K_TTS_ENABLED, p.ttsEnabled)
             ?.putFloat(K_TTS_SPEED, p.ttsSpeed)
             ?.apply()
     }

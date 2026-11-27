@@ -241,7 +241,46 @@ class BrowserFragment : Fragment() {
 
         val engineView = components.engine.createView(context, null)
         engineViewRef = engineView
-        binding.swipeRefresh.addView(engineView.asView())
+        val engineAndroidView = engineView.asView()
+        binding.swipeRefresh.addView(engineAndroidView)
+
+        // Lightweight non-consuming touch scroll detector for the existing Auto-hide Bar toggle
+        val hideThresholdPx = 42f * resources.displayMetrics.density
+        val revealThresholdPx = 22f * resources.displayMetrics.density
+        var lastScrollTouchY = 0f
+        var scrollAccumDy = 0f
+        engineAndroidView.setOnTouchListener { _, event ->
+            if (viewModel.isAutoHideBarEnabled.value &&
+                !viewModel.isEditing.value &&
+                !viewModel.showFindInPage.value &&
+                !viewModel.showZoomBar.value &&
+                !viewModel.isInPipMode.value
+            ) {
+                when (event.actionMasked) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        lastScrollTouchY = event.rawY
+                        scrollAccumDy = 0f
+                    }
+                    android.view.MotionEvent.ACTION_MOVE -> {
+                        val dy = event.rawY - lastScrollTouchY
+                        lastScrollTouchY = event.rawY
+                        if ((dy < 0f && scrollAccumDy > 0f) || (dy > 0f && scrollAccumDy < 0f)) {
+                            scrollAccumDy = dy
+                        } else {
+                            scrollAccumDy += dy
+                        }
+                        if (scrollAccumDy < -hideThresholdPx) {
+                            viewModel.setToolbarAutoHidden(true)
+                        } else if (scrollAccumDy > revealThresholdPx) {
+                            viewModel.setToolbarAutoHidden(false)
+                        }
+                    }
+                }
+            } else if (viewModel.isToolbarAutoHidden.value) {
+                viewModel.setToolbarAutoHidden(false)
+            }
+            false
+        }
 
         // Mount modular Compose overlay for Long-Press Context Menu, Smart JS & HTTPS Fallback banners
         val overlayComposeView = ComposeView(context).apply {
@@ -297,10 +336,11 @@ class BrowserFragment : Fragment() {
             val density = v.resources.displayMetrics.density
             val isLandscape = v.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
             // Exact match with UHAddressBar barHeight (50dp landscape, 58dp portrait) + docked strips
-            val toolbarClearancePx = ((if (isLandscape) 50f else 58f) * density).toInt()
+            val isAutoHidden = viewModel.isToolbarAutoHidden.value && viewModel.isAutoHideBarEnabled.value
+            val toolbarClearancePx = if (isAutoHidden) 0 else ((if (isLandscape) 50f else 58f) * density).toInt()
             val extra = viewModel.chromeExtraDp.value
-            val extraTopPx = (extra.topDp * density).toInt()
-            val extraBottomPx = (extra.bottomDp * density).toInt()
+            val extraTopPx = if (isAutoHidden && !viewModel.isBarBottom.value) 0 else (extra.topDp * density).toInt()
+            val extraBottomPx = if (isAutoHidden && viewModel.isBarBottom.value) 0 else (extra.bottomDp * density).toInt()
             val isBottom = viewModel.isBarBottom.value
             val topPadding = bars.top + (if (!isBottom) toolbarClearancePx else 0) + extraTopPx
             val bottomPadding = bars.bottom + (if (isBottom) toolbarClearancePx else 0) + extraBottomPx
@@ -346,13 +386,29 @@ class BrowserFragment : Fragment() {
                     }
                 }
                 launch {
+                    viewModel.isAutoHideBarEnabled.collect { enabled ->
+                        if (!enabled) viewModel.setToolbarAutoHidden(false)
+                        ViewCompat.requestApplyInsets(binding.browserLayout)
+                    }
+                }
+                launch {
+                    viewModel.isToolbarAutoHidden.collect {
+                        ViewCompat.requestApplyInsets(binding.browserLayout)
+                    }
+                }
+                launch {
                     viewModel.chromeExtraDp.collect {
                         ViewCompat.requestApplyInsets(binding.browserLayout)
                     }
                 }
                 launch {
-                    viewModel.capturePreviewSignal.collect {
-                        captureCurrentTabPreview()
+                    viewModel.capturePreviewSignal.collect { onDone ->
+                        captureCurrentTabPreview { onDone?.invoke() }
+                    }
+                }
+                launch {
+                    app.harvester.companion.browser.reader.ReaderModeManager.state.collect { readerState ->
+                        updateKeepScreenOn(readerState.isActive || readerState.ttsPlaying)
                     }
                 }
                 launch {
@@ -589,6 +645,7 @@ class BrowserFragment : Fragment() {
                         lastTabId = tab.id
                         lastNormalizedHost = host
                         lastTabPrivate = tab.content.private
+                        viewModel.setToolbarAutoHidden(false)
                         UhShieldEngine.onTabNavigated(tab.id, content.url)
                         context?.let { ctx ->
                             UhPrivacyController.syncPerSiteEngineProtections(
@@ -637,6 +694,11 @@ class BrowserFragment : Fragment() {
 
     fun onBackPressed(): Boolean {
         if (!isAdded || isDetached || context == null) return false
+        if (app.harvester.companion.browser.reader.ReaderModeManager.state.value.isActive) {
+            app.harvester.companion.browser.reader.ReaderModeManager.exitReader()
+            viewModel.setToolbarAutoHidden(false)
+            return true
+        }
         val components = (requireContext().applicationContext as UHApp).components
         if (sessionFeature.onBackPressed()) {
             return true
@@ -679,8 +741,18 @@ class BrowserFragment : Fragment() {
     }
 
     override fun onPause() {
+        updateKeepScreenOn(false)
         captureCurrentTabPreview()
         super.onPause()
+    }
+
+    private fun updateKeepScreenOn(keepOn: Boolean) {
+        val window = activity?.window ?: return
+        if (keepOn) {
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 
     private fun captureCurrentTabPreview(onComplete: ((android.graphics.Bitmap?) -> Unit)? = null) {

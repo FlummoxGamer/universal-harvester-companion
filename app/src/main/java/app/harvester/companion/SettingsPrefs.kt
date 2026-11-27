@@ -10,6 +10,7 @@ object SettingsPrefs {
     private fun p(ctx: Context) = ctx.applicationContext.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 
     private val _addressBarBottomFlow = MutableStateFlow<Boolean?>(null)
+    private val _autoHideBarFlow = MutableStateFlow<Boolean?>(null)
     private val _customDownloadUriFlow = MutableStateFlow<String?>(null)
     private val _homeStatsEnabledFlow = MutableStateFlow<Boolean?>(null)
     private val _forceDarkWebFlow = MutableStateFlow<Boolean?>(null)
@@ -26,6 +27,14 @@ object SettingsPrefs {
         }
         @Suppress("UNCHECKED_CAST")
         return _addressBarBottomFlow.asStateFlow() as StateFlow<Boolean>
+    }
+
+    fun autoHideBarFlow(ctx: Context): StateFlow<Boolean> {
+        if (_autoHideBarFlow.value == null) {
+            _autoHideBarFlow.value = getBool(ctx, K_AUTO_HIDE_BAR, false)
+        }
+        @Suppress("UNCHECKED_CAST")
+        return _autoHideBarFlow.asStateFlow() as StateFlow<Boolean>
     }
 
     fun customDownloadUriFlow(ctx: Context): StateFlow<String> {
@@ -106,6 +115,7 @@ object SettingsPrefs {
     fun setBool(ctx: Context, key: String, v: Boolean) {
         p(ctx).edit().putBoolean(key, v).apply()
         when (key) {
+            K_AUTO_HIDE_BAR -> _autoHideBarFlow.value = v
             K_HOME_SHOW_STATS -> _homeStatsEnabledFlow.value = v
             K_FORCE_DARK_SITES -> _forceDarkWebFlow.value = v
             K_ENHANCE_DARK -> _enhanceDarkFlow.value = v

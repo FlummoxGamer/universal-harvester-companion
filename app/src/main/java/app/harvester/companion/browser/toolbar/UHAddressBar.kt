@@ -482,7 +482,7 @@ fun UHAddressBar(
                                 Icon(
                                     painter = painterResource(id = R.drawable.uh_ic_private_vibe_24),
                                     contentDescription = null,
-                                    tint = privateAccent,
+                                    tint = Color(0xFFA78BFA),
                                     modifier = Modifier.size(18.dp)
                                 )
                             },

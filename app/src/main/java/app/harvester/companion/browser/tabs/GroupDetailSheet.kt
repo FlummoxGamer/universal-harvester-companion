@@ -109,8 +109,8 @@ internal fun GroupDetailSheet(
     val gridState = rememberLazyGridState()
     val latestMembers by rememberUpdatedState(members)
     var draggingTabId by remember { mutableStateOf<String?>(null) }
-    var dragStartItemOffset by remember { mutableStateOf(Offset.Zero) }
-    var dragPointerDelta by remember { mutableStateOf(Offset.Zero) }
+    var dragPointerViewport by remember { mutableStateOf(Offset.Zero) }
+    var dragTouchOffsetInCard by remember { mutableStateOf(Offset.Zero) }
     var dragMovedDistance by remember { mutableFloatStateOf(0f) }
     var didLiveReorder by remember { mutableStateOf(false) }
     var lastReorderAtMs by remember { mutableLongStateOf(0L) }
@@ -328,8 +328,13 @@ internal fun GroupDetailSheet(
                                     .zIndex(if (isDraggingThis) 10f else 0f)
                                     .graphicsLayer {
                                         if (isDraggingThis) {
-                                            translationX = dragPointerDelta.x
-                                            translationY = dragPointerDelta.y
+                                            val curInfo = gridState.layoutInfo.visibleItemsInfo
+                                                .firstOrNull { it.key == tab.id }
+                                            if (curInfo != null) {
+                                                val desiredTopLeft = dragPointerViewport - dragTouchOffsetInCard
+                                                translationX = desiredTopLeft.x - curInfo.offset.x.toFloat()
+                                                translationY = desiredTopLeft.y - curInfo.offset.y.toFloat()
+                                            }
                                             scaleX = 1.04f
                                             scaleY = 1.04f
                                             alpha = 0.94f
@@ -337,24 +342,23 @@ internal fun GroupDetailSheet(
                                     }
                                     .pointerInput(tab.id) {
                                         detectDragGesturesAfterLongPress(
-                                            onDragStart = {
+                                            onDragStart = { downOffset ->
                                                 val info = gridState.layoutInfo.visibleItemsInfo
                                                     .firstOrNull { it.key == tab.id }
-                                                dragStartItemOffset = if (info != null) {
+                                                dragTouchOffsetInCard = downOffset
+                                                dragPointerViewport = if (info != null) {
                                                     Offset(
-                                                        info.offset.x + info.size.width / 2f,
-                                                        info.offset.y + info.size.height / 2f
+                                                        info.offset.x.toFloat() + downOffset.x,
+                                                        info.offset.y.toFloat() + downOffset.y
                                                     )
-                                                } else Offset.Zero
+                                                } else downOffset
                                                 draggingTabId = tab.id
-                                                dragPointerDelta = Offset.Zero
                                                 dragMovedDistance = 0f
                                                 didLiveReorder = false
                                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                             },
                                             onDragCancel = {
                                                 draggingTabId = null
-                                                dragPointerDelta = Offset.Zero
                                                 dragMovedDistance = 0f
                                                 didLiveReorder = false
                                             },
@@ -362,7 +366,6 @@ internal fun GroupDetailSheet(
                                                 val moved = dragMovedDistance
                                                 val reordered = didLiveReorder
                                                 draggingTabId = null
-                                                dragPointerDelta = Offset.Zero
                                                 dragMovedDistance = 0f
                                                 didLiveReorder = false
                                                 if (!reordered && moved < 26f) {
@@ -371,17 +374,16 @@ internal fun GroupDetailSheet(
                                             },
                                             onDrag = { change, dragAmount ->
                                                 change.consume()
-                                                dragPointerDelta += dragAmount
+                                                dragPointerViewport += dragAmount
                                                 dragMovedDistance += hypot(dragAmount.x, dragAmount.y)
-                                                val pointerViewport = dragStartItemOffset + dragPointerDelta
 
                                                 val target = gridState.layoutInfo.visibleItemsInfo.firstOrNull { item ->
                                                     val key = item.key as? String ?: return@firstOrNull false
                                                     if (key == tab.id) return@firstOrNull false
                                                     val left = item.offset.x.toFloat()
                                                     val top = item.offset.y.toFloat()
-                                                    pointerViewport.x in left..(left + item.size.width) &&
-                                                        pointerViewport.y in top..(top + item.size.height)
+                                                    dragPointerViewport.x in left..(left + item.size.width) &&
+                                                        dragPointerViewport.y in top..(top + item.size.height)
                                                 }
                                                 val targetId = target?.key as? String
                                                 if (targetId != null) {
@@ -393,20 +395,20 @@ internal fun GroupDetailSheet(
                             ) {
                                 SwipeToCloseTabBox(
                                     enabled = draggingTabId == null,
-                                    onDismissed = { actions.onCloseTab(tab.id) }
+                                    onClose = { actions.onCloseTab(tab.id) }
                                 ) {
                                     TabGridCard(
                                         tab = tab,
+                                        group = group,
+                                        palette = sheetPalette,
                                         isSelected = tab.id == selectedTabId,
                                         isPinned = tab.id in pinnedIdSet,
                                         isMuted = tab.id in mutedIdSet,
+                                        isSleeping = TabMetaStore.isTabSleeping(tab, selectedTabId),
                                         isMultiSelect = false,
                                         isChecked = false,
                                         isDropTarget = false,
                                         isBeingDragged = isDraggingThis,
-                                        groupAccentColor = groupColor,
-                                        showGroupAccent = false,
-                                        palette = sheetPalette,
                                         showContextMenu = contextMenuTabId == tab.id,
                                         onDismissContextMenu = { contextMenuTabId = null },
                                         onClick = {
@@ -414,13 +416,14 @@ internal fun GroupDetailSheet(
                                             actions.onSelectTab(tab.id)
                                         },
                                         onClose = { actions.onCloseTab(tab.id) },
-                                        onDuplicate = { actions.onDuplicateTab(tab) },
-                                        onTogglePin = { actions.onTogglePinTab(tab) },
                                         onToggleMute = { actions.onToggleMuteTab(tab) },
-                                        onShare = { actions.onShareTabs(listOf(tab.id)) },
-                                        onBookmark = { actions.onBookmarkTabs(listOf(tab.id)) },
+                                        onTogglePin = { actions.onTogglePinTab(tab) },
                                         onAddToGroup = { onMoveTabToGroup(tab) },
-                                        onRemoveFromGroup = { actions.onRemoveTabFromGroup(tab.id) }
+                                        onRemoveFromGroup = { actions.onRemoveTabFromGroup(tab.id) },
+                                        onBookmark = { actions.onBookmarkTabs(listOf(tab.id)) },
+                                        onDuplicate = { actions.onDuplicateTab(tab) },
+                                        onShare = { actions.onShareTabs(listOf(tab.id)) },
+                                        showGroupAccent = false
                                     )
                                 }
                             }

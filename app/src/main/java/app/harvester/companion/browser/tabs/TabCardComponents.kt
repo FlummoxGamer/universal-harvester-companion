@@ -435,7 +435,21 @@ internal fun BlankTabMiniPreview(
     }
 
     Box(
-        modifier = modifier.background(bgBrush),
+        modifier = modifier
+            .background(bgBrush)
+            .then(
+                if (isPrivate) {
+                    Modifier.background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                PrivateAccentStrongColor.copy(alpha = 0.24f),
+                                Color.Transparent
+                            ),
+                            radius = 280f
+                        )
+                    )
+                } else Modifier
+            ),
         contentAlignment = Alignment.Center
     ) {
         if (compact) {

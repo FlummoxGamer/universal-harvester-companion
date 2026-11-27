@@ -162,8 +162,8 @@ internal fun TabCollectionPage(
 
         // Viewport-local drag-to-reorder & drop-to-group engine (100% parity on Normal & Private!)
         var draggingKey by remember { mutableStateOf<String?>(null) }
-        var dragOriginCenter by remember { mutableStateOf(Offset.Zero) }
-        var dragPointerDelta by remember { mutableStateOf(Offset.Zero) }
+        var dragPointerViewport by remember { mutableStateOf(Offset.Zero) }
+        var dragTouchOffsetInCard by remember { mutableStateOf(Offset.Zero) }
         var dragMovedDistance by remember { mutableFloatStateOf(0f) }
         var didLiveReorder by remember { mutableStateOf(false) }
         var lastReorderAtMs by remember { mutableLongStateOf(0L) }
@@ -231,18 +231,18 @@ internal fun TabCollectionPage(
             if (isMultiSelect) return this
             return this.pointerInput(itemKey, isPrivate, canMergeIntoOthers) {
                 detectDragGesturesAfterLongPress(
-                    onDragStart = {
+                    onDragStart = { downOffset ->
                         val visibleInfo = gridState.layoutInfo.visibleItemsInfo
                             .firstOrNull { it.key == itemKey }
-                        dragOriginCenter = if (visibleInfo != null) {
+                        dragTouchOffsetInCard = downOffset
+                        dragPointerViewport = if (visibleInfo != null) {
                             Offset(
-                                visibleInfo.offset.x + visibleInfo.size.width / 2f,
-                                visibleInfo.offset.y + visibleInfo.size.height / 2f
+                                visibleInfo.offset.x.toFloat() + downOffset.x,
+                                visibleInfo.offset.y.toFloat() + downOffset.y
                             )
-                        } else Offset.Zero
+                        } else downOffset
 
                         draggingKey = itemKey
-                        dragPointerDelta = Offset.Zero
                         dragMovedDistance = 0f
                         didLiveReorder = false
                         autoScrollSpeed = 0f
@@ -251,7 +251,6 @@ internal fun TabCollectionPage(
                     },
                     onDragCancel = {
                         draggingKey = null
-                        dragPointerDelta = Offset.Zero
                         dragMovedDistance = 0f
                         didLiveReorder = false
                         autoScrollSpeed = 0f
@@ -264,7 +263,6 @@ internal fun TabCollectionPage(
 
                         cancelDwell()
                         draggingKey = null
-                        dragPointerDelta = Offset.Zero
                         dragMovedDistance = 0f
                         didLiveReorder = false
                         autoScrollSpeed = 0f
@@ -291,10 +289,10 @@ internal fun TabCollectionPage(
                     },
                     onDrag = { change, dragAmount ->
                         change.consume()
-                        dragPointerDelta += dragAmount
+                        dragPointerViewport += dragAmount
                         dragMovedDistance += hypot(dragAmount.x, dragAmount.y)
 
-                        val pointerViewport = dragOriginCenter + dragPointerDelta
+                        val pointerViewport = dragPointerViewport
                         val layoutInfo = gridState.layoutInfo
                         val vpStart = layoutInfo.viewportStartOffset.toFloat()
                         val vpEnd = layoutInfo.viewportEndOffset.toFloat()
@@ -391,38 +389,50 @@ internal fun TabCollectionPage(
                                 members = item.members,
                                 selectedTabId = selectedTabId,
                                 palette = palette,
+                                isDropTarget = false,
                                 onOpenGroup = { onOpenGroupDetail(item.group) },
-                                onNewTabInGroup = { actions.onNewTabInGroup(item.group.id, item.group.isPrivate) },
+                                onAddNewTabInGroup = { actions.onNewTabInGroup(item.group.id, item.group.isPrivate) },
                                 onEditGroup = { onEditGroup(item.group) },
+                                onBookmarkGroup = {
+                                    if (!item.group.isPrivate) actions.onBookmarkTabs(item.group.tabIds)
+                                },
+                                onShareGroup = { actions.onShareTabs(item.group.tabIds) },
                                 onUngroup = { actions.onUngroup(item.group.id) },
-                                onCloseGroupTabs = { actions.onCloseGroupTabs(item.group) }
+                                onCloseGroup = { actions.onCloseGroupTabs(item.group) }
                             )
                         }
                         is TrayItem.SingleTabItem -> {
                             val tab = item.tab
                             SwipeToCloseTabBox(
                                 enabled = !isMultiSelect,
-                                onDismissed = { actions.onCloseTab(tab.id) }
+                                onClose = { actions.onCloseTab(tab.id) }
                             ) {
                                 TabListRow(
                                     tab = tab,
+                                    group = null,
+                                    palette = palette,
                                     isSelected = tab.id == selectedTabId,
                                     isPinned = tab.id in pinnedIdSet,
                                     isMuted = tab.id in mutedIdSet,
+                                    isSleeping = TabMetaStore.isTabSleeping(tab, selectedTabId),
                                     isMultiSelect = isMultiSelect,
                                     isChecked = tab.id in selectedIds,
-                                    palette = palette,
+                                    isDropTarget = false,
+                                    isBeingDragged = false,
+                                    showContextMenu = contextMenuTabId == tab.id,
+                                    onDismissContextMenu = { contextMenuTabId = null },
                                     onClick = {
                                         if (isMultiSelect) onToggleSelectId(tab.id)
                                         else actions.onSelectTab(tab.id)
                                     },
                                     onClose = { actions.onCloseTab(tab.id) },
-                                    onDuplicate = { actions.onDuplicateTab(tab) },
-                                    onTogglePin = { actions.onTogglePinTab(tab) },
                                     onToggleMute = { actions.onToggleMuteTab(tab) },
-                                    onShare = { actions.onShareTabs(listOf(tab.id)) },
+                                    onTogglePin = { actions.onTogglePinTab(tab) },
+                                    onAddToGroup = { onRequestAddTabToGroup(tab) },
+                                    onRemoveFromGroup = null,
                                     onBookmark = { actions.onBookmarkTabs(listOf(tab.id)) },
-                                    onAddToGroup = { onRequestAddTabToGroup(tab) }
+                                    onDuplicate = { actions.onDuplicateTab(tab) },
+                                    onShare = { actions.onShareTabs(listOf(tab.id)) }
                                 )
                             }
                         }
@@ -478,8 +488,13 @@ internal fun TabCollectionPage(
                                     .zIndex(if (isDraggingThis) 12f else 0f)
                                     .graphicsLayer {
                                         if (isDraggingThis) {
-                                            translationX = dragPointerDelta.x
-                                            translationY = dragPointerDelta.y
+                                            val curInfo = gridState.layoutInfo.visibleItemsInfo
+                                                .firstOrNull { it.key == item.key }
+                                            if (curInfo != null) {
+                                                val desiredTopLeft = dragPointerViewport - dragTouchOffsetInCard
+                                                translationX = desiredTopLeft.x - curInfo.offset.x.toFloat()
+                                                translationY = desiredTopLeft.y - curInfo.offset.y.toFloat()
+                                            }
                                             scaleX = 1.04f
                                             scaleY = 1.04f
                                             alpha = 0.94f
@@ -491,16 +506,20 @@ internal fun TabCollectionPage(
                                     group = item.group,
                                     members = item.members,
                                     selectedTabId = selectedTabId,
-                                    isDropTarget = isArmedDropTarget,
-                                    isBeingDragged = isDraggingThis,
                                     palette = palette,
-                                    showContextMenu = contextMenuGroupId == item.group.id,
-                                    onDismissContextMenu = { contextMenuGroupId = null },
+                                    isDropTarget = isArmedDropTarget,
                                     onOpenGroup = { onOpenGroupDetail(item.group) },
-                                    onNewTabInGroup = { actions.onNewTabInGroup(item.group.id, item.group.isPrivate) },
+                                    onAddNewTabInGroup = { actions.onNewTabInGroup(item.group.id, item.group.isPrivate) },
                                     onEditGroup = { onEditGroup(item.group) },
+                                    onBookmarkGroup = {
+                                        if (!item.group.isPrivate) actions.onBookmarkTabs(item.group.tabIds)
+                                    },
+                                    onShareGroup = { actions.onShareTabs(item.group.tabIds) },
                                     onUngroup = { actions.onUngroup(item.group.id) },
-                                    onCloseGroupTabs = { actions.onCloseGroupTabs(item.group) }
+                                    onCloseGroup = { actions.onCloseGroupTabs(item.group) },
+                                    isBeingDragged = isDraggingThis,
+                                    showContextMenu = contextMenuGroupId == item.group.id,
+                                    onDismissContextMenu = { contextMenuGroupId = null }
                                 )
                             }
                         }
@@ -512,8 +531,13 @@ internal fun TabCollectionPage(
                                     .zIndex(if (isDraggingThis) 12f else 0f)
                                     .graphicsLayer {
                                         if (isDraggingThis) {
-                                            translationX = dragPointerDelta.x
-                                            translationY = dragPointerDelta.y
+                                            val curInfo = gridState.layoutInfo.visibleItemsInfo
+                                                .firstOrNull { it.key == item.key }
+                                            if (curInfo != null) {
+                                                val desiredTopLeft = dragPointerViewport - dragTouchOffsetInCard
+                                                translationX = desiredTopLeft.x - curInfo.offset.x.toFloat()
+                                                translationY = desiredTopLeft.y - curInfo.offset.y.toFloat()
+                                            }
                                             scaleX = 1.05f
                                             scaleY = 1.05f
                                             alpha = 0.94f
@@ -523,18 +547,20 @@ internal fun TabCollectionPage(
                             ) {
                                 SwipeToCloseTabBox(
                                     enabled = !isMultiSelect && draggingKey == null,
-                                    onDismissed = { actions.onCloseTab(tab.id) }
+                                    onClose = { actions.onCloseTab(tab.id) }
                                 ) {
                                     TabGridCard(
                                         tab = tab,
+                                        group = null,
+                                        palette = palette,
                                         isSelected = tab.id == selectedTabId,
                                         isPinned = tab.id in pinnedIdSet,
                                         isMuted = tab.id in mutedIdSet,
+                                        isSleeping = TabMetaStore.isTabSleeping(tab, selectedTabId),
                                         isMultiSelect = isMultiSelect,
                                         isChecked = tab.id in selectedIds,
                                         isDropTarget = isArmedDropTarget,
                                         isBeingDragged = isDraggingThis,
-                                        palette = palette,
                                         showContextMenu = contextMenuTabId == tab.id,
                                         onDismissContextMenu = { contextMenuTabId = null },
                                         onClick = {
@@ -542,12 +568,13 @@ internal fun TabCollectionPage(
                                             else actions.onSelectTab(tab.id)
                                         },
                                         onClose = { actions.onCloseTab(tab.id) },
-                                        onDuplicate = { actions.onDuplicateTab(tab) },
-                                        onTogglePin = { actions.onTogglePinTab(tab) },
                                         onToggleMute = { actions.onToggleMuteTab(tab) },
-                                        onShare = { actions.onShareTabs(listOf(tab.id)) },
+                                        onTogglePin = { actions.onTogglePinTab(tab) },
+                                        onAddToGroup = { onRequestAddTabToGroup(tab) },
+                                        onRemoveFromGroup = null,
                                         onBookmark = { actions.onBookmarkTabs(listOf(tab.id)) },
-                                        onAddToGroup = { onRequestAddTabToGroup(tab) }
+                                        onDuplicate = { actions.onDuplicateTab(tab) },
+                                        onShare = { actions.onShareTabs(listOf(tab.id)) }
                                     )
                                 }
                             }
