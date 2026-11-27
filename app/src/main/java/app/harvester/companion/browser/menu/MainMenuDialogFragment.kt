@@ -134,6 +134,8 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                     val devToolsActiveTabIds by browserViewModel.devToolsActiveTabIds.collectAsState()
                     val isDevToolsActive = selectedTab?.id != null && selectedTab.id in devToolsActiveTabIds
                     val isCaptureActive = SessionRecorder.isActive()
+                    val readerState by app.harvester.companion.browser.reader.ReaderModeManager.state.collectAsState()
+                    val isPrivateTab = selectedTab?.content?.private == true
 
                     Box(
                         modifier = Modifier.fillMaxWidth(),
@@ -172,6 +174,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                                         onNewPrivateTab = {
                                             dismissAllowingStateLoss()
                                             browserViewModel.openNewPrivateTab()
+                                            navigateSafe(R.id.homeFragment)
                                         },
                                         onCaptureTools = {
                                             dismissAllowingStateLoss()
@@ -181,7 +184,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                                             dismissAllowingStateLoss()
                                             context.startActivity(Intent(context, SettingsActivity::class.java))
                                         },
-                                        onCustomizeHome = {
+                                        onWallpaper = {
                                             dismissAllowingStateLoss()
                                             context.startActivity(Intent(context, CustomizeHomeActivity::class.java))
                                         },
@@ -192,10 +195,6 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                                         onScripts = {
                                             dismissAllowingStateLoss()
                                             context.startActivity(Intent(context, ScriptsActivity::class.java))
-                                        },
-                                        onQuit = {
-                                            dismissAllowingStateLoss()
-                                            activity?.finish()
                                         }
                                     )
                                 } else {
@@ -209,6 +208,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                                         isTranslated = isTranslated,
                                         isDevToolsActive = isDevToolsActive,
                                         isCaptureActive = isCaptureActive,
+                                        isReaderActive = readerState.isActive,
                                         zoomPercent = zoomPercent,
                                         onBack = {
                                             dismissAllowingStateLoss()
@@ -265,6 +265,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                                         onNewPrivateTab = {
                                             dismissAllowingStateLoss()
                                             browserViewModel.openNewPrivateTab()
+                                            navigateSafe(R.id.homeFragment)
                                         },
                                         onTranslate = {
                                             dismissAllowingStateLoss()
@@ -295,9 +296,13 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                                             dismissAllowingStateLoss()
                                             browserViewModel.openSavePdfSheet()
                                         },
+                                        onToggleReaderMode = {
+                                            dismissAllowingStateLoss()
+                                            app.harvester.companion.browser.reader.ReaderModeManager.toggleReader()
+                                        },
                                         onCopyLink = {
                                             dismissAllowingStateLoss()
-                                            browserViewModel.copyLink(currentUrl)
+                                            browserViewModel.copyLink(currentUrl, isPrivate = isPrivateTab)
                                         },
                                         onOpenInExternalApp = {
                                             val hostActivity = activity ?: context
@@ -345,10 +350,9 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
         onNewPrivateTab: () -> Unit,
         onCaptureTools: () -> Unit,
         onSettings: () -> Unit,
-        onCustomizeHome: () -> Unit,
+        onWallpaper: () -> Unit,
         onExtensions: () -> Unit,
-        onScripts: () -> Unit,
-        onQuit: () -> Unit
+        onScripts: () -> Unit
     ) {
         Column(
             modifier = Modifier.fillMaxWidth(),
@@ -374,9 +378,9 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                 ) {
                     CompactGridTile(
                         iconRes = R.drawable.fx_ic_appearance_24,
-                        label = "Customize",
+                        label = "Wallpaper",
                         modifier = Modifier.weight(1f),
-                        onClick = onCustomizeHome
+                        onClick = onWallpaper
                     )
                     CompactGridTile(
                         iconRes = R.drawable.fx_ic_extensions_24,
@@ -401,37 +405,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                 }
             }
 
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surface,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    FooterActionButton(
-                        iconRes = R.drawable.fx_ic_settings_24,
-                        label = "Settings",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.weight(1f),
-                        onClick = onSettings
-                    )
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .height(22.dp)
-                            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
-                    )
-                    FooterActionButton(
-                        iconRes = R.drawable.ic_power,
-                        label = "Quit",
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.weight(1f),
-                        onClick = onQuit
-                    )
-                }
-            }
+            SettingsPillFooter(onClick = onSettings)
         }
     }
 
@@ -446,6 +420,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
         isTranslated: Boolean,
         isDevToolsActive: Boolean,
         isCaptureActive: Boolean,
+        isReaderActive: Boolean,
         zoomPercent: Int,
         onBack: () -> Unit,
         onForward: () -> Unit,
@@ -463,6 +438,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
         onZoomStep: (Int) -> Unit,
         onAddToHome: () -> Unit,
         onSavePdfPrint: () -> Unit,
+        onToggleReaderMode: () -> Unit,
         onCopyLink: () -> Unit,
         onOpenInExternalApp: () -> Unit,
         onExtensions: () -> Unit,
@@ -649,7 +625,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                 }
             }
 
-            // Row 4: Slim Utility & Settings Bar at bottom thumb edge
+            // Row 4: Slim Utility Bar (Print / PDF, Reader Mode, Copy Clean Link, Open App)
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surface,
@@ -667,6 +643,14 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                     )
                     FooterDivider()
                     FooterActionButton(
+                        iconRes = R.drawable.uh_ic_reader_mode_24,
+                        label = if (isReaderActive) "Exit Reader" else "Reader",
+                        tint = if (isReaderActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                        onClick = onToggleReaderMode
+                    )
+                    FooterDivider()
+                    FooterActionButton(
                         iconRes = R.drawable.uh_ic_copy_24,
                         label = "Copy Link",
                         modifier = Modifier.weight(1f),
@@ -679,16 +663,11 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                         modifier = Modifier.weight(1f),
                         onClick = onOpenInExternalApp
                     )
-                    FooterDivider()
-                    FooterActionButton(
-                        iconRes = R.drawable.fx_ic_settings_24,
-                        label = "Settings",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.weight(1f),
-                        onClick = onSettings
-                    )
                 }
             }
+
+            // Row 5: Full-Width Frosted Settings Pill at bottom of sheet
+            SettingsPillFooter(onClick = onSettings)
         }
     }
 
@@ -765,7 +744,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
             )
             QuickActionItem(
                 label = "Private",
-                iconRes = R.drawable.uh_ic_private_mode_24,
+                iconRes = R.drawable.uh_ic_private_vibe_24,
                 modifier = Modifier.weight(1f),
                 onClick = onNewPrivateTab
             )
@@ -905,6 +884,46 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+    }
+
+    @Composable
+    private fun SettingsPillFooter(onClick: () -> Unit) {
+        val pillShape = androidx.compose.foundation.shape.CircleShape
+        Surface(
+            shape = pillShape,
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+            tonalElevation = 2.dp,
+            border = androidx.compose.foundation.BorderStroke(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(pillShape)
+                .clickable(onClick = onClick)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.fx_ic_settings_24),
+                    contentDescription = "Settings",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Settings",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
     }
 }

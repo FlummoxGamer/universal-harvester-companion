@@ -480,10 +480,12 @@ internal fun TabGroupGridCard(
                                 shadowElevation = 6.dp
                             ) {
                                 Text(
-                                    text = "Add to group",
+                                    text = "Add to ${group.name}",
                                     color = Color.White,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                                 )
                             }
@@ -512,23 +514,26 @@ private fun GroupMiniTile(
     ) {
         if (tab != null) {
             val isBlank = tab.content.url.isBlank() || tab.content.url == "about:blank"
-            val bmp = remember(tab.id, tab.content.url, previewVersion) {
-                if (isBlank) null
-                else TabPreviewCache.getOrLoadAsync(tab.id, isPrivate = tab.content.private)
+            val bmp = remember(tab.id, tab.content.url, isBlank, previewVersion) {
+                when {
+                    isBlank && !tab.content.private -> TabPreviewCache.getHomeSnapshotAsync()
+                    isBlank -> null
+                    else -> TabPreviewCache.getOrLoadAsync(tab.id, isPrivate = tab.content.private)
+                }
             }
-            if (isBlank) {
-                BlankTabMiniPreview(
-                    isPrivate = tab.content.private,
-                    palette = palette,
-                    compact = true,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else if (bmp != null && !bmp.isRecycled) {
+            if (bmp != null && !bmp.isRecycled) {
                 Image(
                     bitmap = bmp.asImageBitmap(),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     alignment = Alignment.TopCenter,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else if (isBlank) {
+                BlankTabMiniPreview(
+                    isPrivate = tab.content.private,
+                    palette = palette,
+                    compact = true,
                     modifier = Modifier.fillMaxSize()
                 )
             } else {

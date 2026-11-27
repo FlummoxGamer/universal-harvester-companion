@@ -24,15 +24,14 @@ import app.harvester.companion.browser.menu.ContextMenuDialog
 import app.harvester.companion.browser.menu.OcrResultDialog
 import app.harvester.companion.browser.privacy.BlockedRedirectToast
 import app.harvester.companion.browser.privacy.HomographWarningBanner
-import app.harvester.companion.browser.privacy.HttpsFallbackBanner
+import app.harvester.companion.browser.reader.ReaderControlsSheet
+import app.harvester.companion.browser.reader.ReaderModeManager
 import app.harvester.companion.components.Components
 import app.harvester.companion.privacy.UhHomographDetector
-import app.harvester.companion.privacy.UhPrivacyController
 import app.harvester.companion.privacy.UhShieldEngine
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import mozilla.components.browser.state.selector.selectedTab
-import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.engine.HitResult
 
 private data class ActiveHitMenu(
@@ -46,7 +45,9 @@ private data class ActiveHitMenu(
  * Modular Compose overlay host mounted over the BrowserFragment viewport:
  * 1) Redesigned Long-Press Context Menu dialog + OCR Result dialog
  * 2) Punycode/IDN homograph spoofing warning banner
- * 3) 1-Tap HTTPS-Only HTTP fallback banner & confirmed blocked-redirect toast
+ * 3) Confirmed blocked-redirect toast
+ * Note: HTTP-only sites are indicated silently via the red slashed shield in the address bar
+ * plus full connection details inside Site Shield (no intrusive on-screen HTTP banner).
  */
 @Composable
 fun BrowserOverlays(
@@ -56,17 +57,19 @@ fun BrowserOverlays(
     val context = LocalContext.current
     val browserState by components.store.stateFlow.collectAsState()
     val isBarBottom by isBarBottomFlow.collectAsState()
-    val httpExceptions by UhShieldEngine.httpExceptionHosts.collectAsState()
     val blockedRedirect by UhShieldEngine.blockedRedirectEvent.collectAsState()
+    val readerState by ReaderModeManager.state.collectAsState()
 
     val selectedTab = browserState.selectedTab
     val tabId = selectedTab?.id.orEmpty()
     val currentUrl = selectedTab?.content?.url.orEmpty()
-    val currentHost = remember(currentUrl) { UhShieldEngine.normalizeHost(currentUrl) }
     val isPrivate = selectedTab?.content?.private == true
-    val isLoading = selectedTab?.content?.loading == true
-    val isSecure = selectedTab?.content?.securityInfo?.isSecure == true
     val canGoBack = selectedTab?.content?.canGoBack == true
+
+    LaunchedEffect(tabId, currentUrl) {
+        ReaderModeManager.init(context)
+        ReaderModeManager.onActiveTabChanged(currentUrl)
+    }
 
     // 1. Capture and immediately consume HitResult so rotation/resume never re-opens the menu
     var activeHitMenu by remember { mutableStateOf<ActiveHitMenu?>(null) }
@@ -85,41 +88,14 @@ fun BrowserOverlays(
         }
     }
 
-    // 2. HTTPS-Only 1-tap HTTP fallback banner (debounced so normal redirects never flicker)
-    var dismissedHttpsHost by remember { mutableStateOf<String?>(null) }
-    var showHttpsFallback by remember { mutableStateOf(false) }
-
-    LaunchedEffect(currentUrl, isLoading, isSecure, httpExceptions, isPrivate) {
-        showHttpsFallback = false
-        if (dismissedHttpsHost != null && dismissedHttpsHost != currentHost) {
-            dismissedHttpsHost = null
-        }
-        val httpsMode = UhPrivacyController.buildHttpsOnlyMode(context)
-        val httpsModeActive = httpsMode == Engine.HttpsOnlyMode.ENABLED ||
-            (httpsMode == Engine.HttpsOnlyMode.ENABLED_PRIVATE_ONLY && isPrivate)
-
-        val candidate = httpsModeActive &&
-            !isLoading &&
-            currentUrl.startsWith("https://", ignoreCase = true) &&
-            !isSecure &&
-            currentHost.isNotBlank() &&
-            currentHost !in httpExceptions &&
-            dismissedHttpsHost != currentHost
-
-        if (candidate) {
-            delay(450L)
-            showHttpsFallback = true
-        }
-    }
-
-    // 4. Auto-dismiss blocked ad-redirect / popunder toast after 4.5s
+    // 2. Auto-dismiss blocked ad-redirect / popunder toast after 4.5s
     LaunchedEffect(blockedRedirect?.id) {
         val currentEvent = blockedRedirect ?: return@LaunchedEffect
         delay(4500L)
         UhShieldEngine.dismissBlockedRedirect(currentEvent.id)
     }
 
-    // 5. Punycode / IDN Homograph spoofing detection
+    // 3. Punycode / IDN Homograph spoofing detection
     var dismissedHomographHosts by remember { mutableStateOf<Set<String>>(emptySet()) }
     val homographWarning = remember(currentUrl) {
         UhHomographDetector.inspectUrl(currentUrl)
@@ -155,28 +131,6 @@ fun BrowserOverlays(
                         },
                     )
                 }
-            }
-
-            AnimatedVisibility(
-                visible = showHttpsFallback,
-                enter = fadeIn() + slideInVertically { if (isBarBottom) it / 2 else -it / 2 },
-                exit = fadeOut() + slideOutVertically { if (isBarBottom) it / 2 else -it / 2 },
-            ) {
-                HttpsFallbackBanner(
-                    host = currentHost,
-                    onContinueHttp = {
-                        showHttpsFallback = false
-                        if (tabId.isNotBlank() && currentUrl.isNotBlank()) {
-                            UhPrivacyController.allowHttpFallbackForSite(context, currentUrl)
-                            val httpUrl = currentUrl.replaceFirst("https://", "http://", ignoreCase = true)
-                            components.useCases.sessionUseCases.loadUrl(httpUrl)
-                        }
-                    },
-                    onDismiss = {
-                        dismissedHttpsHost = currentHost
-                        showHttpsFallback = false
-                    },
-                )
             }
 
             AnimatedVisibility(
@@ -227,6 +181,14 @@ fun BrowserOverlays(
                     )
                 },
                 onDismiss = { ocrResultText = null },
+            )
+        }
+
+        // Reader Mode Appearance & Read Aloud Controls Sheet
+        if (readerState.controlsSheetVisible && readerState.isActive) {
+            ReaderControlsSheet(
+                state = readerState,
+                onDismiss = { ReaderModeManager.closeControlsSheet() }
             )
         }
     }

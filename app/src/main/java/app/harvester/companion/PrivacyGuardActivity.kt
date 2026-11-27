@@ -52,7 +52,7 @@ class PrivacyGuardActivity : AppCompatActivity() {
 
     private fun showRedirectDialog() {
         val opts = arrayOf("Stop redirecting to app", "Ask before redirecting", "Always allow")
-        val current = SettingsPrefs.getInt(this, SettingsPrefs.K_PG_REDIRECT, 1)
+        val current = SettingsPrefs.getInt(this, SettingsPrefs.K_PG_REDIRECT, 0)
         AlertDialog.Builder(this)
             .setTitle("Stop App Redirects")
             .setSingleChoiceItems(opts, current) { dialog, which ->

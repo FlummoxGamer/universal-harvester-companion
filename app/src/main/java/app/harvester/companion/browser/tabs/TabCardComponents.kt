@@ -113,9 +113,12 @@ internal fun TabGridCard(
     }
 
     val previewVersion by TabPreviewCache.versionFlow.collectAsState()
-    val previewBitmap = remember(tab.id, tab.content.url, previewVersion) {
-        if (isBlankTab) null
-        else TabPreviewCache.getOrLoadAsync(tab.id, isPrivate = tab.content.private)
+    val previewBitmap = remember(tab.id, tab.content.url, isBlankTab, previewVersion) {
+        when {
+            isBlankTab && !tab.content.private -> TabPreviewCache.getHomeSnapshotAsync()
+            isBlankTab -> null
+            else -> TabPreviewCache.getOrLoadAsync(tab.id, isPrivate = tab.content.private)
+        }
     }
 
     val hasMedia = TabMetaStore.hasMediaSession(tab) || isMuted
@@ -140,20 +143,20 @@ internal fun TabGridCard(
                     .fillMaxSize()
                     .background(palette.previewBg)
             ) {
-                // 1. Full-bleed Preview Canvas (live screenshot, Home Mini-Preview, or clean domain card)
-                if (isBlankTab) {
-                    BlankTabMiniPreview(
-                        isPrivate = tab.content.private,
-                        palette = palette,
-                        compact = false,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else if (previewBitmap != null && !previewBitmap.isRecycled) {
+                // 1. Full-bleed Preview Canvas (live screenshot, real Home snapshot, or fallback card)
+                if (previewBitmap != null && !previewBitmap.isRecycled) {
                     Image(
                         bitmap = previewBitmap.asImageBitmap(),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         alignment = Alignment.TopCenter,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else if (isBlankTab) {
+                    BlankTabMiniPreview(
+                        isPrivate = tab.content.private,
+                        palette = palette,
+                        compact = false,
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
@@ -163,6 +166,30 @@ internal fun TabGridCard(
                         palette = palette,
                         modifier = Modifier.fillMaxSize()
                     )
+                }
+
+                // Crisp snap-highlight overlay when another card is hovering to merge
+                if (isDropTarget) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(palette.accent.copy(alpha = 0.20f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = palette.accentStrong,
+                            shadowElevation = 6.dp
+                        ) {
+                            Text(
+                                text = "Create Group",
+                                color = palette.onAccent,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
                 }
 
                 // Subtle bottom glass vignette for elevated depth
@@ -454,7 +481,7 @@ internal fun BlankTabMiniPreview(
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Stealth Mode",
+                        text = "Private Browsing",
                         color = Color(0xFFE9E2FF),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold

@@ -88,7 +88,6 @@ fun HomeScreen(
     shortcuts: List<Shortcut>,
     wallpaperState: WallpaperStore.WallpaperState,
     isWallpaperPlaybackActive: Boolean = true,
-    onEditHomeClick: () -> Unit,
     onShortcutOpen: (String) -> Unit,
     onMoveShortcut: (Int, Int) -> Unit,
     onAddShortcut: (Shortcut) -> Unit,
@@ -304,27 +303,6 @@ fun HomeScreen(
 
                 Spacer(modifier = Modifier.weight(0.36f))
             }
-        }
-
-        IconButton(
-            onClick = onEditHomeClick,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .statusBarsPadding()
-                .padding(
-                    top = if (!isAddressBarBottom) {
-                        if (isLandscape) 52.dp else 60.dp
-                    } else {
-                        8.dp
-                    },
-                    end = 10.dp
-                )
-                .size(40.dp)
-        ) {
-            ShadowedPencilIcon(
-                tint = textColor,
-                shadowColor = shadowColor
-            )
         }
     }
 }

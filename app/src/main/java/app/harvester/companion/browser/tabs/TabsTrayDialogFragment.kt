@@ -291,9 +291,6 @@ class TabsTrayDialogFragment : DialogFragment() {
                                     TabGroupStore.insertTabAfter(newId, anchorId, isPrivate)
                                 }
                                 if (!isPrivate) TabHistoryStore.recordTabAccess(newId)
-                                if (isPrivate) {
-                                    browserViewModel.enterEditMode("")
-                                }
                                 navigateToHome()
                             },
                             onNewTabInGroup = { groupId, isPrivate ->
@@ -306,9 +303,6 @@ class TabsTrayDialogFragment : DialogFragment() {
                                 )
                                 TabGroupStore.addTabToGroup(groupId, newId)
                                 if (!isPrivate) TabHistoryStore.recordTabAccess(newId)
-                                if (isPrivate) {
-                                    browserViewModel.enterEditMode("")
-                                }
                                 navigateToHome()
                             },
                             onDuplicateTab = { sourceTab ->

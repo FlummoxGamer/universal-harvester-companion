@@ -381,16 +381,22 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         PdfPrintHelper.printSession(activityContext, geckoSessionForTab(null), title)
     }
 
-    fun copyLink(url: String) {
+    fun copyLink(url: String, isPrivate: Boolean = false) {
         if (url.isBlank() || url == "about:blank") return
         val cleanUrl = app.harvester.companion.privacy.UhShieldEngine.cleanTrackingUrl(
             rawUrl = url,
-            stripTrackers = SettingsPrefs.getBool(context, SettingsPrefs.K_PG_CLEAR_URLS, true),
-            deAmp = SettingsPrefs.getBool(context, SettingsPrefs.K_ADV_DEAMP, true),
+            stripTrackers = true,
+            deAmp = true,
         )
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-        cm?.setPrimaryClip(ClipData.newPlainText("URL", cleanUrl))
-        val msg = if (cleanUrl != url) "Clean link copied (trackers stripped)" else "Link copied"
+        val clip = ClipData.newPlainText("URL", cleanUrl)
+        if (isPrivate && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            clip.description.extras = android.os.PersistableBundle().apply {
+                putBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE, true)
+            }
+        }
+        cm?.setPrimaryClip(clip)
+        val msg = if (cleanUrl != url) "Clean link copied" else "Link copied"
         Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
     }
 
@@ -504,7 +510,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         if (anchorId != null && SettingsPrefs.getBool(context, SettingsPrefs.K_TAB_OPEN_NEXT_TO_CURRENT, true)) {
             app.harvester.companion.browser.tabs.TabGroupStore.insertTabAfter(newId, anchorId, isPrivate = true)
         }
-        enterEditMode("")
+        exitEditMode()
     }
 
     // ---- Bookmarks ----

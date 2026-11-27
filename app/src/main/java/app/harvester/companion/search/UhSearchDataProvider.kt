@@ -81,10 +81,87 @@ object UhSearchDataProvider {
             val items = mutableListOf<UhSearchListItem>()
 
             if (isPrivate) {
-                // Hardened Private Search: zero history, zero recent searches, zero external trending/autocomplete leaks
-                if (query.isNotBlank()) {
-                    items.add(UhSearchListItem.Header("Private Search"))
-                    items.add(UhSearchListItem.Suggestion(query, SuggestionType.SEARCH))
+                if (query.isBlank()) {
+                    val tempPrivate = PrivateSearchHistoryStore.recent(6)
+                    if (tempPrivate.isNotEmpty()) {
+                        items.add(UhSearchListItem.Header("Private Session"))
+                        tempPrivate.forEach { term ->
+                            items.add(UhSearchListItem.Suggestion(term, SuggestionType.HISTORY))
+                        }
+                    }
+                    val normalRecent = fetchRecentSearchTerms(appCtx, components)
+                        .filter { norm -> tempPrivate.none { it.equals(norm, ignoreCase = true) } }
+                        .take(5)
+                    if (normalRecent.isNotEmpty()) {
+                        items.add(UhSearchListItem.Header("Recent Searches"))
+                        normalRecent.forEach { term ->
+                            items.add(UhSearchListItem.Suggestion(term, SuggestionType.HISTORY))
+                        }
+                    }
+                } else {
+                    val remoteDeferred = async {
+                        val showRemote = SettingsPrefs.getBool(appCtx, SettingsPrefs.K_SEARCH_REMOTE, true)
+                        if (!showRemote || !SettingsPrefs.getBool(appCtx, SettingsPrefs.K_SEARCH_SUGGESTIONS, true)) {
+                            return@async listOf(query)
+                        }
+                        try {
+                            val remote = suggestionClient.getSuggestions(activeEngine.id, activeEngine.suggestionsUrl, query)
+                            if (remote.isNullOrEmpty()) listOf(query) else remote.take(5)
+                        } catch (e: Exception) {
+                            UHLog.w("search_warn", "Remote suggestions failed: ${e.message}")
+                            listOf(query)
+                        }
+                    }
+                    val historyDeferred = async {
+                        if (!SettingsPrefs.getBool(appCtx, SettingsPrefs.K_SEARCH_HISTORY, true)) {
+                            return@async emptyList<UhSearchListItem.History>()
+                        }
+                        try {
+                            val since = System.currentTimeMillis() - 90L * 24 * 60 * 60 * 1000
+                            val visits = components.placesHistoryStorage.getDetailedVisits(since, System.currentTimeMillis())
+                            visits.asSequence()
+                                .filter {
+                                    !SearchHistoryUtils.isSearchUrl(appCtx, it.url) &&
+                                        (it.url.contains(query, ignoreCase = true) ||
+                                            (it.title?.contains(query, ignoreCase = true) == true))
+                                }
+                                .sortedByDescending { it.visitTime }
+                                .distinctBy { it.url }
+                                .take(5)
+                                .map { visit ->
+                                    val cleanTitle = visit.title?.let { SearchHistoryUtils.stripEngineSuffix(it) }
+                                        ?.takeIf { it.isNotBlank() } ?: visit.url
+                                    UhSearchListItem.History(cleanTitle, visit.url, null)
+                                }
+                                .toList()
+                        } catch (e: Exception) {
+                            UHLog.e("search_error", "Local history search failed: ${e.message}")
+                            emptyList()
+                        }
+                    }
+
+                    val privateMatches = PrivateSearchHistoryStore.matching(query, limit = 3)
+                    if (privateMatches.isNotEmpty()) {
+                        items.add(UhSearchListItem.Header("Private Session"))
+                        privateMatches.forEach { term ->
+                            items.add(UhSearchListItem.Suggestion(term, SuggestionType.HISTORY))
+                        }
+                    }
+
+                    val suggestions = remoteDeferred.await()
+                        .filter { sug -> privateMatches.none { it.equals(sug, ignoreCase = true) } }
+                    if (suggestions.isNotEmpty()) {
+                        items.add(UhSearchListItem.Header("Search"))
+                        suggestions.forEach { sug ->
+                            items.add(UhSearchListItem.Suggestion(sug, SuggestionType.SEARCH))
+                        }
+                    }
+
+                    val historyMatches = historyDeferred.await()
+                    if (historyMatches.isNotEmpty()) {
+                        items.add(UhSearchListItem.Header("History"))
+                        items.addAll(historyMatches)
+                    }
                 }
             } else if (query.isBlank()) {
                 val recentDeferred = async { fetchRecentSearchTerms(appCtx, components) }

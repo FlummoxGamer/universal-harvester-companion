@@ -59,6 +59,7 @@ object PrivateSessionNotificationManager {
                         TabGroupStore.clearPrivateGroups()
                         TabPreviewCache.clearPrivate()
                         TabHistoryStore.clearPrivateUndo()
+                        app.harvester.companion.search.PrivateSearchHistoryStore.clear()
                         PrivateLockManager.onAllPrivateClosed()
                         if (hadPrivateTabs) {
                             hadPrivateTabs = false
@@ -161,6 +162,7 @@ object PrivateSessionNotificationManager {
             TabPreviewCache.setLastActiveBitmap(null)
         }
         TabHistoryStore.clearPrivateUndo()
+        app.harvester.companion.search.PrivateSearchHistoryStore.clear()
         PrivateLockManager.onAllPrivateClosed()
         app.harvester.companion.privacy.UhPrivacyController.purgePrivateSessionData(context)
         cancel(context)

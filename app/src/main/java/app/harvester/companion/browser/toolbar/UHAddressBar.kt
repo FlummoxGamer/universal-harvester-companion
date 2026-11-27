@@ -86,6 +86,8 @@ fun UHAddressBar(
     isCurrentTabPinned: Boolean = false,
     isCurrentTabMuted: Boolean = false,
     zoomPercent: Int = 100,
+    isReaderEligible: Boolean = false,
+    isReaderActive: Boolean = false,
     onEditTextChanged: (String) -> Unit,
     onSubmit: (String) -> Unit,
     onEditStart: () -> Unit,
@@ -94,6 +96,7 @@ fun UHAddressBar(
     onLockClick: () -> Unit,
     onScriptMenuClick: () -> Unit,
     onModeBadgeClick: () -> Unit = {},
+    onReaderClick: () -> Unit = {},
     onReloadStopClick: () -> Unit = {},
     onMenuClick: () -> Unit,
     onTabCountClick: () -> Unit,
@@ -170,12 +173,7 @@ fun UHAddressBar(
     val outerBarColor = if (isWallpaperActive || isEditing) Color.Transparent else MaterialTheme.colorScheme.background
     val hasPageUrl = !isWallpaperActive && url.isNotBlank() && url != "about:blank"
 
-    val privateAccent = Color(0xFF9F7AEA)
-    val pillBorderColor = if (isPrivate) {
-        privateAccent.copy(alpha = 0.78f)
-    } else {
-        MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)
-    }
+    val pillBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)
 
     Row(
         modifier = Modifier
@@ -279,7 +277,7 @@ fun UHAddressBar(
                     contentAlignment = Alignment.CenterStart
                 ) {
                     if (isEditing) {
-                        val cursorAccent = if (isPrivate) privateAccent else MaterialTheme.colorScheme.primary
+                        val cursorAccent = MaterialTheme.colorScheme.primary
                         CompositionLocalProvider(
                             LocalTextSelectionColors provides TextSelectionColors(
                                 handleColor = cursorAccent,
@@ -362,7 +360,7 @@ fun UHAddressBar(
                     }
                 }
 
-                // Inline Dynamic Mode Badge + Reload/Stop when browsing
+                // Inline Dynamic Mode Badge + Reader Mode + Reload/Stop when browsing
                 if (!isEditing && hasPageUrl) {
                     if (isDesktopMode || zoomPercent != 100) {
                         val badgeLabel = buildString {
@@ -389,6 +387,32 @@ fun UHAddressBar(
                         }
                     }
 
+                    if (isReaderEligible || isReaderActive) {
+                        Box(
+                            modifier = Modifier
+                                .padding(end = 2.dp)
+                                .size(30.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (isReaderActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                                    else Color.Transparent
+                                )
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = onReaderClick
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.uh_ic_reader_mode_24),
+                                contentDescription = if (isReaderActive) "Exit Reader Mode" else "Enter Reader Mode",
+                                tint = if (isReaderActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
                     IconButton(
                         onClick = onReloadStopClick,
                         modifier = Modifier.size(30.dp)
@@ -402,15 +426,14 @@ fun UHAddressBar(
                     }
                 }
 
-                // Tab Counter Badge (tap opens Tab Switcher, long-press opens quick tab menu)
-                val tabBadgeColor = if (isPrivate) privateAccent else MaterialTheme.colorScheme.onSurface
+                // Tab Counter Badge (identical normal theme colors across Normal & Private)
+                val tabBadgeColor = MaterialTheme.colorScheme.onSurface
                 Box {
                     Box(
                         modifier = Modifier
                             .padding(horizontal = 4.dp)
                             .size(23.dp)
                             .clip(RoundedCornerShape(7.dp))
-                            .background(if (isPrivate) privateAccent.copy(alpha = 0.16f) else Color.Transparent)
                             .border(1.8.dp, tabBadgeColor, RoundedCornerShape(7.dp))
                             .combinedClickable(
                                 interactionSource = remember { MutableInteractionSource() },

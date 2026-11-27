@@ -71,7 +71,7 @@ class PrivacyGuardActivity : AppCompatActivity() {
                     mutableIntStateOf(SettingsPrefs.getInt(context, SettingsPrefs.K_PG_COOKIES, 0))
                 }
                 var redirectChoice by remember {
-                    mutableIntStateOf(SettingsPrefs.getInt(context, SettingsPrefs.K_PG_REDIRECT, 1))
+                    mutableIntStateOf(SettingsPrefs.getInt(context, SettingsPrefs.K_PG_REDIRECT, 0))
                 }
 
                 var showShieldDialog by remember { mutableStateOf(false) }
@@ -93,9 +93,9 @@ class PrivacyGuardActivity : AppCompatActivity() {
                     "Allow All Cookies" to "No cookie restrictions",
                 )
                 val redirectOptions = listOf(
-                    "Block App Redirects" to "Keep links inside UH instead of launching external apps",
-                    "Ask Before Opening App" to "Prompt before switching to an installed app",
-                    "Always Allow" to "Open supported app links automatically",
+                    "Block App Redirects" to "Keep links inside UH (Private tabs always block automatic app launches)",
+                    "Ask Before Opening App" to "Prompt before switching to an installed app (Normal tabs only)",
+                    "Always Allow" to "Open supported app links automatically (Normal tabs only)",
                 )
 
                 if (showShieldDialog) {

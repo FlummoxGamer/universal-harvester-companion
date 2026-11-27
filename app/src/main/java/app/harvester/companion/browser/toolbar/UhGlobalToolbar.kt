@@ -245,11 +245,14 @@ fun UhGlobalToolbar(
         } else 0
     }
     val isCaptureActive = SessionRecorder.isActive()
+    val readerState by app.harvester.companion.browser.reader.ReaderModeManager.state.collectAsState()
+    val isTabSecure = selectedTab?.content?.securityInfo?.isSecure == true
 
     val iconState = if (isBrowser) {
         when {
-            displayUrl.startsWith("https://") -> 1
-            displayUrl.startsWith("http://") -> 2
+            displayUrl.startsWith("http://", ignoreCase = true) -> 2
+            displayUrl.startsWith("https://", ignoreCase = true) && !isPageLoading && !isTabSecure -> 2
+            displayUrl.startsWith("https://", ignoreCase = true) -> 1
             else -> 0
         }
     } else 0
@@ -301,6 +304,9 @@ fun UhGlobalToolbar(
     val onSearchSubmit = { query: String ->
         val target = viewModel.normalize(query)
         if (target.isNotBlank()) {
+            if (isPrivateMode) {
+                app.harvester.companion.search.PrivateSearchHistoryStore.record(query)
+            }
             try {
                 viewModel.setPendingUrl(target)
                 if (isBrowser) {
@@ -602,7 +608,6 @@ fun UhGlobalToolbar(
                                 )
                                 TabGroupStore.addTabToGroup(activeGroup.id, newId)
                                 if (!activeGroup.isPrivate) TabHistoryStore.recordTabAccess(newId)
-                                if (activeGroup.isPrivate) viewModel.enterEditMode("")
                                 navigateToHomeSafe()
                             }
                         )
@@ -624,6 +629,8 @@ fun UhGlobalToolbar(
                         isCurrentTabPinned = isCurrentTabPinned,
                         isCurrentTabMuted = isCurrentTabMuted,
                         zoomPercent = zoomPercent,
+                        isReaderEligible = isBrowser && readerState.isEligible,
+                        isReaderActive = isBrowser && readerState.isActive,
                         onEditTextChanged = { viewModel.onTextChanged(it) },
                         onSubmit = onSearchSubmit,
                         onEditStart = {
@@ -634,6 +641,9 @@ fun UhGlobalToolbar(
                         onSearchEngineClick = { showSearchEnginePicker = true },
                         onLockClick = openTrustPanel,
                         onScriptMenuClick = { viewModel.openScriptsSheet() },
+                        onReaderClick = {
+                            app.harvester.companion.browser.reader.ReaderModeManager.toggleReader()
+                        },
                         onModeBadgeClick = { viewModel.openZoomBar() },
                         onReloadStopClick = onReloadStop,
                         onMenuClick = openMainMenu,

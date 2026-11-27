@@ -76,6 +76,7 @@ object GeckoWebExtensionBridge {
         if (!installed.compareAndSet(false, true)) return
         appContext = ctx.applicationContext
         componentsRef = components
+        app.harvester.companion.browser.reader.ReaderModeManager.init(ctx)
 
         mainHandler.post {
             installBridgeExtension(runtime)
@@ -212,6 +213,32 @@ object GeckoWebExtensionBridge {
             }
         }
         return true
+    }
+
+    fun sendReaderCommand(action: String, prefs: JSONObject? = null) {
+        val port = activeBridgePort ?: return
+        mainHandler.post {
+            try {
+                port.postMessage(JSONObject().apply {
+                    put("action", action)
+                    if (prefs != null) put("prefs", prefs)
+                })
+            } catch (e: Exception) {
+                UHLog.w("reader", "Failed sending $action: ${e.message}")
+            }
+        }
+    }
+
+    fun sendReaderTtsHighlight(index: Int) {
+        val port = activeBridgePort ?: return
+        mainHandler.post {
+            try {
+                port.postMessage(JSONObject().apply {
+                    put("action", "READER_TTS_HIGHLIGHT")
+                    put("index", index)
+                })
+            } catch (_: Exception) {}
+        }
     }
 
     fun pushCnameBlockedHost(subdomain: String, target: String, isTracker: Boolean) {
@@ -732,6 +759,38 @@ object GeckoWebExtensionBridge {
                     if (cat.isNotBlank()) {
                         SessionRecorder.record(cat, data)
                     }
+                    GeckoResult.fromValue(true)
+                }
+
+                "READER_ELIGIBILITY" -> {
+                    app.harvester.companion.browser.reader.ReaderModeManager.onEligibilityFromPage(
+                        url = json.optString("url"),
+                        host = json.optString("host"),
+                        eligible = json.optBoolean("eligible", false),
+                        active = json.optBoolean("active", false)
+                    )
+                    GeckoResult.fromValue(true)
+                }
+
+                "READER_ENTERED" -> {
+                    app.harvester.companion.browser.reader.ReaderModeManager.onReaderEnteredFromPage(
+                        url = json.optString("url"),
+                        host = json.optString("host"),
+                        title = json.optString("title"),
+                        readMins = json.optInt("readMins", 1),
+                        wordCount = json.optInt("wordCount", 0),
+                        paragraphsArray = json.optJSONArray("paragraphs")
+                    )
+                    GeckoResult.fromValue(true)
+                }
+
+                "READER_EXITED" -> {
+                    app.harvester.companion.browser.reader.ReaderModeManager.onReaderExitedFromPage()
+                    GeckoResult.fromValue(true)
+                }
+
+                "READER_OPEN_CONTROLS" -> {
+                    app.harvester.companion.browser.reader.ReaderModeManager.openControlsSheet()
                     GeckoResult.fromValue(true)
                 }
 

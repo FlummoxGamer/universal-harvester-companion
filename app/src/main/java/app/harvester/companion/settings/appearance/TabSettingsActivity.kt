@@ -44,7 +44,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.harvester.companion.R
 import app.harvester.companion.SettingsPrefs
-import app.harvester.companion.browser.tabs.PrivateAccentColor
 import app.harvester.companion.browser.tabs.PrivateLockManager
 import app.harvester.companion.settings.components.SettingsCategory
 import app.harvester.companion.settings.components.SettingsRow
@@ -258,8 +257,6 @@ class TabSettingsActivity : AppCompatActivity() {
                                 }
                             },
                         )
-                        UhSettingsDivider()
-                        HardenedPrivateSummaryRow()
                     }
 
                     Spacer(modifier = Modifier.height(28.dp))
@@ -352,46 +349,6 @@ private fun LayoutOptionChip(
             fontSize = 13.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
         )
-    }
-}
-
-@Composable
-private fun HardenedPrivateSummaryRow() {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 13.dp),
-        verticalAlignment = Alignment.Top,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(PrivateAccentColor.copy(alpha = 0.16f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                painter = painterResource(id = R.drawable.uh_ic_private_vibe_24),
-                contentDescription = null,
-                tint = PrivateAccentColor,
-                modifier = Modifier.size(18.dp),
-            )
-        }
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                text = "Always-On Stealth Protections",
-                color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = "Strict tracker & 3P cookie isolation, HTTPS-Only, anti-fingerprinting, URL tracker stripping, RAM-only previews, zero search leaks & instant session wipe on close.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
-            )
-        }
     }
 }
 

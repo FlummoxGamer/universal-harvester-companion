@@ -1,9 +1,11 @@
 package app.harvester.companion.browser.tabs
 
-import android.content.res.Configuration
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,18 +19,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -37,7 +40,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -47,16 +49,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -128,300 +127,258 @@ internal fun TabCollectionPage(
                 onUnlock = actions.onUnlockPrivate,
                 onCloseAllPrivate = { actions.onCloseAllTabs(true) }
             )
-            return
+            return@Box
         }
 
-        val context = LocalContext.current
+        val hasAnyContent = pinnedTabs.isNotEmpty() || trayItems.isNotEmpty() || inactiveTabs.isNotEmpty()
+        if (!hasAnyContent) {
+            EmptyTabsState(
+                isPrivate = isPrivate,
+                isSearchActive = searchQuery.isNotBlank(),
+                palette = palette
+            )
+            return@Box
+        }
+
         val haptic = LocalHapticFeedback.current
         val scope = rememberCoroutineScope()
-        val configuration = LocalConfiguration.current
-        val columns = if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) 3 else 2
-
-        val gridState = rememberLazyGridState()
-        val listState = rememberLazyListState()
+        val density = LocalDensity.current
+        val screenWidthDp = LocalConfiguration.current.screenWidthDp
+        val gridColumns = remember(screenWidthDp) {
+            when {
+                screenWidthDp >= 840 -> 4
+                screenWidthDp >= 600 -> 3
+                else -> 2
+            }
+        }
 
         var inactiveExpanded by remember { mutableStateOf(false) }
         var contextMenuTabId by remember { mutableStateOf<String?>(null) }
         var contextMenuGroupId by remember { mutableStateOf<String?>(null) }
 
-        // Continuous, glitch-free drag-to-reorder & 250ms dwell-to-merge state
-        // Works seamlessly for BOTH single tab cards ("tab_<id>") AND group cards ("grp_<id>")
-        val slotBounds = remember { mutableStateMapOf<String, Rect>() }
+        val gridState = rememberLazyGridState()
+        val latestTrayItems by rememberUpdatedState(trayItems)
+        val latestSortMode by rememberUpdatedState(sortMode)
+
+        // Viewport-local drag-to-reorder & drop-to-group engine (100% parity on Normal & Private!)
         var draggingKey by remember { mutableStateOf<String?>(null) }
         var dragOriginCenter by remember { mutableStateOf(Offset.Zero) }
         var dragPointerDelta by remember { mutableStateOf(Offset.Zero) }
         var dragMovedDistance by remember { mutableFloatStateOf(0f) }
         var didLiveReorder by remember { mutableStateOf(false) }
-        var hoveredMergeTargetKey by remember { mutableStateOf<String?>(null) }
-        var dwellCandidateKey by remember { mutableStateOf<String?>(null) }
-        var dwellJob by remember { mutableStateOf<Job?>(null) }
         var lastReorderAtMs by remember { mutableLongStateOf(0L) }
-        var lastLongPressAtMs by remember { mutableLongStateOf(0L) }
 
-        val latestTrayItems by rememberUpdatedState(trayItems)
-        val latestSortMode by rememberUpdatedState(sortMode)
+        var pendingMergeKey by remember { mutableStateOf<String?>(null) }
+        var armedMergeTargetKey by remember { mutableStateOf<String?>(null) }
+        var dwellJob by remember { mutableStateOf<Job?>(null) }
+        var autoScrollSpeed by remember { mutableFloatStateOf(0f) }
 
-        var didInitialAutoScroll by remember(isPrivate) { mutableStateOf(false) }
-        LaunchedEffect(selectedTabId, trayItems.size, isListView) {
-            if (!didInitialAutoScroll && selectedTabId != null && searchQuery.isBlank()) {
-                val targetIndex = trayItems.indexOfFirst { item ->
-                    when (item) {
-                        is TrayItem.SingleTabItem -> item.tab.id == selectedTabId
-                        is TrayItem.GroupCardItem -> item.members.any { it.id == selectedTabId }
-                    }
-                }
-                if (targetIndex >= 0) {
-                    didInitialAutoScroll = true
-                    val headerOffset = (if (isPrivate) 1 else 0) + (if (!isPrivate && pinnedTabs.isNotEmpty()) 1 else 0)
-                    val scrollIndex = (targetIndex + headerOffset).coerceAtLeast(0)
-                    try {
-                        if (isListView) listState.scrollToItem(scrollIndex)
-                        else gridState.scrollToItem(scrollIndex)
-                    } catch (_: Exception) {}
-                }
-            }
-        }
+        val edgeThresholdPx = with(density) { 74.dp.toPx() }
 
-        val isEmptyAll = pinnedTabs.isEmpty() && trayItems.isEmpty() && inactiveTabs.isEmpty()
-        if (isEmptyAll) {
-            if (searchQuery.isNotBlank()) {
-                EmptySearchState(query = searchQuery, palette = palette)
-            } else {
-                EmptyModeState(
-                    isPrivate = isPrivate,
-                    palette = palette
-                )
-            }
-            return
-        }
-
-        fun performLiveTrayReorder(dragKey: String, targetKey: String) {
-            val now = System.currentTimeMillis()
-            if (now - lastReorderAtMs < 180L) return
-            val keys = latestTrayItems.map { it.key }.toMutableList()
-            val fromIdx = keys.indexOf(dragKey)
-            val toIdx = keys.indexOf(targetKey)
-            if (fromIdx in keys.indices && toIdx in keys.indices && fromIdx != toIdx) {
-                val moved = keys.removeAt(fromIdx)
-                keys.add(toIdx, moved)
-                TabGroupStore.setExactTrayOrder(keys, isPrivate)
-                if (latestSortMode != TabSortMode.MANUAL) {
-                    TabMetaStore.setSortMode(context, TabSortMode.MANUAL)
-                    onResetSortToManual()
-                }
-                lastReorderAtMs = now
-                didLiveReorder = true
-                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        // Smooth edge auto-scroll while dragging near top or bottom of grid
+        LaunchedEffect(draggingKey, autoScrollSpeed) {
+            while (draggingKey != null && autoScrollSpeed != 0f) {
+                gridState.scrollBy(autoScrollSpeed)
+                delay(16L)
             }
         }
 
         fun cancelDwell() {
             dwellJob?.cancel()
             dwellJob = null
-            dwellCandidateKey = null
-            hoveredMergeTargetKey = null
+            pendingMergeKey = null
+            armedMergeTargetKey = null
         }
 
-        fun armMergeDwell(dragItemKey: String, candidateKey: String) {
-            if (dwellCandidateKey == candidateKey && (dwellJob?.isActive == true || hoveredMergeTargetKey == candidateKey)) {
-                return
-            }
+        fun armDwellFor(targetKey: String, isGroupTarget: Boolean) {
+            if (armedMergeTargetKey == targetKey) return
+            if (pendingMergeKey == targetKey && dwellJob?.isActive == true) return
             dwellJob?.cancel()
-            dwellCandidateKey = candidateKey
-            if (hoveredMergeTargetKey != candidateKey) {
-                hoveredMergeTargetKey = null
-            }
+            pendingMergeKey = targetKey
+            armedMergeTargetKey = null
+            // Group cards lock in quickly (110ms) for effortless unlimited adding;
+            // single-tab merge takes a deliberate 220ms center dwell so accidental merges never happen.
+            val dwellMs = if (isGroupTarget) 110L else 220L
             dwellJob = scope.launch {
-                delay(250L)
-                if (draggingKey == dragItemKey && dwellCandidateKey == candidateKey) {
-                    hoveredMergeTargetKey = candidateKey
+                delay(dwellMs)
+                if (draggingKey != null && pendingMergeKey == targetKey) {
+                    armedMergeTargetKey = targetKey
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 }
             }
         }
 
-        fun unifiedDragModifier(itemKey: String, canMergeIntoOthers: Boolean): Modifier {
-            val isDraggingThis = draggingKey == itemKey
-            return Modifier
-                // Record untranslated layout slot bounds BEFORE applying graphicsLayer translation
-                .onGloballyPositioned { coords ->
-                    slotBounds[itemKey] = coords.boundsInWindow()
+        fun performLiveReorder(fromKey: String, toKey: String) {
+            val now = System.currentTimeMillis()
+            if (now - lastReorderAtMs < 150L) return
+            val keys = latestTrayItems.map { it.key }.toMutableList()
+            val fromIdx = keys.indexOf(fromKey)
+            val toIdx = keys.indexOf(toKey)
+            if (fromIdx in keys.indices && toIdx in keys.indices && fromIdx != toIdx) {
+                val moved = keys.removeAt(fromIdx)
+                keys.add(toIdx, moved)
+                if (latestSortMode != TabSortMode.MANUAL) {
+                    onResetSortToManual()
                 }
-                .zIndex(if (isDraggingThis) 12f else 0f)
-                .graphicsLayer {
-                    if (isDraggingThis) {
-                        val liveCenter = dragOriginCenter + dragPointerDelta
-                        val currentSlotCenter = slotBounds[itemKey]?.center ?: dragOriginCenter
-                        translationX = liveCenter.x - currentSlotCenter.x
-                        translationY = liveCenter.y - currentSlotCenter.y
-                        scaleX = 1.045f
-                        scaleY = 1.045f
-                        alpha = 0.95f
-                    }
-                }
-                .then(
-                    if (!isMultiSelect && searchQuery.isBlank()) {
-                        Modifier.pointerInput(itemKey, isPrivate) {
-                            detectDragGesturesAfterLongPress(
-                                onDragStart = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    draggingKey = itemKey
-                                    dragOriginCenter = slotBounds[itemKey]?.center ?: Offset.Zero
-                                    dragPointerDelta = Offset.Zero
-                                    dragMovedDistance = 0f
-                                    didLiveReorder = false
-                                    cancelDwell()
-                                },
-                                onDrag = { change, dragAmount ->
-                                    change.consume()
-                                    dragPointerDelta += dragAmount
-                                    dragMovedDistance += hypot(dragAmount.x, dragAmount.y)
-
-                                    val liveCenter = dragOriginCenter + dragPointerDelta
-                                    var candidateMergeKey: String? = null
-                                    var candidateReorderKey: String? = null
-
-                                    for ((candidateKey, candidateRect) in slotBounds.entries) {
-                                        if (candidateKey == itemKey) continue
-                                        if (!candidateRect.contains(liveCenter)) continue
-
-                                        if (canMergeIntoOthers && candidateKey.startsWith("grp_")) {
-                                            // Center 70% of a group card = dwell 250ms to add into group; outer rim = reorder around group
-                                            val insetX = candidateRect.width * 0.15f
-                                            val insetY = candidateRect.height * 0.15f
-                                            val innerRect = Rect(
-                                                left = candidateRect.left + insetX,
-                                                top = candidateRect.top + insetY,
-                                                right = candidateRect.right - insetX,
-                                                bottom = candidateRect.bottom - insetY
-                                            )
-                                            if (innerRect.contains(liveCenter)) {
-                                                candidateMergeKey = candidateKey
-                                            } else if (dragMovedDistance > 24f) {
-                                                candidateReorderKey = candidateKey
-                                            }
-                                            break
-                                        } else if (canMergeIntoOthers && candidateKey.startsWith("tab_")) {
-                                            // Center 54% of another tab card = dwell 250ms to merge; outer rim = edge-cross reorder
-                                            val insetX = candidateRect.width * 0.23f
-                                            val insetY = candidateRect.height * 0.23f
-                                            val innerRect = Rect(
-                                                left = candidateRect.left + insetX,
-                                                top = candidateRect.top + insetY,
-                                                right = candidateRect.right - insetX,
-                                                bottom = candidateRect.bottom - insetY
-                                            )
-                                            if (innerRect.contains(liveCenter)) {
-                                                candidateMergeKey = candidateKey
-                                            } else if (dragMovedDistance > 24f) {
-                                                candidateReorderKey = candidateKey
-                                            }
-                                            break
-                                        } else {
-                                            // Dragging a Group card reorders cleanly with all sibling items
-                                            if (dragMovedDistance > 24f) {
-                                                candidateReorderKey = candidateKey
-                                            }
-                                            break
-                                        }
-                                    }
-
-                                    if (candidateMergeKey != null) {
-                                        armMergeDwell(itemKey, candidateMergeKey)
-                                    } else {
-                                        cancelDwell()
-                                        if (candidateReorderKey != null) {
-                                            performLiveTrayReorder(itemKey, candidateReorderKey)
-                                        }
-                                    }
-                                },
-                                onDragEnd = {
-                                    lastLongPressAtMs = System.currentTimeMillis()
-                                    val armedTarget = hoveredMergeTargetKey
-                                    val moved = dragMovedDistance
-                                    val reordered = didLiveReorder
-
-                                    cancelDwell()
-                                    draggingKey = null
-                                    dragPointerDelta = Offset.Zero
-                                    dragMovedDistance = 0f
-                                    didLiveReorder = false
-
-                                    when {
-                                        canMergeIntoOthers && armedTarget != null && armedTarget.startsWith("grp_") -> {
-                                            val grpId = armedTarget.removePrefix("grp_")
-                                            val tabId = itemKey.removePrefix("tab_")
-                                            actions.onAddTabsToGroup(grpId, listOf(tabId))
-                                        }
-                                        canMergeIntoOthers && armedTarget != null && armedTarget.startsWith("tab_") -> {
-                                            val otherTabId = armedTarget.removePrefix("tab_")
-                                            val tabId = itemKey.removePrefix("tab_")
-                                            onRequestMergeCreateGroup(listOf(otherTabId, tabId), isPrivate)
-                                        }
-                                        !reordered && moved < 24f -> {
-                                            if (itemKey.startsWith("tab_")) {
-                                                contextMenuTabId = itemKey.removePrefix("tab_")
-                                            } else if (itemKey.startsWith("grp_")) {
-                                                contextMenuGroupId = itemKey.removePrefix("grp_")
-                                            }
-                                        }
-                                    }
-                                },
-                                onDragCancel = {
-                                    lastLongPressAtMs = System.currentTimeMillis()
-                                    cancelDwell()
-                                    draggingKey = null
-                                    dragPointerDelta = Offset.Zero
-                                    dragMovedDistance = 0f
-                                    didLiveReorder = false
-                                }
-                            )
-                        }
-                    } else {
-                        Modifier
-                    }
-                )
+                TabGroupStore.setExactTrayOrder(keys, isPrivate)
+                lastReorderAtMs = now
+                didLiveReorder = true
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            }
         }
 
-        fun handleCardClick(tabId: String) {
-            if (System.currentTimeMillis() - lastLongPressAtMs < 350L) return
-            if (isMultiSelect) {
-                onToggleSelectId(tabId)
-            } else {
-                actions.onSelectTab(tabId)
+        fun Modifier.trayCardDragModifier(itemKey: String, canMergeIntoOthers: Boolean): Modifier {
+            if (isMultiSelect) return this
+            return this.pointerInput(itemKey, isPrivate, canMergeIntoOthers) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = {
+                        val visibleInfo = gridState.layoutInfo.visibleItemsInfo
+                            .firstOrNull { it.key == itemKey }
+                        dragOriginCenter = if (visibleInfo != null) {
+                            Offset(
+                                visibleInfo.offset.x + visibleInfo.size.width / 2f,
+                                visibleInfo.offset.y + visibleInfo.size.height / 2f
+                            )
+                        } else Offset.Zero
+
+                        draggingKey = itemKey
+                        dragPointerDelta = Offset.Zero
+                        dragMovedDistance = 0f
+                        didLiveReorder = false
+                        autoScrollSpeed = 0f
+                        cancelDwell()
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    },
+                    onDragCancel = {
+                        draggingKey = null
+                        dragPointerDelta = Offset.Zero
+                        dragMovedDistance = 0f
+                        didLiveReorder = false
+                        autoScrollSpeed = 0f
+                        cancelDwell()
+                    },
+                    onDragEnd = {
+                        val armedTarget = armedMergeTargetKey
+                        val moved = dragMovedDistance
+                        val reordered = didLiveReorder
+
+                        cancelDwell()
+                        draggingKey = null
+                        dragPointerDelta = Offset.Zero
+                        dragMovedDistance = 0f
+                        didLiveReorder = false
+                        autoScrollSpeed = 0f
+
+                        when {
+                            canMergeIntoOthers && armedTarget != null && armedTarget.startsWith("grp_") -> {
+                                val grpId = armedTarget.removePrefix("grp_")
+                                val tabId = itemKey.removePrefix("tab_")
+                                actions.onAddTabsToGroup(grpId, listOf(tabId))
+                            }
+                            canMergeIntoOthers && armedTarget != null && armedTarget.startsWith("tab_") -> {
+                                val otherTabId = armedTarget.removePrefix("tab_")
+                                val tabId = itemKey.removePrefix("tab_")
+                                onRequestMergeCreateGroup(listOf(otherTabId, tabId), isPrivate)
+                            }
+                            !reordered && moved < 26f -> {
+                                if (itemKey.startsWith("tab_")) {
+                                    contextMenuTabId = itemKey.removePrefix("tab_")
+                                } else if (itemKey.startsWith("grp_")) {
+                                    contextMenuGroupId = itemKey.removePrefix("grp_")
+                                }
+                            }
+                        }
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        dragPointerDelta += dragAmount
+                        dragMovedDistance += hypot(dragAmount.x, dragAmount.y)
+
+                        val pointerViewport = dragOriginCenter + dragPointerDelta
+                        val layoutInfo = gridState.layoutInfo
+                        val vpStart = layoutInfo.viewportStartOffset.toFloat()
+                        val vpEnd = layoutInfo.viewportEndOffset.toFloat()
+
+                        // Edge auto-scroll
+                        autoScrollSpeed = when {
+                            pointerViewport.y < vpStart + edgeThresholdPx -> -18f
+                            pointerViewport.y > vpEnd - edgeThresholdPx -> 18f
+                            else -> 0f
+                        }
+
+                        // Hit-test directly against real-time LazyGridState viewport items
+                        // (immune to HorizontalPager X-offset -> 100% identical accuracy on Private & Normal!)
+                        val hoveredItem = layoutInfo.visibleItemsInfo.firstOrNull { info ->
+                            val key = info.key as? String ?: return@firstOrNull false
+                            if (key == itemKey) return@firstOrNull false
+                            if (!key.startsWith("tab_") && !key.startsWith("grp_")) return@firstOrNull false
+                            val left = info.offset.x.toFloat()
+                            val top = info.offset.y.toFloat()
+                            pointerViewport.x in left..(left + info.size.width) &&
+                                pointerViewport.y in top..(top + info.size.height)
+                        }
+
+                        if (hoveredItem == null) {
+                            cancelDwell()
+                            return@detectDragGesturesAfterLongPress
+                        }
+
+                        val targetKey = hoveredItem.key as String
+                        val left = hoveredItem.offset.x.toFloat()
+                        val top = hoveredItem.offset.y.toFloat()
+                        val width = hoveredItem.size.width.toFloat().coerceAtLeast(1f)
+                        val height = hoveredItem.size.height.toFloat().coerceAtLeast(1f)
+
+                        if (canMergeIntoOthers && targetKey.startsWith("grp_")) {
+                            // Generous 74% center sticky magnet on existing Groups -> NEVER shifts/creates new group by mistake
+                            val padX = width * 0.13f
+                            val padY = height * 0.13f
+                            val inGroupCenter = pointerViewport.x in (left + padX)..(left + width - padX) &&
+                                pointerViewport.y in (top + padY)..(top + height - padY)
+                            if (inGroupCenter) {
+                                armDwellFor(targetKey, isGroupTarget = true)
+                            } else {
+                                cancelDwell()
+                                performLiveReorder(itemKey, targetKey)
+                            }
+                        } else if (canMergeIntoOthers && targetKey.startsWith("tab_")) {
+                            // Deliberate 48% inner merge zone on single tabs; outer edge reorders smoothly
+                            val padX = width * 0.26f
+                            val padY = height * 0.26f
+                            val inTabCenter = pointerViewport.x in (left + padX)..(left + width - padX) &&
+                                pointerViewport.y in (top + padY)..(top + height - padY)
+                            if (inTabCenter) {
+                                armDwellFor(targetKey, isGroupTarget = false)
+                            } else {
+                                cancelDwell()
+                                performLiveReorder(itemKey, targetKey)
+                            }
+                        } else {
+                            // Dragging a group card always reorders smoothly
+                            cancelDwell()
+                            performLiveReorder(itemKey, targetKey)
+                        }
+                    }
+                )
             }
         }
 
         if (isListView) {
             LazyColumn(
-                state = listState,
-                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 104.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 104.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (isPrivate) {
-                    item(key = "priv_banner") {
-                        PrivateSessionStatusStrip(
-                            blockScreenshots = blockPrivateScreenshots,
-                            palette = palette
-                        )
-                    }
-                }
-
-                if (!isPrivate && pinnedTabs.isNotEmpty()) {
+                if (pinnedTabs.isNotEmpty()) {
                     item(key = "pinned_strip") {
                         PinnedTabsStrip(
                             pinnedTabs = pinnedTabs,
                             selectedTabId = selectedTabId,
-                            mutedIds = mutedIdSet,
+                            mutedIdSet = mutedIdSet,
                             palette = palette,
-                            onSelectTab = actions.onSelectTab,
-                            onUnpinTab = actions.onTogglePinTab,
-                            onToggleMuteTab = actions.onToggleMuteTab,
-                            onBookmarkTab = { actions.onBookmarkTabs(listOf(it.id)) },
-                            onDuplicateTab = actions.onDuplicateTab,
-                            onShareTab = { actions.onShareTabs(listOf(it.id)) },
-                            onCloseTab = actions.onCloseTab
+                            onSelect = actions.onSelectTab,
+                            onUnpin = actions.onTogglePinTab,
+                            onClose = actions.onCloseTab
                         )
                     }
                 }
@@ -434,73 +391,51 @@ internal fun TabCollectionPage(
                                 members = item.members,
                                 selectedTabId = selectedTabId,
                                 palette = palette,
-                                isDropTarget = hoveredMergeTargetKey == item.key,
-                                isBeingDragged = draggingKey == item.key,
-                                showContextMenu = contextMenuGroupId == item.group.id,
-                                onDismissContextMenu = { contextMenuGroupId = null },
-                                onOpenGroup = {
-                                    if (System.currentTimeMillis() - lastLongPressAtMs >= 350L) {
-                                        onOpenGroupDetail(item.group)
-                                    }
-                                },
-                                onAddNewTabInGroup = { actions.onNewTabInGroup(item.group.id, item.group.isPrivate) },
+                                onOpenGroup = { onOpenGroupDetail(item.group) },
+                                onNewTabInGroup = { actions.onNewTabInGroup(item.group.id, item.group.isPrivate) },
                                 onEditGroup = { onEditGroup(item.group) },
-                                onBookmarkGroup = { actions.onBookmarkTabs(item.group.tabIds) },
-                                onShareGroup = { actions.onShareTabs(item.group.tabIds) },
                                 onUngroup = { actions.onUngroup(item.group.id) },
-                                onCloseGroup = { actions.onCloseGroupTabs(item.group) },
-                                modifier = Modifier
-                                    .animateItem()
-                                    .then(unifiedDragModifier(item.key, canMergeIntoOthers = false))
+                                onCloseGroupTabs = { actions.onCloseGroupTabs(item.group) }
                             )
                         }
                         is TrayItem.SingleTabItem -> {
                             val tab = item.tab
-                            val isMuted = TabMetaStore.isTabMuted(tab) || (tab.id in mutedIdSet)
                             SwipeToCloseTabBox(
-                                enabled = !isMultiSelect && draggingKey == null,
-                                onClose = { actions.onCloseTab(tab.id) },
-                                modifier = Modifier
-                                    .animateItem()
-                                    .then(unifiedDragModifier(item.key, canMergeIntoOthers = true))
+                                enabled = !isMultiSelect,
+                                onDismissed = { actions.onCloseTab(tab.id) }
                             ) {
                                 TabListRow(
                                     tab = tab,
-                                    group = null,
-                                    palette = palette,
                                     isSelected = tab.id == selectedTabId,
                                     isPinned = tab.id in pinnedIdSet,
-                                    isMuted = isMuted,
-                                    isSleeping = TabMetaStore.isTabSleeping(tab, selectedTabId),
+                                    isMuted = tab.id in mutedIdSet,
                                     isMultiSelect = isMultiSelect,
                                     isChecked = tab.id in selectedIds,
-                                    isDropTarget = hoveredMergeTargetKey == item.key,
-                                    isBeingDragged = draggingKey == item.key,
-                                    showContextMenu = contextMenuTabId == tab.id,
-                                    onDismissContextMenu = { contextMenuTabId = null },
-                                    onClick = { handleCardClick(tab.id) },
+                                    palette = palette,
+                                    onClick = {
+                                        if (isMultiSelect) onToggleSelectId(tab.id)
+                                        else actions.onSelectTab(tab.id)
+                                    },
                                     onClose = { actions.onCloseTab(tab.id) },
-                                    onToggleMute = { actions.onToggleMuteTab(tab) },
-                                    onTogglePin = { actions.onTogglePinTab(tab) },
-                                    onAddToGroup = { onRequestAddTabToGroup(tab) },
-                                    onRemoveFromGroup = null,
-                                    onBookmark = { actions.onBookmarkTabs(listOf(tab.id)) },
                                     onDuplicate = { actions.onDuplicateTab(tab) },
-                                    onShare = { actions.onShareTabs(listOf(tab.id)) }
+                                    onTogglePin = { actions.onTogglePinTab(tab) },
+                                    onToggleMute = { actions.onToggleMuteTab(tab) },
+                                    onShare = { actions.onShareTabs(listOf(tab.id)) },
+                                    onBookmark = { actions.onBookmarkTabs(listOf(tab.id)) },
+                                    onAddToGroup = { onRequestAddTabToGroup(tab) }
                                 )
                             }
                         }
                     }
                 }
 
-                if (!isPrivate && inactiveTabs.isNotEmpty() && searchQuery.isBlank()) {
+                if (inactiveTabs.isNotEmpty()) {
                     item(key = "inactive_section") {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        InactiveTabsSection(
+                        InactiveTabsAccordion(
                             inactiveTabs = inactiveTabs,
                             expanded = inactiveExpanded,
                             palette = palette,
-                            onToggleExpanded = { inactiveExpanded = !inactiveExpanded },
+                            onToggleExpand = { inactiveExpanded = !inactiveExpanded },
                             onSelectTab = actions.onSelectTab,
                             onCloseTab = actions.onCloseTab,
                             onCloseAllInactive = onCloseAllInactive
@@ -510,175 +445,129 @@ internal fun TabCollectionPage(
             }
         } else {
             LazyVerticalGrid(
-                columns = GridCells.Fixed(columns),
                 state = gridState,
-                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 104.dp),
+                columns = GridCells.Fixed(gridColumns),
+                userScrollEnabled = draggingKey == null,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 104.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxSize()
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                if (isPrivate) {
-                    item(key = "priv_banner", span = { GridItemSpan(maxLineSpan) }) {
-                        PrivateSessionStatusStrip(
-                            blockScreenshots = blockPrivateScreenshots,
-                            palette = palette
-                        )
-                    }
-                }
-
-                if (!isPrivate && pinnedTabs.isNotEmpty()) {
+                if (pinnedTabs.isNotEmpty()) {
                     item(key = "pinned_strip", span = { GridItemSpan(maxLineSpan) }) {
                         PinnedTabsStrip(
                             pinnedTabs = pinnedTabs,
                             selectedTabId = selectedTabId,
-                            mutedIds = mutedIdSet,
+                            mutedIdSet = mutedIdSet,
                             palette = palette,
-                            onSelectTab = actions.onSelectTab,
-                            onUnpinTab = actions.onTogglePinTab,
-                            onToggleMuteTab = actions.onToggleMuteTab,
-                            onBookmarkTab = { actions.onBookmarkTabs(listOf(it.id)) },
-                            onDuplicateTab = actions.onDuplicateTab,
-                            onShareTab = { actions.onShareTabs(listOf(it.id)) },
-                            onCloseTab = actions.onCloseTab
+                            onSelect = actions.onSelectTab,
+                            onUnpin = actions.onTogglePinTab,
+                            onClose = actions.onCloseTab
                         )
                     }
                 }
 
                 items(trayItems, key = { it.key }) { item ->
+                    val isDraggingThis = draggingKey == item.key
+                    val isArmedDropTarget = armedMergeTargetKey == item.key
+
                     when (item) {
                         is TrayItem.GroupCardItem -> {
-                            TabGroupGridCard(
-                                group = item.group,
-                                members = item.members,
-                                selectedTabId = selectedTabId,
-                                palette = palette,
-                                isDropTarget = hoveredMergeTargetKey == item.key,
-                                isBeingDragged = draggingKey == item.key,
-                                showContextMenu = contextMenuGroupId == item.group.id,
-                                onDismissContextMenu = { contextMenuGroupId = null },
-                                onOpenGroup = {
-                                    if (System.currentTimeMillis() - lastLongPressAtMs >= 350L) {
-                                        onOpenGroupDetail(item.group)
-                                    }
-                                },
-                                onAddNewTabInGroup = { actions.onNewTabInGroup(item.group.id, item.group.isPrivate) },
-                                onEditGroup = { onEditGroup(item.group) },
-                                onBookmarkGroup = { actions.onBookmarkTabs(item.group.tabIds) },
-                                onShareGroup = { actions.onShareTabs(item.group.tabIds) },
-                                onUngroup = { actions.onUngroup(item.group.id) },
-                                onCloseGroup = { actions.onCloseGroupTabs(item.group) },
+                            Box(
                                 modifier = Modifier
-                                    .animateItem()
-                                    .then(unifiedDragModifier(item.key, canMergeIntoOthers = false))
-                            )
+                                    .zIndex(if (isDraggingThis) 12f else 0f)
+                                    .graphicsLayer {
+                                        if (isDraggingThis) {
+                                            translationX = dragPointerDelta.x
+                                            translationY = dragPointerDelta.y
+                                            scaleX = 1.04f
+                                            scaleY = 1.04f
+                                            alpha = 0.94f
+                                        }
+                                    }
+                                    .trayCardDragModifier(itemKey = item.key, canMergeIntoOthers = false)
+                            ) {
+                                TabGroupGridCard(
+                                    group = item.group,
+                                    members = item.members,
+                                    selectedTabId = selectedTabId,
+                                    isDropTarget = isArmedDropTarget,
+                                    isBeingDragged = isDraggingThis,
+                                    palette = palette,
+                                    showContextMenu = contextMenuGroupId == item.group.id,
+                                    onDismissContextMenu = { contextMenuGroupId = null },
+                                    onOpenGroup = { onOpenGroupDetail(item.group) },
+                                    onNewTabInGroup = { actions.onNewTabInGroup(item.group.id, item.group.isPrivate) },
+                                    onEditGroup = { onEditGroup(item.group) },
+                                    onUngroup = { actions.onUngroup(item.group.id) },
+                                    onCloseGroupTabs = { actions.onCloseGroupTabs(item.group) }
+                                )
+                            }
                         }
+
                         is TrayItem.SingleTabItem -> {
                             val tab = item.tab
-                            val isMuted = TabMetaStore.isTabMuted(tab) || (tab.id in mutedIdSet)
-                            SwipeToCloseTabBox(
-                                enabled = !isMultiSelect && draggingKey == null,
-                                onClose = { actions.onCloseTab(tab.id) },
+                            Box(
                                 modifier = Modifier
-                                    .animateItem()
-                                    .then(unifiedDragModifier(item.key, canMergeIntoOthers = true))
+                                    .zIndex(if (isDraggingThis) 12f else 0f)
+                                    .graphicsLayer {
+                                        if (isDraggingThis) {
+                                            translationX = dragPointerDelta.x
+                                            translationY = dragPointerDelta.y
+                                            scaleX = 1.05f
+                                            scaleY = 1.05f
+                                            alpha = 0.94f
+                                        }
+                                    }
+                                    .trayCardDragModifier(itemKey = item.key, canMergeIntoOthers = true)
                             ) {
-                                TabGridCard(
-                                    tab = tab,
-                                    group = null,
-                                    palette = palette,
-                                    isSelected = tab.id == selectedTabId,
-                                    isPinned = tab.id in pinnedIdSet,
-                                    isMuted = isMuted,
-                                    isSleeping = TabMetaStore.isTabSleeping(tab, selectedTabId),
-                                    isMultiSelect = isMultiSelect,
-                                    isChecked = tab.id in selectedIds,
-                                    isDropTarget = hoveredMergeTargetKey == item.key,
-                                    isBeingDragged = draggingKey == item.key,
-                                    showContextMenu = contextMenuTabId == tab.id,
-                                    onDismissContextMenu = { contextMenuTabId = null },
-                                    onClick = { handleCardClick(tab.id) },
-                                    onClose = { actions.onCloseTab(tab.id) },
-                                    onToggleMute = { actions.onToggleMuteTab(tab) },
-                                    onTogglePin = { actions.onTogglePinTab(tab) },
-                                    onAddToGroup = { onRequestAddTabToGroup(tab) },
-                                    onRemoveFromGroup = null,
-                                    onBookmark = { actions.onBookmarkTabs(listOf(tab.id)) },
-                                    onDuplicate = { actions.onDuplicateTab(tab) },
-                                    onShare = { actions.onShareTabs(listOf(tab.id)) }
-                                )
+                                SwipeToCloseTabBox(
+                                    enabled = !isMultiSelect && draggingKey == null,
+                                    onDismissed = { actions.onCloseTab(tab.id) }
+                                ) {
+                                    TabGridCard(
+                                        tab = tab,
+                                        isSelected = tab.id == selectedTabId,
+                                        isPinned = tab.id in pinnedIdSet,
+                                        isMuted = tab.id in mutedIdSet,
+                                        isMultiSelect = isMultiSelect,
+                                        isChecked = tab.id in selectedIds,
+                                        isDropTarget = isArmedDropTarget,
+                                        isBeingDragged = isDraggingThis,
+                                        palette = palette,
+                                        showContextMenu = contextMenuTabId == tab.id,
+                                        onDismissContextMenu = { contextMenuTabId = null },
+                                        onClick = {
+                                            if (isMultiSelect) onToggleSelectId(tab.id)
+                                            else actions.onSelectTab(tab.id)
+                                        },
+                                        onClose = { actions.onCloseTab(tab.id) },
+                                        onDuplicate = { actions.onDuplicateTab(tab) },
+                                        onTogglePin = { actions.onTogglePinTab(tab) },
+                                        onToggleMute = { actions.onToggleMuteTab(tab) },
+                                        onShare = { actions.onShareTabs(listOf(tab.id)) },
+                                        onBookmark = { actions.onBookmarkTabs(listOf(tab.id)) },
+                                        onAddToGroup = { onRequestAddTabToGroup(tab) }
+                                    )
+                                }
                             }
                         }
                     }
                 }
 
-                if (!isPrivate && inactiveTabs.isNotEmpty() && searchQuery.isBlank()) {
+                if (inactiveTabs.isNotEmpty()) {
                     item(key = "inactive_section", span = { GridItemSpan(maxLineSpan) }) {
-                        InactiveTabsSection(
+                        InactiveTabsAccordion(
                             inactiveTabs = inactiveTabs,
                             expanded = inactiveExpanded,
                             palette = palette,
-                            onToggleExpanded = { inactiveExpanded = !inactiveExpanded },
+                            onToggleExpand = { inactiveExpanded = !inactiveExpanded },
                             onSelectTab = actions.onSelectTab,
                             onCloseTab = actions.onCloseTab,
-                            onCloseAllInactive = onCloseAllInactive,
-                            modifier = Modifier.padding(top = 6.dp)
+                            onCloseAllInactive = onCloseAllInactive
                         )
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PrivateSessionStatusStrip(
-    blockScreenshots: Boolean,
-    palette: TabsTrayPalette
-) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = Color(0xFF17112B),
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, PrivateAccentColor.copy(alpha = 0.28f), RoundedCornerShape(16.dp))
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(30.dp)
-                    .clip(CircleShape)
-                    .background(PrivateAccentStrongColor.copy(alpha = 0.22f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.uh_ic_private_vibe_24),
-                    contentDescription = null,
-                    tint = PrivateAccentColor,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Hardened Stealth Session",
-                    color = palette.onSurface,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = if (blockScreenshots) {
-                        "Strict trackers & 3P cookies blocked · HTTPS-Only · Screenshots blocked"
-                    } else {
-                        "Strict trackers & 3P cookies blocked · HTTPS-Only · Zero disk trace"
-                    },
-                    color = palette.onSurfaceSubtle,
-                    fontSize = 10.5.sp
-                )
             }
         }
     }
@@ -699,19 +588,19 @@ internal fun PrivateLockGate(
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(76.dp)
+                    .size(72.dp)
                     .clip(CircleShape)
-                    .background(PrivateAccentStrongColor.copy(alpha = 0.20f))
-                    .border(1.5.dp, PrivateAccentColor.copy(alpha = 0.50f), CircleShape),
+                    .background(PrivateAccentStrongColor.copy(alpha = 0.22f))
+                    .border(1.2.dp, PrivateAccentColor.copy(alpha = 0.45f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     painter = painterResource(id = R.drawable.uh_ic_private_vibe_24),
-                    contentDescription = "Locked",
+                    contentDescription = null,
                     tint = PrivateAccentColor,
                     modifier = Modifier.size(34.dp)
                 )
@@ -724,15 +613,16 @@ internal fun PrivateLockGate(
             )
             Text(
                 text = if (privateTabCount > 0) {
-                    "Unlock with biometrics or device PIN to view your $privateTabCount private ${if (privateTabCount == 1) "tab" else "tabs"}."
+                    "$privateTabCount private ${if (privateTabCount == 1) "tab is" else "tabs are"} protected. Verify your identity to continue."
                 } else {
-                    "Unlock with biometrics or device PIN to access Private Browsing."
+                    "Verify your identity to access Private Browsing."
                 },
                 color = palette.onSurfaceSubtle,
                 fontSize = 13.sp,
+                lineHeight = 19.sp,
                 textAlign = TextAlign.Center
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(6.dp))
             Button(
                 onClick = onUnlock,
                 shape = CircleShape,
@@ -740,26 +630,16 @@ internal fun PrivateLockGate(
                     containerColor = PrivateAccentStrongColor,
                     contentColor = Color.White
                 ),
-                modifier = Modifier.height(46.dp)
+                contentPadding = PaddingValues(horizontal = 28.dp, vertical = 12.dp)
             ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.uh_ic_lock),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Unlock Private Tabs",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Text("Unlock Private Tabs", fontSize = 14.sp, fontWeight = FontWeight.Bold)
             }
             if (privateTabCount > 0) {
                 TextButton(onClick = onCloseAllPrivate) {
                     Text(
                         text = "Close all private tabs",
                         color = Color(0xFFF87171),
-                        fontSize = 13.sp,
+                        fontSize = 12.5.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -768,19 +648,16 @@ internal fun PrivateLockGate(
     }
 }
 
-/**
- * Clean minimal empty state with NO redundant mid-screen action button
- * (the floating "+" dock button handles opening tabs cleanly).
- */
 @Composable
-private fun EmptyModeState(
+private fun EmptyTabsState(
     isPrivate: Boolean,
-    palette: TabsTrayPalette,
+    isSearchActive: Boolean,
+    palette: TabsTrayPalette
 ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 36.dp, vertical = 24.dp),
+            .padding(horizontal = 32.dp, vertical = 24.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -789,14 +666,14 @@ private fun EmptyModeState(
         ) {
             Box(
                 modifier = Modifier
-                    .size(74.dp)
+                    .size(70.dp)
                     .clip(CircleShape)
                     .background(
-                        if (isPrivate) PrivateAccentStrongColor.copy(alpha = 0.18f)
-                        else palette.accent.copy(alpha = 0.12f)
+                        if (isPrivate) PrivateAccentStrongColor.copy(alpha = 0.22f)
+                        else palette.accent.copy(alpha = 0.14f)
                     )
                     .border(
-                        width = 1.2.dp,
+                        width = 1.dp,
                         color = if (isPrivate) PrivateAccentColor.copy(alpha = 0.42f) else palette.subtleBorder,
                         shape = CircleShape
                     ),
@@ -812,16 +689,20 @@ private fun EmptyModeState(
                 )
             }
             Text(
-                text = if (isPrivate) "Stealth Mode Ready" else "No Open Tabs",
+                text = when {
+                    isSearchActive -> "No Matching Tabs"
+                    isPrivate -> "No Private Tabs"
+                    else -> "No Open Tabs"
+                },
                 color = palette.onSurface,
                 fontSize = 19.sp,
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = if (isPrivate) {
-                    "Zero history, isolated cookies, strict tracker & fingerprint shield, and instant session wipe on close."
-                } else {
-                    "Tap + below to open a tab. Hold and dwell one tab over another to create a group."
+                text = when {
+                    isSearchActive -> "Try a different search keyword."
+                    isPrivate -> "Tap + below to open a private tab. Cookies, cache, and history stay isolated."
+                    else -> "Tap + below to open a tab. Hold and drag over another tab or group to organize."
                 },
                 color = palette.onSurfaceSubtle,
                 fontSize = 13.sp,
@@ -833,33 +714,189 @@ private fun EmptyModeState(
 }
 
 @Composable
-private fun EmptySearchState(
-    query: String,
-    palette: TabsTrayPalette
+private fun PinnedTabsStrip(
+    pinnedTabs: List<TabSessionState>,
+    selectedTabId: String?,
+    mutedIdSet: Set<String>,
+    palette: TabsTrayPalette,
+    onSelect: (String) -> Unit,
+    onUnpin: (TabSessionState) -> Unit,
+    onClose: (String) -> Unit
 ) {
-    Box(
+    Column(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        contentAlignment = Alignment.Center
+            .fillMaxWidth()
+            .padding(bottom = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+        Text(
+            text = "PINNED",
+            color = palette.onSurfaceSubtle,
+            fontSize = 10.5.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.9.sp,
+            modifier = Modifier.padding(horizontal = 4.dp)
+        )
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Icon(
-                painter = painterResource(id = R.drawable.fx_ic_search_24),
-                contentDescription = null,
-                tint = palette.accent.copy(alpha = 0.7f),
-                modifier = Modifier.size(34.dp)
-            )
-            Text(
-                text = "No tabs matching \"$query\"",
-                color = palette.onSurface,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center
-            )
+            items(pinnedTabs, key = { it.id }) { tab ->
+                val isSelected = tab.id == selectedTabId
+                val host = remember(tab.content.url) { extractHostLabel(tab.content.url) }
+                val label = tab.content.title.ifBlank { host.ifBlank { "Tab" } }
+
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (isSelected) palette.accent.copy(alpha = 0.2f) else palette.cardBg,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .border(
+                            width = if (isSelected) 1.5.dp else 0.8.dp,
+                            color = if (isSelected) palette.accent else palette.subtleBorder,
+                            shape = RoundedCornerShape(14.dp)
+                        )
+                        .clickable { onSelect(tab.id) }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(7.dp)
+                    ) {
+                        TabFaviconBox(tab = tab, accentColor = palette.accent, sizeDp = 18)
+                        Text(
+                            text = label,
+                            color = palette.onSurface,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1
+                        )
+                        if (tab.id in mutedIdSet) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.uh_ic_volume_off_24),
+                                contentDescription = "Muted",
+                                tint = palette.onSurfaceSubtle,
+                                modifier = Modifier.size(13.dp)
+                            )
+                        }
+                        Icon(
+                            painter = painterResource(id = R.drawable.fx_ic_close_24),
+                            contentDescription = "Close pinned tab",
+                            tint = palette.onSurfaceSubtle,
+                            modifier = Modifier
+                                .size(14.dp)
+                                .clip(CircleShape)
+                                .clickable {
+                                    onUnpin(tab)
+                                    onClose(tab.id)
+                                }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InactiveTabsAccordion(
+    inactiveTabs: List<TabSessionState>,
+    expanded: Boolean,
+    palette: TabsTrayPalette,
+    onToggleExpand: () -> Unit,
+    onSelectTab: (String) -> Unit,
+    onCloseTab: (String) -> Unit,
+    onCloseAllInactive: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = palette.cardBg,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 6.dp)
+            .border(0.8.dp, palette.subtleBorder, RoundedCornerShape(18.dp))
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onToggleExpand)
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.uh_ic_sleep_moon_24),
+                    contentDescription = null,
+                    tint = palette.onSurfaceSubtle,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "Inactive Tabs (${inactiveTabs.size})",
+                    color = palette.onSurface,
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = onCloseAllInactive) {
+                    Text(
+                        text = "Close all",
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    inactiveTabs.forEach { tab ->
+                        val host = remember(tab.content.url) { extractHostLabel(tab.content.url) }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(palette.previewBg)
+                                .clickable { onSelectTab(tab.id) }
+                                .padding(horizontal = 10.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TabFaviconBox(tab = tab, accentColor = palette.accent, sizeDp = 22)
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = tab.content.title.ifBlank { host.ifBlank { "Tab" } },
+                                    color = palette.onSurface,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1
+                                )
+                                if (host.isNotBlank()) {
+                                    Text(
+                                        text = host,
+                                        color = palette.onSurfaceSubtle,
+                                        fontSize = 11.sp,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                            Icon(
+                                painter = painterResource(id = R.drawable.fx_ic_close_24),
+                                contentDescription = "Close inactive tab",
+                                tint = palette.onSurfaceSubtle,
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .clip(CircleShape)
+                                    .clickable { onCloseTab(tab.id) }
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

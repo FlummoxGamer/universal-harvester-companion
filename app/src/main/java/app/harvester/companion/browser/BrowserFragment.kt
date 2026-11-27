@@ -420,17 +420,19 @@ class BrowserFragment : Fragment() {
                 sessionId = null,
                 loadUrlUseCase = components.useCases.sessionUseCases.loadUrl,
                 shouldPrompt = {
-                    app.harvester.companion.SettingsPrefs.getInt(
+                    val isPriv = components.store.state.selectedTab?.content?.private == true
+                    !isPriv && app.harvester.companion.SettingsPrefs.getInt(
                         requireContext(),
                         app.harvester.companion.SettingsPrefs.K_PG_REDIRECT,
-                        1,
+                        0,
                     ) == 1
                 },
                 launchInApp = {
-                    app.harvester.companion.SettingsPrefs.getInt(
+                    val isPriv = components.store.state.selectedTab?.content?.private == true
+                    !isPriv && app.harvester.companion.SettingsPrefs.getInt(
                         requireContext(),
                         app.harvester.companion.SettingsPrefs.K_PG_REDIRECT,
-                        1,
+                        0,
                     ) != 0
                 },
             ),
