@@ -237,21 +237,28 @@ internal fun TabsSearchTopBar(
                 cursorBrush = SolidColor(palette.accent),
                 textStyle = TextStyle(
                     color = palette.onSurface,
-                    fontSize = 14.sp
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
                 ),
                 modifier = Modifier
                     .weight(1f)
                     .focusRequester(focusRequester),
                 decorationBox = { inner ->
-                    if (query.isEmpty()) {
-                        Text(
-                            text = "Search open tabs...",
-                            color = palette.onSurfaceSubtle,
-                            fontSize = 14.sp,
-                            maxLines = 1
-                        )
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        if (query.isEmpty()) {
+                            Text(
+                                text = "Search open tabs...",
+                                color = palette.onSurfaceSubtle,
+                                fontSize = 14.sp,
+                                lineHeight = 20.sp,
+                                maxLines = 1
+                            )
+                        }
+                        inner()
                     }
-                    inner()
                 }
             )
             if (query.isNotEmpty()) {

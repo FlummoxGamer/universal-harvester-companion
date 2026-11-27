@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import app.harvester.companion.GeckoWebExtensionBridge
 import app.harvester.companion.UHLog
+import app.harvester.companion.browser.reader.ReaderModeManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -398,6 +399,7 @@ object UhTranslationManager {
                         )
                     }
                     schedulePillAutoHide(5500L)
+                    ReaderModeManager.onPageTranslationChanged(targetCode)
                     engineRef?.let { fetchLanguageModels(it) }
                     return
                 } else if (tabState.isTranslateProcessing) {
@@ -785,6 +787,7 @@ object UhTranslationManager {
                     UHLog.w("translate", "requestTranslationRestore failed: ${e.message}")
                 }
             }
+            ReaderModeManager.onPageTranslationChanged(null)
         }
     }
 

@@ -48,7 +48,7 @@ class AccessibilityActivity : AppCompatActivity() {
         val darkRow = layoutInflater.inflate(R.layout.item_tool_category, c, false)
         darkRow.findViewById<TextView>(R.id.rowLabel).text = "Force dark mode on all sites"
         val darkSw = darkRow.findViewById<Switch>(R.id.rowSwitch)
-        darkSw.isChecked = SettingsPrefs.getBool(this, SettingsPrefs.K_FORCE_DARK_SITES, false)
+        darkSw.isChecked = SettingsPrefs.getBool(this, SettingsPrefs.K_FORCE_DARK_SITES, true)
         darkSw.setOnCheckedChangeListener { _, b ->
             SettingsPrefs.setBool(this, SettingsPrefs.K_FORCE_DARK_SITES, b)
         }

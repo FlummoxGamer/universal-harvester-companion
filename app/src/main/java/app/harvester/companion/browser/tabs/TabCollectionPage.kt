@@ -1,6 +1,9 @@
 package app.harvester.companion.browser.tabs
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -196,9 +199,8 @@ internal fun TabCollectionPage(
             dwellJob?.cancel()
             pendingMergeKey = targetKey
             armedMergeTargetKey = null
-            // Group cards lock in quickly (110ms) for effortless unlimited adding;
-            // single-tab merge takes a deliberate 220ms center dwell so accidental merges never happen.
-            val dwellMs = if (isGroupTarget) 110L else 220L
+            // Snappy Chrome-style group-morph response when hovering over a card center
+            val dwellMs = if (isGroupTarget) 75L else 105L
             dwellJob = scope.launch {
                 delay(dwellMs)
                 if (draggingKey != null && pendingMergeKey == targetKey) {
@@ -328,9 +330,9 @@ internal fun TabCollectionPage(
                         val height = hoveredItem.size.height.toFloat().coerceAtLeast(1f)
 
                         if (canMergeIntoOthers && targetKey.startsWith("grp_")) {
-                            // Generous 74% center sticky magnet on existing Groups -> NEVER shifts/creates new group by mistake
-                            val padX = width * 0.13f
-                            val padY = height * 0.13f
+                            // Generous 72% center sticky magnet on existing Groups; moving to outer edge reorders smoothly
+                            val padX = width * 0.14f
+                            val padY = height * 0.14f
                             val inGroupCenter = pointerViewport.x in (left + padX)..(left + width - padX) &&
                                 pointerViewport.y in (top + padY)..(top + height - padY)
                             if (inGroupCenter) {
@@ -340,9 +342,9 @@ internal fun TabCollectionPage(
                                 performLiveReorder(itemKey, targetKey)
                             }
                         } else if (canMergeIntoOthers && targetKey.startsWith("tab_")) {
-                            // Deliberate 48% inner merge zone on single tabs; outer edge reorders smoothly
-                            val padX = width * 0.26f
-                            val padY = height * 0.26f
+                            // Chrome-style 56% center group-morph zone; pushing past outer edge triggers smooth reorder
+                            val padX = width * 0.22f
+                            val padY = height * 0.22f
                             val inTabCenter = pointerViewport.x in (left + padX)..(left + width - padX) &&
                                 pointerViewport.y in (top + padY)..(top + height - padY)
                             if (inTabCenter) {
@@ -480,11 +482,20 @@ internal fun TabCollectionPage(
                 items(trayItems, key = { it.key }) { item ->
                     val isDraggingThis = draggingKey == item.key
                     val isArmedDropTarget = armedMergeTargetKey == item.key
+                    val dragScale by animateFloatAsState(
+                        targetValue = if (isDraggingThis) 0.88f else 1f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        ),
+                        label = "tabDragScale"
+                    )
 
                     when (item) {
                         is TrayItem.GroupCardItem -> {
                             Box(
                                 modifier = Modifier
+                                    .then(if (!isDraggingThis) Modifier.animateItem() else Modifier)
                                     .zIndex(if (isDraggingThis) 12f else 0f)
                                     .graphicsLayer {
                                         if (isDraggingThis) {
@@ -495,10 +506,10 @@ internal fun TabCollectionPage(
                                                 translationX = desiredTopLeft.x - curInfo.offset.x.toFloat()
                                                 translationY = desiredTopLeft.y - curInfo.offset.y.toFloat()
                                             }
-                                            scaleX = 1.04f
-                                            scaleY = 1.04f
                                             alpha = 0.94f
                                         }
+                                        scaleX = dragScale
+                                        scaleY = dragScale
                                     }
                                     .trayCardDragModifier(itemKey = item.key, canMergeIntoOthers = false)
                             ) {
@@ -528,6 +539,7 @@ internal fun TabCollectionPage(
                             val tab = item.tab
                             Box(
                                 modifier = Modifier
+                                    .then(if (!isDraggingThis) Modifier.animateItem() else Modifier)
                                     .zIndex(if (isDraggingThis) 12f else 0f)
                                     .graphicsLayer {
                                         if (isDraggingThis) {
@@ -538,10 +550,10 @@ internal fun TabCollectionPage(
                                                 translationX = desiredTopLeft.x - curInfo.offset.x.toFloat()
                                                 translationY = desiredTopLeft.y - curInfo.offset.y.toFloat()
                                             }
-                                            scaleX = 1.05f
-                                            scaleY = 1.05f
                                             alpha = 0.94f
                                         }
+                                        scaleX = dragScale
+                                        scaleY = dragScale
                                     }
                                     .trayCardDragModifier(itemKey = item.key, canMergeIntoOthers = true)
                             ) {

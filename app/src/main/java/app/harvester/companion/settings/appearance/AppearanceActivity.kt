@@ -107,9 +107,9 @@ class AppearanceActivity : AppCompatActivity() {
                                 UhSettingsDivider()
                                 SettingsSwitchRow(
                                     title = "Force Dark Mode on Websites",
-                                    subtitle = "Smart dark styling for bright websites while preserving images and native dark pages",
+                                    subtitle = "Dark Reader-grade forced dark mode on light websites while preserving images and native dark pages",
                                     key = SettingsPrefs.K_FORCE_DARK_SITES,
-                                    default = false,
+                                    default = true,
                                     insideCard = true,
                                     onChanged = { UhPrivacyController.applyAllToEngine(context) },
                                 )

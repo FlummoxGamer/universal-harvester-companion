@@ -244,44 +244,6 @@ class BrowserFragment : Fragment() {
         val engineAndroidView = engineView.asView()
         binding.swipeRefresh.addView(engineAndroidView)
 
-        // Lightweight non-consuming touch scroll detector for the existing Auto-hide Bar toggle
-        val hideThresholdPx = 42f * resources.displayMetrics.density
-        val revealThresholdPx = 22f * resources.displayMetrics.density
-        var lastScrollTouchY = 0f
-        var scrollAccumDy = 0f
-        engineAndroidView.setOnTouchListener { _, event ->
-            if (viewModel.isAutoHideBarEnabled.value &&
-                !viewModel.isEditing.value &&
-                !viewModel.showFindInPage.value &&
-                !viewModel.showZoomBar.value &&
-                !viewModel.isInPipMode.value
-            ) {
-                when (event.actionMasked) {
-                    android.view.MotionEvent.ACTION_DOWN -> {
-                        lastScrollTouchY = event.rawY
-                        scrollAccumDy = 0f
-                    }
-                    android.view.MotionEvent.ACTION_MOVE -> {
-                        val dy = event.rawY - lastScrollTouchY
-                        lastScrollTouchY = event.rawY
-                        if ((dy < 0f && scrollAccumDy > 0f) || (dy > 0f && scrollAccumDy < 0f)) {
-                            scrollAccumDy = dy
-                        } else {
-                            scrollAccumDy += dy
-                        }
-                        if (scrollAccumDy < -hideThresholdPx) {
-                            viewModel.setToolbarAutoHidden(true)
-                        } else if (scrollAccumDy > revealThresholdPx) {
-                            viewModel.setToolbarAutoHidden(false)
-                        }
-                    }
-                }
-            } else if (viewModel.isToolbarAutoHidden.value) {
-                viewModel.setToolbarAutoHidden(false)
-            }
-            false
-        }
-
         // Mount modular Compose overlay for Long-Press Context Menu, Smart JS & HTTPS Fallback banners
         val overlayComposeView = ComposeView(context).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
@@ -323,7 +285,11 @@ class BrowserFragment : Fragment() {
         setupLogging(components)
         ViewCompat.setOnApplyWindowInsetsListener(binding.browserLayout) { v, insets ->
             val inPip = viewModel.isInPipMode.value
-            val isFullScreen = components.store.state.selectedTab?.content?.fullScreen == true
+            val readerStateNow = app.harvester.companion.browser.reader.ReaderModeManager.state.value
+            val isReaderFs = readerStateNow.isActive && readerStateNow.prefs.isFullscreen
+            val isFullScreen = components.store.state.selectedTab?.content?.fullScreen == true ||
+                viewModel.isImmersiveFullscreen.value ||
+                isReaderFs
             if (inPip || isFullScreen) {
                 v.setPadding(0, 0, 0, 0)
                 return@setOnApplyWindowInsetsListener insets
@@ -407,13 +373,22 @@ class BrowserFragment : Fragment() {
                     }
                 }
                 launch {
+                    viewModel.isImmersiveFullscreen.collect {
+                        ViewCompat.requestApplyInsets(binding.browserLayout)
+                    }
+                }
+                launch {
                     app.harvester.companion.browser.reader.ReaderModeManager.state.collect { readerState ->
                         updateKeepScreenOn(readerState.isActive || readerState.ttsPlaying)
+                        updateReaderBrightness(if (readerState.isActive) readerState.prefs.brightness else -1f)
+                        binding.swipeRefresh.isEnabled = !viewModel.isInPipMode.value && !readerState.isActive
+                        ViewCompat.requestApplyInsets(binding.browserLayout)
                     }
                 }
                 launch {
                     viewModel.isInPipMode.collect { inPip ->
-                        binding.swipeRefresh.isEnabled = !inPip
+                        val readerActive = app.harvester.companion.browser.reader.ReaderModeManager.state.value.isActive
+                        binding.swipeRefresh.isEnabled = !inPip && !readerActive
                         ViewCompat.requestApplyInsets(binding.browserLayout)
                     }
                 }
@@ -742,6 +717,7 @@ class BrowserFragment : Fragment() {
 
     override fun onPause() {
         updateKeepScreenOn(false)
+        updateReaderBrightness(-1f)
         captureCurrentTabPreview()
         super.onPause()
     }
@@ -752,6 +728,20 @@ class BrowserFragment : Fragment() {
             window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         } else {
             window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
+    private fun updateReaderBrightness(brightness: Float) {
+        val window = activity?.window ?: return
+        val target = if (brightness < 0f) {
+            android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        } else {
+            brightness.coerceIn(0.05f, 1.0f)
+        }
+        val lp = window.attributes
+        if (kotlin.math.abs(lp.screenBrightness - target) > 0.005f) {
+            lp.screenBrightness = target
+            window.attributes = lp
         }
     }
 

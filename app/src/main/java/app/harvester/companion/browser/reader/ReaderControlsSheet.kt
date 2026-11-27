@@ -3,6 +3,7 @@ package app.harvester.companion.browser.reader
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,15 +44,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.harvester.companion.R
+import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * Sleek Material 3 Reader Mode Controls Sheet:
- * - Read Aloud (Android TTS) with play/pause, skip prev/next paragraph, and speed selector
- * - 4 reading themes (Light, Sepia, Dark, OLED Black)
- * - Font family (Sans, Serif, Mono) + continuous font size slider
- * - Line spacing & page margin width selectors
- * - Show images toggle + Per-domain Auto-Reader toggle
+ * Kindle-class Material 3 Reader Mode Controls Sheet:
+ * - Multi-language Read Aloud (Android TTS) with sentence tracking, speed selector,
+ *   Auto / Female / Male voice filter, and on-device human voice picker
+ * - 4 book themes (Paper, Sepia, Dark, OLED) + Reader-specific Brightness slider
+ * - 4 bookish font families (Book Serif, Classic, Clean Sans, Mono) + font size slider
+ * - Line spacing & page margins
+ * - Book Pages mode, Fullscreen Reading, Show Images, Read Aloud toggle, Auto-Reader per domain
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,6 +65,7 @@ fun ReaderControlsSheet(
     val context = LocalContext.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val prefs = state.prefs
+    val detectedLangShort = state.detectedLang.substringBefore("-").uppercase(Locale.ROOT).ifBlank { "EN" }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -91,12 +95,30 @@ fun ReaderControlsSheet(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Reader Mode",
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Reader Mode",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = detectedLangShort,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                     if (state.readMins > 0) {
                         Text(
                             text = "${state.readMins} min read • ${state.wordCount} words",
@@ -122,8 +144,8 @@ fun ReaderControlsSheet(
                 }
             }
 
-            // Read Aloud (Android TTS) Player Card (shown only when Read Aloud toggle is enabled)
-            if (prefs.ttsEnabled && state.paragraphs.isNotEmpty()) {
+            // Read Aloud (Android TTS) Player + Male/Female Human Voice Picker
+            if (prefs.ttsEnabled && state.sentences.isNotEmpty()) {
                 Surface(
                     shape = RoundedCornerShape(18.dp),
                     color = MaterialTheme.colorScheme.surface,
@@ -147,9 +169,9 @@ fun ReaderControlsSheet(
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 val progressLabel = if (state.ttsIndex >= 0) {
-                                    "Paragraph ${state.ttsIndex + 1} of ${state.paragraphs.size}"
+                                    "Sentence ${state.ttsIndex + 1} of ${state.sentences.size}"
                                 } else {
-                                    "Tap play to listen with live highlighting"
+                                    "Exact resume & live sentence highlighting"
                                 }
                                 Text(
                                     text = progressLabel,
@@ -164,7 +186,7 @@ fun ReaderControlsSheet(
                             ) {
                                 Icon(
                                     painter = painterResource(id = R.drawable.uh_ic_back_24),
-                                    contentDescription = "Previous paragraph",
+                                    contentDescription = "Previous sentence",
                                     tint = MaterialTheme.colorScheme.onSurface,
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -194,7 +216,7 @@ fun ReaderControlsSheet(
                             ) {
                                 Icon(
                                     painter = painterResource(id = R.drawable.uh_ic_forward_24),
-                                    contentDescription = "Next paragraph",
+                                    contentDescription = "Next sentence",
                                     tint = MaterialTheme.colorScheme.onSurface,
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -231,11 +253,87 @@ fun ReaderControlsSheet(
                                 }
                             }
                         }
+
+                        // Voice Gender selector (Auto / Female / Male)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            ReaderVoiceGender.entries.forEach { gender ->
+                                val selected = prefs.voiceGender == gender
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(
+                                            if (selected) MaterialTheme.colorScheme.primaryContainer
+                                            else MaterialTheme.colorScheme.surfaceContainerHigh
+                                        )
+                                        .border(
+                                            width = if (selected) 1.dp else 0.dp,
+                                            color = if (selected) MaterialTheme.colorScheme.primary
+                                            else Color.Transparent,
+                                            shape = RoundedCornerShape(10.dp)
+                                        )
+                                        .clickable { ReaderModeManager.setVoiceGender(gender) }
+                                        .padding(vertical = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = gender.label,
+                                        color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
+
+                        // On-device Human Voice Picker (filtered by selected gender when not Auto)
+                        val filteredVoices = when (prefs.voiceGender) {
+                            ReaderVoiceGender.AUTO -> state.availableVoices
+                            else -> state.availableVoices.filter { it.gender == prefs.voiceGender }
+                                .ifEmpty { state.availableVoices }
+                        }
+                        if (filteredVoices.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                filteredVoices.forEach { voice ->
+                                    val isChosen = prefs.voiceName == voice.name
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(9.dp))
+                                            .background(
+                                                if (isChosen) MaterialTheme.colorScheme.primary
+                                                else MaterialTheme.colorScheme.surfaceContainerHigh
+                                            )
+                                            .clickable { ReaderModeManager.selectVoiceOption(voice) }
+                                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = voice.label,
+                                            color = if (isChosen) MaterialTheme.colorScheme.onPrimary
+                                            else MaterialTheme.colorScheme.onSurface,
+                                            fontSize = 11.sp,
+                                            fontWeight = if (isChosen) FontWeight.Bold else FontWeight.Medium,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
 
-            // Theme Swatches
+            // Theme Swatches + Custom Reader Brightness Slider
             Surface(
                 shape = RoundedCornerShape(18.dp),
                 color = MaterialTheme.colorScheme.surface,
@@ -260,10 +358,10 @@ fun ReaderControlsSheet(
                         ReaderTheme.entries.forEach { theme ->
                             val selected = prefs.theme == theme
                             val (swatchBg, swatchFg) = when (theme) {
-                                ReaderTheme.LIGHT -> Color(0xFFFFFFFF) to Color(0xFF1A1C1E)
-                                ReaderTheme.SEPIA -> Color(0xFFF6EFE2) to Color(0xFF3B2E1E)
-                                ReaderTheme.DARK -> Color(0xFF181A1F) to Color(0xFFE6E8EC)
-                                ReaderTheme.OLED -> Color(0xFF000000) to Color(0xFFE8EAED)
+                                ReaderTheme.LIGHT -> Color(0xFFFAF9F6) to Color(0xFF1C1B18)
+                                ReaderTheme.SEPIA -> Color(0xFFF5ECD8) to Color(0xFF322618)
+                                ReaderTheme.DARK -> Color(0xFF17181C) to Color(0xFFE4E2DC)
+                                ReaderTheme.OLED -> Color(0xFF000000) to Color(0xFFE4E6EA)
                             }
                             Box(
                                 modifier = Modifier
@@ -292,10 +390,51 @@ fun ReaderControlsSheet(
                             }
                         }
                     }
+
+                    // Reader Brightness Slider
+                    val isAutoBrightness = prefs.brightness < 0f
+                    val sliderBrightness = if (isAutoBrightness) 0.55f else prefs.brightness.coerceIn(0.05f, 1.0f)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = "Brightness",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Slider(
+                            value = sliderBrightness,
+                            onValueChange = { v -> ReaderModeManager.setBrightness(v) },
+                            valueRange = 0.05f..1.0f,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(
+                                    if (isAutoBrightness) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.surfaceContainerHigh
+                                )
+                                .clickable { ReaderModeManager.setBrightness(-1f) }
+                                .padding(horizontal = 9.dp, vertical = 5.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (isAutoBrightness) "Auto" else "${(sliderBrightness * 100f).roundToInt()}%",
+                                color = if (isAutoBrightness) MaterialTheme.colorScheme.onPrimary
+                                else MaterialTheme.colorScheme.onSurface,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
             }
 
-            // Typography: Font Family + Size Slider
+            // Typography: 4 Bookish Font Families + Size Slider
             Surface(
                 shape = RoundedCornerShape(18.dp),
                 color = MaterialTheme.colorScheme.surface,
@@ -308,26 +447,27 @@ fun ReaderControlsSheet(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "Typography",
+                        text = "Book Typography",
                         color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 13.5.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         ReaderFont.entries.forEach { font ->
                             val selected = prefs.font == font
                             val composeFont = when (font) {
-                                ReaderFont.SANS -> FontFamily.SansSerif
                                 ReaderFont.SERIF -> FontFamily.Serif
+                                ReaderFont.EDITORIAL -> FontFamily.Serif
+                                ReaderFont.SANS -> FontFamily.SansSerif
                                 ReaderFont.MONO -> FontFamily.Monospace
                             }
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .clip(RoundedCornerShape(11.dp))
                                     .background(
                                         if (selected) MaterialTheme.colorScheme.primary
                                         else MaterialTheme.colorScheme.surfaceContainerHigh
@@ -335,7 +475,7 @@ fun ReaderControlsSheet(
                                     .clickable {
                                         ReaderModeManager.updatePrefs { it.copy(font = font) }
                                     }
-                                    .padding(vertical = 9.dp),
+                                    .padding(vertical = 9.dp, horizontal = 4.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
@@ -343,8 +483,10 @@ fun ReaderControlsSheet(
                                     fontFamily = composeFont,
                                     color = if (selected) MaterialTheme.colorScheme.onPrimary
                                     else MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -380,7 +522,7 @@ fun ReaderControlsSheet(
                 }
             }
 
-            // Layout: Line Spacing + Margin Width
+            // Layout: Line Spacing + Page Margins
             Surface(
                 shape = RoundedCornerShape(18.dp),
                 color = MaterialTheme.colorScheme.surface,
@@ -468,119 +610,111 @@ fun ReaderControlsSheet(
                 }
             }
 
-            // Toggles: Images + Auto-Reader per domain
+            // Reading Mode, Fullscreen & Options
             Surface(
                 shape = RoundedCornerShape(18.dp),
                 color = MaterialTheme.colorScheme.surface,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                ReaderModeManager.updatePrefs { it.copy(showImages = !it.showImages) }
-                            }
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Show Images",
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = "Turn off for pure distraction-free text",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 12.sp
-                            )
+                    ReaderToggleRow(
+                        title = "Book Pages Mode",
+                        subtitle = "Swipe left or right to flip pages like a Kindle",
+                        checked = prefs.pageMode,
+                        onCheckedChange = { enabled ->
+                            ReaderModeManager.updatePrefs { it.copy(pageMode = enabled) }
                         }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Switch(
-                            checked = prefs.showImages,
-                            onCheckedChange = { show ->
-                                ReaderModeManager.updatePrefs { it.copy(showImages = show) }
-                            }
-                        )
-                    }
-
+                    )
                     HorizontalDivider(
                         modifier = Modifier.padding(horizontal = 14.dp),
                         color = MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)
                     )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                ReaderModeManager.setTtsEnabled(!prefs.ttsEnabled)
-                            }
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Read Aloud (TTS)",
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = "Show voice playback controls in Reader Mode",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 12.sp
-                            )
+                    ReaderToggleRow(
+                        title = "Fullscreen Reading",
+                        subtitle = "Hide system bars and browser chrome",
+                        checked = prefs.isFullscreen,
+                        onCheckedChange = { enabled ->
+                            ReaderModeManager.updatePrefs { it.copy(isFullscreen = enabled) }
                         }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Switch(
-                            checked = prefs.ttsEnabled,
-                            onCheckedChange = { enabled ->
-                                ReaderModeManager.setTtsEnabled(enabled)
-                            }
-                        )
-                    }
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 14.dp),
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)
+                    )
+                    ReaderToggleRow(
+                        title = "Show Images",
+                        subtitle = "Turn off for pure distraction-free text",
+                        checked = prefs.showImages,
+                        onCheckedChange = { show ->
+                            ReaderModeManager.updatePrefs { it.copy(showImages = show) }
+                        }
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 14.dp),
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)
+                    )
+                    ReaderToggleRow(
+                        title = "Read Aloud (TTS)",
+                        subtitle = "Show voice playback controls in Reader Mode",
+                        checked = prefs.ttsEnabled,
+                        onCheckedChange = { enabled ->
+                            ReaderModeManager.setTtsEnabled(enabled)
+                        }
+                    )
 
                     if (state.currentHost.isNotBlank()) {
                         HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 14.dp),
                             color = MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)
                         )
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    ReaderModeManager.toggleAutoReaderForCurrentHost(!state.isAutoReaderForCurrentHost)
-                                }
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Auto-Reader for ${state.currentHost}",
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = "Automatically open Reader Mode on this site",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 12.sp
-                                )
+                        ReaderToggleRow(
+                            title = "Auto-Reader for ${state.currentHost}",
+                            subtitle = "Automatically open Reader Mode on this site",
+                            checked = state.isAutoReaderForCurrentHost,
+                            onCheckedChange = { enabled ->
+                                ReaderModeManager.toggleAutoReaderForCurrentHost(enabled)
                             }
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Switch(
-                                checked = state.isAutoReaderForCurrentHost,
-                                onCheckedChange = { enabled ->
-                                    ReaderModeManager.toggleAutoReaderForCurrentHost(enabled)
-                                }
-                            )
-                        }
+                        )
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ReaderToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = subtitle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp
+            )
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange
+        )
     }
 }

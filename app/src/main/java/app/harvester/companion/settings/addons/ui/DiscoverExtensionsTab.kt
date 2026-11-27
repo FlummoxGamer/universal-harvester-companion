@@ -100,7 +100,10 @@ fun DiscoverExtensionsTab(
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(10.dp))
-                Box(modifier = Modifier.weight(1f)) {
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.CenterStart
+                ) {
                     BasicTextField(
                         value = searchQuery,
                         onValueChange = onSearchQueryChange,
@@ -108,18 +111,26 @@ fun DiscoverExtensionsTab(
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                         textStyle = TextStyle(
                             color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 14.sp
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp
                         ),
                         modifier = Modifier.fillMaxWidth(),
                         decorationBox = { inner ->
-                            if (searchQuery.isEmpty()) {
-                                Text(
-                                    text = "Search ${UHBrand.NAME} Extensions…",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 14.sp
-                                )
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                if (searchQuery.isEmpty()) {
+                                    Text(
+                                        text = "Search ${UHBrand.NAME} Extensions…",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 14.sp,
+                                        lineHeight = 20.sp,
+                                        maxLines = 1
+                                    )
+                                }
+                                inner()
                             }
-                            inner()
                         }
                     )
                 }

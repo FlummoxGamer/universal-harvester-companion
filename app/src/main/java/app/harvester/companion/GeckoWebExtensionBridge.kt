@@ -229,13 +229,14 @@ object GeckoWebExtensionBridge {
         }
     }
 
-    fun sendReaderTtsHighlight(index: Int) {
+    fun sendReaderTtsHighlight(index: Int, playing: Boolean = false) {
         val port = activeBridgePort ?: return
         mainHandler.post {
             try {
                 port.postMessage(JSONObject().apply {
                     put("action", "READER_TTS_HIGHLIGHT")
                     put("index", index)
+                    put("playing", playing)
                 })
             } catch (_: Exception) {}
         }
@@ -779,7 +780,21 @@ object GeckoWebExtensionBridge {
                         title = json.optString("title"),
                         readMins = json.optInt("readMins", 1),
                         wordCount = json.optInt("wordCount", 0),
-                        paragraphsArray = json.optJSONArray("paragraphs")
+                        lang = json.optString("lang", "en"),
+                        sentencesArray = json.optJSONArray("sentences") ?: json.optJSONArray("paragraphs")
+                    )
+                    GeckoResult.fromValue(true)
+                }
+
+                "READER_CONTENT_REFRESHED" -> {
+                    app.harvester.companion.browser.reader.ReaderModeManager.onReaderContentRefreshed(
+                        url = json.optString("url"),
+                        host = json.optString("host"),
+                        title = json.optString("title"),
+                        readMins = json.optInt("readMins", 1),
+                        wordCount = json.optInt("wordCount", 0),
+                        lang = json.optString("lang", "en"),
+                        sentencesArray = json.optJSONArray("sentences") ?: json.optJSONArray("paragraphs")
                     )
                     GeckoResult.fromValue(true)
                 }
@@ -791,6 +806,33 @@ object GeckoWebExtensionBridge {
 
                 "READER_OPEN_CONTROLS" -> {
                     app.harvester.companion.browser.reader.ReaderModeManager.openControlsSheet()
+                    GeckoResult.fromValue(true)
+                }
+
+                "READER_OPEN_TRANSLATE" -> {
+                    app.harvester.companion.browser.reader.ReaderModeManager.requestOpenTranslateSheet()
+                    GeckoResult.fromValue(true)
+                }
+
+                "READER_TOGGLE_FULLSCREEN" -> {
+                    app.harvester.companion.browser.reader.ReaderModeManager.toggleFullscreen()
+                    GeckoResult.fromValue(true)
+                }
+
+                "READER_TOGGLE_PAGE_MODE" -> {
+                    app.harvester.companion.browser.reader.ReaderModeManager.togglePageMode()
+                    GeckoResult.fromValue(true)
+                }
+
+                "READER_TTS_TOGGLE" -> {
+                    app.harvester.companion.browser.reader.ReaderModeManager.togglePlayPauseFromPage()
+                    GeckoResult.fromValue(true)
+                }
+
+                "READER_TTS_FROM_INDEX" -> {
+                    app.harvester.companion.browser.reader.ReaderModeManager.playFromSentenceIndex(
+                        json.optInt("index", 0)
+                    )
                     GeckoResult.fromValue(true)
                 }
 

@@ -104,7 +104,7 @@
         <activity android:name=".settings.tools.LogsActivity" android:exported="false" android:label="Logs" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:theme="@style/Theme.UHCompanion" />
         <activity android:name=".ImagePreviewActivity" android:exported="false" android:theme="@style/Theme.UHCompanion" />
 
-        <service android:name=".SessionService" android:exported="false" android:stopWithTask="false" />
+        <service android:name=".SessionService" android:exported="false" android:stopWithTask="false" android:foregroundServiceType="dataSync" />
         <service android:name=".core.downloads.UhDownloadService" android:exported="false" android:foregroundServiceType="dataSync" />
         <service android:name=".media.UhMediaSessionService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
 

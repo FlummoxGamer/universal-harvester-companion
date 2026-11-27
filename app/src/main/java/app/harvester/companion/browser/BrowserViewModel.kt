@@ -76,10 +76,14 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     val isBarBottom: StateFlow<Boolean> = SettingsPrefs.addressBarBottomFlow(context)
     val isAutoHideBarEnabled: StateFlow<Boolean> = SettingsPrefs.autoHideBarFlow(context)
+    val isSwipeFullscreenEnabled: StateFlow<Boolean> = SettingsPrefs.swipeFullscreenFlow(context)
     val searchEngine: StateFlow<SearchEnginePrefs.Entry> = SearchEnginePrefs.activeEngineFlow(context)
 
     private val _isToolbarAutoHidden = MutableStateFlow(false)
     val isToolbarAutoHidden: StateFlow<Boolean> = _isToolbarAutoHidden.asStateFlow()
+
+    private val _isImmersiveFullscreen = MutableStateFlow(false)
+    val isImmersiveFullscreen: StateFlow<Boolean> = _isImmersiveFullscreen.asStateFlow()
 
     private val _chromeExtraDp = MutableStateFlow(BrowserChromeExtraDp())
     val chromeExtraDp: StateFlow<BrowserChromeExtraDp> = _chromeExtraDp.asStateFlow()
@@ -88,9 +92,17 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val capturePreviewSignal: SharedFlow<(() -> Unit)?> = _capturePreviewSignal.asSharedFlow()
 
     fun setToolbarAutoHidden(hidden: Boolean) {
-        val next = hidden && isAutoHideBarEnabled.value && !_isEditing.value && !_showFindInPage.value && !_showZoomBar.value
+        val next = hidden && isAutoHideBarEnabled.value && !_isEditing.value && !_showFindInPage.value && !_showZoomBar.value && !_isImmersiveFullscreen.value
         if (_isToolbarAutoHidden.value != next) {
             _isToolbarAutoHidden.value = next
+        }
+    }
+
+    fun setImmersiveFullscreen(fullscreen: Boolean) {
+        val next = fullscreen && !_isEditing.value && !_showFindInPage.value && !_showZoomBar.value
+        if (_isImmersiveFullscreen.value != next) {
+            _isImmersiveFullscreen.value = next
+            if (next) _isToolbarAutoHidden.value = false
         }
     }
 
@@ -212,6 +224,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun enterEditMode(currentUrl: String) {
+        _isImmersiveFullscreen.value = false
+        _isToolbarAutoHidden.value = false
         _showFindInPage.value = false
         _showZoomBar.value = false
         _isEditing.value = true

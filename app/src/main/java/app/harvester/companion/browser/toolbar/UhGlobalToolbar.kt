@@ -248,9 +248,14 @@ fun UhGlobalToolbar(
     val isCaptureActive = SessionRecorder.isActive()
     val readerState by app.harvester.companion.browser.reader.ReaderModeManager.state.collectAsState()
     val isAutoHideEnabled by viewModel.isAutoHideBarEnabled.collectAsState()
+    val isSwipeFullscreenEnabled by viewModel.isSwipeFullscreenEnabled.collectAsState()
     val isToolbarAutoHidden by viewModel.isToolbarAutoHidden.collectAsState()
-    val shouldHideToolbar = isBrowser && isAutoHideEnabled && isToolbarAutoHidden &&
-        !isEditing && !showFindInPage && !showZoomBar && selectedTab?.content?.fullScreen != true
+    val isImmersiveFullscreen by viewModel.isImmersiveFullscreen.collectAsState()
+    val isReaderFullscreen = isBrowser && readerState.isActive && readerState.prefs.isFullscreen
+    val isAnyBrowserFullscreen = isBrowser && (isImmersiveFullscreen || isReaderFullscreen || selectedTab?.content?.fullScreen == true)
+    val shouldHideToolbar = isBrowser && !isEditing && !showFindInPage && !showZoomBar && (
+        isAnyBrowserFullscreen || (isAutoHideEnabled && isToolbarAutoHidden)
+    )
     val toolbarHideProgress by androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (shouldHideToolbar) 1f else 0f,
         animationSpec = androidx.compose.animation.core.tween(
@@ -264,6 +269,17 @@ fun UhGlobalToolbar(
     LaunchedEffect(isBrowser, isEditing, showFindInPage, showZoomBar) {
         if (!isBrowser || isEditing || showFindInPage || showZoomBar) {
             viewModel.setToolbarAutoHidden(false)
+            if (!isBrowser) viewModel.setImmersiveFullscreen(false)
+        }
+    }
+    LaunchedEffect(isSwipeFullscreenEnabled) {
+        if (!isSwipeFullscreenEnabled && isImmersiveFullscreen) {
+            viewModel.setImmersiveFullscreen(false)
+        }
+    }
+    LaunchedEffect(Unit) {
+        app.harvester.companion.browser.reader.ReaderModeManager.openTranslateEvents.collect {
+            viewModel.openTranslateSheet()
         }
     }
 
@@ -556,7 +572,7 @@ fun UhGlobalToolbar(
                     onNewTab = { openNewModeTab(isPrivateMode) },
                     modifier = Modifier.align(Alignment.TopCenter)
                 )
-            } else if (isBrowser && isBarBottom && selectedTab?.content?.fullScreen != true) {
+            } else if (isBrowser && isBarBottom && !isAnyBrowserFullscreen) {
                 // Paint continuous status bar backing matching Light / Dark / AMOLED theme
                 Box(
                     modifier = Modifier
@@ -665,6 +681,9 @@ fun UhGlobalToolbar(
                         zoomPercent = zoomPercent,
                         isReaderEligible = isBrowser && readerState.isEligible,
                         isReaderActive = isBrowser && readerState.isActive,
+                        isBarBottom = isBarBottom,
+                        swipeFullscreenEnabled = isBrowser && isSwipeFullscreenEnabled && !readerState.isActive,
+                        onEnterImmersiveFullscreen = { viewModel.setImmersiveFullscreen(true) },
                         onEditTextChanged = { viewModel.onTextChanged(it) },
                         onSubmit = onSearchSubmit,
                         onEditStart = {
@@ -746,6 +765,48 @@ fun UhGlobalToolbar(
                             onClearImageOverlays = { UhTranslationManager.clearImageTranslations() },
                             onRetry = { UhTranslationManager.retryLastTranslation() },
                             onDismiss = { UhTranslationManager.dismissPill() },
+                        )
+                    }
+                }
+            }
+
+            // Sleek compact edge pill to exit Swipe-for-Fullscreen immersive mode
+            AnimatedVisibility(
+                visible = isBrowser && isImmersiveFullscreen && !isReaderFullscreen && !isEditing,
+                enter = fadeIn() + slideInVertically { if (isBarBottom) it else -it },
+                exit = fadeOut() + slideOutVertically { if (isBarBottom) it else -it },
+                modifier = Modifier
+                    .align(if (isBarBottom) Alignment.BottomCenter else Alignment.TopCenter)
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.86f),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                    ),
+                    shadowElevation = 6.dp,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable { viewModel.setImmersiveFullscreen(false) }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.fx_ic_close_24),
+                            contentDescription = "Exit fullscreen",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = "Exit Fullscreen",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
                 }

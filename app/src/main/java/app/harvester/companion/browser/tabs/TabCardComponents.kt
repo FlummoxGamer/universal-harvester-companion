@@ -2,6 +2,7 @@ package app.harvester.companion.browser.tabs
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -126,93 +128,37 @@ internal fun TabGridCard(
     val isLoading = tab.content.loading && tab.content.progress in 1..99
     val cardShape = RoundedCornerShape(20.dp)
 
+    val morphProgress by animateFloatAsState(
+        targetValue = if (isDropTarget) 1f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "tabGroupMorph"
+    )
+
     Box(modifier = modifier.fillMaxWidth()) {
         Surface(
             shape = cardShape,
             color = palette.cardBg,
-            shadowElevation = if (isBeingDragged) 16.dp else if (isSelected) 6.dp else 2.dp,
+            shadowElevation = if (isBeingDragged) 18.dp else if (isDropTarget || isSelected) 6.dp else 2.dp,
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(0.78f)
+                .graphicsLayer {
+                    val targetScale = 1f - (morphProgress * 0.03f)
+                    scaleX = targetScale
+                    scaleY = targetScale
+                }
                 .border(borderWidth, borderColor, cardShape)
                 .clip(cardShape)
                 .clickable(onClick = onClick)
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(palette.previewBg)
-            ) {
-                // 1. Full-bleed Preview Canvas (live screenshot, real Home snapshot, or fallback card)
-                if (previewBitmap != null && !previewBitmap.isRecycled) {
-                    Image(
-                        bitmap = previewBitmap.asImageBitmap(),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        alignment = Alignment.TopCenter,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else if (isBlankTab) {
-                    BlankTabMiniPreview(
-                        isPrivate = tab.content.private,
-                        palette = palette,
-                        compact = false,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    UnrenderedSitePreview(
-                        tab = tab,
-                        host = host,
-                        palette = palette,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-
-                // Crisp snap-highlight overlay when another card is hovering to merge
-                if (isDropTarget) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(palette.accent.copy(alpha = 0.20f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = palette.accentStrong,
-                            shadowElevation = 6.dp
-                        ) {
-                            Text(
-                                text = "Create Group",
-                                color = palette.onAccent,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                            )
-                        }
-                    }
-                }
-
-                // Subtle bottom glass vignette for elevated depth
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(32.dp)
-                        .align(Alignment.BottomCenter)
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(
-                                    Color.Transparent,
-                                    Color.Black.copy(alpha = if (palette.isDark) 0.34f else 0.12f)
-                                )
-                            )
-                        )
-                )
-
-                // 2. Frosted Translucent Glass Top Header Overlay
+            Column(modifier = Modifier.fillMaxSize()) {
+                // 1. Solid Opaque Top Header Bar stacked cleanly ABOVE preview (zero overlap/bleed)
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .align(Alignment.TopCenter)
                         .background(palette.headerFrostBg)
                 ) {
                     if (groupColor != null) {
@@ -236,10 +182,10 @@ internal fun TabGridCard(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = titleText,
-                            color = palette.onSurface,
+                            text = if (isDropTarget) "New Group" else titleText,
+                            color = if (isDropTarget) palette.accent else palette.onSurface,
                             fontSize = 11.5.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                            fontWeight = if (isSelected || isDropTarget) FontWeight.Bold else FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
@@ -269,8 +215,8 @@ internal fun TabGridCard(
                         }
                     }
                     HorizontalDivider(
-                        thickness = 0.5.dp,
-                        color = palette.subtleBorder.copy(alpha = 0.55f)
+                        thickness = 0.6.dp,
+                        color = palette.subtleBorder.copy(alpha = 0.65f)
                     )
                     if (isLoading) {
                         LinearProgressIndicator(
@@ -283,6 +229,151 @@ internal fun TabGridCard(
                         )
                     }
                 }
+
+                // 2. Clean Preview Canvas sitting strictly below the solid header
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .background(palette.previewBg)
+                ) {
+                    if (isDropTarget) {
+                        // Chrome-style 2x2 Group Morph Transition preview frame
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(palette.accent.copy(alpha = if (palette.isDark) 0.14f else 0.08f))
+                                .padding(7.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                // Slot 1: Current tab mini-card preview
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(palette.cardBg)
+                                        .border(1.dp, palette.subtleBorder, RoundedCornerShape(10.dp))
+                                ) {
+                                    if (previewBitmap != null && !previewBitmap.isRecycled) {
+                                        Image(
+                                            bitmap = previewBitmap.asImageBitmap(),
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            alignment = Alignment.TopCenter,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            TabFaviconBox(tab = tab, accentColor = palette.accent, sizeDp = 18)
+                                        }
+                                    }
+                                }
+                                // Slot 2: Glowing target slot ready for dragged tab
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(palette.accent.copy(alpha = 0.22f))
+                                        .border(1.5.dp, palette.accent, RoundedCornerShape(10.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.uh_ic_plus_24),
+                                        contentDescription = null,
+                                        tint = palette.accent,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(palette.cardBg.copy(alpha = 0.45f))
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(palette.cardBg.copy(alpha = 0.45f))
+                                )
+                            }
+                        }
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 8.dp)
+                                .clip(CircleShape)
+                                .background(palette.accentStrong)
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "Drop to Group",
+                                color = palette.onAccent,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    } else {
+                        if (previewBitmap != null && !previewBitmap.isRecycled) {
+                            Image(
+                                bitmap = previewBitmap.asImageBitmap(),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                alignment = Alignment.TopCenter,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else if (isBlankTab) {
+                            BlankTabMiniPreview(
+                                isPrivate = tab.content.private,
+                                palette = palette,
+                                compact = false,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            UnrenderedSitePreview(
+                                tab = tab,
+                                host = host,
+                                palette = palette,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+
+                        // Subtle bottom glass vignette for elevated depth
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(26.dp)
+                                .align(Alignment.BottomCenter)
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            Color.Transparent,
+                                            Color.Black.copy(alpha = if (palette.isDark) 0.28f else 0.10f)
+                                        )
+                                    )
+                                )
+                        )
+                    }
 
                 // 3. Live Audio / Mute one-tap interactive pill (bottom-end)
                 if (hasMedia && !isMultiSelect) {
@@ -352,29 +443,6 @@ internal fun TabGridCard(
                         }
                     }
                 }
-
-                // 5. Dwell-armed Drop-to-Group Glass Overlay
-                if (isDropTarget) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(palette.accentStrong.copy(alpha = 0.28f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = palette.accentStrong,
-                            shadowElevation = 6.dp
-                        ) {
-                            Text(
-                                text = "Drop to group",
-                                color = palette.onAccent,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                            )
-                        }
-                    }
                 }
             }
         }

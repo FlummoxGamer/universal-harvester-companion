@@ -11,6 +11,7 @@ import android.content.res.Configuration
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
+import android.view.MotionEvent
 import android.view.WindowManager
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.SystemBarStyle
@@ -28,6 +29,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.FragmentContainerView
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
@@ -56,6 +59,10 @@ class HomeActivity : AppCompatActivity() {
     private var navControllerState by mutableStateOf<NavController?>(null)
     private var isInPipMode by mutableStateOf(false)
     private var pipReceiverRegistered = false
+    private var autoHideStartX = 0f
+    private var autoHideLastY = 0f
+    private var autoHideAccumDy = 0f
+    private var autoHideTracking = false
 
     private val pipActionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -78,6 +85,7 @@ class HomeActivity : AppCompatActivity() {
         registerPipActionReceiver()
         observeMediaStateForPip()
         observeActiveTabPrivacyAndAccess()
+        observeImmersiveFullscreen()
 
         setContent {
             val controller = navControllerState
@@ -151,6 +159,10 @@ class HomeActivity : AppCompatActivity() {
                     browserViewModel.exitEditMode()
                     return
                 }
+                if (browserViewModel.isImmersiveFullscreen.value) {
+                    browserViewModel.setImmersiveFullscreen(false)
+                    return
+                }
                 if (browserViewModel.showFindInPage.value) {
                     browserViewModel.closeFindInPage()
                     return
@@ -188,6 +200,95 @@ class HomeActivity : AppCompatActivity() {
             pipReceiverRegistered = false
         }
         super.onDestroy()
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        trackAutoHideScrollGesture(ev)
+        return super.dispatchTouchEvent(ev)
+    }
+
+    private fun trackAutoHideScrollGesture(ev: MotionEvent) {
+        val onBrowser = navControllerState?.currentDestination?.id == R.id.browserFragment
+        val readerActive = app.harvester.companion.browser.reader.ReaderModeManager.state.value.isActive
+        if (!onBrowser ||
+            !browserViewModel.isAutoHideBarEnabled.value ||
+            browserViewModel.isEditing.value ||
+            browserViewModel.isImmersiveFullscreen.value ||
+            browserViewModel.showFindInPage.value ||
+            browserViewModel.showZoomBar.value ||
+            readerActive ||
+            isInPipMode
+        ) {
+            autoHideTracking = false
+            return
+        }
+
+        val density = resources.displayMetrics.density
+        val toolbarZonePx = 74f * density
+        val screenH = resources.displayMetrics.heightPixels.toFloat()
+        val isBottom = browserViewModel.isBarBottom.value
+
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                val y = ev.rawY
+                val inToolbarZone = if (isBottom) y > (screenH - toolbarZonePx) else y < toolbarZonePx
+                autoHideTracking = !inToolbarZone
+                autoHideStartX = ev.rawX
+                autoHideLastY = y
+                autoHideAccumDy = 0f
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (!autoHideTracking) return
+                val dy = ev.rawY - autoHideLastY
+                val dx = kotlin.math.abs(ev.rawX - autoHideStartX)
+                autoHideLastY = ev.rawY
+                if ((dy < 0f && autoHideAccumDy > 0f) || (dy > 0f && autoHideAccumDy < 0f)) {
+                    autoHideAccumDy = dy
+                } else {
+                    autoHideAccumDy += dy
+                }
+                val hideThreshold = 38f * density
+                val revealThreshold = 20f * density
+                if (kotlin.math.abs(autoHideAccumDy) > dx * 0.9f) {
+                    if (autoHideAccumDy < -hideThreshold) {
+                        browserViewModel.setToolbarAutoHidden(true)
+                        autoHideAccumDy = 0f
+                    } else if (autoHideAccumDy > revealThreshold) {
+                        browserViewModel.setToolbarAutoHidden(false)
+                        autoHideAccumDy = 0f
+                    }
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                autoHideTracking = false
+                autoHideAccumDy = 0f
+            }
+        }
+    }
+
+    private fun observeImmersiveFullscreen() {
+        lifecycleScope.launch {
+            kotlinx.coroutines.flow.combine(
+                browserViewModel.isImmersiveFullscreen,
+                app.harvester.companion.browser.reader.ReaderModeManager.state
+            ) { swipeFs, readerSt ->
+                swipeFs || (readerSt.isActive && readerSt.prefs.isFullscreen)
+            }.collect { immersive ->
+                applySystemBarsImmersive(immersive)
+            }
+        }
+    }
+
+    private fun applySystemBarsImmersive(immersive: Boolean) {
+        try {
+            val controller = WindowInsetsControllerCompat(window, window.decorView)
+            if (immersive) {
+                controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+            } else {
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+        } catch (_: Exception) {}
     }
 
     private fun registerPipActionReceiver() {

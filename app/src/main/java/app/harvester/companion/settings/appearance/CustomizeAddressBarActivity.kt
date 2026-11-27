@@ -78,6 +78,7 @@ fun CustomizeAddressBarScreen(onBack: () -> Unit = {}) {
         UhSettingsCardGroup {
             SettingsSwitchRow(
                 title = "Auto-hide Bar",
+                subtitle = "Hide address bar while scrolling webpages",
                 key = SettingsPrefs.K_AUTO_HIDE_BAR,
                 default = false,
                 insideCard = true
@@ -85,6 +86,7 @@ fun CustomizeAddressBarScreen(onBack: () -> Unit = {}) {
             UhSettingsDivider()
             SettingsSwitchRow(
                 title = "Swipe for Fullscreen",
+                subtitle = "Swipe address bar vertically for immersive mode",
                 key = SettingsPrefs.K_SWIPE_FULLSCREEN,
                 default = false,
                 insideCard = true
@@ -92,6 +94,7 @@ fun CustomizeAddressBarScreen(onBack: () -> Unit = {}) {
             UhSettingsDivider()
             SettingsSwitchRow(
                 title = "Show Full URL",
+                subtitle = "Display full page path instead of domain only",
                 key = SettingsPrefs.K_SHOW_FULL_URL,
                 default = false,
                 insideCard = true

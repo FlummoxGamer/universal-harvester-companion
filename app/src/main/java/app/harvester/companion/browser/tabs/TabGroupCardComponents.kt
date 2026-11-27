@@ -318,7 +318,7 @@ internal fun TabGroupGridCard(
                         .background(groupColor)
                 )
 
-                // Frosted Header row: Color dot + Group name + Count pill + Overflow
+                // Solid Opaque Header row: Color dot + Group name + Count pill + Overflow
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -334,8 +334,8 @@ internal fun TabGroupGridCard(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = group.name,
-                        color = palette.onSurface,
+                        text = if (isDropTarget) "Add to ${group.name}" else group.name,
+                        color = if (isDropTarget) groupColor else palette.onSurface,
                         fontSize = 11.5.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
@@ -384,6 +384,10 @@ internal fun TabGroupGridCard(
                         )
                     }
                 }
+                HorizontalDivider(
+                    thickness = 0.6.dp,
+                    color = palette.subtleBorder.copy(alpha = 0.65f)
+                )
 
                 // Clean 2x2 Mini-Preview Collage filling the card
                 Box(
@@ -392,7 +396,7 @@ internal fun TabGroupGridCard(
                         .weight(1f)
                         .padding(6.dp)
                         .clip(RoundedCornerShape(14.dp))
-                        .background(groupColor.copy(alpha = if (palette.isDark) 0.10f else 0.06f))
+                        .background(groupColor.copy(alpha = if (isDropTarget) 0.20f else if (palette.isDark) 0.10f else 0.06f))
                         .padding(5.dp)
                 ) {
                     val previewSlots = members.take(4)

@@ -11,6 +11,7 @@ object SettingsPrefs {
 
     private val _addressBarBottomFlow = MutableStateFlow<Boolean?>(null)
     private val _autoHideBarFlow = MutableStateFlow<Boolean?>(null)
+    private val _swipeFullscreenFlow = MutableStateFlow<Boolean?>(null)
     private val _customDownloadUriFlow = MutableStateFlow<String?>(null)
     private val _homeStatsEnabledFlow = MutableStateFlow<Boolean?>(null)
     private val _forceDarkWebFlow = MutableStateFlow<Boolean?>(null)
@@ -37,6 +38,14 @@ object SettingsPrefs {
         return _autoHideBarFlow.asStateFlow() as StateFlow<Boolean>
     }
 
+    fun swipeFullscreenFlow(ctx: Context): StateFlow<Boolean> {
+        if (_swipeFullscreenFlow.value == null) {
+            _swipeFullscreenFlow.value = getBool(ctx, K_SWIPE_FULLSCREEN, false)
+        }
+        @Suppress("UNCHECKED_CAST")
+        return _swipeFullscreenFlow.asStateFlow() as StateFlow<Boolean>
+    }
+
     fun customDownloadUriFlow(ctx: Context): StateFlow<String> {
         if (_customDownloadUriFlow.value == null) {
             _customDownloadUriFlow.value = getString(ctx, "custom_download_uri", "")
@@ -55,7 +64,7 @@ object SettingsPrefs {
 
     fun forceDarkWebFlow(ctx: Context): StateFlow<Boolean> {
         if (_forceDarkWebFlow.value == null) {
-            _forceDarkWebFlow.value = getBool(ctx, K_FORCE_DARK_SITES, false)
+            _forceDarkWebFlow.value = getBool(ctx, K_FORCE_DARK_SITES, true)
         }
         @Suppress("UNCHECKED_CAST")
         return _forceDarkWebFlow.asStateFlow() as StateFlow<Boolean>
@@ -116,6 +125,7 @@ object SettingsPrefs {
         p(ctx).edit().putBoolean(key, v).apply()
         when (key) {
             K_AUTO_HIDE_BAR -> _autoHideBarFlow.value = v
+            K_SWIPE_FULLSCREEN -> _swipeFullscreenFlow.value = v
             K_HOME_SHOW_STATS -> _homeStatsEnabledFlow.value = v
             K_FORCE_DARK_SITES -> _forceDarkWebFlow.value = v
             K_ENHANCE_DARK -> _enhanceDarkFlow.value = v

@@ -128,7 +128,7 @@ object UhPrivacyController {
      * Force Web Dark Mode is ONLY active when the browser is in Dark Mode AND enabled.
      */
     fun isForceDarkWebEffectivelyEnabled(ctx: Context): Boolean {
-        return isDarkModeActive(ctx) && SettingsPrefs.getBool(ctx, SettingsPrefs.K_FORCE_DARK_SITES, false)
+        return isDarkModeActive(ctx) && SettingsPrefs.getBool(ctx, SettingsPrefs.K_FORCE_DARK_SITES, true)
     }
 
     fun isSiteDarkBypassed(ctx: Context, urlOrHost: String): Boolean {

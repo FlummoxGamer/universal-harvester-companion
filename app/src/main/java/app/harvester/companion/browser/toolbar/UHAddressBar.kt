@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,8 +52,10 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
@@ -88,6 +91,9 @@ fun UHAddressBar(
     zoomPercent: Int = 100,
     isReaderEligible: Boolean = false,
     isReaderActive: Boolean = false,
+    isBarBottom: Boolean = true,
+    swipeFullscreenEnabled: Boolean = false,
+    onEnterImmersiveFullscreen: () -> Unit = {},
     onEditTextChanged: (String) -> Unit,
     onSubmit: (String) -> Unit,
     onEditStart: () -> Unit,
@@ -174,12 +180,47 @@ fun UHAddressBar(
     val hasPageUrl = !isWallpaperActive && url.isNotBlank() && url != "about:blank"
 
     val pillBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)
+    val swipeThresholdPx = with(LocalDensity.current) { 28.dp.toPx() }
+    val swipeFullscreenModifier = if (swipeFullscreenEnabled && !isEditing && hasPageUrl) {
+        Modifier.pointerInput(isBarBottom, swipeFullscreenEnabled, hasPageUrl) {
+            var accumDy = 0f
+            var triggered = false
+            detectVerticalDragGestures(
+                onDragStart = {
+                    accumDy = 0f
+                    triggered = false
+                },
+                onDragEnd = {
+                    accumDy = 0f
+                    triggered = false
+                },
+                onDragCancel = {
+                    accumDy = 0f
+                    triggered = false
+                },
+                onVerticalDrag = { _, dragAmount ->
+                    if (!triggered) {
+                        accumDy += dragAmount
+                        val shouldEnter = if (isBarBottom) accumDy > swipeThresholdPx else accumDy < -swipeThresholdPx
+                        if (shouldEnter) {
+                            triggered = true
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onEnterImmersiveFullscreen()
+                        }
+                    }
+                }
+            )
+        }
+    } else {
+        Modifier
+    }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(outerBarColor)
             .then(modifier)
+            .then(swipeFullscreenModifier)
             .height(barHeight)
             .padding(horizontal = if (isLandscape) 12.dp else 6.dp),
         verticalAlignment = Alignment.CenterVertically

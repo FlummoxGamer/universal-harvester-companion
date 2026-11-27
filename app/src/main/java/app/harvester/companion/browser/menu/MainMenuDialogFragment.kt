@@ -890,14 +890,14 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
 
     @Composable
     private fun SettingsPillFooter(onClick: () -> Unit) {
-        val pillShape = androidx.compose.foundation.shape.CircleShape
+        val pillShape = RoundedCornerShape(18.dp)
         Surface(
             shape = pillShape,
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-            tonalElevation = 2.dp,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
+            tonalElevation = 1.dp,
             border = androidx.compose.foundation.BorderStroke(
                 width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.36f)
             ),
             modifier = Modifier
                 .fillMaxWidth()
@@ -907,22 +907,31 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 12.dp),
+                    .padding(horizontal = 16.dp, vertical = 13.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
+                horizontalArrangement = Arrangement.Start
             ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.fx_ic_settings_24),
-                    contentDescription = "Settings",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.fx_ic_settings_24),
+                        contentDescription = "Settings",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(17.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = "Settings",
                     color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
                 )
             }
         }
