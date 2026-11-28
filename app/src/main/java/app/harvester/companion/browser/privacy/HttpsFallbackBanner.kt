@@ -49,7 +49,7 @@ fun HttpsFallbackBanner(
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 6.dp),
         shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = MaterialTheme.colorScheme.background,
         tonalElevation = 4.dp,
         shadowElevation = 6.dp,
         border = BorderStroke(

@@ -497,7 +497,7 @@ fun UHAddressBar(
                     DropdownMenu(
                         expanded = showTabQuickMenu,
                         onDismissRequest = { showTabQuickMenu = false },
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        containerColor = MaterialTheme.colorScheme.background,
                         shape = RoundedCornerShape(16.dp)
                     ) {
                         DropdownMenuItem(

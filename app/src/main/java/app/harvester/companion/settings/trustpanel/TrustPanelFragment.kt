@@ -214,7 +214,7 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                             Text("Close", color = MaterialTheme.colorScheme.primary)
                         }
                     },
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    containerColor = MaterialTheme.colorScheme.background,
                     shape = RoundedCornerShape(20.dp),
                 )
             }
@@ -247,7 +247,7 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                             Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     },
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    containerColor = MaterialTheme.colorScheme.background,
                     shape = RoundedCornerShape(20.dp),
                 )
             }
@@ -268,7 +268,7 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
             ) {
                 Surface(
                     shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    color = MaterialTheme.colorScheme.background,
                     modifier = Modifier
                         .widthIn(max = 560.dp)
                         .fillMaxWidth(),

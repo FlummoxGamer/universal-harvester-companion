@@ -1,5 +1,7 @@
 package app.harvester.companion.browser.reader
 
+import android.content.Intent
+import android.speech.tts.TextToSpeech
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -49,8 +51,8 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * Material 3 Reader Mode Controls Sheet:
- * - Multi-language Read Aloud with free AI Neural voices + Offline TTS fallback, verified Female/Male filter
+ * Material 3 UH Reader Controls Sheet:
+ * - Multi-language Read Aloud with natural human voices, live demo on tap, strict gender lock, and offline pack install
  * - 4 reading themes (Paper, Sepia, Dark, OLED) + accurate Reader Brightness slider with Extra-Dim night range
  * - 4 bookish font families (Book Serif, Classic, Clean Sans, Mono) + font size slider
  * - Line spacing & page margins
@@ -78,7 +80,7 @@ fun ReaderControlsSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = MaterialTheme.colorScheme.background,
         shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)
     ) {
         Column(
@@ -108,7 +110,7 @@ fun ReaderControlsSheet(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = "Reader Mode",
+                            text = "UH Reader",
                             color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold
@@ -179,7 +181,7 @@ fun ReaderControlsSheet(
                                 val progressLabel = if (state.ttsIndex >= 0) {
                                     "Sentence ${state.ttsIndex + 1} of ${state.sentences.size}"
                                 } else {
-                                    "AI Neural voices with offline fallback"
+                                    "Tap any voice to hear a live sample"
                                 }
                                 Text(
                                     text = progressLabel,
@@ -244,7 +246,13 @@ fun ReaderControlsSheet(
                                         .clip(RoundedCornerShape(10.dp))
                                         .background(
                                             if (selected) MaterialTheme.colorScheme.primary
-                                            else MaterialTheme.colorScheme.surfaceContainerHigh
+                                            else MaterialTheme.colorScheme.background
+                                        )
+                                        .border(
+                                            width = if (selected) 0.dp else 1.dp,
+                                            color = if (selected) Color.Transparent
+                                            else MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
+                                            shape = RoundedCornerShape(10.dp)
                                         )
                                         .clickable { ReaderModeManager.setTtsSpeed(spd) }
                                         .padding(vertical = 6.dp),
@@ -262,12 +270,16 @@ fun ReaderControlsSheet(
                             }
                         }
 
-                        // Voice Gender selector (Auto / Female / Male)
+                        // Voice Gender selector (Male / Female / Auto) — strictly locks gender across languages
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            ReaderVoiceGender.entries.forEach { gender ->
+                            listOf(
+                                ReaderVoiceGender.MALE,
+                                ReaderVoiceGender.FEMALE,
+                                ReaderVoiceGender.AUTO
+                            ).forEach { gender ->
                                 val selected = prefs.voiceGender == gender
                                 Box(
                                     modifier = Modifier
@@ -275,12 +287,12 @@ fun ReaderControlsSheet(
                                         .clip(RoundedCornerShape(10.dp))
                                         .background(
                                             if (selected) MaterialTheme.colorScheme.primaryContainer
-                                            else MaterialTheme.colorScheme.surfaceContainerHigh
+                                            else MaterialTheme.colorScheme.background
                                         )
                                         .border(
-                                            width = if (selected) 1.dp else 0.dp,
+                                            width = 1.dp,
                                             color = if (selected) MaterialTheme.colorScheme.primary
-                                            else Color.Transparent,
+                                            else MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
                                             shape = RoundedCornerShape(10.dp)
                                         )
                                         .clickable { ReaderModeManager.setVoiceGender(gender) }
@@ -299,43 +311,159 @@ fun ReaderControlsSheet(
                             }
                         }
 
-                        // Verified Neural & Offline Voice Picker
-                        val filteredVoices = when (prefs.voiceGender) {
-                            ReaderVoiceGender.AUTO -> state.availableVoices
-                            else -> state.availableVoices.filter { it.gender == prefs.voiceGender }
-                                .ifEmpty { state.availableVoices }
+                        // Categorized Online Voices (short human names only) + Offline Voices / Install Pack prompt
+                        val onlineVoices = remember(state.availableVoices, prefs.voiceGender) {
+                            val allOnline = state.availableVoices.filter { it.isNeural }
+                            when (prefs.voiceGender) {
+                                ReaderVoiceGender.AUTO -> allOnline
+                                else -> allOnline.filter { it.gender == prefs.voiceGender }.ifEmpty { allOnline }
+                            }
                         }
-                        if (filteredVoices.isNotEmpty()) {
+                        val offlineVoices = remember(state.availableVoices, prefs.voiceGender) {
+                            val allOffline = state.availableVoices.filter { !it.isNeural }
+                            when (prefs.voiceGender) {
+                                ReaderVoiceGender.AUTO -> allOffline
+                                else -> allOffline.filter {
+                                    it.gender == prefs.voiceGender || it.gender == ReaderVoiceGender.AUTO
+                                }.ifEmpty { allOffline }
+                            }
+                        }
+
+                        if (onlineVoices.isNotEmpty()) {
+                            Text(
+                                text = "VOICES · $detectedLangDisplay",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.6.sp
+                            )
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .horizontalScroll(rememberScrollState()),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                filteredVoices.forEach { voice ->
+                                onlineVoices.forEach { voice ->
                                     val isChosen = prefs.voiceName == voice.name ||
-                                        (prefs.voiceName.isBlank() && voice == filteredVoices.first())
+                                        (prefs.voiceName.isBlank() && voice == onlineVoices.first())
+                                    val isDemoPlaying = state.previewingVoiceName == voice.name
                                     Box(
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(9.dp))
+                                            .clip(RoundedCornerShape(10.dp))
                                             .background(
                                                 if (isChosen) MaterialTheme.colorScheme.primary
-                                                else MaterialTheme.colorScheme.surfaceContainerHigh
+                                                else MaterialTheme.colorScheme.background
+                                            )
+                                            .border(
+                                                width = 1.dp,
+                                                color = if (isChosen) MaterialTheme.colorScheme.primary
+                                                else MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
+                                                shape = RoundedCornerShape(10.dp)
                                             )
                                             .clickable { ReaderModeManager.selectVoiceOption(voice) }
-                                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                                            .padding(horizontal = 12.dp, vertical = 7.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(
-                                            text = voice.label,
+                                            text = if (isDemoPlaying) "${voice.label} ♪" else voice.label,
                                             color = if (isChosen) MaterialTheme.colorScheme.onPrimary
                                             else MaterialTheme.colorScheme.onSurface,
-                                            fontSize = 11.sp,
+                                            fontSize = 12.sp,
                                             fontWeight = if (isChosen) FontWeight.Bold else FontWeight.Medium,
                                             maxLines = 1
                                         )
                                     }
                                 }
+                            }
+                        }
+
+                        Text(
+                            text = "OFFLINE VOICES",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.6.sp
+                        )
+                        if (offlineVoices.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                offlineVoices.forEach { voice ->
+                                    val isChosen = prefs.voiceName == voice.name
+                                    val isDemoPlaying = state.previewingVoiceName == voice.name
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(
+                                                if (isChosen) MaterialTheme.colorScheme.primary
+                                                else MaterialTheme.colorScheme.background
+                                            )
+                                            .border(
+                                                width = 1.dp,
+                                                color = if (isChosen) MaterialTheme.colorScheme.primary
+                                                else MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
+                                                shape = RoundedCornerShape(10.dp)
+                                            )
+                                            .clickable { ReaderModeManager.selectVoiceOption(voice) }
+                                            .padding(horizontal = 12.dp, vertical = 7.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = if (isDemoPlaying) "${voice.label} ♪" else voice.label,
+                                            color = if (isChosen) MaterialTheme.colorScheme.onPrimary
+                                            else MaterialTheme.colorScheme.onSurface,
+                                            fontSize = 11.5.sp,
+                                            fontWeight = if (isChosen) FontWeight.Bold else FontWeight.Medium,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(11.dp))
+                                    .background(MaterialTheme.colorScheme.background)
+                                    .border(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
+                                        RoundedCornerShape(11.dp)
+                                    )
+                                    .clickable {
+                                        runCatching {
+                                            val installIntent = Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA)
+                                            installIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            context.startActivity(installIntent)
+                                        }
+                                    }
+                                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "No offline $detectedLangDisplay voice installed",
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = "Install system speech pack for offline reading",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 10.5.sp
+                                    )
+                                }
+                                Text(
+                                    text = "Install",
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(start = 8.dp)
+                                )
                             }
                         }
                     }
@@ -432,7 +560,13 @@ fun ReaderControlsSheet(
                                     .clip(RoundedCornerShape(9.dp))
                                     .background(
                                         if (isAutoBrightness) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.surfaceContainerHigh
+                                        else MaterialTheme.colorScheme.background
+                                    )
+                                    .border(
+                                        width = if (isAutoBrightness) 0.dp else 1.dp,
+                                        color = if (isAutoBrightness) Color.Transparent
+                                        else MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
+                                        shape = RoundedCornerShape(9.dp)
                                     )
                                     .clickable { ReaderModeManager.setBrightness(-1f) }
                                     .padding(horizontal = 9.dp, vertical = 5.dp),
@@ -499,7 +633,13 @@ fun ReaderControlsSheet(
                                     .clip(RoundedCornerShape(11.dp))
                                     .background(
                                         if (selected) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.surfaceContainerHigh
+                                        else MaterialTheme.colorScheme.background
+                                    )
+                                    .border(
+                                        width = if (selected) 0.dp else 1.dp,
+                                        color = if (selected) Color.Transparent
+                                        else MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
+                                        shape = RoundedCornerShape(11.dp)
                                     )
                                     .clickable {
                                         ReaderModeManager.updatePrefs { it.copy(font = font) }
@@ -581,7 +721,13 @@ fun ReaderControlsSheet(
                                     .clip(RoundedCornerShape(11.dp))
                                     .background(
                                         if (selected) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.surfaceContainerHigh
+                                        else MaterialTheme.colorScheme.background
+                                    )
+                                    .border(
+                                        width = if (selected) 0.dp else 1.dp,
+                                        color = if (selected) Color.Transparent
+                                        else MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
+                                        shape = RoundedCornerShape(11.dp)
                                     )
                                     .clickable {
                                         ReaderModeManager.updatePrefs { it.copy(lineSpacing = sp) }
@@ -618,7 +764,13 @@ fun ReaderControlsSheet(
                                     .clip(RoundedCornerShape(11.dp))
                                     .background(
                                         if (selected) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.surfaceContainerHigh
+                                        else MaterialTheme.colorScheme.background
+                                    )
+                                    .border(
+                                        width = if (selected) 0.dp else 1.dp,
+                                        color = if (selected) Color.Transparent
+                                        else MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
+                                        shape = RoundedCornerShape(11.dp)
                                     )
                                     .clickable {
                                         ReaderModeManager.updatePrefs { it.copy(margin = m) }

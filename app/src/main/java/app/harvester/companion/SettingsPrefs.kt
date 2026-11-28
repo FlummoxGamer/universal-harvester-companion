@@ -127,8 +127,18 @@ object SettingsPrefs {
             K_AUTO_HIDE_BAR -> _autoHideBarFlow.value = v
             K_SWIPE_FULLSCREEN -> _swipeFullscreenFlow.value = v
             K_HOME_SHOW_STATS -> _homeStatsEnabledFlow.value = v
-            K_FORCE_DARK_SITES -> _forceDarkWebFlow.value = v
-            K_ENHANCE_DARK -> _enhanceDarkFlow.value = v
+            K_FORCE_DARK_SITES -> {
+                _forceDarkWebFlow.value = v
+                try {
+                    app.harvester.companion.privacy.UhPrivacyController.applyAllToEngine(ctx)
+                } catch (_: Exception) {}
+            }
+            K_ENHANCE_DARK -> {
+                _enhanceDarkFlow.value = v
+                try {
+                    app.harvester.companion.privacy.UhPrivacyController.applyAllToEngine(ctx)
+                } catch (_: Exception) {}
+            }
             K_TAB_GROUP_STRIP_ENABLED -> _tabGroupStripFlow.value = v
             K_TAB_LANDSCAPE_STRIP_ENABLED -> _tabLandscapeStripFlow.value = v
             K_TAB_PRIVATE_LOCK_ENABLED -> _tabPrivateLockFlow.value = v

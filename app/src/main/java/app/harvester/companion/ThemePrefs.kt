@@ -3,6 +3,7 @@ package app.harvester.companion
 import android.content.Context
 import android.content.res.Configuration
 import androidx.appcompat.app.AppCompatDelegate
+import app.harvester.companion.privacy.UhPrivacyController
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -54,6 +55,9 @@ object ThemePrefs {
         _modeFlow.value = mode
         syncAppCompatNightMode(mode)
         syncEngineColorScheme(ctx, mode)
+        try {
+            UhPrivacyController.applyAllToEngine(ctx)
+        } catch (_: Exception) {}
     }
 
     fun applyCurrent(ctx: Context) {
@@ -77,10 +81,10 @@ object ThemePrefs {
     private fun syncEngineColorScheme(ctx: Context, mode: Int) {
         try {
             val app = ctx.applicationContext as? UHApp ?: return
-            app.components.engine.settings.preferredColorScheme = when (mode) {
-                MODE_LIGHT -> PreferredColorScheme.Light
-                MODE_DARK -> PreferredColorScheme.Dark
-                else -> PreferredColorScheme.System
+            app.components.engine.settings.preferredColorScheme = if (isDark(ctx, mode)) {
+                PreferredColorScheme.Dark
+            } else {
+                PreferredColorScheme.Light
             }
         } catch (e: Exception) {
             UHLog.w("theme_warn", "Failed updating engine preferredColorScheme: ${e.message}")

@@ -93,7 +93,7 @@ fun UHSearchEnginePicker(onDismiss: () -> Unit, onSelect: () -> Unit) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = MaterialTheme.colorScheme.background,
     ) {
         Column(
             modifier = Modifier
@@ -269,7 +269,7 @@ private fun CustomEngineEditorDialog(
                 Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = MaterialTheme.colorScheme.background,
         shape = RoundedCornerShape(18.dp)
     )
 }

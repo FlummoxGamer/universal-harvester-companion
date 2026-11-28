@@ -13,7 +13,6 @@ import android.os.Looper
 import android.provider.MediaStore
 import android.util.Base64
 import android.widget.Toast
-import app.harvester.companion.browser.translate.FastTranslatorClient
 import app.harvester.companion.browser.translate.OnlineTranslateClient
 import app.harvester.companion.browser.translate.UhTranslationManager
 import app.harvester.companion.components.Components
@@ -27,9 +26,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -67,12 +63,6 @@ object GeckoWebExtensionBridge {
 
     private val _devToolsVisible = MutableStateFlow(false)
     val devToolsVisible: StateFlow<Boolean> = _devToolsVisible.asStateFlow()
-
-    @Volatile
-    var onImageTranslateProgress: ((done: Int, total: Int) -> Unit)? = null
-
-    @Volatile
-    var onImageTranslateCompleted: ((imageCount: Int, overlayCount: Int, pageUrl: String) -> Unit)? = null
 
     fun init(ctx: Context, runtime: GeckoRuntime, components: Components) {
         if (!installed.compareAndSet(false, true)) return
@@ -160,33 +150,6 @@ object GeckoWebExtensionBridge {
             })
         } catch (e: Exception) {
             UHLog.w("ext", "Failed sending APPLY_GLOBAL_ZOOM: ${e.message}")
-        }
-    }
-
-    fun triggerImageTranslation(fromLang: String, toLang: String, preferOnline: Boolean = true): Boolean {
-        val port = activeBridgePort ?: return false
-        return try {
-            port.postMessage(JSONObject().apply {
-                put("action", "TRANSLATE_IMAGES")
-                put("fromLang", fromLang.ifBlank { "auto" })
-                put("toLang", toLang.ifBlank { "en" })
-                put("preferOnline", preferOnline)
-            })
-            true
-        } catch (e: Exception) {
-            UHLog.w("ext", "Failed sending TRANSLATE_IMAGES: ${e.message}")
-            false
-        }
-    }
-
-    fun clearImageTranslations() {
-        val port = activeBridgePort ?: return
-        try {
-            port.postMessage(JSONObject().apply {
-                put("action", "CLEAR_IMAGE_TRANSLATIONS")
-            })
-        } catch (e: Exception) {
-            UHLog.w("ext", "Failed sending CLEAR_IMAGE_TRANSLATIONS: ${e.message}")
         }
     }
 
@@ -599,91 +562,6 @@ object GeckoWebExtensionBridge {
                     GeckoResult.fromValue(true)
                 }
 
-                "TRANSLATE_IMAGES_OCR" -> {
-                    val result = GeckoResult<Any>()
-                    scope.launch {
-                        try {
-                            val fromLang = json.optString("fromLang", "auto")
-                            val toLang = json.optString("toLang", "en")
-                            val preferOnline = json.optBoolean("preferOnline", true)
-                            val pageUrl = json.optString("pageUrl", "").ifBlank { null }
-                            val imagesArr = json.optJSONArray("images")
-                            val items = mutableListOf<Triple<String, String?, String?>>()
-                            if (imagesArr != null) {
-                                for (i in 0 until imagesArr.length()) {
-                                    val obj = imagesArr.optJSONObject(i) ?: continue
-                                    val id = obj.optString("id")
-                                    val imageUrl = obj.optString("imageUrl").ifBlank { null }
-                                    val dataUrl = obj.optString("dataUrl").ifBlank { null }
-                                    if (id.isNotBlank() && (imageUrl != null || dataUrl != null)) {
-                                        items.add(Triple(id, imageUrl, dataUrl))
-                                    }
-                                }
-                            }
-
-                            val totalImages = items.size
-                            var doneImages = 0
-                            val resultsArr = JSONArray()
-                            for (wave in items.chunked(3)) {
-                                val waveOut = coroutineScope {
-                                    wave.map { (id, imageUrl, dataUrl) ->
-                                        async(Dispatchers.IO) {
-                                            val blocks = FastTranslatorClient.translateImageWithMlKit(
-                                                context = ctx,
-                                                imageUrl = imageUrl,
-                                                dataUrl = dataUrl,
-                                                pageUrl = pageUrl,
-                                                fromLang = fromLang,
-                                                toLang = toLang,
-                                                preferOnline = preferOnline,
-                                            )
-                                            id to blocks
-                                        }
-                                    }.awaitAll()
-                                }
-                                doneImages += wave.size
-                                val curDone = doneImages
-                                mainHandler.post {
-                                    onImageTranslateProgress?.invoke(curDone, totalImages)
-                                }
-                                for ((id, blocks) in waveOut) {
-                                    if (blocks.isEmpty()) continue
-                                    val blocksJson = JSONArray()
-                                    for (b in blocks) {
-                                        blocksJson.put(JSONObject().apply {
-                                            put("leftPct", b.leftPct.toDouble())
-                                            put("topPct", b.topPct.toDouble())
-                                            put("widthPct", b.widthPct.toDouble())
-                                            put("heightPct", b.heightPct.toDouble())
-                                            put("originalText", b.originalText)
-                                            put("translatedText", b.translatedText)
-                                            put("bgColor", b.bgColor)
-                                            put("textColor", b.textColor)
-                                        })
-                                    }
-                                    resultsArr.put(JSONObject().apply {
-                                        put("id", id)
-                                        put("blocks", blocksJson)
-                                    })
-                                }
-                            }
-                            val responseObj = JSONObject().apply {
-                                put("ok", true)
-                                put("results", resultsArr)
-                            }
-                            mainHandler.post { result.complete(responseObj) }
-                        } catch (e: Exception) {
-                            UHLog.w("translate_ocr", "TRANSLATE_IMAGES_OCR handler error: ${e.message}")
-                            val errObj = JSONObject().apply {
-                                put("ok", false)
-                                put("results", JSONArray())
-                            }
-                            mainHandler.post { result.complete(errObj) }
-                        }
-                    }
-                    result
-                }
-
                 "ONLINE_TRANSLATE_BATCH" -> {
                     val result = GeckoResult<Any>()
                     scope.launch {
@@ -722,6 +600,14 @@ object GeckoWebExtensionBridge {
                     result
                 }
 
+                "ONLINE_TRANSLATE_PROGRESS" -> {
+                    val progress = json.optDouble("progress", 0.0).toFloat()
+                    mainHandler.post {
+                        UhTranslationManager.onOnlinePageTranslationProgress(progress)
+                    }
+                    GeckoResult.fromValue(true)
+                }
+
                 "ONLINE_TRANSLATE_DONE" -> {
                     val ok = json.optBoolean("ok", false)
                     val restored = json.optBoolean("restored", false)
@@ -738,16 +624,6 @@ object GeckoWebExtensionBridge {
                             toLang = toLang,
                             error = error
                         )
-                    }
-                    GeckoResult.fromValue(true)
-                }
-
-                "IMAGE_TRANSLATE_DONE" -> {
-                    val imageCount = json.optInt("imageCount", 0)
-                    val overlayCount = json.optInt("overlayCount", 0)
-                    val pageUrl = json.optString("pageUrl", "")
-                    mainHandler.post {
-                        onImageTranslateCompleted?.invoke(imageCount, overlayCount, pageUrl)
                     }
                     GeckoResult.fromValue(true)
                 }
@@ -919,6 +795,13 @@ object GeckoWebExtensionBridge {
 
                 "READER_TOGGLE_FULLSCREEN" -> {
                     app.harvester.companion.browser.reader.ReaderModeManager.toggleFullscreen()
+                    GeckoResult.fromValue(true)
+                }
+
+                "READER_SET_FULLSCREEN" -> {
+                    app.harvester.companion.browser.reader.ReaderModeManager.setFullscreen(
+                        json.optBoolean("enabled", false)
+                    )
                     GeckoResult.fromValue(true)
                 }
 

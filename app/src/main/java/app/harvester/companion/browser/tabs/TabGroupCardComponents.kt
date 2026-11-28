@@ -173,7 +173,7 @@ internal fun PinnedTabsStrip(
                     DropdownMenu(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false },
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        containerColor = MaterialTheme.colorScheme.background,
                         shape = RoundedCornerShape(16.dp)
                     ) {
                         DropdownMenuItem(
@@ -690,7 +690,7 @@ internal fun GroupCardOverflowMenu(
     onUngroup: () -> Unit,
     onCloseGroup: () -> Unit
 ) {
-    val menuBg = if (isPrivate) Color(0xFF1A142D) else MaterialTheme.colorScheme.surfaceContainerHigh
+    val menuBg = if (isPrivate) Color(0xFF1A142D) else MaterialTheme.colorScheme.background
     val itemColor = if (isPrivate) Color(0xFFF3EEFF) else MaterialTheme.colorScheme.onSurface
     val dangerColor = if (isPrivate) Color(0xFFF87171) else MaterialTheme.colorScheme.error
 

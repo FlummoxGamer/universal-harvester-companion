@@ -32,18 +32,16 @@ enum class TranslatePillPhase {
     OFFER,
     DOWNLOADING_MODEL,
     TRANSLATING,
-    TRANSLATING_IMAGES,
     COMPLETED,
     ERROR,
 }
 
 /**
- * Unified Browser Translation Manager supporting:
- * 1. Fast Online Google Translate (default, zero downloads, 55+ languages, Brave-style floating bar).
+ * Unified UH Translate Manager supporting:
+ * 1. Fast Online Full-Page Translation (default, zero downloads, 55+ languages, parallel background worker).
  * 2. Private Offline Mode powered by GeckoView's on-device translation stack with persistent Offline Packs.
  * 3. True Auto-detect source state (picking any explicit language turns off Auto-detect before translating).
- * 4. Fast viewport-only Image OCR Translation (online batched primary + ML Kit offline fallback).
- * 5. "Offer to translate" OFF by default; when enabled, shows a tiny corner translate icon button.
+ * 4. Auto-hiding status pill once translation completes; reopen anytime from the menu or UH Reader.
  */
 object UhTranslationManager {
 
@@ -134,9 +132,6 @@ object UhTranslationManager {
         val statusMessage: String? = null,
         val errorMessage: String? = null,
         val lastTranslateMs: Long? = null,
-        val isTranslatingImages: Boolean = false,
-        val imageOverlayCount: Int = 0,
-        val imageOverlayTabId: String? = null,
         val offerTabId: String? = null,
         val offerFromLang: String? = null,
         val offerToLang: String? = null,
@@ -146,7 +141,6 @@ object UhTranslationManager {
         val pillProgress: Float = 0f,
         val pillTargetLang: String? = null,
         val pillCanRestore: Boolean = false,
-        val pillCanClearImages: Boolean = false,
         val pillCanRetry: Boolean = false,
     ) {
         fun effectiveFromCode(): String = if (isAutoDetect) {
@@ -221,7 +215,6 @@ object UhTranslationManager {
 
     private var pillAutoHideRunnable: Runnable? = null
     private var translateWatchdogRunnable: Runnable? = null
-    private var imageWatchdogRunnable: Runnable? = null
 
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
@@ -248,47 +241,6 @@ object UhTranslationManager {
             )
         }
 
-        GeckoWebExtensionBridge.onImageTranslateProgress = { done, total ->
-            if (_state.value.isTranslatingImages && total > 0) {
-                val frac = (done.toFloat() / total.toFloat()).coerceIn(0.10f, 0.95f)
-                scheduleImageWatchdog(18000L)
-                _state.update {
-                    it.copy(
-                        pillPhase = TranslatePillPhase.TRANSLATING_IMAGES,
-                        pillMessage = "Scanning images ($done/$total)…",
-                        pillProgress = frac,
-                        statusMessage = "Scanning images ($done/$total)…",
-                    )
-                }
-            }
-        }
-
-        GeckoWebExtensionBridge.onImageTranslateCompleted = { imageCount, overlayCount, _ ->
-            cancelImageWatchdog()
-            val activeTabId = storeRef?.state?.selectedTab?.id
-            val msg = when {
-                overlayCount > 0 -> "Translated $overlayCount image text block${if (overlayCount == 1) "" else "s"}"
-                imageCount == 0 -> "No visible images on screen"
-                else -> "No readable text found in visible images"
-            }
-            _state.update {
-                it.copy(
-                    isTranslatingImages = false,
-                    imageOverlayCount = overlayCount,
-                    imageOverlayTabId = if (overlayCount > 0) activeTabId else null,
-                    statusMessage = msg,
-                    errorMessage = null,
-                    pillPhase = TranslatePillPhase.COMPLETED,
-                    pillMessage = msg,
-                    pillProgress = 1f,
-                    pillCanRestore = false,
-                    pillCanClearImages = overlayCount > 0,
-                    pillCanRetry = false,
-                )
-            }
-            schedulePillAutoHide(4500L)
-        }
-
         refreshEngineCapabilities()
     }
 
@@ -303,11 +255,11 @@ object UhTranslationManager {
             _state.update { current ->
                 if (current.pillPhase == TranslatePillPhase.COMPLETED || current.pillPhase == TranslatePillPhase.ERROR) {
                     current.copy(
+                        barVisible = false,
                         pillPhase = TranslatePillPhase.HIDDEN,
                         pillMessage = "",
                         pillProgress = 0f,
                         pillCanRestore = false,
-                        pillCanClearImages = false,
                         pillCanRetry = false,
                     )
                 } else {
@@ -347,42 +299,13 @@ object UhTranslationManager {
                         pillMessage = msg,
                         pillProgress = 0f,
                         pillCanRestore = false,
-                        pillCanClearImages = false,
                         pillCanRetry = true,
                     )
                 }
-                schedulePillAutoHide(6500L)
+                schedulePillAutoHide(5500L)
             }
         }
         translateWatchdogRunnable = r
-        mainHandler.postDelayed(r, timeoutMs)
-    }
-
-    private fun cancelImageWatchdog() {
-        imageWatchdogRunnable?.let { mainHandler.removeCallbacks(it) }
-        imageWatchdogRunnable = null
-    }
-
-    private fun scheduleImageWatchdog(timeoutMs: Long) {
-        cancelImageWatchdog()
-        val r = Runnable {
-            if (_state.value.isTranslatingImages) {
-                _state.update {
-                    it.copy(
-                        isTranslatingImages = false,
-                        statusMessage = null,
-                        pillPhase = TranslatePillPhase.ERROR,
-                        pillMessage = "Image scan timed out",
-                        pillProgress = 0f,
-                        pillCanRestore = false,
-                        pillCanClearImages = false,
-                        pillCanRetry = false,
-                    )
-                }
-                schedulePillAutoHide(4000L)
-            }
-        }
-        imageWatchdogRunnable = r
         mainHandler.postDelayed(r, timeoutMs)
     }
 
@@ -484,7 +407,6 @@ object UhTranslationManager {
                 pillMessage = "",
                 pillProgress = 0f,
                 pillCanRestore = false,
-                pillCanClearImages = false,
                 pillCanRetry = false,
                 offerTabId = null,
                 offerFromLang = null,
@@ -564,7 +486,6 @@ object UhTranslationManager {
                             pillProgress = 1f,
                             pillTargetLang = targetShort,
                             pillCanRestore = true,
-                            pillCanClearImages = false,
                             pillCanRetry = false,
                             offerTabId = null,
                             offerFromLang = null,
@@ -572,7 +493,7 @@ object UhTranslationManager {
                             offerHost = null,
                         )
                     }
-                    schedulePillAutoHide(3200L)
+                    schedulePillAutoHide(1600L)
                     ReaderModeManager.onPageTranslationChanged(targetCode)
                     // Persist downloaded packs in GeckoView Offline Packs store so next time is instant!
                     persistOfflinePacksForPair(fromCode, targetCode)
@@ -602,11 +523,10 @@ object UhTranslationManager {
                             pillMessage = msg,
                             pillProgress = 0f,
                             pillCanRestore = false,
-                            pillCanClearImages = false,
                             pillCanRetry = true,
                         )
                     }
-                    schedulePillAutoHide(6500L)
+                    schedulePillAutoHide(5500L)
                     return
                 }
             }
@@ -648,10 +568,9 @@ object UhTranslationManager {
             return
         }
 
-        if (cur.isBusy || cur.isTranslatingImages ||
+        if (cur.isBusy ||
             cur.pillPhase == TranslatePillPhase.DOWNLOADING_MODEL ||
             cur.pillPhase == TranslatePillPhase.TRANSLATING ||
-            cur.pillPhase == TranslatePillPhase.TRANSLATING_IMAGES ||
             cur.pillPhase == TranslatePillPhase.COMPLETED ||
             cur.pillPhase == TranslatePillPhase.ERROR
         ) {
@@ -881,7 +800,7 @@ object UhTranslationManager {
         cancelPillAutoHide()
 
         if (!cur.useOfflineEngine) {
-            // Fast Online Google Translate mode!
+            // Fast Online UH Translate full-page parallel worker
             translateActiveTabOnline(tab.id, tab.content.url, resolvedFrom, resolvedTo)
         } else {
             // Private Offline GeckoView engine mode
@@ -912,10 +831,9 @@ object UhTranslationManager {
                 errorMessage = null,
                 pillPhase = TranslatePillPhase.TRANSLATING,
                 pillMessage = "Translating to $toLabel…",
-                pillProgress = 0f,
+                pillProgress = 0.08f,
                 pillTargetLang = languageShortLabel(toLang),
                 pillCanRestore = false,
-                pillCanClearImages = false,
                 pillCanRetry = false,
                 offerTabId = null,
                 offerFromLang = null,
@@ -923,7 +841,7 @@ object UhTranslationManager {
                 offerHost = null,
             )
         }
-        scheduleTranslateWatchdog(22000L)
+        scheduleTranslateWatchdog(28000L)
 
         val dispatched = GeckoWebExtensionBridge.triggerOnlinePageTranslation(fromLang, toLang)
         if (!dispatched) {
@@ -939,6 +857,20 @@ object UhTranslationManager {
                 )
             }
             schedulePillAutoHide(4500L)
+        }
+    }
+
+    fun onOnlinePageTranslationProgress(progress: Float) {
+        val cur = _state.value
+        if (!cur.isBusy && cur.pillPhase != TranslatePillPhase.TRANSLATING) return
+        val clamped = progress.coerceIn(0.08f, 0.96f)
+        // Extend watchdog while background full-page translation is actively making progress
+        scheduleTranslateWatchdog(25000L)
+        _state.update {
+            it.copy(
+                pillPhase = TranslatePillPhase.TRANSLATING,
+                pillProgress = clamped,
+            )
         }
     }
 
@@ -960,13 +892,15 @@ object UhTranslationManager {
             _state.update {
                 it.copy(
                     isBusy = false,
+                    barVisible = false,
                     onlineTranslatedTabId = null,
                     onlineTranslatedUrl = null,
                     onlineTranslatedToLang = null,
                     statusMessage = "Showing original page",
                     errorMessage = null,
-                    pillPhase = TranslatePillPhase.COMPLETED,
+                    pillPhase = TranslatePillPhase.HIDDEN,
                     pillMessage = "",
+                    pillProgress = 0f,
                 )
             }
             ReaderModeManager.onPageTranslationChanged(null)
@@ -1013,7 +947,8 @@ object UhTranslationManager {
                 pillCanRetry = false,
             )
         }
-        schedulePillAutoHide(2600L)
+        // Auto-hide pill promptly once full-page translation finishes
+        schedulePillAutoHide(1600L)
         ReaderModeManager.onPageTranslationChanged(finalTo)
     }
 
@@ -1071,7 +1006,6 @@ object UhTranslationManager {
                 pillProgress = 0f,
                 pillTargetLang = languageShortLabel(cleanTo),
                 pillCanRestore = false,
-                pillCanClearImages = false,
                 pillCanRetry = false,
                 offerTabId = null,
                 offerFromLang = null,
@@ -1102,11 +1036,10 @@ object UhTranslationManager {
                         pillMessage = errMsg,
                         pillProgress = 0f,
                         pillCanRestore = false,
-                        pillCanClearImages = false,
                         pillCanRetry = true,
                     )
                 }
-                schedulePillAutoHide(6000L)
+                schedulePillAutoHide(5500L)
             }
         }
     }
@@ -1116,6 +1049,7 @@ object UhTranslationManager {
         val session = tab?.engineState?.engineSession
 
         cancelTranslateWatchdog()
+        cancelPillAutoHide()
         pendingTabId = null
         pendingOnlineTabId = null
         pendingOnlineTabUrl = null
@@ -1128,21 +1062,20 @@ object UhTranslationManager {
         _state.update {
             it.copy(
                 isBusy = false,
+                barVisible = false,
                 onlineTranslatedTabId = null,
                 onlineTranslatedUrl = null,
                 onlineTranslatedToLang = null,
                 lastTranslateMs = null,
                 statusMessage = "Showing original page",
                 errorMessage = null,
-                pillPhase = TranslatePillPhase.COMPLETED,
+                pillPhase = TranslatePillPhase.HIDDEN,
                 pillMessage = "",
-                pillProgress = 1f,
+                pillProgress = 0f,
                 pillCanRestore = false,
-                pillCanClearImages = false,
                 pillCanRetry = false,
             )
         }
-        schedulePillAutoHide(1800L)
 
         if (session != null && tab.translationsState.isTranslated) {
             mainHandler.post {
@@ -1154,67 +1087,6 @@ object UhTranslationManager {
             }
         }
         ReaderModeManager.onPageTranslationChanged(null)
-    }
-
-    fun translateVisibleImages(fromLang: String? = null, toLang: String? = null) {
-        val cur = _state.value
-        val cleanTo = (toLang ?: cur.preferredTargetLang).trim().ifBlank { "en" }
-        val cleanFrom = (fromLang ?: cur.effectiveFromCode()).trim().ifBlank { "auto" }
-        val preferOnline = !cur.useOfflineEngine
-
-        cancelPillAutoHide()
-        _state.update {
-            it.copy(
-                isTranslatingImages = true,
-                barVisible = true,
-                statusMessage = "Scanning visible images…",
-                errorMessage = null,
-                pillPhase = TranslatePillPhase.TRANSLATING_IMAGES,
-                pillMessage = "Scanning visible images…",
-                pillProgress = 0f,
-                pillCanRestore = false,
-                pillCanClearImages = false,
-                pillCanRetry = false,
-                offerTabId = null,
-                offerFromLang = null,
-                offerToLang = null,
-                offerHost = null,
-            )
-        }
-        val dispatched = GeckoWebExtensionBridge.triggerImageTranslation(cleanFrom, cleanTo, preferOnline)
-        if (!dispatched) {
-            _state.update {
-                it.copy(
-                    isTranslatingImages = false,
-                    statusMessage = null,
-                    errorMessage = "Image scanner not ready on this page.",
-                    pillPhase = TranslatePillPhase.ERROR,
-                    pillMessage = "Image scanner not ready",
-                    pillCanRestore = false,
-                    pillCanClearImages = false,
-                    pillCanRetry = false,
-                )
-            }
-            schedulePillAutoHide(4000L)
-            return
-        }
-        scheduleImageWatchdog(20000L)
-    }
-
-    fun clearImageTranslations() {
-        cancelImageWatchdog()
-        GeckoWebExtensionBridge.clearImageTranslations()
-        _state.update {
-            it.copy(
-                isTranslatingImages = false,
-                imageOverlayCount = 0,
-                imageOverlayTabId = null,
-                statusMessage = null,
-                pillPhase = TranslatePillPhase.HIDDEN,
-                pillMessage = "",
-                pillCanClearImages = false,
-            )
-        }
     }
 
     fun setLanguageRule(languageCode: String, setting: LanguageSetting) {

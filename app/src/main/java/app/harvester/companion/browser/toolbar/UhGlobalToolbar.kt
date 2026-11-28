@@ -108,10 +108,10 @@ import app.harvester.companion.browser.tabs.TabGroupStore
 import app.harvester.companion.browser.tabs.TabHistoryStore
 import app.harvester.companion.browser.tabs.TabMetaStore
 import app.harvester.companion.browser.tabs.TabPreviewCache
-import app.harvester.companion.browser.translate.BraveTranslateBar
 import app.harvester.companion.browser.translate.TranslateCornerOfferButton
 import app.harvester.companion.browser.translate.TranslatePillPhase
 import app.harvester.companion.browser.translate.TranslateSheet
+import app.harvester.companion.browser.translate.UhTranslateStatusPill
 import app.harvester.companion.browser.translate.UhTranslationManager
 import app.harvester.companion.browser.webapp.InstallWebAppDialog
 import app.harvester.companion.search.UhSearchViewModel
@@ -569,15 +569,8 @@ fun UhGlobalToolbar(
                 showLandscapeStrip -> Modifier
                 else -> Modifier.statusBarsPadding()
             }
-            val isPageTranslated = translateState.isCurrentTabTranslated(
-                tabId = selectedTab?.id,
-                tabUrl = selectedTab?.content?.url,
-                geckoTranslated = selectedTab?.translationsState?.isTranslated == true
-            )
             val isTabTranslateBusy = selectedTab?.translationsState?.isTranslateProcessing == true ||
                 selectedTab?.translationsState?.isRestoreProcessing == true
-            val hasImageOverlays = translateState.imageOverlayCount > 0 &&
-                translateState.imageOverlayTabId == selectedTab?.id
             val statusBarBackingColor = if (readerState.isActive) {
                 Color(readerState.prefs.theme.bgColorInt)
             } else {
@@ -639,26 +632,12 @@ fun UhGlobalToolbar(
                         )
                     }
                     if (isBrowser && isBarBottom && !showFindInPage && !showZoomBar) {
-                        BraveTranslateBar(
+                        UhTranslateStatusPill(
                             mgrState = translateState,
-                            isPageTranslated = isPageTranslated,
                             isTabBusy = isTabTranslateBusy,
-                            hasImageOverlays = hasImageOverlays,
-                            onSelectOriginalTab = {
-                                if (isPageTranslated) UhTranslationManager.restoreActiveTab()
-                            },
-                            onSelectTargetTab = {
-                                if (!isPageTranslated) UhTranslationManager.translateActiveTab()
-                            },
-                            onOpenLanguageSheet = { viewModel.openTranslateSheet() },
-                            onTranslateImages = {
-                                if (hasImageOverlays) {
-                                    UhTranslationManager.clearImageTranslations()
-                                } else {
-                                    UhTranslationManager.translateVisibleImages()
-                                }
-                            },
-                            onDismiss = { UhTranslationManager.hideTranslateBar() },
+                            onOpenTranslateSheet = { viewModel.openTranslateSheet() },
+                            onRetry = { UhTranslationManager.retryLastTranslation() },
+                            onDismiss = { UhTranslationManager.dismissPill() },
                         )
                     }
                     if (isBrowser && showFindInPage && isBarBottom) {
@@ -798,26 +777,12 @@ fun UhGlobalToolbar(
                         )
                     }
                     if (isBrowser && !isBarBottom && !showFindInPage && !showZoomBar) {
-                        BraveTranslateBar(
+                        UhTranslateStatusPill(
                             mgrState = translateState,
-                            isPageTranslated = isPageTranslated,
                             isTabBusy = isTabTranslateBusy,
-                            hasImageOverlays = hasImageOverlays,
-                            onSelectOriginalTab = {
-                                if (isPageTranslated) UhTranslationManager.restoreActiveTab()
-                            },
-                            onSelectTargetTab = {
-                                if (!isPageTranslated) UhTranslationManager.translateActiveTab()
-                            },
-                            onOpenLanguageSheet = { viewModel.openTranslateSheet() },
-                            onTranslateImages = {
-                                if (hasImageOverlays) {
-                                    UhTranslationManager.clearImageTranslations()
-                                } else {
-                                    UhTranslationManager.translateVisibleImages()
-                                }
-                            },
-                            onDismiss = { UhTranslationManager.hideTranslateBar() },
+                            onOpenTranslateSheet = { viewModel.openTranslateSheet() },
+                            onRetry = { UhTranslationManager.retryLastTranslation() },
+                            onDismiss = { UhTranslationManager.dismissPill() },
                         )
                     }
                 }
@@ -973,7 +938,7 @@ fun UhGlobalToolbar(
     pendingExternalAppPrompt?.let { prompt ->
         AlertDialog(
             onDismissRequest = { viewModel.dismissExternalAppPrompt() },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = MaterialTheme.colorScheme.background,
             shape = RoundedCornerShape(22.dp),
             icon = {
                 if (prompt.appIcon != null) {
@@ -1064,7 +1029,7 @@ private fun SavePdfPrintSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = MaterialTheme.colorScheme.background,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
     ) {
         Column(
@@ -1179,9 +1144,10 @@ private fun FindInPageBar(
     val noMatches = query.isNotBlank() && total == 0
 
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 6.dp,
-        shadowElevation = 6.dp,
+        color = MaterialTheme.colorScheme.background,
+        tonalElevation = 0.dp,
+        shadowElevation = 8.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)),
         shape = RoundedCornerShape(18.dp),
         modifier = modifier
             .fillMaxWidth()
@@ -1350,9 +1316,10 @@ private fun ZoomAdjustBar(
     val presets = listOf(75, 100, 125, 150, 200)
 
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 6.dp,
-        shadowElevation = 6.dp,
+        color = MaterialTheme.colorScheme.background,
+        tonalElevation = 0.dp,
+        shadowElevation = 8.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)),
         shape = RoundedCornerShape(18.dp),
         modifier = Modifier
             .fillMaxWidth()

@@ -702,25 +702,11 @@ class BrowserFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        val preview = app.harvester.companion.browser.tabs.TabPreviewCache.getLastActiveBitmap()
-        if (preview != null && !preview.isRecycled && _binding != null) {
-            binding.tabPreviewOverlay.setImageBitmap(preview)
-            binding.tabPreviewOverlay.visibility = View.VISIBLE
-            binding.tabPreviewOverlay.alpha = 1f
-            binding.tabPreviewOverlay.postDelayed({
-                if (_binding != null) {
-                    binding.tabPreviewOverlay.animate()
-                        .alpha(0f)
-                        .setDuration(250)
-                        .withEndAction {
-                            if (_binding != null) {
-                                binding.tabPreviewOverlay.visibility = View.GONE
-                                binding.tabPreviewOverlay.alpha = 1f
-                            }
-                        }
-                        .start()
-                }
-            }, 450)
+        _binding?.let { b ->
+            b.tabPreviewOverlay.animate().cancel()
+            b.tabPreviewOverlay.setImageDrawable(null)
+            b.tabPreviewOverlay.visibility = View.GONE
+            b.tabPreviewOverlay.alpha = 1f
         }
     }
 
@@ -804,7 +790,7 @@ class BrowserFragment : Fragment() {
             onComplete?.invoke(null)
             return
         }
-        val engineView = if (binding.swipeRefresh.childCount > 0) binding.swipeRefresh.getChildAt(0) else null
+        val engineView = engineViewRef?.asView()
         if (engineView == null) {
             onComplete?.invoke(null)
             return

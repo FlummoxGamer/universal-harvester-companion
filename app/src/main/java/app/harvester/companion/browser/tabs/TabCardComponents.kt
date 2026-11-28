@@ -941,7 +941,7 @@ internal fun TabCardContextMenu(
     onShare: () -> Unit,
     onClose: () -> Unit
 ) {
-    val menuBg = if (isPrivate) Color(0xFF1A142D) else MaterialTheme.colorScheme.surfaceContainerHigh
+    val menuBg = if (isPrivate) Color(0xFF1A142D) else MaterialTheme.colorScheme.background
     val itemColor = if (isPrivate) Color(0xFFF3EEFF) else MaterialTheme.colorScheme.onSurface
     val dangerColor = if (isPrivate) Color(0xFFF87171) else MaterialTheme.colorScheme.error
 

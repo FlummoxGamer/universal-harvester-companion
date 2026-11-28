@@ -121,7 +121,7 @@ fun ExtensionPopupSheet(
         ) {
             Surface(
                 shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = MaterialTheme.colorScheme.background,
                 modifier = Modifier
                     .fillMaxWidth()
                     .fillMaxHeight(0.76f)

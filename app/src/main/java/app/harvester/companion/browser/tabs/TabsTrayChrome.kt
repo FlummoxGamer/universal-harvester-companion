@@ -528,7 +528,7 @@ internal fun TabsTrayBottomDock(
     onOpenSettings: () -> Unit,
     onCloseAllInSection: () -> Unit
 ) {
-    val menuBg = if (palette.isPrivateTheme) Color(0xFF1A142D) else MaterialTheme.colorScheme.surfaceContainerHigh
+    val menuBg = if (palette.isPrivateTheme) Color(0xFF1A142D) else MaterialTheme.colorScheme.background
     val menuText = palette.onSurface
     val menuSubtle = palette.onSurfaceSubtle
 

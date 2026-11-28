@@ -23,6 +23,7 @@ import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.security.MessageDigest
+import java.security.SecureRandom
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -30,27 +31,30 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.roundToInt
 
 /**
- * Free online Neural TTS synthesizer powered by Microsoft Edge Read Aloud Neural voices.
+ * Online Neural TTS synthesizer for UH Reader Read Aloud.
  *
  * Features:
- * - Curated catalog of high-naturalness Neural voices across 35+ languages with verified Male/Female gender.
- * - Parses exact `WordBoundary` millisecond timestamps for real-time word highlighting & instant Book Page auto-turn.
- * - Background prefetches the next sentence while the current sentence plays to eliminate awkward pauses on full stops.
- * - Graceful automatic fallback callback so ReaderModeManager seamlessly switches to on-device Android TTS if offline.
+ * - Current Chromium 143+ Sec-MS-GEC + MUID cookie authentication for reliable online synthesis.
+ * - Distinct human-sounding Neural voices across 35+ languages with short human names only.
+ * - Strict gender preservation across languages (Male stays Male, Female stays Female).
+ * - Default clear deep male narrator (Brian in English; primary male narrator per language).
+ * - 2-sentence concurrent lookahead pre-buffering for gapless full-stop transitions.
+ * - Instant voice preview demo line localized to the active article language.
  */
 object NeuralTtsClient {
 
     private const val TRUSTED_CLIENT_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
-    private const val CHROMIUM_FULL_VERSION = "130.0.2849.68"
+    private const val CHROMIUM_FULL_VERSION = "143.0.3650.75"
     private const val SEC_MS_GEC_VERSION = "1-$CHROMIUM_FULL_VERSION"
     private const val WIN_EPOCH_OFFSET_SEC = 11644473600L
-    private const val SYNTH_TIMEOUT_MS = 6500L
+    private const val SYNTH_TIMEOUT_MS = 7500L
 
     data class NeuralVoiceSpec(
         val shortName: String,
         val displayName: String,
         val gender: ReaderVoiceGender,
-        val langTag: String
+        val langTag: String,
+        val isMultilingual: Boolean = false
     )
 
     data class WordMark(
@@ -68,191 +72,256 @@ object NeuralTtsClient {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val generation = AtomicLong(0L)
+    private val demoGeneration = AtomicLong(0L)
     private val prefetchCache = ConcurrentHashMap<String, CompletableDeferred<SynthesizedChunk?>>()
+    private val secureRandom = SecureRandom()
 
     @Volatile
     private var mediaPlayer: MediaPlayer? = null
     @Volatile
+    private var demoPlayer: MediaPlayer? = null
+    @Volatile
     private var wordTrackerRunnable: Runnable? = null
     @Volatile
     private var activeJob: Job? = null
+    @Volatile
+    private var demoJob: Job? = null
+
+    /**
+     * Adaptive Multilingual Neural voices that speak 40+ languages fluently with natural accent.
+     * Brian (deep, clear male narrator) is the global default voice.
+     */
+    private val multilingualVoices: List<NeuralVoiceSpec> = listOf(
+        NeuralVoiceSpec("en-US-BrianMultilingualNeural", "Brian", ReaderVoiceGender.MALE, "en-US", isMultilingual = true),
+        NeuralVoiceSpec("en-US-AndrewMultilingualNeural", "Andrew", ReaderVoiceGender.MALE, "en-US", isMultilingual = true),
+        NeuralVoiceSpec("en-US-AvaMultilingualNeural", "Ava", ReaderVoiceGender.FEMALE, "en-US", isMultilingual = true),
+        NeuralVoiceSpec("en-US-EmmaMultilingualNeural", "Emma", ReaderVoiceGender.FEMALE, "en-US", isMultilingual = true),
+    )
 
     /**
      * Verified high-naturalness Neural voices mapped by ISO-639 base language code.
-     * Every entry has verified gender — zero guessing or random assignment.
+     * Short human names only; primary clear Male narrator listed first per language.
      */
     private val voiceCatalog: Map<String, List<NeuralVoiceSpec>> = mapOf(
         "en" to listOf(
-            NeuralVoiceSpec("en-US-AvaMultilingualNeural", "Ava (Natural)", ReaderVoiceGender.FEMALE, "en-US"),
-            NeuralVoiceSpec("en-US-AndrewMultilingualNeural", "Andrew (Natural)", ReaderVoiceGender.MALE, "en-US"),
-            NeuralVoiceSpec("en-US-EmmaMultilingualNeural", "Emma (Warm)", ReaderVoiceGender.FEMALE, "en-US"),
-            NeuralVoiceSpec("en-US-BrianMultilingualNeural", "Brian (Deep)", ReaderVoiceGender.MALE, "en-US"),
-            NeuralVoiceSpec("en-GB-SoniaNeural", "Sonia (UK)", ReaderVoiceGender.FEMALE, "en-GB"),
-            NeuralVoiceSpec("en-GB-RyanNeural", "Ryan (UK)", ReaderVoiceGender.MALE, "en-GB")
+            NeuralVoiceSpec("en-US-BrianMultilingualNeural", "Brian", ReaderVoiceGender.MALE, "en-US", isMultilingual = true),
+            NeuralVoiceSpec("en-US-AndrewMultilingualNeural", "Andrew", ReaderVoiceGender.MALE, "en-US", isMultilingual = true),
+            NeuralVoiceSpec("en-GB-RyanNeural", "Ryan", ReaderVoiceGender.MALE, "en-GB"),
+            NeuralVoiceSpec("en-US-AvaMultilingualNeural", "Ava", ReaderVoiceGender.FEMALE, "en-US", isMultilingual = true),
+            NeuralVoiceSpec("en-US-EmmaMultilingualNeural", "Emma", ReaderVoiceGender.FEMALE, "en-US", isMultilingual = true),
+            NeuralVoiceSpec("en-GB-SoniaNeural", "Sonia", ReaderVoiceGender.FEMALE, "en-GB"),
         ),
         "hi" to listOf(
+            NeuralVoiceSpec("hi-IN-MadhurNeural", "Madhur", ReaderVoiceGender.MALE, "hi-IN"),
             NeuralVoiceSpec("hi-IN-SwaraNeural", "Swara", ReaderVoiceGender.FEMALE, "hi-IN"),
-            NeuralVoiceSpec("hi-IN-MadhurNeural", "Madhur", ReaderVoiceGender.MALE, "hi-IN")
         ),
         "es" to listOf(
-            NeuralVoiceSpec("es-ES-ElviraNeural", "Elvira", ReaderVoiceGender.FEMALE, "es-ES"),
             NeuralVoiceSpec("es-ES-AlvaroNeural", "Alvaro", ReaderVoiceGender.MALE, "es-ES"),
-            NeuralVoiceSpec("es-MX-DaliaNeural", "Dalia (MX)", ReaderVoiceGender.FEMALE, "es-MX"),
-            NeuralVoiceSpec("es-MX-JorgeNeural", "Jorge (MX)", ReaderVoiceGender.MALE, "es-MX")
+            NeuralVoiceSpec("es-MX-JorgeNeural", "Jorge", ReaderVoiceGender.MALE, "es-MX"),
+            NeuralVoiceSpec("es-ES-ElviraNeural", "Elvira", ReaderVoiceGender.FEMALE, "es-ES"),
+            NeuralVoiceSpec("es-MX-DaliaNeural", "Dalia", ReaderVoiceGender.FEMALE, "es-MX"),
         ),
         "fr" to listOf(
-            NeuralVoiceSpec("fr-FR-VivienneMultilingualNeural", "Vivienne", ReaderVoiceGender.FEMALE, "fr-FR"),
-            NeuralVoiceSpec("fr-FR-RemyMultilingualNeural", "Remy", ReaderVoiceGender.MALE, "fr-FR"),
+            NeuralVoiceSpec("fr-FR-RemyMultilingualNeural", "Remy", ReaderVoiceGender.MALE, "fr-FR", isMultilingual = true),
+            NeuralVoiceSpec("fr-FR-HenriNeural", "Henri", ReaderVoiceGender.MALE, "fr-FR"),
+            NeuralVoiceSpec("fr-FR-VivienneMultilingualNeural", "Vivienne", ReaderVoiceGender.FEMALE, "fr-FR", isMultilingual = true),
             NeuralVoiceSpec("fr-FR-DeniseNeural", "Denise", ReaderVoiceGender.FEMALE, "fr-FR"),
-            NeuralVoiceSpec("fr-FR-HenriNeural", "Henri", ReaderVoiceGender.MALE, "fr-FR")
         ),
         "de" to listOf(
-            NeuralVoiceSpec("de-DE-SeraphinaMultilingualNeural", "Seraphina", ReaderVoiceGender.FEMALE, "de-DE"),
-            NeuralVoiceSpec("de-DE-FlorianMultilingualNeural", "Florian", ReaderVoiceGender.MALE, "de-DE"),
+            NeuralVoiceSpec("de-DE-FlorianMultilingualNeural", "Florian", ReaderVoiceGender.MALE, "de-DE", isMultilingual = true),
+            NeuralVoiceSpec("de-DE-ConradNeural", "Conrad", ReaderVoiceGender.MALE, "de-DE"),
+            NeuralVoiceSpec("de-DE-SeraphinaMultilingualNeural", "Seraphina", ReaderVoiceGender.FEMALE, "de-DE", isMultilingual = true),
             NeuralVoiceSpec("de-DE-KatjaNeural", "Katja", ReaderVoiceGender.FEMALE, "de-DE"),
-            NeuralVoiceSpec("de-DE-ConradNeural", "Conrad", ReaderVoiceGender.MALE, "de-DE")
         ),
         "pt" to listOf(
-            NeuralVoiceSpec("pt-BR-FranciscaNeural", "Francisca", ReaderVoiceGender.FEMALE, "pt-BR"),
             NeuralVoiceSpec("pt-BR-AntonioNeural", "Antonio", ReaderVoiceGender.MALE, "pt-BR"),
-            NeuralVoiceSpec("pt-PT-RaquelNeural", "Raquel (PT)", ReaderVoiceGender.FEMALE, "pt-PT"),
-            NeuralVoiceSpec("pt-PT-DuarteNeural", "Duarte (PT)", ReaderVoiceGender.MALE, "pt-PT")
+            NeuralVoiceSpec("pt-PT-DuarteNeural", "Duarte", ReaderVoiceGender.MALE, "pt-PT"),
+            NeuralVoiceSpec("pt-BR-FranciscaNeural", "Francisca", ReaderVoiceGender.FEMALE, "pt-BR"),
+            NeuralVoiceSpec("pt-PT-RaquelNeural", "Raquel", ReaderVoiceGender.FEMALE, "pt-PT"),
         ),
         "it" to listOf(
+            NeuralVoiceSpec("it-IT-DiegoNeural", "Diego", ReaderVoiceGender.MALE, "it-IT"),
             NeuralVoiceSpec("it-IT-ElsaNeural", "Elsa", ReaderVoiceGender.FEMALE, "it-IT"),
-            NeuralVoiceSpec("it-IT-DiegoNeural", "Diego", ReaderVoiceGender.MALE, "it-IT")
         ),
         "ru" to listOf(
+            NeuralVoiceSpec("ru-RU-DmitryNeural", "Dmitry", ReaderVoiceGender.MALE, "ru-RU"),
             NeuralVoiceSpec("ru-RU-SvetlanaNeural", "Svetlana", ReaderVoiceGender.FEMALE, "ru-RU"),
-            NeuralVoiceSpec("ru-RU-DmitryNeural", "Dmitry", ReaderVoiceGender.MALE, "ru-RU")
         ),
         "ja" to listOf(
+            NeuralVoiceSpec("ja-JP-KeitaNeural", "Keita", ReaderVoiceGender.MALE, "ja-JP"),
             NeuralVoiceSpec("ja-JP-NanamiNeural", "Nanami", ReaderVoiceGender.FEMALE, "ja-JP"),
-            NeuralVoiceSpec("ja-JP-KeitaNeural", "Keita", ReaderVoiceGender.MALE, "ja-JP")
         ),
         "ko" to listOf(
+            NeuralVoiceSpec("ko-KR-InJoonNeural", "InJoon", ReaderVoiceGender.MALE, "ko-KR"),
             NeuralVoiceSpec("ko-KR-SunHiNeural", "Sun-Hi", ReaderVoiceGender.FEMALE, "ko-KR"),
-            NeuralVoiceSpec("ko-KR-InJoonNeural", "InJoon", ReaderVoiceGender.MALE, "ko-KR")
         ),
         "zh" to listOf(
-            NeuralVoiceSpec("zh-CN-XiaoxiaoNeural", "Xiaoxiao", ReaderVoiceGender.FEMALE, "zh-CN"),
             NeuralVoiceSpec("zh-CN-YunxiNeural", "Yunxi", ReaderVoiceGender.MALE, "zh-CN"),
-            NeuralVoiceSpec("zh-TW-HsiaoChenNeural", "HsiaoChen (TW)", ReaderVoiceGender.FEMALE, "zh-TW"),
-            NeuralVoiceSpec("zh-TW-YunJheNeural", "YunJhe (TW)", ReaderVoiceGender.MALE, "zh-TW")
+            NeuralVoiceSpec("zh-TW-YunJheNeural", "YunJhe", ReaderVoiceGender.MALE, "zh-TW"),
+            NeuralVoiceSpec("zh-CN-XiaoxiaoNeural", "Xiaoxiao", ReaderVoiceGender.FEMALE, "zh-CN"),
+            NeuralVoiceSpec("zh-TW-HsiaoChenNeural", "HsiaoChen", ReaderVoiceGender.FEMALE, "zh-TW"),
         ),
         "ar" to listOf(
+            NeuralVoiceSpec("ar-SA-HamedNeural", "Hamed", ReaderVoiceGender.MALE, "ar-SA"),
             NeuralVoiceSpec("ar-SA-ZariyahNeural", "Zariyah", ReaderVoiceGender.FEMALE, "ar-SA"),
-            NeuralVoiceSpec("ar-SA-HamedNeural", "Hamed", ReaderVoiceGender.MALE, "ar-SA")
         ),
         "tr" to listOf(
+            NeuralVoiceSpec("tr-TR-AhmetNeural", "Ahmet", ReaderVoiceGender.MALE, "tr-TR"),
             NeuralVoiceSpec("tr-TR-EmelNeural", "Emel", ReaderVoiceGender.FEMALE, "tr-TR"),
-            NeuralVoiceSpec("tr-TR-AhmetNeural", "Ahmet", ReaderVoiceGender.MALE, "tr-TR")
         ),
         "id" to listOf(
+            NeuralVoiceSpec("id-ID-ArdiNeural", "Ardi", ReaderVoiceGender.MALE, "id-ID"),
             NeuralVoiceSpec("id-ID-GadisNeural", "Gadis", ReaderVoiceGender.FEMALE, "id-ID"),
-            NeuralVoiceSpec("id-ID-ArdiNeural", "Ardi", ReaderVoiceGender.MALE, "id-ID")
         ),
         "vi" to listOf(
+            NeuralVoiceSpec("vi-VN-NamMinhNeural", "NamMinh", ReaderVoiceGender.MALE, "vi-VN"),
             NeuralVoiceSpec("vi-VN-HoaiMyNeural", "HoaiMy", ReaderVoiceGender.FEMALE, "vi-VN"),
-            NeuralVoiceSpec("vi-VN-NamMinhNeural", "NamMinh", ReaderVoiceGender.MALE, "vi-VN")
         ),
         "th" to listOf(
+            NeuralVoiceSpec("th-TH-NiwatNeural", "Niwat", ReaderVoiceGender.MALE, "th-TH"),
             NeuralVoiceSpec("th-TH-PremwadeeNeural", "Premwadee", ReaderVoiceGender.FEMALE, "th-TH"),
-            NeuralVoiceSpec("th-TH-NiwatNeural", "Niwat", ReaderVoiceGender.MALE, "th-TH")
         ),
         "nl" to listOf(
+            NeuralVoiceSpec("nl-NL-MaartenNeural", "Maarten", ReaderVoiceGender.MALE, "nl-NL"),
             NeuralVoiceSpec("nl-NL-ColetteNeural", "Colette", ReaderVoiceGender.FEMALE, "nl-NL"),
-            NeuralVoiceSpec("nl-NL-MaartenNeural", "Maarten", ReaderVoiceGender.MALE, "nl-NL")
         ),
         "pl" to listOf(
+            NeuralVoiceSpec("pl-PL-MarekNeural", "Marek", ReaderVoiceGender.MALE, "pl-PL"),
             NeuralVoiceSpec("pl-PL-ZofiaNeural", "Zofia", ReaderVoiceGender.FEMALE, "pl-PL"),
-            NeuralVoiceSpec("pl-PL-MarekNeural", "Marek", ReaderVoiceGender.MALE, "pl-PL")
         ),
         "uk" to listOf(
+            NeuralVoiceSpec("uk-UA-OstapNeural", "Ostap", ReaderVoiceGender.MALE, "uk-UA"),
             NeuralVoiceSpec("uk-UA-PolinaNeural", "Polina", ReaderVoiceGender.FEMALE, "uk-UA"),
-            NeuralVoiceSpec("uk-UA-OstapNeural", "Ostap", ReaderVoiceGender.MALE, "uk-UA")
         ),
         "sv" to listOf(
+            NeuralVoiceSpec("sv-SE-MattiasNeural", "Mattias", ReaderVoiceGender.MALE, "sv-SE"),
             NeuralVoiceSpec("sv-SE-SofieNeural", "Sofie", ReaderVoiceGender.FEMALE, "sv-SE"),
-            NeuralVoiceSpec("sv-SE-MattiasNeural", "Mattias", ReaderVoiceGender.MALE, "sv-SE")
         ),
         "bn" to listOf(
+            NeuralVoiceSpec("bn-IN-BashkarNeural", "Bashkar", ReaderVoiceGender.MALE, "bn-IN"),
             NeuralVoiceSpec("bn-IN-TanishaaNeural", "Tanishaa", ReaderVoiceGender.FEMALE, "bn-IN"),
-            NeuralVoiceSpec("bn-IN-BashkarNeural", "Bashkar", ReaderVoiceGender.MALE, "bn-IN")
         ),
         "ur" to listOf(
+            NeuralVoiceSpec("ur-PK-AsadNeural", "Asad", ReaderVoiceGender.MALE, "ur-PK"),
             NeuralVoiceSpec("ur-PK-UzmaNeural", "Uzma", ReaderVoiceGender.FEMALE, "ur-PK"),
-            NeuralVoiceSpec("ur-PK-AsadNeural", "Asad", ReaderVoiceGender.MALE, "ur-PK")
         ),
         "ta" to listOf(
+            NeuralVoiceSpec("ta-IN-ValluvarNeural", "Valluvar", ReaderVoiceGender.MALE, "ta-IN"),
             NeuralVoiceSpec("ta-IN-PallaviNeural", "Pallavi", ReaderVoiceGender.FEMALE, "ta-IN"),
-            NeuralVoiceSpec("ta-IN-ValluvarNeural", "Valluvar", ReaderVoiceGender.MALE, "ta-IN")
         ),
         "te" to listOf(
+            NeuralVoiceSpec("te-IN-MohanNeural", "Mohan", ReaderVoiceGender.MALE, "te-IN"),
             NeuralVoiceSpec("te-IN-ShrutiNeural", "Shruti", ReaderVoiceGender.FEMALE, "te-IN"),
-            NeuralVoiceSpec("te-IN-MohanNeural", "Mohan", ReaderVoiceGender.MALE, "te-IN")
         ),
         "mr" to listOf(
+            NeuralVoiceSpec("mr-IN-ManoharNeural", "Manohar", ReaderVoiceGender.MALE, "mr-IN"),
             NeuralVoiceSpec("mr-IN-AarohiNeural", "Aarohi", ReaderVoiceGender.FEMALE, "mr-IN"),
-            NeuralVoiceSpec("mr-IN-ManoharNeural", "Manohar", ReaderVoiceGender.MALE, "mr-IN")
         ),
         "gu" to listOf(
+            NeuralVoiceSpec("gu-IN-NiranjanNeural", "Niranjan", ReaderVoiceGender.MALE, "gu-IN"),
             NeuralVoiceSpec("gu-IN-DhwaniNeural", "Dhwani", ReaderVoiceGender.FEMALE, "gu-IN"),
-            NeuralVoiceSpec("gu-IN-NiranjanNeural", "Niranjan", ReaderVoiceGender.MALE, "gu-IN")
         ),
         "el" to listOf(
+            NeuralVoiceSpec("el-GR-NestorasNeural", "Nestoras", ReaderVoiceGender.MALE, "el-GR"),
             NeuralVoiceSpec("el-GR-AthinaNeural", "Athina", ReaderVoiceGender.FEMALE, "el-GR"),
-            NeuralVoiceSpec("el-GR-NestorasNeural", "Nestoras", ReaderVoiceGender.MALE, "el-GR")
         ),
         "he" to listOf(
+            NeuralVoiceSpec("he-IL-AvriNeural", "Avri", ReaderVoiceGender.MALE, "he-IL"),
             NeuralVoiceSpec("he-IL-HilaNeural", "Hila", ReaderVoiceGender.FEMALE, "he-IL"),
-            NeuralVoiceSpec("he-IL-AvriNeural", "Avri", ReaderVoiceGender.MALE, "he-IL")
         ),
         "fa" to listOf(
+            NeuralVoiceSpec("fa-IR-FaridNeural", "Farid", ReaderVoiceGender.MALE, "fa-IR"),
             NeuralVoiceSpec("fa-IR-DilaraNeural", "Dilara", ReaderVoiceGender.FEMALE, "fa-IR"),
-            NeuralVoiceSpec("fa-IR-FaridNeural", "Farid", ReaderVoiceGender.MALE, "fa-IR")
         ),
         "cs" to listOf(
+            NeuralVoiceSpec("cs-CZ-AntoninNeural", "Antonin", ReaderVoiceGender.MALE, "cs-CZ"),
             NeuralVoiceSpec("cs-CZ-VlastaNeural", "Vlasta", ReaderVoiceGender.FEMALE, "cs-CZ"),
-            NeuralVoiceSpec("cs-CZ-AntoninNeural", "Antonin", ReaderVoiceGender.MALE, "cs-CZ")
         ),
         "ro" to listOf(
+            NeuralVoiceSpec("ro-RO-EmilNeural", "Emil", ReaderVoiceGender.MALE, "ro-RO"),
             NeuralVoiceSpec("ro-RO-AlinaNeural", "Alina", ReaderVoiceGender.FEMALE, "ro-RO"),
-            NeuralVoiceSpec("ro-RO-EmilNeural", "Emil", ReaderVoiceGender.MALE, "ro-RO")
         ),
         "hu" to listOf(
+            NeuralVoiceSpec("hu-HU-TamasNeural", "Tamas", ReaderVoiceGender.MALE, "hu-HU"),
             NeuralVoiceSpec("hu-HU-NoemiNeural", "Noemi", ReaderVoiceGender.FEMALE, "hu-HU"),
-            NeuralVoiceSpec("hu-HU-TamasNeural", "Tamas", ReaderVoiceGender.MALE, "hu-HU")
         ),
         "fi" to listOf(
+            NeuralVoiceSpec("fi-FI-HarriNeural", "Harri", ReaderVoiceGender.MALE, "fi-FI"),
             NeuralVoiceSpec("fi-FI-NooraNeural", "Noora", ReaderVoiceGender.FEMALE, "fi-FI"),
-            NeuralVoiceSpec("fi-FI-HarriNeural", "Harri", ReaderVoiceGender.MALE, "fi-FI")
         ),
         "da" to listOf(
+            NeuralVoiceSpec("da-DK-JeppeNeural", "Jeppe", ReaderVoiceGender.MALE, "da-DK"),
             NeuralVoiceSpec("da-DK-ChristelNeural", "Christel", ReaderVoiceGender.FEMALE, "da-DK"),
-            NeuralVoiceSpec("da-DK-JeppeNeural", "Jeppe", ReaderVoiceGender.MALE, "da-DK")
         ),
         "nb" to listOf(
+            NeuralVoiceSpec("nb-NO-FinnNeural", "Finn", ReaderVoiceGender.MALE, "nb-NO"),
             NeuralVoiceSpec("nb-NO-PernilleNeural", "Pernille", ReaderVoiceGender.FEMALE, "nb-NO"),
-            NeuralVoiceSpec("nb-NO-FinnNeural", "Finn", ReaderVoiceGender.MALE, "nb-NO")
         ),
         "ms" to listOf(
+            NeuralVoiceSpec("ms-MY-OsmanNeural", "Osman", ReaderVoiceGender.MALE, "ms-MY"),
             NeuralVoiceSpec("ms-MY-YasminNeural", "Yasmin", ReaderVoiceGender.FEMALE, "ms-MY"),
-            NeuralVoiceSpec("ms-MY-OsmanNeural", "Osman", ReaderVoiceGender.MALE, "ms-MY")
         ),
         "fil" to listOf(
+            NeuralVoiceSpec("fil-PH-AngeloNeural", "Angelo", ReaderVoiceGender.MALE, "fil-PH"),
             NeuralVoiceSpec("fil-PH-BlessicaNeural", "Blessica", ReaderVoiceGender.FEMALE, "fil-PH"),
-            NeuralVoiceSpec("fil-PH-AngeloNeural", "Angelo", ReaderVoiceGender.MALE, "fil-PH")
-        )
+        ),
     )
 
+    private val demoLinesByLang: Map<String, String> = mapOf(
+        "en" to "Hello, this is how your article will sound when read aloud.",
+        "hi" to "नमस्ते, यह आवाज़ आपके लेख को स्पष्ट और सहज रूप से पढ़ेगी।",
+        "es" to "Hola, así sonará este artículo cuando lo escuches en voz alta.",
+        "fr" to "Bonjour, voici comment votre article sonnera lors de la lecture à voix haute.",
+        "de" to "Hallo, so klingt dieser Artikel, wenn er laut vorgelesen wird.",
+        "pt" to "Olá, é assim que o seu artigo vai soar durante a leitura em voz alta.",
+        "it" to "Ciao, ecco come suonerà questo articolo durante la lettura ad alta voce.",
+        "ru" to "Здравствуйте, так будет звучать эта статья при чтении вслух.",
+        "ja" to "こんにちは。記事を読み上げると、このような声で再生されます。",
+        "ko" to "안녕하세요. 기사를 소리 내어 읽을 때 이런 목소리로 들립니다.",
+        "zh" to "你好，这是朗读文章时您听到的声音效果。",
+        "ar" to "مرحباً، هكذا سيبدو صوت قراءة هذا المقال بصوت عالٍ.",
+        "tr" to "Merhaba, makaleniz sesli okunduğunda bu şekilde duyulacaktır.",
+        "id" to "Halo, beginilah suara artikel Anda saat dibacakan dengan keras.",
+        "vi" to "Xin chào, đây là giọng đọc bài viết dành cho bạn.",
+        "th" to "สวัสดี นี่คือเสียงอ่านบทความของคุณ",
+        "nl" to "Hallo, zo klinkt dit artikel wanneer het wordt voorgelezen.",
+        "pl" to "Cześć, tak zabrzmi ten artykuł podczas czytania na głos.",
+        "uk" to "Привіт, ось так звучатиме ця стаття під час читання вголос.",
+        "sv" to "Hej, så här låter den här artikeln när den läses upp.",
+        "bn" to "হ্যালো, আপনার নিবন্ধটি পড়ার সময় এই কণ্ঠে শোনা যাবে।",
+        "ur" to "سلام، آپ کا مضمون پڑھتے وقت یہ آواز سنائی دے گی۔",
+        "ta" to "வணக்கம், உங்கள் கட்டுரை இவ்வாறு வாசிக்கப்படும்.",
+        "te" to "నమస్కారం, మీ వ్యాసం ఈ విధంగా వినిపిస్తుంది.",
+        "mr" to "नमस्कार, तुमचा लेख वाचताना हा आवाज असा ऐकू येईल.",
+        "gu" to "નમસ્તે, તમારો લેખ વાંચતી વખતે આ અવાજ આ રીતે સંભળાશે.",
+    )
+
+    fun demoLineForLanguage(langTag: String): String {
+        val base = normalizeBaseLang(langTag)
+        return demoLinesByLang[base] ?: demoLinesByLang["en"]!!
+    }
+
+    /**
+     * Returns native neural voices for [langTag] followed by adaptive multilingual neural voices
+     * (deduplicated), using short human names only.
+     */
     fun voicesForLanguage(langTag: String): List<ReaderVoiceOption> {
         val base = normalizeBaseLang(langTag)
-        val specs = voiceCatalog[base] ?: voiceCatalog["en"].orEmpty()
-        return specs.map { spec ->
+        val nativeSpecs = voiceCatalog[base].orEmpty()
+        val combined = LinkedHashMap<String, NeuralVoiceSpec>()
+        for (spec in nativeSpecs) {
+            combined[spec.shortName] = spec
+        }
+        // Include adaptive multilingual voices so users can also keep a favorite narrator across languages
+        for (multi in multilingualVoices) {
+            if (!combined.containsKey(multi.shortName)) {
+                combined[multi.shortName] = multi
+            }
+        }
+        return combined.values.map { spec ->
             ReaderVoiceOption(
                 name = "neural:${spec.shortName}",
-                label = "${spec.displayName} · AI",
+                label = spec.displayName,
                 gender = spec.gender,
                 langTag = spec.langTag,
                 quality = 500,
@@ -261,28 +330,46 @@ object NeuralTtsClient {
         }
     }
 
+    /**
+     * Resolves the best Neural voice for [langTag] while STRICTLY preserving the user's selected gender:
+     * - If the user picked an explicit voice matching this language OR a multilingual voice of the
+     *   same gender, keep that voice.
+     * - Otherwise switch automatically to the native neural voice for [langTag] that matches the
+     *   user's selected gender (Male stays Male, Female stays Female).
+     * - Default (AUTO / Male) picks the clear deep male narrator (Brian in English, native male elsewhere).
+     */
     fun resolveVoiceSpec(langTag: String, prefs: ReaderPrefsState): NeuralVoiceSpec {
         val base = normalizeBaseLang(langTag)
-        val pool = voiceCatalog[base] ?: voiceCatalog["en"]!!
+        val nativePool = voiceCatalog[base] ?: voiceCatalog["en"]!!
+        val targetGender = when (prefs.voiceGender) {
+            ReaderVoiceGender.FEMALE -> ReaderVoiceGender.FEMALE
+            ReaderVoiceGender.MALE, ReaderVoiceGender.AUTO -> ReaderVoiceGender.MALE
+        }
 
         if (prefs.voiceName.startsWith("neural:")) {
             val wanted = prefs.voiceName.removePrefix("neural:")
-            pool.firstOrNull { it.shortName == wanted }?.let { return it }
-            // Also check all languages if user explicitly picked a multilingual voice
-            voiceCatalog.values.flatten().firstOrNull { it.shortName == wanted }?.let {
-                if (it.shortName.contains("Multilingual", ignoreCase = true) ||
-                    normalizeBaseLang(it.langTag) == base
-                ) {
-                    return it
-                }
-            }
+            // 1. Exact match in the native language pool
+            nativePool.firstOrNull { it.shortName == wanted }?.let { return it }
+            // 2. If user explicitly picked a multilingual voice, honor it across languages
+            multilingualVoices.firstOrNull { it.shortName == wanted }?.let { return it }
+            // 3. Otherwise, infer gender from previously selected voice and pick native voice of SAME gender
+            val prevSpec = findSpecByShortName(wanted)
+            val lockedGender = prevSpec?.gender ?: targetGender
+            return nativePool.firstOrNull { it.gender == lockedGender }
+                ?: multilingualVoices.firstOrNull { it.gender == lockedGender }
+                ?: nativePool.first()
         }
 
-        return when (prefs.voiceGender) {
-            ReaderVoiceGender.FEMALE -> pool.firstOrNull { it.gender == ReaderVoiceGender.FEMALE } ?: pool.first()
-            ReaderVoiceGender.MALE -> pool.firstOrNull { it.gender == ReaderVoiceGender.MALE } ?: pool.first()
-            ReaderVoiceGender.AUTO -> pool.first()
+        return nativePool.firstOrNull { it.gender == targetGender }
+            ?: multilingualVoices.firstOrNull { it.gender == targetGender }
+            ?: nativePool.first()
+    }
+
+    fun findSpecByShortName(shortName: String): NeuralVoiceSpec? {
+        for (list in voiceCatalog.values) {
+            list.firstOrNull { it.shortName == shortName }?.let { return it }
         }
+        return multilingualVoices.firstOrNull { it.shortName == shortName }
     }
 
     fun stop() {
@@ -294,21 +381,110 @@ object NeuralTtsClient {
         clearPrefetchCache()
     }
 
+    fun stopDemo() {
+        demoGeneration.incrementAndGet()
+        demoJob?.cancel()
+        demoJob = null
+        releaseDemoPlayer()
+    }
+
     /**
-     * Synthesizes and plays [sentence] (while prefetching [nextSentence] if provided).
-     * Calls [onWordProgress] as each word starts speaking, [onCompleted] when done,
-     * or [onFallbackNeeded] if network/service is unavailable.
+     * Plays a short localized demo sentence using the selected online neural voice so the user
+     * immediately hears what the voice sounds like on tap.
+     */
+    fun speakDemoLine(
+        context: Context,
+        voiceShortName: String,
+        articleLangTag: String,
+        speed: Float,
+        onStarted: () -> Unit = {},
+        onFinished: () -> Unit = {},
+        onFallbackNeeded: () -> Unit = {}
+    ) {
+        val dGen = demoGeneration.incrementAndGet()
+        demoJob?.cancel()
+        releaseDemoPlayer()
+
+        val spec = findSpecByShortName(voiceShortName)
+        val effectiveLangTag = if (spec != null && !spec.isMultilingual) {
+            spec.langTag
+        } else {
+            articleLangTag.ifBlank { spec?.langTag ?: "en-US" }
+        }
+        val ssmlLang = spec?.langTag ?: effectiveLangTag.ifBlank { "en-US" }
+        val demoText = demoLineForLanguage(articleLangTag.ifBlank { effectiveLangTag })
+        val ratePct = ((speed - 1.0f) * 100f).roundToInt().coerceIn(-40, 100)
+        val appCtx = context.applicationContext
+
+        demoJob = scope.launch {
+            val chunk = synthesizeOnce(appCtx, demoText, voiceShortName, ssmlLang, ratePct)
+            if (demoGeneration.get() != dGen) {
+                runCatching { chunk?.audioFile?.delete() }
+                return@launch
+            }
+            if (chunk == null || !chunk.audioFile.exists() || chunk.audioFile.length() < 64L) {
+                mainHandler.post {
+                    if (demoGeneration.get() == dGen) onFallbackNeeded()
+                }
+                return@launch
+            }
+
+            mainHandler.post {
+                if (demoGeneration.get() != dGen) {
+                    runCatching { chunk.audioFile.delete() }
+                    return@post
+                }
+                try {
+                    val mp = MediaPlayer().apply {
+                        setAudioAttributes(
+                            AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_MEDIA)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                .build()
+                        )
+                        setDataSource(chunk.audioFile.absolutePath)
+                        setOnCompletionListener {
+                            runCatching { chunk.audioFile.delete() }
+                            releaseDemoPlayer()
+                            if (demoGeneration.get() == dGen) onFinished()
+                        }
+                        setOnErrorListener { _, _, _ ->
+                            runCatching { chunk.audioFile.delete() }
+                            releaseDemoPlayer()
+                            if (demoGeneration.get() == dGen) onFallbackNeeded()
+                            true
+                        }
+                        prepare()
+                        start()
+                    }
+                    demoPlayer = mp
+                    onStarted()
+                } catch (e: Exception) {
+                    UHLog.w("reader_tts", "Demo playback failed: ${e.message}")
+                    runCatching { chunk.audioFile.delete() }
+                    releaseDemoPlayer()
+                    if (demoGeneration.get() == dGen) onFallbackNeeded()
+                }
+            }
+        }
+    }
+
+    /**
+     * Synthesizes and plays [sentence] while concurrently pre-buffering BOTH [nextSentence] and
+     * [nextNextSentence] so sentence handoffs are completely gapless.
      */
     fun speakSentence(
         context: Context,
         sentence: String,
         nextSentence: String?,
+        nextNextSentence: String? = null,
         langTag: String,
         prefs: ReaderPrefsState,
         onWordProgress: (charOffset: Int, charLength: Int) -> Unit,
         onCompleted: () -> Unit,
         onFallbackNeeded: () -> Unit
     ) {
+        stopDemo()
         val gen = generation.incrementAndGet()
         activeJob?.cancel()
         stopWordTracker()
@@ -319,7 +495,7 @@ object NeuralTtsClient {
         val appCtx = context.applicationContext
 
         activeJob = scope.launch {
-            val chunk = fetchOrSynthesize(appCtx, sentence, spec.shortName, ratePct)
+            val chunk = fetchOrSynthesize(appCtx, sentence, spec.shortName, spec.langTag, ratePct)
             if (generation.get() != gen) return@launch
 
             if (chunk == null || !chunk.audioFile.exists() || chunk.audioFile.length() < 64L) {
@@ -329,9 +505,12 @@ object NeuralTtsClient {
                 return@launch
             }
 
-            // Prefetch next sentence immediately while current plays -> near-zero pause at full stops!
+            // Gapless 2-sentence concurrent pre-buffering while current sentence plays
             if (!nextSentence.isNullOrBlank()) {
-                prefetch(appCtx, nextSentence, spec.shortName, ratePct)
+                prefetch(appCtx, nextSentence, spec.shortName, spec.langTag, ratePct)
+            }
+            if (!nextNextSentence.isNullOrBlank()) {
+                prefetch(appCtx, nextNextSentence, spec.shortName, spec.langTag, ratePct)
             }
 
             mainHandler.post {
@@ -348,13 +527,12 @@ object NeuralTtsClient {
         }
     }
 
-    private fun prefetch(ctx: Context, text: String, voiceShortName: String, ratePct: Int) {
+    private fun prefetch(ctx: Context, text: String, voiceShortName: String, ssmlLang: String, ratePct: Int) {
         val key = cacheKey(text, voiceShortName, ratePct)
         if (prefetchCache.containsKey(key)) return
         val deferred = CompletableDeferred<SynthesizedChunk?>()
         if (prefetchCache.putIfAbsent(key, deferred) != null) return
-        // Keep cache tiny (max 4 audio chunks)
-        if (prefetchCache.size > 4) {
+        if (prefetchCache.size > 6) {
             val oldest = prefetchCache.keys.firstOrNull { it != key }
             if (oldest != null) {
                 prefetchCache.remove(oldest)?.let { d ->
@@ -365,7 +543,7 @@ object NeuralTtsClient {
             }
         }
         scope.launch {
-            val res = synthesizeOnce(ctx, text, voiceShortName, ratePct)
+            val res = synthesizeOnce(ctx, text, voiceShortName, ssmlLang, ratePct)
             deferred.complete(res)
         }
     }
@@ -374,6 +552,7 @@ object NeuralTtsClient {
         ctx: Context,
         text: String,
         voiceShortName: String,
+        ssmlLang: String,
         ratePct: Int
     ): SynthesizedChunk? {
         val key = cacheKey(text, voiceShortName, ratePct)
@@ -384,13 +563,14 @@ object NeuralTtsClient {
                 return cached
             }
         }
-        return synthesizeOnce(ctx, text, voiceShortName, ratePct)
+        return synthesizeOnce(ctx, text, voiceShortName, ssmlLang, ratePct)
     }
 
     private suspend fun synthesizeOnce(
         ctx: Context,
         rawText: String,
         voiceShortName: String,
+        ssmlLang: String,
         ratePct: Int
     ): SynthesizedChunk? {
         val text = rawText.trim()
@@ -400,6 +580,7 @@ object NeuralTtsClient {
         val connId = UUID.randomUUID().toString().replace("-", "")
         val reqId = UUID.randomUUID().toString().replace("-", "")
         val gec = generateSecMsGec()
+        val muid = generateMuid()
         val wsUrl = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1" +
             "?TrustedClientToken=$TRUSTED_CLIENT_TOKEN" +
             "&Sec-MS-GEC=$gec" +
@@ -409,6 +590,11 @@ object NeuralTtsClient {
         val request = Request.Builder()
             .url(wsUrl)
             .header("Origin", "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold")
+            .header("Pragma", "no-cache")
+            .header("Cache-Control", "no-cache")
+            .header("Cookie", "muid=$muid;")
+            .header("Accept-Encoding", "gzip, deflate, br")
+            .header("Accept-Language", "en-US,en;q=0.9")
             .header(
                 "User-Agent",
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$CHROMIUM_FULL_VERSION Safari/537.36 Edg/$CHROMIUM_FULL_VERSION"
@@ -419,7 +605,8 @@ object NeuralTtsClient {
         val words = mutableListOf<WordMark>()
         val rateSign = if (ratePct >= 0) "+${ratePct}%" else "${ratePct}%"
         val escapedText = escapeXml(text)
-        val ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>" +
+        val cleanSsmlLang = ssmlLang.ifBlank { "en-US" }
+        val ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='$cleanSsmlLang'>" +
             "<voice name='$voiceShortName'>" +
             "<prosody pitch='+0Hz' rate='$rateSign' volume='+0%'>$escapedText</prosody>" +
             "</voice></speak>"
@@ -476,7 +663,7 @@ object NeuralTtsClient {
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    UHLog.w("reader_tts", "Neural TTS WS failed: ${t.message}")
+                    UHLog.w("reader_tts", "Neural TTS WS failed (${response?.code}): ${t.message}")
                     if (!resultDeferred.isCompleted) resultDeferred.complete(null)
                 }
 
@@ -535,8 +722,6 @@ object NeuralTtsClient {
                 start()
             }
             mediaPlayer = mp
-
-            // Drive real-time word-level progress synchronized to audio playback clock
             startWordTracker(gen, mp, chunk.words, sourceText, onWordProgress)
         } catch (e: Exception) {
             UHLog.w("reader_tts", "Neural MediaPlayer failed: ${e.message}")
@@ -582,7 +767,6 @@ object NeuralTtsClient {
                         onWordProgress(w.charOffset, w.charLength)
                     }
                 } else {
-                    // Fallback proportional word tracking if a voice omitted WordBoundary metadata
                     val durMs = runCatching { mp.duration.toLong() }.getOrDefault(0L)
                     if (durMs > 100L) {
                         val frac = (posMs.toFloat() / durMs.toFloat()).coerceIn(0f, 0.99f)
@@ -609,9 +793,16 @@ object NeuralTtsClient {
         val mp = mediaPlayer
         mediaPlayer = null
         if (mp != null) {
-            runCatching {
-                if (mp.isPlaying) mp.stop()
-            }
+            runCatching { if (mp.isPlaying) mp.stop() }
+            runCatching { mp.release() }
+        }
+    }
+
+    private fun releaseDemoPlayer() {
+        val mp = demoPlayer
+        demoPlayer = null
+        if (mp != null) {
+            runCatching { if (mp.isPlaying) mp.stop() }
             runCatching { mp.release() }
         }
     }
@@ -654,10 +845,6 @@ object NeuralTtsClient {
         } catch (_: Exception) {}
     }
 
-    /**
-     * Maps sequential WordBoundary word strings onto exact character offsets inside [sourceText]
-     * so JS `Range` can highlight the exact word and trigger instant Book Page flips.
-     */
     private fun alignWordOffsetsToText(rawMarks: List<WordMark>, sourceText: String): List<WordMark> {
         if (rawMarks.isEmpty()) return emptyList()
         val lowerSrc = sourceText.lowercase(Locale.ROOT)
@@ -678,6 +865,16 @@ object NeuralTtsClient {
             }
         }
         return aligned
+    }
+
+    private fun generateMuid(): String {
+        val bytes = ByteArray(16)
+        secureRandom.nextBytes(bytes)
+        val sb = StringBuilder(32)
+        for (b in bytes) {
+            sb.append(String.format(Locale.US, "%02X", b))
+        }
+        return sb.toString()
     }
 
     private fun generateSecMsGec(): String {

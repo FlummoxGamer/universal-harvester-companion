@@ -144,7 +144,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                     ) {
                         Surface(
                             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            color = MaterialTheme.colorScheme.background,
                             modifier = Modifier
                                 .widthIn(max = if (isLandscape) 640.dp else 900.dp)
                                 .fillMaxWidth()
@@ -515,7 +515,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                     modifier = Modifier
                         .clip(RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .background(MaterialTheme.colorScheme.background)
                         .padding(horizontal = 3.dp, vertical = 2.dp)
                 ) {
                     InlineZoomButton("−") { onZoomStep(-10) }
@@ -559,7 +559,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                     ) {
                         CompactGridTile(
                             iconRes = R.drawable.uh_ic_translate_24,
-                            label = "Translate",
+                            label = "UH Translate",
                             isActive = isTranslated,
                             modifier = Modifier.weight(1f),
                             onClick = onTranslate
@@ -645,7 +645,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                     FooterDivider()
                     FooterActionButton(
                         iconRes = R.drawable.uh_ic_reader_mode_24,
-                        label = if (isReaderActive) "Exit Reader" else "Reader",
+                        label = if (isReaderActive) "Exit Reader" else "UH Reader",
                         tint = if (isReaderActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
                         onClick = onToggleReaderMode
@@ -805,7 +805,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
         val iconBg = when {
             isErrorTint -> MaterialTheme.colorScheme.error.copy(alpha = 0.14f)
             isActive -> MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-            else -> MaterialTheme.colorScheme.surfaceContainerHigh
+            else -> MaterialTheme.colorScheme.background
         }
 
         Column(

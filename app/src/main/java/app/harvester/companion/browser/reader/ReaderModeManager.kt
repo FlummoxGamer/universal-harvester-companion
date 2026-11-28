@@ -81,7 +81,7 @@ data class ReaderPrefsState(
     val showImages: Boolean = true,
     val ttsEnabled: Boolean = true,
     val ttsSpeed: Float = 1.0f,
-    val voiceGender: ReaderVoiceGender = ReaderVoiceGender.AUTO,
+    val voiceGender: ReaderVoiceGender = ReaderVoiceGender.MALE,
     val voiceName: String = "",
     val pageMode: Boolean = false,
     val isFullscreen: Boolean = false,
@@ -116,6 +116,8 @@ data class ReaderUiState(
     val detectedLang: String = "en",
     val sentences: List<String> = emptyList(),
     val availableVoices: List<ReaderVoiceOption> = emptyList(),
+    val hasOfflineVoicesForLang: Boolean = false,
+    val previewingVoiceName: String? = null,
     val controlsSheetVisible: Boolean = false,
     val autoReaderHosts: Set<String> = emptySet(),
     val prefs: ReaderPrefsState = ReaderPrefsState(),
@@ -205,10 +207,16 @@ object ReaderModeManager {
     )
 
     private val urlRegex = Regex("https?://\\S+|www\\.\\S+", RegexOption.IGNORE_CASE)
-    private val citationRegex = Regex("\\[(?:\\d+|edit|citation needed|note \\d+|clarification needed)\\]", RegexOption.IGNORE_CASE)
-    private val repeatedPunctRegex = Regex("[—–_=~*#|•·»«]{2,}|\\.{3,}")
+    private val citationRegex = Regex(
+        "\\[(?:\\d{1,4}|[a-z]|edit|citation needed|note\\s*\\d+|nb\\s*\\d+|clarification needed|who\\?|when\\?|where\\?|by whom\\?|dubious[^\\]]*|dead link|better source needed|original research\\?|failed verification|page needed|full citation needed)\\]",
+        RegexOption.IGNORE_CASE
+    )
+    private val ipaSlashRegex = Regex("/[^/\\n]{2,48}[ˈˌɑæɒɔəɛɜɪʊʌθðʃʒŋɾɹːɐʉɨɯɤɵœø][^/\\n]{0,48}/")
+    private val ipaBracketRegex = Regex("\\[[^\\]\\n]{2,48}[ˈˌɑæɒɔəɛɜɪʊʌθðʃʒŋɾɹːɐʉɨɯɤɵœø][^\\]\\n]{0,48}\\]")
+    private val listenPronunciationRegex = Regex("\\((?:listen|ⓘ|audio|pronunciation)[^)]{0,40}\\)", RegexOption.IGNORE_CASE)
+    private val repeatedPunctRegex = Regex("[—–_=~*#|•·»«^]{2,}|\\.{3,}")
     private val boilerplateSpeechRegex = Regex(
-        "^(share|tweet|pin it|subscribe|sign up|read more|related|advertisement|sponsored|cookie|privacy policy|terms of service|skip to content|menu|search|table of contents|comments?)\\b.*",
+        "^(share|tweet|pin it|subscribe|sign up|read more|related|advertisement|sponsored|cookie|privacy policy|terms of service|skip to content|menu|search|table of contents|comments?|jump up|retrieved \\d|archived from|isbn\\b|issn\\b|doi:|external links|see also|further reading|references|bibliography|notes and references|wikimedia commons)\\b.*",
         RegexOption.IGNORE_CASE
     )
 
@@ -248,8 +256,8 @@ object ReaderModeManager {
         val showImages = sp.getBoolean(K_SHOW_IMAGES, true)
         val ttsEnabled = sp.getBoolean(K_TTS_ENABLED, true)
         val ttsSpeed = sp.getFloat(K_TTS_SPEED, 1.0f).coerceIn(0.75f, 2.0f)
-        val voiceGender = ReaderVoiceGender.entries.firstOrNull { it.id == sp.getString(K_VOICE_GENDER, "auto") }
-            ?: ReaderVoiceGender.AUTO
+        val voiceGender = ReaderVoiceGender.entries.firstOrNull { it.id == sp.getString(K_VOICE_GENDER, "male") }
+            ?: ReaderVoiceGender.MALE
         val voiceName = sp.getString(K_VOICE_NAME, "").orEmpty()
         val pageMode = sp.getBoolean(K_PAGE_MODE, false)
         val isFullscreen = sp.getBoolean(K_FULLSCREEN, false)
@@ -539,7 +547,12 @@ object ReaderModeManager {
     }
 
     fun toggleFullscreen() {
-        updatePrefs { it.copy(isFullscreen = !it.isFullscreen) }
+        setFullscreen(!_state.value.prefs.isFullscreen)
+    }
+
+    fun setFullscreen(enabled: Boolean) {
+        if (_state.value.prefs.isFullscreen == enabled) return
+        updatePrefs { it.copy(isFullscreen = enabled) }
     }
 
     fun setBrightness(value: Float) {
@@ -564,7 +577,7 @@ object ReaderModeManager {
         sharedPrefs?.edit()?.putStringSet(K_AUTO_HOSTS, next)?.apply()
     }
 
-    // ---- Free Online Neural TTS Primary + Seamless Upgraded Local TTS Fallback ----
+    // ---- Online Human Neural TTS Primary + Local Offline TTS Fallback ----
 
     fun setTtsEnabled(enabled: Boolean) {
         if (!enabled) stopTts()
@@ -573,19 +586,113 @@ object ReaderModeManager {
 
     fun setVoiceGender(gender: ReaderVoiceGender) {
         updatePrefs { it.copy(voiceGender = gender, voiceName = "") }
+        val ctx = appContext ?: return
         if (_state.value.ttsPlaying) {
-            val ctx = appContext ?: return
             val idx = _state.value.ttsIndex.coerceAtLeast(0)
             speakFromIndex(ctx, idx)
+        } else {
+            val defaultSpec = NeuralTtsClient.resolveVoiceSpec(_state.value.detectedLang, _state.value.prefs)
+            val option = ReaderVoiceOption(
+                name = "neural:${defaultSpec.shortName}",
+                label = defaultSpec.displayName,
+                gender = defaultSpec.gender,
+                langTag = defaultSpec.langTag,
+                quality = 500,
+                isNeural = true
+            )
+            previewVoice(ctx, option)
         }
     }
 
     fun selectVoiceOption(option: ReaderVoiceOption) {
-        updatePrefs { it.copy(voiceGender = option.gender, voiceName = option.name) }
+        val lockedGender = if (option.gender == ReaderVoiceGender.AUTO) _state.value.prefs.voiceGender else option.gender
+        updatePrefs { it.copy(voiceGender = lockedGender, voiceName = option.name) }
+        val ctx = appContext ?: return
         if (_state.value.ttsPlaying) {
-            val ctx = appContext ?: return
             val idx = _state.value.ttsIndex.coerceAtLeast(0)
             speakFromIndex(ctx, idx)
+        } else {
+            previewVoice(ctx, option)
+        }
+    }
+
+    /**
+     * Plays a short localized demo sentence immediately when the user taps any voice in the picker,
+     * so they can hear exactly how that voice sounds before resuming Read Aloud.
+     */
+    fun previewVoice(ctx: Context, option: ReaderVoiceOption) {
+        val lang = _state.value.detectedLang
+        val speed = _state.value.prefs.ttsSpeed
+        _state.update { it.copy(previewingVoiceName = option.name) }
+
+        if (option.isNeural && option.name.startsWith("neural:")) {
+            val shortName = option.name.removePrefix("neural:")
+            NeuralTtsClient.speakDemoLine(
+                context = ctx,
+                voiceShortName = shortName,
+                articleLangTag = lang,
+                speed = speed,
+                onStarted = {
+                    _state.update { it.copy(previewingVoiceName = option.name) }
+                },
+                onFinished = {
+                    _state.update { cur ->
+                        if (cur.previewingVoiceName == option.name) cur.copy(previewingVoiceName = null) else cur
+                    }
+                },
+                onFallbackNeeded = {
+                    speakLocalDemoLine(ctx, option, lang, speed)
+                }
+            )
+        } else {
+            NeuralTtsClient.stopDemo()
+            speakLocalDemoLine(ctx, option, lang, speed)
+        }
+    }
+
+    private fun speakLocalDemoLine(ctx: Context, option: ReaderVoiceOption, langTag: String, speed: Float) {
+        val demoText = NeuralTtsClient.demoLineForLanguage(langTag)
+        val engine = tts
+        val runSpeak: (TextToSpeech) -> Unit = { e ->
+            try {
+                val previewPrefs = _state.value.prefs.copy(
+                    voiceGender = option.gender,
+                    voiceName = option.name
+                )
+                lastAppliedLocalVoiceKey = ""
+                applyLocalVoiceOnce(e, langTag, previewPrefs)
+                e.setSpeechRate(speed)
+                e.speak(demoText, TextToSpeech.QUEUE_FLUSH, Bundle(), "uh_demo_${System.currentTimeMillis()}")
+                mainHandler.postDelayed({
+                    _state.update { cur ->
+                        if (cur.previewingVoiceName == option.name) cur.copy(previewingVoiceName = null) else cur
+                    }
+                }, 2600L)
+            } catch (_: Exception) {
+                _state.update { it.copy(previewingVoiceName = null) }
+            }
+        }
+        if (engine != null && ttsReady) {
+            runSpeak(engine)
+        } else {
+            try {
+                tts = TextToSpeech(ctx.applicationContext) { status ->
+                    if (status == TextToSpeech.SUCCESS) {
+                        ttsReady = true
+                        attachUtteranceListener()
+                        mainHandler.post {
+                            tts?.let {
+                                updateVoiceCatalog(it, _state.value.detectedLang)
+                                runSpeak(it)
+                            }
+                        }
+                    } else {
+                        mainHandler.post { _state.update { it.copy(previewingVoiceName = null) } }
+                    }
+                }
+            } catch (_: Exception) {
+                _state.update { it.copy(previewingVoiceName = null) }
+            }
         }
     }
 
@@ -669,6 +776,8 @@ object ReaderModeManager {
         localSpeakingActiveGen = -1L
         localQueuedUpToIndex = -1
         NeuralTtsClient.stop()
+        NeuralTtsClient.stopDemo()
+        _state.update { it.copy(previewingVoiceName = null) }
         try { tts?.stop() } catch (_: Exception) {}
     }
 
@@ -785,9 +894,11 @@ object ReaderModeManager {
             stopTts()
             return
         }
-        val cleanText = cleanSentenceForSpeech(st.sentences[actualIdx])
+        val cleanText = cleanSentenceForSpeech(st.sentences[actualIdx], st.detectedLang)
         val nextIdx = findNextSpeakableIndex(st.sentences, actualIdx + 1)
-        val nextCleanText = if (nextIdx >= 0) cleanSentenceForSpeech(st.sentences[nextIdx]) else null
+        val nextCleanText = if (nextIdx >= 0) cleanSentenceForSpeech(st.sentences[nextIdx], st.detectedLang) else null
+        val nextNextIdx = if (nextIdx >= 0) findNextSpeakableIndex(st.sentences, nextIdx + 1) else -1
+        val nextNextCleanText = if (nextNextIdx >= 0) cleanSentenceForSpeech(st.sentences[nextNextIdx], st.detectedLang) else null
 
         if (st.currentUrl.isNotBlank()) {
             savedSentenceByUrl[st.currentUrl] = actualIdx
@@ -799,6 +910,7 @@ object ReaderModeManager {
             context = ctx,
             sentence = cleanText,
             nextSentence = nextCleanText,
+            nextNextSentence = nextNextCleanText,
             langTag = st.detectedLang,
             prefs = st.prefs,
             onWordProgress = { charOffset, charLen ->
@@ -953,10 +1065,11 @@ object ReaderModeManager {
 
     private fun updateVoiceCatalog(engine: TextToSpeech?, langTag: String) {
         val options = mutableListOf<ReaderVoiceOption>()
-        // 1. Free Online Neural Voices first (highest realism, verified gender)
+        // 1. Online Human Neural Voices first (native + multilingual, short names only)
         options.addAll(NeuralTtsClient.voicesForLanguage(langTag))
 
-        // 2. Verified On-Device Offline Voices second
+        // 2. Installed On-Device Offline Voices for this language
+        var offlineCount = 0
         if (engine != null) {
             try {
                 val baseLang = NeuralTtsClient.normalizeBaseLang(langTag)
@@ -979,20 +1092,21 @@ object ReaderModeManager {
                     val label = when (gender) {
                         ReaderVoiceGender.FEMALE -> {
                             fCount++
-                            if (fCount > 2) continue
-                            "Offline Female $fCount"
+                            if (fCount > 3) continue
+                            if (fCount == 1) "Offline Female" else "Offline Female $fCount"
                         }
                         ReaderVoiceGender.MALE -> {
                             mCount++
-                            if (mCount > 2) continue
-                            "Offline Male $mCount"
+                            if (mCount > 3) continue
+                            if (mCount == 1) "Offline Male" else "Offline Male $mCount"
                         }
                         ReaderVoiceGender.AUTO -> {
                             aCount++
                             if (aCount > 2) continue
-                            "Offline Voice $aCount"
+                            if (aCount == 1) "Offline Voice" else "Offline Voice $aCount"
                         }
                     }
+                    offlineCount++
                     options.add(
                         ReaderVoiceOption(
                             name = "local:${v.name}",
@@ -1007,7 +1121,12 @@ object ReaderModeManager {
             } catch (_: Exception) {}
         }
 
-        _state.update { it.copy(availableVoices = options) }
+        _state.update {
+            it.copy(
+                availableVoices = options,
+                hasOfflineVoicesForLang = offlineCount > 0
+            )
+        }
     }
 
     /**
@@ -1035,8 +1154,9 @@ object ReaderModeManager {
     }
 
     private fun findNextSpeakableIndex(sentences: List<String>, start: Int): Int {
+        val lang = _state.value.detectedLang
         for (i in start.coerceAtLeast(0) until sentences.size) {
-            val cleaned = cleanSentenceForSpeech(sentences[i])
+            val cleaned = cleanSentenceForSpeech(sentences[i], lang)
             if (cleaned.length >= 2 && !isUnnecessaryBoilerplate(cleaned)) {
                 return i
             }
@@ -1045,27 +1165,73 @@ object ReaderModeManager {
     }
 
     /**
-     * Cleans raw DOM text before speaking so Read Aloud skips URLs, citation brackets,
-     * symbol clutter, and navigation noise.
+     * Smart article & Wikipedia speech cleaner:
+     * - Strips URLs, citation brackets ([1], [a], [citation needed], [edit]), IPA phonetics, and audio tags.
+     * - Normalizes currency, units, percentages, and common abbreviations so numbers sound natural.
      */
-    private fun cleanSentenceForSpeech(raw: String): String {
+    private fun cleanSentenceForSpeech(raw: String, lang: String = "en"): String {
         var s = raw
             .replace(urlRegex, "")
             .replace(citationRegex, "")
+            .replace(ipaSlashRegex, "")
+            .replace(ipaBracketRegex, "")
+            .replace(listenPronunciationRegex, "")
+            .replace("ⓘ", "")
             .replace(repeatedPunctRegex, " ")
+
+        val base = NeuralTtsClient.normalizeBaseLang(lang)
+        if (base == "en") {
+            s = s
+                // Currency with scale suffixes ($4.5M -> 4.5 million dollars)
+                .replace(Regex("\\$(\\d+(?:\\.\\d+)?)\\s*[Bb]\\b"), "$1 billion dollars")
+                .replace(Regex("\\$(\\d+(?:\\.\\d+)?)\\s*[Mm]\\b"), "$1 million dollars")
+                .replace(Regex("\\$(\\d+(?:\\.\\d+)?)\\s*[Kk]\\b"), "$1 thousand dollars")
+                .replace(Regex("€(\\d+(?:\\.\\d+)?)\\s*[Bb]\\b"), "$1 billion euros")
+                .replace(Regex("€(\\d+(?:\\.\\d+)?)\\s*[Mm]\\b"), "$1 million euros")
+                .replace(Regex("£(\\d+(?:\\.\\d+)?)\\s*[Bb]\\b"), "$1 billion pounds")
+                .replace(Regex("£(\\d+(?:\\.\\d+)?)\\s*[Mm]\\b"), "$1 million pounds")
+                .replace(Regex("₹(\\d+(?:[.,]\\d+)?)"), "$1 rupees")
+                // Units & measurements
+                .replace(Regex("(\\d+(?:\\.\\d+)?)\\s*km/h\\b", RegexOption.IGNORE_CASE), "$1 kilometers per hour")
+                .replace(Regex("(\\d+(?:\\.\\d+)?)\\s*mph\\b", RegexOption.IGNORE_CASE), "$1 miles per hour")
+                .replace(Regex("(\\d+(?:\\.\\d+)?)\\s*°C\\b"), "$1 degrees Celsius")
+                .replace(Regex("(\\d+(?:\\.\\d+)?)\\s*°F\\b"), "$1 degrees Fahrenheit")
+                .replace(Regex("(\\d+(?:\\.\\d+)?)\\s*km²"), "$1 square kilometers")
+                .replace(Regex("(\\d+(?:\\.\\d+)?)\\s*sq\\s*mi\\b", RegexOption.IGNORE_CASE), "$1 square miles")
+                .replace(Regex("(\\d+(?:\\.\\d+)?)\\s*km\\b"), "$1 kilometers")
+                .replace(Regex("(\\d+(?:\\.\\d+)?)\\s*cm\\b"), "$1 centimeters")
+                .replace(Regex("(\\d+(?:\\.\\d+)?)\\s*mm\\b"), "$1 millimeters")
+                .replace(Regex("(\\d+(?:\\.\\d+)?)\\s*kg\\b"), "$1 kilograms")
+                .replace(Regex("(\\d+(?:\\.\\d+)?)\\s*mg\\b"), "$1 milligrams")
+                .replace(Regex("(\\d+(?:\\.\\d+)?)\\s*%"), "$1 percent")
+                // Date ranges (1939–1945 -> 1939 to 1945)
+                .replace(Regex("\\b(1\\d{3}|20\\d{2})\\s*[–—-]\\s*(1\\d{3}|20\\d{2})\\b"), "$1 to $2")
+                // Common Latin/editorial abbreviations
+                .replace(Regex("\\be\\.g\\.,?", RegexOption.IGNORE_CASE), "for example,")
+                .replace(Regex("\\bi\\.e\\.,?", RegexOption.IGNORE_CASE), "that is,")
+                .replace(Regex("\\betc\\.", RegexOption.IGNORE_CASE), "etcetera")
+                .replace(Regex("\\bvs\\.", RegexOption.IGNORE_CASE), "versus")
+                .replace(Regex("\\bc\\.\\s*(\\d{3,4})\\b", RegexOption.IGNORE_CASE), "circa $1")
+                .replace(Regex("\\bFig\\.\\s*(\\d+)"), "Figure $1")
+                .replace(Regex("\\bNo\\.\\s*(\\d+)"), "Number $1")
+                .replace(Regex("\\bSt\\.\\s+([A-Z])"), "Saint $1")
+        }
+
+        // Remove empty parentheses left behind after stripping IPA / listen tags
+        s = s
+            .replace(Regex("\\(\\s*[,;:]?\\s*\\)"), "")
+            .replace(Regex("\\s+([,.;:!?])"), "$1")
             .replace(Regex("\\s+"), " ")
             .trim()
-        // Drop leading list bullets or stray punctuation
-        s = s.trimStart('•', '·', '-', '–', '—', '|', '»', '›', '*', ' ')
+        s = s.trimStart('•', '·', '-', '–', '—', '|', '»', '›', '*', '^', ' ')
         return s.trim()
     }
 
     private fun isUnnecessaryBoilerplate(text: String): Boolean {
         if (text.length < 3) return true
-        // Skip strings with almost no letters/digits (pure symbols/dividers)
         val alphaNum = text.count { it.isLetterOrDigit() }
         if (alphaNum < 2) return true
-        if (text.length <= 42 && boilerplateSpeechRegex.matches(text)) return true
+        if (text.length <= 64 && boilerplateSpeechRegex.matches(text)) return true
         return false
     }
 

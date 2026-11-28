@@ -1,9 +1,15 @@
 package app.harvester.companion.browser.tabs
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -97,7 +103,7 @@ internal fun GroupDetailSheet(
 
     val groupColor = Color(group.colorArgb)
     val sheetPalette = rememberTabsTrayPalette(isDark = palette.isDark, isPrivateSection = group.isPrivate)
-    val sheetContainerColor = if (group.isPrivate) Color(0xFF120D22) else MaterialTheme.colorScheme.surfaceContainerHigh
+    val sheetContainerColor = if (group.isPrivate) Color(0xFF120D22) else MaterialTheme.colorScheme.background
     val chipBg = if (group.isPrivate) Color(0xFF1C1633) else MaterialTheme.colorScheme.surface
 
     val dismissThresholdPx = with(density) { 120.dp.toPx() }
@@ -105,7 +111,7 @@ internal fun GroupDetailSheet(
 
     var contextMenuTabId by remember { mutableStateOf<String?>(null) }
 
-    // Live grid-coordinate drag-to-reorder for member tabs inside the group
+    // Live grid-coordinate drag-to-reorder & drag-out-to-ungroup for member tabs inside the group
     val gridState = rememberLazyGridState()
     val latestMembers by rememberUpdatedState(members)
     var draggingTabId by remember { mutableStateOf<String?>(null) }
@@ -114,6 +120,9 @@ internal fun GroupDetailSheet(
     var dragMovedDistance by remember { mutableFloatStateOf(0f) }
     var didLiveReorder by remember { mutableStateOf(false) }
     var lastReorderAtMs by remember { mutableLongStateOf(0L) }
+    var isOverUngroupZone by remember { mutableStateOf(false) }
+    val ungroupTopThresholdPx = with(density) { -28.dp.toPx() }
+    val ungroupBottomInsetPx = with(density) { 36.dp.toPx() }
 
     fun performMemberReorder(dragId: String, targetId: String) {
         val now = System.currentTimeMillis()
@@ -240,8 +249,12 @@ internal fun GroupDetailSheet(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = "${members.size} ${if (members.size == 1) "tab" else "tabs"} • Hold & drag to reorder",
-                                    color = sheetPalette.onSurfaceSubtle,
+                                    text = if (draggingTabId != null) {
+                                        "Drag out to ungroup • Drag over tab to reorder"
+                                    } else {
+                                        "${members.size} ${if (members.size == 1) "tab" else "tabs"} • Hold & drag to reorder or ungroup"
+                                    },
+                                    color = if (isOverUngroupZone) Color(0xFFF87171) else sheetPalette.onSurfaceSubtle,
                                     fontSize = 12.sp
                                 )
                             }
@@ -355,20 +368,30 @@ internal fun GroupDetailSheet(
                                                 draggingTabId = tab.id
                                                 dragMovedDistance = 0f
                                                 didLiveReorder = false
+                                                isOverUngroupZone = false
                                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                             },
                                             onDragCancel = {
                                                 draggingTabId = null
                                                 dragMovedDistance = 0f
                                                 didLiveReorder = false
+                                                isOverUngroupZone = false
                                             },
                                             onDragEnd = {
                                                 val moved = dragMovedDistance
                                                 val reordered = didLiveReorder
+                                                val shouldUngroup = isOverUngroupZone
                                                 draggingTabId = null
                                                 dragMovedDistance = 0f
                                                 didLiveReorder = false
-                                                if (!reordered && moved < 26f) {
+                                                isOverUngroupZone = false
+                                                if (shouldUngroup) {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    actions.onRemoveTabFromGroup(tab.id)
+                                                    if (latestMembers.size <= 1) {
+                                                        onDismiss()
+                                                    }
+                                                } else if (!reordered && moved < 26f) {
                                                     contextMenuTabId = tab.id
                                                 }
                                             },
@@ -376,6 +399,17 @@ internal fun GroupDetailSheet(
                                                 change.consume()
                                                 dragPointerViewport += dragAmount
                                                 dragMovedDistance += hypot(dragAmount.x, dragAmount.y)
+
+                                                val vpEnd = gridState.layoutInfo.viewportEndOffset.toFloat()
+                                                val outOfGridZone = dragPointerViewport.y < ungroupTopThresholdPx ||
+                                                    dragPointerViewport.y > (vpEnd - ungroupBottomInsetPx)
+                                                if (outOfGridZone != isOverUngroupZone) {
+                                                    isOverUngroupZone = outOfGridZone
+                                                    if (outOfGridZone) {
+                                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    }
+                                                }
+                                                if (outOfGridZone) return@detectDragGesturesAfterLongPress
 
                                                 val target = gridState.layoutInfo.visibleItemsInfo.firstOrNull { item ->
                                                     val key = item.key as? String ?: return@firstOrNull false
@@ -427,6 +461,49 @@ internal fun GroupDetailSheet(
                                     )
                                 }
                             }
+                        }
+                    }
+
+                    // Animated drag-out-to-ungroup drop dock shown while dragging a member tab
+                    AnimatedVisibility(
+                        visible = draggingTabId != null,
+                        enter = fadeIn() + slideInVertically { it / 2 },
+                        exit = fadeOut() + slideOutVertically { it / 2 }
+                    ) {
+                        val zoneTint = if (isOverUngroupZone) Color(0xFFF87171) else sheetPalette.onSurfaceSubtle
+                        val zoneBg = if (isOverUngroupZone) {
+                            Color(0xFFF87171).copy(alpha = 0.16f)
+                        } else {
+                            chipBg
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 6.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(zoneBg)
+                                .border(
+                                    width = if (isOverUngroupZone) 1.5.dp else 1.dp,
+                                    color = if (isOverUngroupZone) Color(0xFFF87171) else sheetPalette.subtleBorder,
+                                    shape = RoundedCornerShape(16.dp)
+                                )
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.uh_ic_tab_groups_24),
+                                contentDescription = null,
+                                tint = zoneTint,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (isOverUngroupZone) "Release to remove from group" else "Drop here to ungroup",
+                                color = zoneTint,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
                     }
                 }

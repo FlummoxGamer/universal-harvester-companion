@@ -104,7 +104,7 @@ fun ContextMenuDialog(
     ) {
         Surface(
             shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = MaterialTheme.colorScheme.background,
             tonalElevation = 6.dp,
             shadowElevation = 16.dp,
             modifier = Modifier
@@ -532,7 +532,7 @@ private fun ContextMenuHeader(
                 modifier = Modifier
                     .size(54.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                    .background(MaterialTheme.colorScheme.surface)
                     .border(
                         0.6.dp,
                         MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
@@ -689,7 +689,7 @@ fun OcrResultDialog(
                 }
             }
         },
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = MaterialTheme.colorScheme.background,
         shape = RoundedCornerShape(22.dp),
     )
 }

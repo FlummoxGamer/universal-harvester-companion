@@ -7,14 +7,7 @@
 
     function reportDeliveryFailure(msg) {
         try {
-            if (msg.action === "TRANSLATE_IMAGES") {
-                api.runtime.sendNativeMessage("uhApp", {
-                    type: "IMAGE_TRANSLATE_DONE",
-                    imageCount: 0,
-                    overlayCount: 0,
-                    pageUrl: ""
-                }).catch(() => {});
-            } else if (msg.action === "ONLINE_TRANSLATE_PAGE") {
+            if (msg.action === "ONLINE_TRANSLATE_PAGE") {
                 api.runtime.sendNativeMessage("uhApp", {
                     type: "ONLINE_TRANSLATE_DONE",
                     ok: false,
@@ -23,6 +16,14 @@
                 }).catch(() => {});
             }
         } catch (_e) {}
+    }
+
+    function dispatchToTabs(tabs, msg) {
+        if (!tabs || !tabs.length) return Promise.resolve(false);
+        const sendPromises = tabs.map((t) =>
+            api.tabs.sendMessage(t.id, msg).then(() => true).catch(() => false)
+        );
+        return Promise.all(sendPromises).then((results) => results.some(Boolean));
     }
 
     function ensureNativePort() {
@@ -46,19 +47,26 @@
                     });
                     return;
                 }
-                const query = (msg.action === "APPLY_GLOBAL_ZOOM" || msg.action === "SET_PIP_ISOLATION") ? {} : { active: true };
+                const broadcastAll = (msg.action === "APPLY_GLOBAL_ZOOM" || msg.action === "SET_PIP_ISOLATION");
+                const query = broadcastAll ? {} : { active: true };
                 api.tabs.query(query).then((tabs) => {
-                    if (!tabs || !tabs.length) {
-                        reportDeliveryFailure(msg);
-                        return;
-                    }
-                    const sendPromises = tabs.map((t) =>
-                        api.tabs.sendMessage(t.id, msg).then(() => true).catch(() => false)
-                    );
-                    Promise.all(sendPromises).then((results) => {
-                        if (!results.some(Boolean)) {
-                            reportDeliveryFailure(msg);
+                    return dispatchToTabs(tabs, msg).then((delivered) => {
+                        if (delivered || broadcastAll) {
+                            if (!delivered) reportDeliveryFailure(msg);
+                            return;
                         }
+                        // Fallback when GeckoView doesn't flag the tab as active: query all tabs and target most recent HTTP(S) tab
+                        return api.tabs.query({}).then((allTabs) => {
+                            const sorted = (allTabs || []).slice().sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+                            const target = sorted.find((t) => t.active) || sorted[0];
+                            if (!target) {
+                                reportDeliveryFailure(msg);
+                                return;
+                            }
+                            return dispatchToTabs([target], msg).then((ok) => {
+                                if (!ok) reportDeliveryFailure(msg);
+                            });
+                        });
                     });
                 }).catch(() => {
                     reportDeliveryFailure(msg);

@@ -91,8 +91,6 @@ fun TranslateSheet(
     val isProcessing = tabTranslationsState?.isTranslateProcessing == true ||
         tabTranslationsState?.isRestoreProcessing == true ||
         mgrState.isBusy
-    val hasImageOverlays = mgrState.imageOverlayCount > 0 &&
-        (activeTabId == null || mgrState.imageOverlayTabId == activeTabId)
 
     val effectiveFrom = mgrState.effectiveFromCode()
     val effectiveTo = mgrState.preferredTargetLang.ifBlank { "en" }
@@ -121,7 +119,7 @@ fun TranslateSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = MaterialTheme.colorScheme.background,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
     ) {
         AnimatedContent(
@@ -139,7 +137,6 @@ fun TranslateSheet(
                         isPairReadyOffline = isPairReadyOffline,
                         isTranslated = isTranslated,
                         isProcessing = isProcessing,
-                        hasImageOverlays = hasImageOverlays,
                         onSelectAutoDetect = { UhTranslationManager.setSourceAutoDetect() },
                         onSelectManualFrom = { UhTranslationManager.setManualSourceLanguage(it) },
                         onSelectTo = { UhTranslationManager.setPreferredTargetLanguage(it) },
@@ -151,14 +148,6 @@ fun TranslateSheet(
                         },
                         onShowOriginal = {
                             UhTranslationManager.restoreActiveTab()
-                        },
-                        onTranslateImages = {
-                            if (hasImageOverlays) {
-                                UhTranslationManager.clearImageTranslations()
-                            } else {
-                                UhTranslationManager.translateVisibleImages(effectiveFrom, effectiveTo)
-                            }
-                            onDismiss()
                         },
                         onOpenSettings = { currentPage = TranslateSheetPage.Settings },
                         onOpenModels = { currentPage = TranslateSheetPage.Models },
@@ -199,7 +188,6 @@ private fun TranslateMainPanel(
     isPairReadyOffline: Boolean,
     isTranslated: Boolean,
     isProcessing: Boolean,
-    hasImageOverlays: Boolean,
     onSelectAutoDetect: () -> Unit,
     onSelectManualFrom: (String) -> Unit,
     onSelectTo: (String) -> Unit,
@@ -207,7 +195,6 @@ private fun TranslateMainPanel(
     onToggleOffline: (Boolean) -> Unit,
     onTranslate: () -> Unit,
     onShowOriginal: () -> Unit,
-    onTranslateImages: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenModels: () -> Unit,
     onDismiss: () -> Unit,
@@ -243,7 +230,7 @@ private fun TranslateMainPanel(
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                     Text(
-                        text = if (isTranslated) "Page Translated" else "Translate Page",
+                        text = if (isTranslated) "UH Translate · Active" else "UH Translate",
                         color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
@@ -252,7 +239,7 @@ private fun TranslateMainPanel(
                         text = if (mgrState.useOfflineEngine) {
                             "Offline Mode · Private on-device packs"
                         } else {
-                            "Fast Online Google Translate · 55+ languages"
+                            "Fast online full-page translation · 55+ languages"
                         },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.5.sp
@@ -312,7 +299,11 @@ private fun TranslateMainPanel(
                     Surface(
                         onClick = onSwap,
                         shape = RoundedCornerShape(10.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh
+                        color = MaterialTheme.colorScheme.background,
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+                        )
                     ) {
                         Text(
                             text = "⇄",
@@ -367,7 +358,7 @@ private fun TranslateMainPanel(
                                 else "Uses private downloaded language packs"
                             }
                         } else {
-                            "Off · Using instant online Google Translate"
+                            "Off · Using instant online UH Translate"
                         }
                         Text(
                             text = modeSubtitle,
@@ -444,47 +435,7 @@ private fun TranslateMainPanel(
             }
         }
 
-        // Fast Viewport Image OCR Translation
-        OutlinedButton(
-            onClick = onTranslateImages,
-            enabled = !mgrState.isTranslatingImages,
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            if (mgrState.isTranslatingImages) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(15.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Scanning Visible Images…",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            } else {
-                Icon(
-                    painter = painterResource(id = R.drawable.uh_ic_camera_24),
-                    contentDescription = null,
-                    tint = if (hasImageOverlays) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (hasImageOverlays) {
-                        "Clear Image Overlays (${mgrState.imageOverlayCount})"
-                    } else {
-                        "Translate Visible Images (OCR)"
-                    },
-                    color = if (hasImageOverlays) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-        }
-
-        // Single clean Offline Packs shortcut (duplicate Language Rules button removed)
+        // Offline Packs shortcut
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Start,
@@ -563,7 +514,7 @@ private fun TranslateSettingsPanel(
                 )
                 TranslateToggleRow(
                     title = "Offline Translation Mode",
-                    subtitle = "Use downloaded on-device language packs instead of online Google Translate",
+                    subtitle = "Use downloaded on-device language packs instead of online UH Translate",
                     checked = mgrState.useOfflineEngine,
                     onCheckedChange = { UhTranslationManager.setUseOfflineEngine(it) }
                 )
@@ -974,7 +925,8 @@ private fun LanguagePickerButton(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .background(MaterialTheme.colorScheme.background)
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 9.dp)
     ) {

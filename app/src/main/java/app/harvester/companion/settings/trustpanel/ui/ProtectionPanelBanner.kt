@@ -71,7 +71,7 @@ private fun protectionPanelBannerContent(
                 iconId = R.drawable.ic_shield,
                 title = stringResource(id = R.string.protection_panel_banner_not_protected_title),
                 description = stringResource(id = R.string.protection_panel_banner_not_protected_description, appName),
-                backgroundColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                backgroundColor = MaterialTheme.colorScheme.surface,
             )
         else ->
             ProtectionPanelBannerContent(

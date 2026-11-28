@@ -177,7 +177,7 @@ fun BrowserExtensionsSheet(
                     Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = MaterialTheme.colorScheme.background,
             shape = RoundedCornerShape(20.dp)
         )
     }
@@ -187,7 +187,7 @@ fun BrowserExtensionsSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = MaterialTheme.colorScheme.background,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
     ) {
         AnimatedContent(
@@ -934,7 +934,7 @@ private fun ExtensionSheetIcon(
         modifier = Modifier
             .size(38.dp)
             .clip(RoundedCornerShape(10.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            .background(MaterialTheme.colorScheme.background),
         contentAlignment = Alignment.Center
     ) {
         val bmp = iconBitmap

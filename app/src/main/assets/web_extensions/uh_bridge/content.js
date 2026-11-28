@@ -155,10 +155,6 @@
             ensureAndToggleDevTools(msg.darkTheme !== false);
         } else if (msg.action === "APPLY_GLOBAL_ZOOM" && isTopFrame) {
             window.postMessage({ type: "UH_APPLY_GLOBAL_ZOOM", percent: msg.percent || 100 }, "*");
-        } else if (msg.action === "TRANSLATE_IMAGES" && isTopFrame) {
-            C.runImageOcrTranslation(msg.fromLang || "auto", msg.toLang || "en", msg.preferOnline !== false);
-        } else if (msg.action === "CLEAR_IMAGE_TRANSLATIONS" && isTopFrame) {
-            C.clearImageTranslationOverlays();
         } else if (msg.action === "ONLINE_TRANSLATE_PAGE" && isTopFrame) {
             if (C.runOnlinePageTranslation) {
                 C.runOnlinePageTranslation(msg.fromLang || "auto", msg.toLang || "en");

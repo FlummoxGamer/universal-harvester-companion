@@ -287,9 +287,29 @@
             "script", "style", "noscript", "iframe", "form", "button", "input", "select",
             "textarea", "nav", "footer", "aside", "svg", "canvas", "audio", "video", "dialog",
             "[role='navigation']", "[role='banner']", "[role='complementary']", "[role='contentinfo']",
-            "[role='search']", "[role='dialog']", "[aria-hidden='true']", "[aria-modal='true']"
+            "[role='search']", "[role='dialog']", "[role='note']", "[aria-hidden='true']", "[aria-modal='true']",
+            // Wikipedia & editorial non-narrative clutter (citations, edit links, infoboxes, tables, captions, reflists)
+            "sup.reference", ".reference", ".mw-editsection", ".infobox", ".navbox", ".vertical-navbox",
+            ".sidebar", ".thumbcaption", "figcaption", "table", ".wikitable", ".reflist", ".references",
+            ".hatnote", ".shortdescription", ".ambox", ".mbox-small", ".noprint", ".metadata",
+            ".mw-jump-link", ".catlinks", ".printfooter", ".portal", ".sistersitebox", ".IPA", ".rt-commentedText"
         ].join(",");
         clone.querySelectorAll(stripSel).forEach((n) => n.remove());
+
+        // Remove trailing Reference / External Links / Further Reading / See Also sections
+        clone.querySelectorAll("h2, h3").forEach((heading) => {
+            if (!heading.isConnected) return;
+            const hTxt = (heading.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+            if (/^(references|external links|further reading|see also|bibliography|notes and references|citations|footnotes)$/i.test(hTxt)) {
+                let cur = heading.nextElementSibling;
+                while (cur && !/^H[12]$/.test(cur.tagName)) {
+                    const next = cur.nextElementSibling;
+                    cur.remove();
+                    cur = next;
+                }
+                heading.remove();
+            }
+        });
 
         // Prune junk containers regardless of text length (comments, related lists, sidebars, nav menus)
         const cloneTotalLen = Math.max(1, getTextLen(clone));
@@ -625,7 +645,7 @@
                 stroke-linejoin: round !important;
             }
 
-            /* Exit Fullscreen pill: visible ONLY when BOTH top and bottom bars are hidden */
+            /* Exit Fullscreen pill: visible smoothly whenever fullscreen is active and chrome is hidden */
             #${ROOT_ID} .uh-r-exit-fs {
                 position: fixed !important;
                 top: 12px !important;
@@ -633,18 +653,20 @@
                 z-index: 2147483647 !important;
                 display: none !important;
                 align-items: center !important;
-                gap: 5px !important;
-                padding: 6px 12px !important;
+                gap: 6px !important;
+                min-height: 36px !important;
+                padding: 7px 14px !important;
                 border-radius: 999px !important;
                 background: var(--uh-r-bar-bg) !important;
                 border: 1px solid var(--uh-r-border) !important;
                 color: var(--uh-r-fg) !important;
                 font-family: system-ui, -apple-system, 'Roboto', sans-serif !important;
-                font-size: 11px !important;
+                font-size: 11.5px !important;
                 font-weight: 700 !important;
                 box-shadow: 0 4px 16px rgba(0,0,0,0.22) !important;
                 cursor: pointer !important;
-                opacity: 0.9 !important;
+                touch-action: manipulation !important;
+                opacity: 0.92 !important;
             }
             #${ROOT_ID}.uh-r-fullscreen.uh-r-chrome-hidden .uh-r-exit-fs {
                 display: inline-flex !important;
@@ -977,7 +999,11 @@
 
     function applyReaderStyle(prefs) {
         const prevPageMode = currentPrefs.pageMode;
+        const prevFullscreen = currentPrefs.isFullscreen;
         currentPrefs = Object.assign({}, currentPrefs, prefs || {});
+        if (prefs && typeof prefs.isFullscreen === "boolean" && prefs.isFullscreen !== prevFullscreen) {
+            chromeVisible = !prefs.isFullscreen;
+        }
         const root = document.getElementById(ROOT_ID);
         if (!root) return;
         const t = themeTokens(currentPrefs.theme);
@@ -1061,14 +1087,35 @@
             e.stopPropagation();
             sendNative({ type: "READER_OPEN_TRANSLATE" });
         });
-        root.querySelector("#uh-r-fs-btn")?.addEventListener("click", (e) => {
-            e.stopPropagation();
-            sendNative({ type: "READER_TOGGLE_FULLSCREEN" });
-        });
-        root.querySelector("#uh-r-exit-fs-btn")?.addEventListener("click", (e) => {
-            e.stopPropagation();
-            sendNative({ type: "READER_TOGGLE_FULLSCREEN" });
-        });
+        // Instant 1-tap Fullscreen toggle (optimistic UI + debounce so it NEVER takes multiple clicks)
+        let lastFsTapAt = 0;
+        const triggerFullscreenState = (nextEnabled, ev) => {
+            if (ev) {
+                ev.preventDefault();
+                ev.stopPropagation();
+            }
+            const now = Date.now();
+            if (now - lastFsTapAt < 260) return;
+            lastFsTapAt = now;
+            currentPrefs.isFullscreen = nextEnabled;
+            chromeVisible = !nextEnabled;
+            updateChromeClasses();
+            if (currentPrefs.pageMode) {
+                requestAnimationFrame(() => recalcPages(true));
+            }
+            sendNative({ type: "READER_SET_FULLSCREEN", enabled: nextEnabled });
+        };
+
+        const fsBtn = root.querySelector("#uh-r-fs-btn");
+        if (fsBtn) {
+            fsBtn.addEventListener("pointerup", (e) => triggerFullscreenState(!currentPrefs.isFullscreen, e));
+            fsBtn.addEventListener("click", (e) => triggerFullscreenState(!currentPrefs.isFullscreen, e));
+        }
+        const exitFsBtn = root.querySelector("#uh-r-exit-fs-btn");
+        if (exitFsBtn) {
+            exitFsBtn.addEventListener("pointerup", (e) => triggerFullscreenState(false, e));
+            exitFsBtn.addEventListener("click", (e) => triggerFullscreenState(false, e));
+        }
 
         // Integrated Bottom Bar buttons
         root.querySelector("#uh-r-tts-btn")?.addEventListener("click", (e) => {
@@ -1573,6 +1620,79 @@
         }
         return undefined;
     });
+
+    /**
+     * Called directly by cs_translate.js after live in-place UH Translate finishes on the open Reader DOM.
+     * Re-collects translated sentence spans, updates RTL/lang/Book Pages layout, and pushes fresh
+     * sentences + language to ReaderModeManager so Read Aloud speaks the translated article immediately
+     * without closing or reopening Reader Mode.
+     */
+    function syncReaderLiveTranslationInPlace(targetLang) {
+        if (!readerActive) return;
+        const root = document.getElementById(ROOT_ID);
+        if (!root) return;
+
+        const bodyEl = root.querySelector("#uh-r-body");
+        const titleEl = root.querySelector(".uh-r-title");
+        const titleBarEl = root.querySelector("#uh-r-bar-title");
+        const titleText = (titleEl && titleEl.textContent ? titleEl.textContent : "").trim() || document.title || "";
+        if (titleBarEl && titleText) {
+            titleBarEl.textContent = titleText;
+        }
+
+        const updatedSentences = [];
+        if (bodyEl) {
+            const spans = bodyEl.querySelectorAll("[data-uh-s]");
+            for (let i = 0; i < spans.length; i++) {
+                const t = (spans[i].textContent || "").replace(/\s+/g, " ").trim();
+                spans[i].setAttribute("data-uh-s", String(updatedSentences.length));
+                if (t.length > 0) {
+                    updatedSentences.push(t);
+                }
+            }
+        }
+
+        const joined = updatedSentences.join(" ").trim();
+        const resolvedLang = (targetLang && String(targetLang).trim())
+            ? String(targetLang).trim()
+            : detectLanguage(titleText + " " + joined);
+        currentSentences = updatedSentences;
+        currentDetectedLang = resolvedLang || "en";
+
+        const rtl = isRtlLang(currentDetectedLang);
+        root.setAttribute("dir", rtl ? "rtl" : "ltr");
+        root.setAttribute("lang", currentDetectedLang);
+
+        if (currentPrefs.pageMode) {
+            requestAnimationFrame(() => recalcPages(true));
+        } else {
+            updateProgressLabel();
+        }
+
+        const cjkMatches = joined.match(/[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF]/g);
+        const cjkCount = cjkMatches ? cjkMatches.length : 0;
+        const nonCjkText = joined.replace(/[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF]+/g, " ").trim();
+        const latinWords = nonCjkText ? nonCjkText.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length : 0;
+        const wordCount = latinWords + cjkCount;
+        const readMins = Math.max(1, Math.round((latinWords / 235) + (cjkCount / 450)));
+
+        let host = "";
+        try { host = new URL(location.href).hostname.toLowerCase(); } catch (_e) {}
+        sendNative({
+            type: "READER_CONTENT_REFRESHED",
+            url: location.href,
+            host: host,
+            title: titleText,
+            readMins: readMins,
+            wordCount: wordCount,
+            lang: currentDetectedLang,
+            sentences: updatedSentences.slice(0, 1200)
+        });
+    }
+
+    if (globalThis.__uhCs) {
+        globalThis.__uhCs.onReaderLiveTranslationUpdated = syncReaderLiveTranslationInPlace;
+    }
 
     document.addEventListener("DOMContentLoaded", () => {
         setTimeout(() => notifyEligibility(false), 180);
