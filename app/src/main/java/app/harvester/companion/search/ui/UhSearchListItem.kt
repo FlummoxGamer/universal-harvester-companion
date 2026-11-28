@@ -91,9 +91,14 @@ fun UhSearchListItem(
 
                     IconButton(onClick = {
                         try {
+                            val cleanUrl = app.harvester.companion.privacy.UhShieldEngine.cleanTrackingUrl(
+                                rawUrl = item.url,
+                                stripTrackers = true,
+                                deAmp = true,
+                            )
                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, item.url)
+                                putExtra(Intent.EXTRA_TEXT, cleanUrl)
                             }
                             context.startActivity(Intent.createChooser(shareIntent, "Share"))
                         } catch (e: Exception) {
@@ -110,11 +115,18 @@ fun UhSearchListItem(
 
                     IconButton(onClick = {
                         try {
+                            val cleanUrl = app.harvester.companion.privacy.UhShieldEngine.cleanTrackingUrl(
+                                rawUrl = item.url,
+                                stripTrackers = true,
+                                deAmp = true,
+                            )
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
                             if (clipboard == null) {
                                 app.harvester.companion.UHLog.w("ui_warn", "ClipboardManager unavailable when copying URL.")
                             } else {
-                                clipboard.setPrimaryClip(ClipData.newPlainText("URL", item.url))
+                                clipboard.setPrimaryClip(ClipData.newPlainText("URL", cleanUrl))
+                                val msg = if (cleanUrl != item.url) "Clean link copied" else "Link copied"
+                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
                             }
                         } catch (e: Exception) {
                             app.harvester.companion.UHLog.throwable("ui_error", "Failed copying URL to clipboard", e)

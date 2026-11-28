@@ -298,8 +298,8 @@ class TrustPanelFragment : BottomSheetDialogFragment() {
                                 val smartJsBlockedCount = remember(siteHost, jsTick) {
                                     UhShieldEngine.getJsBlockedState(siteHost)?.totalBlocked ?: 0
                                 }
-                                val showWebDarkToggle = UhPrivacyController.isForceDarkWebEffectivelyEnabled(ctx)
-                                val isWebDarkBypassed = siteHost.isNotBlank() && siteHost in darkBypassHosts
+                                val showWebDarkToggle = false
+                                val isWebDarkBypassed = false
                                 val requestLogs = remember(siteHost, requestLogTick) {
                                     UhShieldEngine.getRequestLogForHost(siteHost)
                                 }

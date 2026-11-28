@@ -32,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,10 +49,9 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * Kindle-class Material 3 Reader Mode Controls Sheet:
- * - Multi-language Read Aloud (Android TTS) with sentence tracking, speed selector,
- *   Auto / Female / Male voice filter, and on-device human voice picker
- * - 4 book themes (Paper, Sepia, Dark, OLED) + Reader-specific Brightness slider
+ * Material 3 Reader Mode Controls Sheet:
+ * - Multi-language Read Aloud with free AI Neural voices + Offline TTS fallback, verified Female/Male filter
+ * - 4 reading themes (Paper, Sepia, Dark, OLED) + accurate Reader Brightness slider with Extra-Dim night range
  * - 4 bookish font families (Book Serif, Classic, Clean Sans, Mono) + font size slider
  * - Line spacing & page margins
  * - Book Pages mode, Fullscreen Reading, Show Images, Read Aloud toggle, Auto-Reader per domain
@@ -66,6 +66,14 @@ fun ReaderControlsSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val prefs = state.prefs
     val detectedLangShort = state.detectedLang.substringBefore("-").uppercase(Locale.ROOT).ifBlank { "EN" }
+    val detectedLangDisplay = remember(state.detectedLang) {
+        val loc = Locale.forLanguageTag(state.detectedLang.ifBlank { "en" })
+        loc.getDisplayLanguage(Locale.ENGLISH).replaceFirstChar { it.uppercase() }.ifBlank { detectedLangShort }
+    }
+    // Seed initial slider position from actual current device brightness when in Auto mode
+    val systemSliderSeed = remember(prefs.brightness < 0f) {
+        ReaderModeManager.readSystemSliderBrightness(context)
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -112,7 +120,7 @@ fun ReaderControlsSheet(
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text = detectedLangShort,
+                                text = detectedLangDisplay,
                                 color = MaterialTheme.colorScheme.primary,
                                 fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Bold
@@ -144,7 +152,7 @@ fun ReaderControlsSheet(
                 }
             }
 
-            // Read Aloud (Android TTS) Player + Male/Female Human Voice Picker
+            // Read Aloud Player + AI Neural & Offline Voice Picker
             if (prefs.ttsEnabled && state.sentences.isNotEmpty()) {
                 Surface(
                     shape = RoundedCornerShape(18.dp),
@@ -171,7 +179,7 @@ fun ReaderControlsSheet(
                                 val progressLabel = if (state.ttsIndex >= 0) {
                                     "Sentence ${state.ttsIndex + 1} of ${state.sentences.size}"
                                 } else {
-                                    "Exact resume & live sentence highlighting"
+                                    "AI Neural voices with offline fallback"
                                 }
                                 Text(
                                     text = progressLabel,
@@ -291,7 +299,7 @@ fun ReaderControlsSheet(
                             }
                         }
 
-                        // On-device Human Voice Picker (filtered by selected gender when not Auto)
+                        // Verified Neural & Offline Voice Picker
                         val filteredVoices = when (prefs.voiceGender) {
                             ReaderVoiceGender.AUTO -> state.availableVoices
                             else -> state.availableVoices.filter { it.gender == prefs.voiceGender }
@@ -305,7 +313,8 @@ fun ReaderControlsSheet(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 filteredVoices.forEach { voice ->
-                                    val isChosen = prefs.voiceName == voice.name
+                                    val isChosen = prefs.voiceName == voice.name ||
+                                        (prefs.voiceName.isBlank() && voice == filteredVoices.first())
                                     Box(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(9.dp))
@@ -314,7 +323,7 @@ fun ReaderControlsSheet(
                                                 else MaterialTheme.colorScheme.surfaceContainerHigh
                                             )
                                             .clickable { ReaderModeManager.selectVoiceOption(voice) }
-                                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                                            .padding(horizontal = 10.dp, vertical = 6.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(
@@ -333,7 +342,7 @@ fun ReaderControlsSheet(
                 }
             }
 
-            // Theme Swatches + Custom Reader Brightness Slider
+            // Theme Swatches + Accurate Reader Brightness Slider with Extra-Dim Night Zone
             Surface(
                 shape = RoundedCornerShape(18.dp),
                 color = MaterialTheme.colorScheme.surface,
@@ -391,43 +400,63 @@ fun ReaderControlsSheet(
                         }
                     }
 
-                    // Reader Brightness Slider
+                    // Reader Brightness Slider (0%..20% Extra-Dim Night Scrim, 20%..100% Hardware Brightness)
                     val isAutoBrightness = prefs.brightness < 0f
-                    val sliderBrightness = if (isAutoBrightness) 0.55f else prefs.brightness.coerceIn(0.05f, 1.0f)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text(
-                            text = "Brightness",
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 12.5.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Slider(
-                            value = sliderBrightness,
-                            onValueChange = { v -> ReaderModeManager.setBrightness(v) },
-                            valueRange = 0.05f..1.0f,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(9.dp))
-                                .background(
-                                    if (isAutoBrightness) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.surfaceContainerHigh
-                                )
-                                .clickable { ReaderModeManager.setBrightness(-1f) }
-                                .padding(horizontal = 9.dp, vertical = 5.dp),
-                            contentAlignment = Alignment.Center
+                    val sliderBrightness = if (isAutoBrightness) {
+                        systemSliderSeed
+                    } else {
+                        prefs.brightness.coerceIn(0.0f, 1.0f)
+                    }
+                    val isExtraDim = !isAutoBrightness && sliderBrightness < 0.20f
+
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Text(
-                                text = if (isAutoBrightness) "Auto" else "${(sliderBrightness * 100f).roundToInt()}%",
-                                color = if (isAutoBrightness) MaterialTheme.colorScheme.onPrimary
-                                else MaterialTheme.colorScheme.onSurface,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
+                                text = "Brightness",
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Slider(
+                                value = sliderBrightness,
+                                onValueChange = { v -> ReaderModeManager.setBrightness(v) },
+                                valueRange = 0.0f..1.0f,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(9.dp))
+                                    .background(
+                                        if (isAutoBrightness) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.surfaceContainerHigh
+                                    )
+                                    .clickable { ReaderModeManager.setBrightness(-1f) }
+                                    .padding(horizontal = 9.dp, vertical = 5.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                val badgeText = when {
+                                    isAutoBrightness -> "Auto"
+                                    isExtraDim -> "Dim ${(sliderBrightness * 100f).roundToInt()}%"
+                                    else -> "${(sliderBrightness * 100f).roundToInt()}%"
+                                }
+                                Text(
+                                    text = badgeText,
+                                    color = if (isAutoBrightness) MaterialTheme.colorScheme.onPrimary
+                                    else MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                        if (isExtraDim) {
+                            Text(
+                                text = "Extra-low night dim active below system minimum",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp
                             )
                         }
                     }
@@ -619,7 +648,7 @@ fun ReaderControlsSheet(
                 Column(modifier = Modifier.fillMaxWidth()) {
                     ReaderToggleRow(
                         title = "Book Pages Mode",
-                        subtitle = "Swipe left or right to flip pages like a Kindle",
+                        subtitle = "Swipe or tap edges to turn pages horizontally",
                         checked = prefs.pageMode,
                         onCheckedChange = { enabled ->
                             ReaderModeManager.updatePrefs { it.copy(pageMode = enabled) }
@@ -631,7 +660,7 @@ fun ReaderControlsSheet(
                     )
                     ReaderToggleRow(
                         title = "Fullscreen Reading",
-                        subtitle = "Hide system bars and browser chrome",
+                        subtitle = "Hide reader bars and browser toolbar while reading",
                         checked = prefs.isFullscreen,
                         onCheckedChange = { enabled ->
                             ReaderModeManager.updatePrefs { it.copy(isFullscreen = enabled) }

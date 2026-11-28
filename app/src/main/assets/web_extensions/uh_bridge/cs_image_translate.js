@@ -57,7 +57,7 @@
             const natW = img.naturalWidth || img.width || 0;
             const natH = img.naturalHeight || img.height || 0;
             if (natW < 40 || natH < 24) return "";
-            const maxSide = 1600;
+            const maxSide = 1280;
             const scale = Math.min(1, maxSide / Math.max(natW, natH));
             const w = Math.max(1, Math.round(natW * scale));
             const h = Math.max(1, Math.round(natH * scale));
@@ -67,7 +67,7 @@
             const ctx = canvas.getContext("2d");
             if (!ctx) return "";
             ctx.drawImage(img, 0, 0, w, h);
-            return canvas.toDataURL("image/jpeg", 0.86);
+            return canvas.toDataURL("image/jpeg", 0.84);
         } catch (_e) {
             return "";
         }
@@ -92,7 +92,7 @@
         }
         try {
             const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-            const timer = controller ? setTimeout(() => controller.abort(), 5000) : null;
+            const timer = controller ? setTimeout(() => controller.abort(), 4000) : null;
             const resp = await fetch(src, {
                 credentials: "include",
                 mode: "cors",
@@ -101,7 +101,7 @@
             if (timer) clearTimeout(timer);
             if (!resp || !resp.ok) return "";
             const blob = await resp.blob();
-            if (!blob || blob.size < 64 || blob.size > 6 * 1024 * 1024) return "";
+            if (!blob || blob.size < 64 || blob.size > 5 * 1024 * 1024) return "";
             if (blob.type && !blob.type.startsWith("image/")) return "";
             return await blobToDataUrl(blob);
         } catch (_e) {
@@ -118,9 +118,9 @@
         if (canvasData) {
             return { imageUrl: src.startsWith("http") ? src : "", dataUrl: canvasData };
         }
-        const fetchedData = await tryFetchImageWithCredentials(src);
-        if (fetchedData) {
-            return { imageUrl: src.startsWith("http") ? src : "", dataUrl: fetchedData };
+        if (src.startsWith("blob:")) {
+            const fetchedData = await tryFetchImageWithCredentials(src);
+            if (fetchedData) return { imageUrl: "", dataUrl: fetchedData };
         }
         if (src.startsWith("http://") || src.startsWith("https://")) {
             return { imageUrl: src, dataUrl: "" };
@@ -128,20 +128,32 @@
         return null;
     }
 
-    async function runImageOcrTranslation(fromLang, toLang) {
+    async function runImageOcrTranslation(fromLang, toLang, preferOnline) {
         clearImageTranslationOverlays();
         const imgs = Array.from(document.querySelectorAll("img"));
+        const vw = window.innerWidth || 360;
         const vh = window.innerHeight || 800;
-        const rawTargets = [];
+        const scoredTargets = [];
 
-        for (let i = 0; i < imgs.length && rawTargets.length < 12; i++) {
+        for (let i = 0; i < imgs.length; i++) {
             const img = imgs[i];
-            if (!img.complete || img.naturalWidth < 60 || img.naturalHeight < 32) continue;
+            if (!img.complete || img.naturalWidth < 72 || img.naturalHeight < 40) continue;
             const rect = img.getBoundingClientRect();
-            if (rect.width < 72 || rect.height < 36) continue;
-            if (rect.bottom < -220 || rect.top > vh * 2.2) continue;
-            rawTargets.push(img);
+            // Strictly visible in current viewport & large enough to contain real content text
+            if (rect.width < 96 || rect.height < 48) continue;
+            if (rect.bottom <= 0 || rect.top >= vh || rect.right <= 0 || rect.left >= vw) continue;
+            const st = window.getComputedStyle(img);
+            if (st.display === "none" || st.visibility === "hidden" || parseFloat(st.opacity || "1") < 0.15) continue;
+            const visW = Math.min(rect.right, vw) - Math.max(rect.left, 0);
+            const visH = Math.min(rect.bottom, vh) - Math.max(rect.top, 0);
+            const visArea = Math.max(0, visW) * Math.max(0, visH);
+            if (visArea < 4500) continue;
+            scoredTargets.push({ img, area: visArea });
         }
+
+        // Prioritize the 6 largest visible viewport images for snappy 1-3s results
+        scoredTargets.sort((a, b) => b.area - a.area);
+        const rawTargets = scoredTargets.slice(0, 6).map((x) => x.img);
 
         if (!rawTargets.length) {
             C.sendNativeCall({ type: "IMAGE_TRANSLATE_DONE", imageCount: 0, overlayCount: 0 });
@@ -168,6 +180,7 @@
             type: "TRANSLATE_IMAGES_OCR",
             fromLang: fromLang || "auto",
             toLang: toLang || "en",
+            preferOnline: preferOnline !== false,
             images: candidates
         });
 

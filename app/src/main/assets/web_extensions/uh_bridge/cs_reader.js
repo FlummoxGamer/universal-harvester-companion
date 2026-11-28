@@ -26,6 +26,8 @@
     let selectionTimer = null;
     let resizeHandler = null;
 
+    let progressReportTimer = null;
+
     let currentPrefs = {
         theme: "sepia",
         fontFamily: "serif",
@@ -38,8 +40,8 @@
         isFullscreen: false
     };
 
-    const UNLIKELY_RE = /banner|breadcrumbs|combx|comment|community|cover-wrap|disqus|extra|footer|gdpr|header|legends|menu|related|remark|replies|rss|shoutbox|sidebar|skyscraper|social|sponsor|supplemental|ad-break|agegate|pagination|pager|popup|yom-remote|cookie|newsletter|subscribe|promo|widget|nav|toolbar|modal/i;
-    const POSITIVE_RE = /article|body|content|entry|hentry|h-entry|main|page|pagination|post|text|blog|story|markdown|prose|wiki|chapter/i;
+    const UNLIKELY_RE = /banner|breadcrumbs?|combx|comments?|community|cover-wrap|disqus|extra|footer|gdpr|header|legends|menu|related|remark|replies|rss|shoutbox|sidebar|skyscraper|social|share|sponsor|supplemental|ad-break|ad-slot|advert|agegate|pagination|pager|popup|yom-remote|cookie|newsletter|subscribe|promo|widget|nav|toolbar|modal|outbrain|taboola|recirc|trending|most-read|read-next|recommend|author-bio|toc|table-of-contents|tag-list|tags/i;
+    const POSITIVE_RE = /article|body|content|entry|hentry|h-entry|main|post|text|blog|story|markdown|prose|wiki|chapter/i;
 
     const EXCLUDED_HOSTS = new Set([
         "www.youtube.com", "m.youtube.com", "youtube.com",
@@ -283,14 +285,29 @@
 
         const stripSel = [
             "script", "style", "noscript", "iframe", "form", "button", "input", "select",
-            "textarea", "nav", "footer", "aside", "svg", "canvas", "audio", "video",
-            "[role='navigation']", "[role='banner']", "[role='complementary']", "[aria-hidden='true']"
+            "textarea", "nav", "footer", "aside", "svg", "canvas", "audio", "video", "dialog",
+            "[role='navigation']", "[role='banner']", "[role='complementary']", "[role='contentinfo']",
+            "[role='search']", "[role='dialog']", "[aria-hidden='true']", "[aria-modal='true']"
         ].join(",");
         clone.querySelectorAll(stripSel).forEach((n) => n.remove());
 
-        clone.querySelectorAll("div, section, ul, ol").forEach((n) => {
-            const clsId = (n.className || "") + " " + (n.id || "");
-            if (UNLIKELY_RE.test(clsId) && !POSITIVE_RE.test(clsId) && getTextLen(n) < 500) {
+        // Prune junk containers regardless of text length (comments, related lists, sidebars, nav menus)
+        const cloneTotalLen = Math.max(1, getTextLen(clone));
+        clone.querySelectorAll("div, section, ul, ol, header").forEach((n) => {
+            if (!n.isConnected) return;
+            const clsId = (typeof n.className === "string" ? n.className : "") + " " + (n.id || "");
+            const nLen = getTextLen(n);
+            const links = n.querySelectorAll("a");
+            let linkChars = 0;
+            for (let i = 0; i < links.length; i++) linkChars += getTextLen(links[i]);
+            const linkDensity = nLen > 0 ? (linkChars / nLen) : 0;
+
+            const isUnlikely = UNLIKELY_RE.test(clsId) && !POSITIVE_RE.test(clsId);
+            const isHeaderNoise = n.tagName === "HEADER" && nLen < cloneTotalLen * 0.45 && (linkDensity > 0.35 || n.querySelectorAll("p").length === 0);
+            const isLinkList = (n.tagName === "UL" || n.tagName === "OL") && linkDensity > 0.65 && nLen < cloneTotalLen * 0.6;
+            const isLargeBoilerplate = isUnlikely && (nLen < cloneTotalLen * 0.55 || linkDensity > 0.45);
+
+            if (isHeaderNoise || isLinkList || isLargeBoilerplate) {
                 n.remove();
             }
         });
@@ -345,14 +362,23 @@
         const byline = (authorMeta || (bylineEl ? bylineEl.textContent : "") || "").replace(/\s+/g, " ").trim().slice(0, 90);
         const host = location.hostname.replace(/^www\./i, "");
 
-        // Index readable blocks into clean sentence-level spans for accurate TTS & book layout
+        // Index readable blocks into clean sentence-level spans (strictly deduplicating nested blocks)
         const sentences = [];
+        const seenTexts = new Set();
         const readableNodes = clone.querySelectorAll("p, h2, h3, h4, blockquote, li, pre");
         readableNodes.forEach((node) => {
+            if (!node.isConnected) return;
             if (node.closest("pre") && node.tagName !== "PRE") return;
-            if (node.querySelector("p, blockquote, pre")) return;
+            if (node.parentElement && node.parentElement.closest("p, blockquote, pre, li")) return;
+            if (node.querySelector("p, blockquote, pre, h2, h3, h4")) return;
+
             const txt = (node.textContent || "").replace(/\s+/g, " ").trim();
             if (txt.length < 4) return;
+            // Skip tiny pure-link menu/tag items
+            if (node.tagName === "LI") {
+                const aChars = Array.from(node.querySelectorAll("a")).reduce((acc, a) => acc + getTextLen(a), 0);
+                if (txt.length < 48 && aChars / txt.length > 0.85) return;
+            }
             if (node.tagName === "PRE") {
                 const idx = sentences.length;
                 node.setAttribute("data-uh-s", String(idx));
@@ -360,9 +386,13 @@
                 return;
             }
             const parts = splitIntoSentences(txt);
-            // Only replace innerHTML with sentence spans when block has no embedded <img>
             if (!node.querySelector("img")) {
                 const spans = parts.map((part) => {
+                    const norm = part.toLowerCase();
+                    if (part.length > 24 && seenTexts.has(norm)) {
+                        return escapeHtml(part);
+                    }
+                    seenTexts.add(norm);
                     const idx = sentences.length;
                     sentences.push(part);
                     return `<span class="uh-s" data-uh-s="${idx}">${escapeHtml(part)}</span>`;
@@ -390,13 +420,16 @@
             }).join("");
         }
 
-        const joined = sentences.join(" ");
+        const joined = sentences.join(" ").trim();
         const detectedLang = detectLanguage(title + " " + joined);
-        const wordCount = Math.max(
-            joined.split(/\s+/).filter(Boolean).length,
-            Math.round(joined.length / 5)
-        );
-        const readMins = Math.max(1, Math.ceil(wordCount / 215));
+        // Script-aware accurate word count & read time (CJK ~450 CPM, Latin/other ~235 WPM)
+        const cjkMatches = joined.match(/[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF]/g);
+        const cjkCount = cjkMatches ? cjkMatches.length : 0;
+        const nonCjkText = joined.replace(/[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF]+/g, " ").trim();
+        const latinWords = nonCjkText ? nonCjkText.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length : 0;
+        const wordCount = latinWords + cjkCount;
+        const estMinutes = (latinWords / 235) + (cjkCount / 450);
+        const readMins = Math.max(1, Math.round(estMinutes));
 
         return {
             title,
@@ -473,6 +506,7 @@
                 display: flex !important;
                 flex-direction: column !important;
                 overflow: hidden !important;
+                transition: background-color 180ms ease, color 180ms ease !important;
                 -webkit-font-smoothing: antialiased !important;
                 text-rendering: optimizeLegibility !important;
             }
@@ -591,7 +625,7 @@
                 stroke-linejoin: round !important;
             }
 
-            /* Dedicated visible exit-fullscreen pill when Reader Fullscreen is active */
+            /* Exit Fullscreen pill: visible ONLY when BOTH top and bottom bars are hidden */
             #${ROOT_ID} .uh-r-exit-fs {
                 position: fixed !important;
                 top: 12px !important;
@@ -600,7 +634,7 @@
                 display: none !important;
                 align-items: center !important;
                 gap: 5px !important;
-                padding: 6px 11px !important;
+                padding: 6px 12px !important;
                 border-radius: 999px !important;
                 background: var(--uh-r-bar-bg) !important;
                 border: 1px solid var(--uh-r-border) !important;
@@ -610,13 +644,10 @@
                 font-weight: 700 !important;
                 box-shadow: 0 4px 16px rgba(0,0,0,0.22) !important;
                 cursor: pointer !important;
-                opacity: 0.85 !important;
+                opacity: 0.9 !important;
             }
-            #${ROOT_ID}.uh-r-fullscreen .uh-r-exit-fs {
+            #${ROOT_ID}.uh-r-fullscreen.uh-r-chrome-hidden .uh-r-exit-fs {
                 display: inline-flex !important;
-            }
-            #${ROOT_ID}.uh-r-fullscreen:not(.uh-r-chrome-hidden) .uh-r-exit-fs {
-                top: 54px !important;
             }
 
             /* Scroll mode viewport */
@@ -634,7 +665,7 @@
                 padding: 64px var(--uh-r-pad, 24px) 96px var(--uh-r-pad, 24px) !important;
             }
 
-            /* Kindle Book Pages mode (horizontal multi-column pagination) */
+            /* Book Pages mode (horizontal multi-column pagination sized strictly to inset viewport) */
             #${ROOT_ID}.uh-r-paged .uh-r-viewport {
                 overflow: hidden !important;
                 touch-action: pan-y !important;
@@ -644,17 +675,17 @@
                 max-width: none !important;
                 margin: 0 !important;
                 padding: 54px 0 58px 0 !important;
-                height: 100vh !important;
-                width: 100vw !important;
+                height: 100% !important;
+                width: 100% !important;
                 overflow: hidden !important;
             }
             #${ROOT_ID}.uh-r-paged .uh-r-book-track {
-                height: calc(100vh - 112px) !important;
+                height: 100% !important;
                 column-width: 100vw !important;
                 column-gap: 0px !important;
                 column-fill: auto !important;
                 will-change: transform !important;
-                transition: transform 270ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+                transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1) !important;
             }
             #${ROOT_ID}.uh-r-paged .uh-r-book-track.uh-dragging {
                 transition: none !important;
@@ -896,6 +927,35 @@
         updateProgressLabel();
     }
 
+    function scheduleProgressReport(immediate) {
+        if (!readerActive) return;
+        const send = () => {
+            progressReportTimer = null;
+            const root = document.getElementById(ROOT_ID);
+            if (!root) return;
+            let ratio = 0;
+            if (currentPrefs.pageMode) {
+                ratio = totalPages <= 1 ? 0 : (currentPage / Math.max(1, totalPages - 1));
+            } else {
+                const vp = root.querySelector("#uh-r-viewport");
+                const maxScroll = vp ? Math.max(1, vp.scrollHeight - vp.clientHeight) : 1;
+                ratio = vp ? Math.min(1, Math.max(0, vp.scrollTop / maxScroll)) : 0;
+            }
+            sendNative({
+                type: "READER_PROGRESS_UPDATE",
+                url: location.href,
+                scrollRatio: ratio,
+                pageIndex: currentPage
+            });
+        };
+        if (progressReportTimer) {
+            clearTimeout(progressReportTimer);
+            progressReportTimer = null;
+        }
+        if (immediate) send();
+        else progressReportTimer = setTimeout(send, 450);
+    }
+
     function updateProgressLabel() {
         const root = document.getElementById(ROOT_ID);
         if (!root) return;
@@ -912,6 +972,7 @@
             if (progEl) progEl.style.width = pct.toFixed(1) + "%";
             if (metaEl) metaEl.textContent = `${Math.round(pct)}%`;
         }
+        scheduleProgressReport(false);
     }
 
     function applyReaderStyle(prefs) {
@@ -1298,6 +1359,31 @@
         bindInteractions(root);
         applyReaderStyle(prefs);
 
+        // Restore per-article saved scroll or Book Page position cleanly
+        const savedRatio = (prefs && typeof prefs.savedScrollRatio === "number") ? prefs.savedScrollRatio : 0;
+        const savedPage = (prefs && typeof prefs.savedPageIndex === "number") ? prefs.savedPageIndex : 0;
+        if (savedRatio > 0.01 || savedPage > 0) {
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    if (!readerActive) return;
+                    if (currentPrefs.pageMode) {
+                        recalcPages(false);
+                        const targetPg = savedPage > 0
+                            ? Math.min(savedPage, totalPages - 1)
+                            : Math.round(savedRatio * Math.max(0, totalPages - 1));
+                        if (targetPg > 0) goToPage(targetPg, false);
+                    } else {
+                        const vp = root.querySelector("#uh-r-viewport");
+                        if (vp && savedRatio > 0.01) {
+                            const maxScroll = Math.max(0, vp.scrollHeight - vp.clientHeight);
+                            vp.scrollTop = Math.round(maxScroll * Math.min(1, savedRatio));
+                            updateProgressLabel();
+                        }
+                    }
+                });
+            });
+        }
+
         if (resizeHandler) window.removeEventListener("resize", resizeHandler);
         resizeHandler = () => {
             if (readerActive && currentPrefs.pageMode) {
@@ -1322,6 +1408,7 @@
     }
 
     function exitReader() {
+        scheduleProgressReport(true);
         const root = document.getElementById(ROOT_ID);
         if (root) root.remove();
         if (resizeHandler) {
@@ -1354,11 +1441,10 @@
             if (target) {
                 target.setAttribute("data-uh-tts-active", "true");
                 if (currentPrefs.pageMode) {
-                    // Auto-flip book page to the exact page containing the spoken sentence
                     try {
                         const rect = target.getBoundingClientRect();
                         const vw = Math.max(1, window.innerWidth);
-                        const pageDelta = Math.floor(rect.left / vw);
+                        const pageDelta = Math.floor((rect.left + 8) / vw);
                         if (pageDelta !== 0) {
                             goToPage(currentPage + pageDelta, true);
                         }
@@ -1370,6 +1456,77 @@
                 }
             }
         }
+    }
+
+    /**
+     * Word-level TTS tracker: measures the exact character Range inside the active sentence
+     * and instantaneously flips Book Pages the moment the active spoken word crosses onto the next page.
+     */
+    function trackTtsWord(index, charOffset, charLength) {
+        if (!readerActive || !currentTtsPlaying) return;
+        const root = document.getElementById(ROOT_ID);
+        if (!root) return;
+        const target = root.querySelector(`[data-uh-s="${index}"]`);
+        if (!target) return;
+
+        try {
+            const walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT, null);
+            let remaining = Math.max(0, charOffset);
+            let textNode = walker.nextNode();
+            let startNode = null;
+            let startOff = 0;
+            let endNode = null;
+            let endOff = 0;
+            const endTarget = remaining + Math.max(1, charLength);
+            let acc = 0;
+
+            while (textNode) {
+                const len = (textNode.nodeValue || "").length;
+                if (!startNode && acc + len > remaining) {
+                    startNode = textNode;
+                    startOff = Math.max(0, remaining - acc);
+                }
+                if (startNode && acc + len >= endTarget) {
+                    endNode = textNode;
+                    endOff = Math.min(len, Math.max(startOff + 1, endTarget - acc));
+                    break;
+                }
+                acc += len;
+                textNode = walker.nextNode();
+            }
+
+            if (!startNode) return;
+            if (!endNode) {
+                endNode = startNode;
+                endOff = (startNode.nodeValue || "").length;
+            }
+
+            const range = document.createRange();
+            range.setStart(startNode, Math.min(startOff, (startNode.nodeValue || "").length));
+            range.setEnd(endNode, Math.min(endOff, (endNode.nodeValue || "").length));
+            const rects = range.getClientRects();
+            const rect = (rects && rects.length > 0) ? rects[rects.length - 1] : range.getBoundingClientRect();
+            if (!rect || (rect.width === 0 && rect.height === 0)) return;
+
+            if (currentPrefs.pageMode) {
+                const vw = Math.max(1, window.innerWidth);
+                // Turn page immediately the moment this word sits past the right or left column boundary
+                const centerX = rect.left + Math.min(rect.width * 0.5, 12);
+                const pageDelta = Math.floor(centerX / vw);
+                if (pageDelta !== 0) {
+                    goToPage(currentPage + pageDelta, true);
+                }
+            } else {
+                const vp = root.querySelector("#uh-r-viewport");
+                if (vp) {
+                    const vh = window.innerHeight || 640;
+                    if (rect.bottom > vh * 0.80 || rect.top < vh * 0.14) {
+                        const deltaY = rect.top - vh * 0.42;
+                        vp.scrollBy({ top: deltaY, behavior: "smooth" });
+                    }
+                }
+            }
+        } catch (_e) {}
     }
 
     api.runtime.onMessage.addListener((msg) => {
@@ -1399,6 +1556,14 @@
             highlightTtsSentence(
                 typeof msg.index === "number" ? msg.index : -1,
                 msg.playing === true
+            );
+            return Promise.resolve(true);
+        }
+        if (msg.action === "READER_TTS_WORD") {
+            trackTtsWord(
+                typeof msg.index === "number" ? msg.index : -1,
+                typeof msg.charOffset === "number" ? msg.charOffset : 0,
+                typeof msg.charLength === "number" ? msg.charLength : 1
             );
             return Promise.resolve(true);
         }

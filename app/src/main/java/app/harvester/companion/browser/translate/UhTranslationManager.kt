@@ -38,60 +38,97 @@ enum class TranslatePillPhase {
 }
 
 /**
- * UH Private On-Device Translation Manager.
- * Runs exclusively on the browser engine's built-in neural translation stack
- * (100% private, on-device, zero external scraping timeouts) with automatic
- * foreign-page detection, subtle floating Translate offer pill, language/site
- * rules, offline language pack management, and multi-script Image OCR overlays.
+ * Unified Browser Translation Manager supporting:
+ * 1. Fast Online Google Translate (default, zero downloads, 55+ languages, Brave-style floating bar).
+ * 2. Private Offline Mode powered by GeckoView's on-device translation stack with persistent Offline Packs.
+ * 3. True Auto-detect source state (picking any explicit language turns off Auto-detect before translating).
+ * 4. Fast viewport-only Image OCR Translation (online batched primary + ML Kit offline fallback).
+ * 5. "Offer to translate" OFF by default; when enabled, shows a tiny corner translate icon button.
  */
 object UhTranslationManager {
 
     private const val PREFS_NAME = "uh_translation_prefs"
     private const val KEY_PREFERRED_TARGET_LANG = "preferred_target_lang"
-    private const val KEY_AUTO_OFFER_PILL = "auto_offer_translate_pill"
+    private const val KEY_AUTO_OFFER_PILL = "auto_offer_translate_pill_v2"
+    private const val KEY_USE_OFFLINE_ENGINE = "use_offline_translate_engine"
 
-    private val FALLBACK_LANGUAGES: List<Language> = listOf(
+    val ONLINE_LANGUAGES: List<Language> = listOf(
+        Language("af", "Afrikaans"),
+        Language("ar", "Arabic"),
+        Language("az", "Azerbaijani"),
+        Language("bg", "Bulgarian"),
+        Language("bn", "Bengali"),
+        Language("ca", "Catalan"),
+        Language("cs", "Czech"),
+        Language("da", "Danish"),
+        Language("de", "German"),
+        Language("el", "Greek"),
         Language("en", "English"),
         Language("es", "Spanish"),
+        Language("et", "Estonian"),
+        Language("fa", "Persian"),
+        Language("fi", "Finnish"),
+        Language("fil", "Filipino"),
         Language("fr", "French"),
-        Language("de", "German"),
+        Language("gu", "Gujarati"),
+        Language("he", "Hebrew"),
         Language("hi", "Hindi"),
+        Language("hr", "Croatian"),
+        Language("hu", "Hungarian"),
+        Language("id", "Indonesian"),
+        Language("it", "Italian"),
         Language("ja", "Japanese"),
+        Language("kn", "Kannada"),
         Language("ko", "Korean"),
+        Language("lt", "Lithuanian"),
+        Language("lv", "Latvian"),
+        Language("ml", "Malayalam"),
+        Language("mr", "Marathi"),
+        Language("ms", "Malay"),
+        Language("nb", "Norwegian"),
+        Language("ne", "Nepali"),
+        Language("nl", "Dutch"),
+        Language("pa", "Punjabi"),
+        Language("pl", "Polish"),
+        Language("pt", "Portuguese"),
+        Language("ro", "Romanian"),
+        Language("ru", "Russian"),
+        Language("sk", "Slovak"),
+        Language("sl", "Slovenian"),
+        Language("sq", "Albanian"),
+        Language("sr", "Serbian"),
+        Language("sv", "Swedish"),
+        Language("sw", "Swahili"),
+        Language("ta", "Tamil"),
+        Language("te", "Telugu"),
+        Language("th", "Thai"),
+        Language("tr", "Turkish"),
+        Language("uk", "Ukrainian"),
+        Language("ur", "Urdu"),
+        Language("vi", "Vietnamese"),
         Language("zh-Hans", "Chinese (Simplified)"),
         Language("zh-Hant", "Chinese (Traditional)"),
-        Language("ar", "Arabic"),
-        Language("pt", "Portuguese"),
-        Language("ru", "Russian"),
-        Language("it", "Italian"),
-        Language("nl", "Dutch"),
-        Language("tr", "Turkish"),
-        Language("pl", "Polish"),
-        Language("id", "Indonesian"),
-        Language("vi", "Vietnamese"),
-        Language("th", "Thai"),
-        Language("uk", "Ukrainian"),
-        Language("bn", "Bengali"),
-        Language("ur", "Urdu"),
-        Language("sv", "Swedish"),
-        Language("da", "Danish"),
-        Language("fi", "Finnish"),
-        Language("el", "Greek"),
-        Language("cs", "Czech"),
-        Language("ro", "Romanian"),
-    )
+    ).sortedBy { it.localizedDisplayName ?: it.code }
 
     data class State(
         val isEngineSupported: Boolean = true,
         val isLoadingLanguages: Boolean = false,
-        val fromLanguages: List<Language> = FALLBACK_LANGUAGES,
-        val toLanguages: List<Language> = FALLBACK_LANGUAGES,
+        val useOfflineEngine: Boolean = false,
+        val fromLanguages: List<Language> = ONLINE_LANGUAGES,
+        val toLanguages: List<Language> = ONLINE_LANGUAGES,
         val languageModels: List<LanguageModel> = emptyList(),
         val languageSettings: Map<String, LanguageSetting> = emptyMap(),
         val neverTranslateSites: List<String> = emptyList(),
         val currentSiteNeverTranslate: Boolean = false,
+        val isAutoDetect: Boolean = true,
+        val manualFromLang: String? = null,
+        val detectedDocLang: String? = null,
         val preferredTargetLang: String = Locale.getDefault().language.ifBlank { "en" },
-        val autoOfferEnabled: Boolean = true,
+        val autoOfferEnabled: Boolean = false,
+        val barVisible: Boolean = false,
+        val onlineTranslatedTabId: String? = null,
+        val onlineTranslatedUrl: String? = null,
+        val onlineTranslatedToLang: String? = null,
         val pairDownloadSizeBytes: Long? = null,
         val isBusy: Boolean = false,
         val statusMessage: String? = null,
@@ -111,33 +148,74 @@ object UhTranslationManager {
         val pillCanRestore: Boolean = false,
         val pillCanClearImages: Boolean = false,
         val pillCanRetry: Boolean = false,
-    )
+    ) {
+        fun effectiveFromCode(): String = if (isAutoDetect) {
+            "auto"
+        } else {
+            manualFromLang?.ifBlank { null } ?: detectedDocLang?.ifBlank { null } ?: "auto"
+        }
+
+        fun resolvedSourceLangForRules(): String {
+            return if (!isAutoDetect && !manualFromLang.isNullOrBlank()) {
+                manualFromLang
+            } else {
+                detectedDocLang?.ifBlank { null } ?: "es"
+            }
+        }
+
+        fun sourceTabDisplayLabel(): String {
+            return if (isAutoDetect) {
+                val det = detectedDocLang?.ifBlank { null }
+                if (det != null) "${UhTranslationManager.languageDisplayName(det)} (Auto)"
+                else "Auto-detect"
+            } else {
+                val code = manualFromLang?.ifBlank { null } ?: detectedDocLang ?: "auto"
+                if (code == "auto") "Auto-detect" else UhTranslationManager.languageDisplayName(code)
+            }
+        }
+
+        fun targetTabDisplayLabel(): String {
+            val code = preferredTargetLang.ifBlank { "en" }
+            return UhTranslationManager.languageDisplayName(code)
+        }
+
+        fun activeFromLanguageList(): List<Language> =
+            if (useOfflineEngine) fromLanguages else ONLINE_LANGUAGES
+
+        fun activeToLanguageList(): List<Language> =
+            if (useOfflineEngine) toLanguages else ONLINE_LANGUAGES
+
+        fun isCurrentTabTranslated(tabId: String?, tabUrl: String?, geckoTranslated: Boolean): Boolean {
+            if (geckoTranslated) return true
+            return !tabId.isNullOrBlank() &&
+                tabId == onlineTranslatedTabId &&
+                !tabUrl.isNullOrBlank() &&
+                tabUrl == onlineTranslatedUrl
+        }
+    }
 
     private val initialized = AtomicBoolean(false)
     private val mainHandler = Handler(Looper.getMainLooper())
 
     @Volatile
     private var appContext: Context? = null
-
     @Volatile
     private var engineRef: Engine? = null
-
     @Volatile
     private var storeRef: BrowserStore? = null
-
     @Volatile
-    private var lastRequestedFrom: String = "es"
-
+    private var lastRequestedFrom: String = "auto"
     @Volatile
     private var lastRequestedTo: String = "en"
-
     @Volatile
     private var pendingTabId: String? = null
-
+    @Volatile
+    private var pendingOnlineTabId: String? = null
+    @Volatile
+    private var pendingOnlineTabUrl: String? = null
     @Volatile
     private var translateStartedAtMs: Long = 0L
 
-    // Session-scoped sets so dismissed offers and ALWAYS auto-translates don't loop
     private val dismissedOfferKeys = ConcurrentHashMap.newKeySet<String>()
     private val autoTranslatedPageKeys = ConcurrentHashMap.newKeySet<String>()
 
@@ -158,19 +236,22 @@ object UhTranslationManager {
         val savedTarget = prefs.getString(KEY_PREFERRED_TARGET_LANG, null)
             ?.ifBlank { null }
             ?: Locale.getDefault().language.ifBlank { "en" }
-        val autoOffer = prefs.getBoolean(KEY_AUTO_OFFER_PILL, true)
+        // Offer to translate is OFF by default per user preference
+        val autoOffer = prefs.getBoolean(KEY_AUTO_OFFER_PILL, false)
+        val offlineEngine = prefs.getBoolean(KEY_USE_OFFLINE_ENGINE, false)
 
         _state.update {
             it.copy(
                 preferredTargetLang = savedTarget,
                 autoOfferEnabled = autoOffer,
+                useOfflineEngine = offlineEngine,
             )
         }
 
         GeckoWebExtensionBridge.onImageTranslateProgress = { done, total ->
             if (_state.value.isTranslatingImages && total > 0) {
                 val frac = (done.toFloat() / total.toFloat()).coerceIn(0.10f, 0.95f)
-                scheduleImageWatchdog(25000L)
+                scheduleImageWatchdog(18000L)
                 _state.update {
                     it.copy(
                         pillPhase = TranslatePillPhase.TRANSLATING_IMAGES,
@@ -187,8 +268,8 @@ object UhTranslationManager {
             val activeTabId = storeRef?.state?.selectedTab?.id
             val msg = when {
                 overlayCount > 0 -> "Translated $overlayCount image text block${if (overlayCount == 1) "" else "s"}"
-                imageCount == 0 -> "No visible images found on screen"
-                else -> "No translatable text found in images"
+                imageCount == 0 -> "No visible images on screen"
+                else -> "No readable text found in visible images"
             }
             _state.update {
                 it.copy(
@@ -205,10 +286,9 @@ object UhTranslationManager {
                     pillCanRetry = false,
                 )
             }
-            schedulePillAutoHide(5500L)
+            schedulePillAutoHide(4500L)
         }
 
-        // Pre-warm the built-in on-device translation engine immediately at app launch
         refreshEngineCapabilities()
     }
 
@@ -252,7 +332,12 @@ object UhTranslationManager {
                     st.pillPhase == TranslatePillPhase.TRANSLATING)
             ) {
                 pendingTabId = null
-                val msg = "Translation timed out — check network for first-time pack"
+                pendingOnlineTabId = null
+                val msg = if (st.useOfflineEngine) {
+                    "Offline translation timed out — check pack download"
+                } else {
+                    "Translation timed out — check connection or try Offline Mode"
+                }
                 _state.update {
                     it.copy(
                         isBusy = false,
@@ -266,7 +351,7 @@ object UhTranslationManager {
                         pillCanRetry = true,
                     )
                 }
-                schedulePillAutoHide(7000L)
+                schedulePillAutoHide(6500L)
             }
         }
         translateWatchdogRunnable = r
@@ -294,11 +379,20 @@ object UhTranslationManager {
                         pillCanRetry = false,
                     )
                 }
-                schedulePillAutoHide(4500L)
+                schedulePillAutoHide(4000L)
             }
         }
         imageWatchdogRunnable = r
         mainHandler.postDelayed(r, timeoutMs)
+    }
+
+    fun setUseOfflineEngine(offline: Boolean) {
+        appContext?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            ?.edit()?.putBoolean(KEY_USE_OFFLINE_ENGINE, offline)?.apply()
+        _state.update { it.copy(useOfflineEngine = offline, errorMessage = null) }
+        if (offline) {
+            refreshEngineCapabilities()
+        }
     }
 
     fun setAutoOfferEnabled(enabled: Boolean) {
@@ -317,6 +411,66 @@ object UhTranslationManager {
         }
     }
 
+    fun setSourceAutoDetect() {
+        _state.update {
+            it.copy(
+                isAutoDetect = true,
+                manualFromLang = null,
+                errorMessage = null
+            )
+        }
+    }
+
+    fun setManualSourceLanguage(langCode: String) {
+        val clean = langCode.trim()
+        if (clean.isBlank() || clean.equals("auto", ignoreCase = true)) {
+            setSourceAutoDetect()
+            return
+        }
+        _state.update {
+            it.copy(
+                isAutoDetect = false,
+                manualFromLang = clean,
+                errorMessage = null
+            )
+        }
+    }
+
+    fun setPreferredTargetLanguage(langCode: String) {
+        val clean = langCode.trim()
+        if (clean.isBlank()) return
+        appContext?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            ?.edit()?.putString(KEY_PREFERRED_TARGET_LANG, clean)?.apply()
+        _state.update { it.copy(preferredTargetLang = clean, errorMessage = null) }
+    }
+
+    fun swapLanguages() {
+        val cur = _state.value
+        val resolvedFrom = if (cur.isAutoDetect) {
+            cur.detectedDocLang?.ifBlank { null } ?: "en"
+        } else {
+            cur.manualFromLang?.ifBlank { null } ?: cur.detectedDocLang?.ifBlank { null } ?: "en"
+        }
+        val currentTo = cur.preferredTargetLang.ifBlank { "en" }
+        setManualSourceLanguage(currentTo)
+        setPreferredTargetLanguage(resolvedFrom)
+    }
+
+    fun showTranslateBar() {
+        _state.update { it.copy(barVisible = true) }
+    }
+
+    fun hideTranslateBar() {
+        cancelPillAutoHide()
+        _state.update {
+            it.copy(
+                barVisible = false,
+                pillPhase = if (it.pillPhase == TranslatePillPhase.OFFER) it.pillPhase else TranslatePillPhase.HIDDEN,
+                pillMessage = "",
+            )
+        }
+    }
+
     fun dismissPill() {
         cancelPillAutoHide()
         val cur = _state.value
@@ -325,6 +479,7 @@ object UhTranslationManager {
         }
         _state.update {
             it.copy(
+                barVisible = false,
                 pillPhase = TranslatePillPhase.HIDDEN,
                 pillMessage = "",
                 pillProgress = 0f,
@@ -341,8 +496,9 @@ object UhTranslationManager {
 
     fun acceptTranslateOffer() {
         val cur = _state.value
-        val from = cur.offerFromLang?.ifBlank { null } ?: return
         val to = cur.offerToLang?.ifBlank { null } ?: cur.preferredTargetLang.ifBlank { "en" }
+        val from = if (cur.isAutoDetect) "auto" else (cur.offerFromLang?.ifBlank { null } ?: "auto")
+        _state.update { it.copy(barVisible = true) }
         translateActiveTab(from, to)
     }
 
@@ -350,16 +506,31 @@ object UhTranslationManager {
         translateActiveTab(lastRequestedFrom, lastRequestedTo)
     }
 
-    /**
-     * Observes native engine [TranslationsState] for the active tab to:
-     * 1. Track live on-device model preparation & translation completion.
-     * 2. Honor "Always translate [Language]" rules automatically.
-     * 3. Surface a subtle floating Translate Offer Pill when a foreign page is detected.
-     */
     fun syncFromGeckoTabState(tabId: String?, tabUrl: String?, tabState: TranslationsState?) {
         val cur = _state.value
 
-        // 1. Track active translation lifecycle
+        // Clear online-translated marker & bar when user navigates to a different page/tab
+        if (cur.onlineTranslatedTabId != null &&
+            (tabId != cur.onlineTranslatedTabId || tabUrl != cur.onlineTranslatedUrl)
+        ) {
+            _state.update {
+                it.copy(
+                    onlineTranslatedTabId = null,
+                    onlineTranslatedUrl = null,
+                    onlineTranslatedToLang = null,
+                    barVisible = false
+                )
+            }
+        }
+
+        // Track detected language from GeckoView cleanly without clobbering user's manual selection!
+        val rawDetected = tabState?.translationEngineState?.detectedLanguages?.documentLangTag
+            ?.trim()?.ifBlank { null }
+        if (rawDetected != null && rawDetected != cur.detectedDocLang) {
+            _state.update { it.copy(detectedDocLang = rawDetected) }
+        }
+
+        // 1. Track active offline GeckoView translation lifecycle
         val pendingId = pendingTabId
         if (pendingId != null) {
             if (tabId == null || tabId != pendingId) {
@@ -377,11 +548,14 @@ object UhTranslationManager {
                     val elapsed = (System.currentTimeMillis() - translateStartedAtMs).coerceAtLeast(100L)
                     val targetCode = tabState.translationEngineState?.requestedTranslationPair?.toLanguage
                         ?.ifBlank { null } ?: lastRequestedTo
+                    val fromCode = tabState.translationEngineState?.requestedTranslationPair?.fromLanguage
+                        ?.ifBlank { null } ?: lastRequestedFrom
                     val targetShort = languageShortLabel(targetCode)
-                    val msg = "Translated to $targetShort · ${formatDurationShort(elapsed)}"
+                    val msg = "Translated offline to $targetShort · ${formatDurationShort(elapsed)}"
                     _state.update {
                         it.copy(
                             isBusy = false,
+                            barVisible = true,
                             statusMessage = msg,
                             errorMessage = null,
                             lastTranslateMs = elapsed,
@@ -398,9 +572,10 @@ object UhTranslationManager {
                             offerHost = null,
                         )
                     }
-                    schedulePillAutoHide(5500L)
+                    schedulePillAutoHide(3200L)
                     ReaderModeManager.onPageTranslationChanged(targetCode)
-                    engineRef?.let { fetchLanguageModels(it) }
+                    // Persist downloaded packs in GeckoView Offline Packs store so next time is instant!
+                    persistOfflinePacksForPair(fromCode, targetCode)
                     return
                 } else if (tabState.isTranslateProcessing) {
                     val elapsed = System.currentTimeMillis() - translateStartedAtMs
@@ -417,7 +592,7 @@ object UhTranslationManager {
                 } else if (tabState.translationError != null) {
                     pendingTabId = null
                     cancelTranslateWatchdog()
-                    val msg = "Could not translate this page"
+                    val msg = "Offline translation failed for this page"
                     _state.update {
                         it.copy(
                             isBusy = false,
@@ -456,8 +631,8 @@ object UhTranslationManager {
             return
         }
 
-        // If tab is already translated or actively working, hide any lingering offer pill
-        if (tabState.isTranslated || tabState.isTranslateProcessing || tabState.isRestoreProcessing) {
+        val alreadyTranslated = _state.value.isCurrentTabTranslated(tabId, tabUrl, tabState.isTranslated)
+        if (alreadyTranslated || tabState.isTranslateProcessing || tabState.isRestoreProcessing) {
             if (cur.pillPhase == TranslatePillPhase.OFFER) {
                 _state.update {
                     it.copy(
@@ -473,7 +648,6 @@ object UhTranslationManager {
             return
         }
 
-        // Don't interrupt active progress/completion/error pills
         if (cur.isBusy || cur.isTranslatingImages ||
             cur.pillPhase == TranslatePillPhase.DOWNLOADING_MODEL ||
             cur.pillPhase == TranslatePillPhase.TRANSLATING ||
@@ -484,16 +658,11 @@ object UhTranslationManager {
             return
         }
 
-        val rawDetected = tabState.translationEngineState?.detectedLanguages?.documentLangTag
-            ?.trim()
-            ?.ifBlank { null }
-        val resolvedFrom = rawDetected?.let { resolveSupportedFromCode(it) }
+        val resolvedFrom = rawDetected?.let { resolveSupportedFromCode(it) ?: it }
         val targetLang = cur.preferredTargetLang.ifBlank { "en" }
-        val resolvedTo = resolveSupportedToCode(targetLang) ?: targetLang
-
         val host = extractHost(tabUrl)
         val sameLanguage = resolvedFrom == null ||
-            baseLang(resolvedFrom).equals(baseLang(resolvedTo), ignoreCase = true)
+            baseLang(resolvedFrom).equals(baseLang(targetLang), ignoreCase = true)
 
         if (sameLanguage || resolvedFrom == null) {
             if (cur.pillPhase == TranslatePillPhase.OFFER) {
@@ -511,7 +680,6 @@ object UhTranslationManager {
             return
         }
 
-        // Check site-level and language-level user rules
         if (isHostNeverTranslated(host, tabUrl, cur.neverTranslateSites)) {
             if (cur.pillPhase == TranslatePillPhase.OFFER) dismissPill()
             return
@@ -529,12 +697,12 @@ object UhTranslationManager {
         if (langRule == LanguageSetting.ALWAYS) {
             val pageKey = "$tabId|$tabUrl"
             if (autoTranslatedPageKeys.add(pageKey)) {
-                translateActiveTab(resolvedFrom, resolvedTo)
+                translateActiveTab("auto", targetLang)
             }
             return
         }
 
-        // Subtle floating offer pill (UH-branded)
+        // Tiny corner icon offer — strictly gated behind user-enabled autoOfferEnabled (OFF by default)
         if (!cur.autoOfferEnabled) return
         val dismissKey = "$tabId|$host"
         if (dismissKey in dismissedOfferKeys) {
@@ -547,10 +715,7 @@ object UhTranslationManager {
         val shouldOffer = tabState.isExpectedTranslate || !rawDetected.isNullOrBlank()
         if (!shouldOffer) return
 
-        val fromName = languageDisplayName(resolvedFrom)
-        val toShort = languageShortLabel(resolvedTo)
-        val offerMsg = "Translate $fromName → $toShort?"
-
+        val toShort = languageShortLabel(targetLang)
         if (cur.pillPhase != TranslatePillPhase.OFFER ||
             cur.offerTabId != tabId ||
             cur.offerFromLang != resolvedFrom ||
@@ -559,19 +724,49 @@ object UhTranslationManager {
             _state.update {
                 it.copy(
                     pillPhase = TranslatePillPhase.OFFER,
-                    pillMessage = offerMsg,
+                    pillMessage = "Translate",
                     pillProgress = 0f,
                     pillTargetLang = toShort,
-                    pillCanRestore = false,
-                    pillCanClearImages = false,
-                    pillCanRetry = false,
                     offerTabId = tabId,
                     offerFromLang = resolvedFrom,
-                    offerToLang = resolvedTo,
+                    offerToLang = targetLang,
                     offerHost = host,
                 )
             }
         }
+    }
+
+    /**
+     * Ensures that when Offline Mode downloads a language pack on-demand, GeckoView registers &
+     * persists it in the Offline Language Packs catalog so it's saved for future offline use.
+     */
+    private fun persistOfflinePacksForPair(fromCode: String, toCode: String) {
+        val engine = engineRef ?: return
+        val candidates = listOf(fromCode, toCode)
+            .map { it.trim() }
+            .filter { it.isNotBlank() && !it.equals("auto", ignoreCase = true) && !it.equals("en", ignoreCase = true) }
+            .distinct()
+
+        for (code in candidates) {
+            if (!isModelDownloaded(code)) {
+                mainHandler.post {
+                    try {
+                        engine.manageTranslationsLanguageModel(
+                            options = ModelManagementOptions(
+                                languageToManage = code,
+                                operation = ModelOperation.DOWNLOAD,
+                                operationLevel = OperationLevel.LANGUAGE,
+                            ),
+                            onSuccess = { fetchLanguageModels(engine) },
+                            onError = { fetchLanguageModels(engine) }
+                        )
+                    } catch (_: Exception) {
+                        fetchLanguageModels(engine)
+                    }
+                }
+            }
+        }
+        mainHandler.postDelayed({ fetchLanguageModels(engine) }, 800L)
     }
 
     fun isModelDownloaded(langCode: String): Boolean {
@@ -624,8 +819,15 @@ object UhTranslationManager {
     }
 
     fun fetchPairDownloadSize(fromLang: String, toLang: String) {
+        if (!_state.value.useOfflineEngine) {
+            _state.update { it.copy(pairDownloadSizeBytes = null) }
+            return
+        }
         val engine = engineRef ?: return
-        val resolvedFrom = resolveSupportedFromCode(fromLang) ?: fromLang
+        val effectiveFrom = if (fromLang.equals("auto", ignoreCase = true)) {
+            _state.value.detectedDocLang ?: return
+        } else fromLang
+        val resolvedFrom = resolveSupportedFromCode(effectiveFrom) ?: effectiveFrom
         val resolvedTo = resolveSupportedToCode(toLang) ?: toLang
         if (resolvedFrom.isBlank() || resolvedTo.isBlank() ||
             baseLang(resolvedFrom).equals(baseLang(resolvedTo), ignoreCase = true)
@@ -647,42 +849,196 @@ object UhTranslationManager {
         }
     }
 
-    fun setPreferredTargetLanguage(langCode: String) {
-        val clean = langCode.trim()
-        if (clean.isBlank()) return
-        appContext?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            ?.edit()?.putString(KEY_PREFERRED_TARGET_LANG, clean)?.apply()
-        _state.update { it.copy(preferredTargetLang = clean) }
-    }
-
-    fun translateActiveTab(fromLang: String, toLang: String) {
+    fun translateActiveTab(fromLang: String? = null, toLang: String? = null) {
+        val cur = _state.value
         val tab = storeRef?.state?.selectedTab
         val session = tab?.engineState?.engineSession
-        if (session == null) {
+        if (tab == null || session == null) {
             _state.update {
                 it.copy(
                     errorMessage = "No active webpage to translate.",
                     pillPhase = TranslatePillPhase.ERROR,
-                    pillMessage = "No active webpage to translate",
-                    pillCanRestore = false,
-                    pillCanClearImages = false,
-                    pillCanRetry = false,
+                    pillMessage = "No active webpage",
                 )
             }
-            schedulePillAutoHide(4000L)
+            schedulePillAutoHide(3500L)
             return
         }
 
-        val cleanToRaw = toLang.trim().ifBlank { _state.value.preferredTargetLang.ifBlank { "en" } }
-        val cleanTo = resolveSupportedToCode(cleanToRaw) ?: cleanToRaw
+        val resolvedTo = (toLang ?: cur.preferredTargetLang).trim().ifBlank { "en" }
+        val resolvedFrom = (fromLang ?: cur.effectiveFromCode()).trim().ifBlank { "auto" }
 
-        val rawFrom = fromLang.trim()
-        val detected = tab.translationsState.translationEngineState?.detectedLanguages?.documentLangTag
-            ?.trim()?.ifBlank { null }
-        val cleanFromRaw = if (rawFrom.isBlank() || rawFrom.equals("auto", ignoreCase = true)) {
+        if (!resolvedFrom.equals("auto", ignoreCase = true) &&
+            baseLang(resolvedFrom).equals(baseLang(resolvedTo), ignoreCase = true)
+        ) {
+            _state.update { it.copy(errorMessage = "Source and target languages are the same.") }
+            return
+        }
+
+        lastRequestedFrom = resolvedFrom
+        lastRequestedTo = resolvedTo
+        setPreferredTargetLanguage(resolvedTo)
+        cancelPillAutoHide()
+
+        if (!cur.useOfflineEngine) {
+            // Fast Online Google Translate mode!
+            translateActiveTabOnline(tab.id, tab.content.url, resolvedFrom, resolvedTo)
+        } else {
+            // Private Offline GeckoView engine mode
+            translateActiveTabOffline(tab.id, session, tab.translationsState, resolvedFrom, resolvedTo)
+        }
+    }
+
+    private fun translateActiveTabOnline(tabId: String, tabUrl: String, fromLang: String, toLang: String) {
+        // Restore any prior GeckoView offline translation first so DOM stays clean
+        val tab = storeRef?.state?.selectedTab
+        if (tab != null && tab.translationsState.isTranslated) {
+            mainHandler.post {
+                runCatching { tab.engineState.engineSession?.requestTranslationRestore() }
+            }
+        }
+
+        pendingTabId = null
+        pendingOnlineTabId = tabId
+        pendingOnlineTabUrl = tabUrl
+        translateStartedAtMs = System.currentTimeMillis()
+        val toLabel = languageDisplayName(toLang)
+
+        _state.update {
+            it.copy(
+                isBusy = true,
+                barVisible = true,
+                statusMessage = "Translating to $toLabel…",
+                errorMessage = null,
+                pillPhase = TranslatePillPhase.TRANSLATING,
+                pillMessage = "Translating to $toLabel…",
+                pillProgress = 0f,
+                pillTargetLang = languageShortLabel(toLang),
+                pillCanRestore = false,
+                pillCanClearImages = false,
+                pillCanRetry = false,
+                offerTabId = null,
+                offerFromLang = null,
+                offerToLang = null,
+                offerHost = null,
+            )
+        }
+        scheduleTranslateWatchdog(22000L)
+
+        val dispatched = GeckoWebExtensionBridge.triggerOnlinePageTranslation(fromLang, toLang)
+        if (!dispatched) {
+            pendingOnlineTabId = null
+            cancelTranslateWatchdog()
+            _state.update {
+                it.copy(
+                    isBusy = false,
+                    errorMessage = "Translator not ready yet — try again.",
+                    pillPhase = TranslatePillPhase.ERROR,
+                    pillMessage = "Translator not ready",
+                    pillCanRetry = true,
+                )
+            }
+            schedulePillAutoHide(4500L)
+        }
+    }
+
+    fun onOnlinePageTranslationDone(
+        ok: Boolean,
+        restored: Boolean,
+        @Suppress("UNUSED_PARAMETER") translatedCount: Int,
+        detectedLang: String?,
+        toLang: String?,
+        error: String?
+    ) {
+        cancelTranslateWatchdog()
+        val tabId = pendingOnlineTabId ?: storeRef?.state?.selectedTab?.id
+        val tabUrl = pendingOnlineTabUrl ?: storeRef?.state?.selectedTab?.content?.url
+        pendingOnlineTabId = null
+        pendingOnlineTabUrl = null
+
+        if (restored) {
+            _state.update {
+                it.copy(
+                    isBusy = false,
+                    onlineTranslatedTabId = null,
+                    onlineTranslatedUrl = null,
+                    onlineTranslatedToLang = null,
+                    statusMessage = "Showing original page",
+                    errorMessage = null,
+                    pillPhase = TranslatePillPhase.COMPLETED,
+                    pillMessage = "",
+                )
+            }
+            ReaderModeManager.onPageTranslationChanged(null)
+            return
+        }
+
+        if (!ok) {
+            val msg = error?.ifBlank { null } ?: "Online translation failed — try Offline Mode"
+            _state.update {
+                it.copy(
+                    isBusy = false,
+                    statusMessage = null,
+                    errorMessage = msg,
+                    pillPhase = TranslatePillPhase.ERROR,
+                    pillMessage = msg,
+                    pillCanRetry = true,
+                )
+            }
+            schedulePillAutoHide(5500L)
+            return
+        }
+
+        val elapsed = (System.currentTimeMillis() - translateStartedAtMs).coerceAtLeast(80L)
+        val finalTo = toLang?.ifBlank { null } ?: lastRequestedTo
+        val normalizedDetected = detectedLang?.trim()?.ifBlank { null }
+        val msg = "Translated to ${languageShortLabel(finalTo)} · ${formatDurationShort(elapsed)}"
+
+        _state.update {
+            it.copy(
+                isBusy = false,
+                barVisible = true,
+                onlineTranslatedTabId = tabId,
+                onlineTranslatedUrl = tabUrl,
+                onlineTranslatedToLang = finalTo,
+                detectedDocLang = normalizedDetected ?: it.detectedDocLang,
+                statusMessage = msg,
+                errorMessage = null,
+                lastTranslateMs = elapsed,
+                pillPhase = TranslatePillPhase.COMPLETED,
+                pillMessage = msg,
+                pillProgress = 1f,
+                pillTargetLang = languageShortLabel(finalTo),
+                pillCanRestore = true,
+                pillCanRetry = false,
+            )
+        }
+        schedulePillAutoHide(2600L)
+        ReaderModeManager.onPageTranslationChanged(finalTo)
+    }
+
+    private fun translateActiveTabOffline(
+        tabId: String,
+        session: mozilla.components.concept.engine.EngineSession,
+        tabTranslationsState: TranslationsState,
+        fromLang: String,
+        toLang: String
+    ) {
+        // Clear any online translation first
+        if (_state.value.onlineTranslatedTabId == tabId) {
+            GeckoWebExtensionBridge.restoreOnlinePageTranslation()
+            _state.update {
+                it.copy(onlineTranslatedTabId = null, onlineTranslatedUrl = null, onlineTranslatedToLang = null)
+            }
+        }
+
+        val cleanTo = resolveSupportedToCode(toLang) ?: toLang
+        val detected = tabTranslationsState.translationEngineState?.detectedLanguages?.documentLangTag
+            ?.trim()?.ifBlank { null } ?: _state.value.detectedDocLang
+        val cleanFromRaw = if (fromLang.isBlank() || fromLang.equals("auto", ignoreCase = true)) {
             detected ?: _state.value.fromLanguages.firstOrNull { !baseLang(it.code).equals(baseLang(cleanTo), ignoreCase = true) }?.code ?: "es"
         } else {
-            rawFrom
+            fromLang
         }
         val cleanFrom = resolveSupportedFromCode(cleanFromRaw) ?: cleanFromRaw
 
@@ -693,22 +1049,21 @@ object UhTranslationManager {
 
         lastRequestedFrom = cleanFrom
         lastRequestedTo = cleanTo
-        setPreferredTargetLanguage(cleanTo)
-        cancelPillAutoHide()
 
         val needsDownload = !isModelDownloaded(cleanFrom) || !isModelDownloaded(cleanTo)
         val phase = if (needsDownload) TranslatePillPhase.DOWNLOADING_MODEL else TranslatePillPhase.TRANSLATING
         val statusMsg = if (needsDownload) {
-            "Preparing ${languageDisplayName(cleanFrom)} pack…"
+            "Preparing ${languageDisplayName(cleanFrom)} offline pack…"
         } else {
-            "Translating to ${languageShortLabel(cleanTo)}…"
+            "Translating offline to ${languageShortLabel(cleanTo)}…"
         }
 
-        pendingTabId = tab.id
+        pendingTabId = tabId
         translateStartedAtMs = System.currentTimeMillis()
         _state.update {
             it.copy(
                 isBusy = true,
+                barVisible = true,
                 statusMessage = statusMsg,
                 errorMessage = null,
                 pillPhase = phase,
@@ -737,7 +1092,7 @@ object UhTranslationManager {
                 pendingTabId = null
                 cancelTranslateWatchdog()
                 UHLog.w("translate", "requestTranslate failed: ${e.message}")
-                val errMsg = e.message ?: "On-device translation failed."
+                val errMsg = e.message ?: "Offline translation failed."
                 _state.update {
                     it.copy(
                         isBusy = false,
@@ -762,22 +1117,32 @@ object UhTranslationManager {
 
         cancelTranslateWatchdog()
         pendingTabId = null
+        pendingOnlineTabId = null
+        pendingOnlineTabUrl = null
+
+        val wasOnline = _state.value.onlineTranslatedTabId != null
+        if (wasOnline) {
+            GeckoWebExtensionBridge.restoreOnlinePageTranslation()
+        }
 
         _state.update {
             it.copy(
                 isBusy = false,
+                onlineTranslatedTabId = null,
+                onlineTranslatedUrl = null,
+                onlineTranslatedToLang = null,
                 lastTranslateMs = null,
-                statusMessage = "Restored original page",
+                statusMessage = "Showing original page",
                 errorMessage = null,
                 pillPhase = TranslatePillPhase.COMPLETED,
-                pillMessage = "Restored original page",
+                pillMessage = "",
                 pillProgress = 1f,
                 pillCanRestore = false,
                 pillCanClearImages = false,
                 pillCanRetry = false,
             )
         }
-        schedulePillAutoHide(2400L)
+        schedulePillAutoHide(1800L)
 
         if (session != null && tab.translationsState.isTranslated) {
             mainHandler.post {
@@ -787,21 +1152,25 @@ object UhTranslationManager {
                     UHLog.w("translate", "requestTranslationRestore failed: ${e.message}")
                 }
             }
-            ReaderModeManager.onPageTranslationChanged(null)
         }
+        ReaderModeManager.onPageTranslationChanged(null)
     }
 
-    fun translateVisibleImages(fromLang: String, toLang: String) {
-        val cleanTo = toLang.trim().ifBlank { _state.value.preferredTargetLang.ifBlank { "en" } }
-        val cleanFrom = fromLang.trim().ifBlank { "auto" }
+    fun translateVisibleImages(fromLang: String? = null, toLang: String? = null) {
+        val cur = _state.value
+        val cleanTo = (toLang ?: cur.preferredTargetLang).trim().ifBlank { "en" }
+        val cleanFrom = (fromLang ?: cur.effectiveFromCode()).trim().ifBlank { "auto" }
+        val preferOnline = !cur.useOfflineEngine
+
         cancelPillAutoHide()
         _state.update {
             it.copy(
                 isTranslatingImages = true,
-                statusMessage = "Scanning images (OCR)…",
+                barVisible = true,
+                statusMessage = "Scanning visible images…",
                 errorMessage = null,
                 pillPhase = TranslatePillPhase.TRANSLATING_IMAGES,
-                pillMessage = "Scanning images (OCR)…",
+                pillMessage = "Scanning visible images…",
                 pillProgress = 0f,
                 pillCanRestore = false,
                 pillCanClearImages = false,
@@ -812,7 +1181,7 @@ object UhTranslationManager {
                 offerHost = null,
             )
         }
-        val dispatched = GeckoWebExtensionBridge.triggerImageTranslation(cleanFrom, cleanTo)
+        val dispatched = GeckoWebExtensionBridge.triggerImageTranslation(cleanFrom, cleanTo, preferOnline)
         if (!dispatched) {
             _state.update {
                 it.copy(
@@ -826,10 +1195,10 @@ object UhTranslationManager {
                     pillCanRetry = false,
                 )
             }
-            schedulePillAutoHide(4500L)
+            schedulePillAutoHide(4000L)
             return
         }
-        scheduleImageWatchdog(30000L)
+        scheduleImageWatchdog(20000L)
     }
 
     fun clearImageTranslations() {
@@ -943,10 +1312,10 @@ object UhTranslationManager {
             onSuccess = { support ->
                 val fromList = support.fromLanguages.orEmpty()
                     .sortedBy { it.localizedDisplayName ?: it.code }
-                    .ifEmpty { FALLBACK_LANGUAGES }
+                    .ifEmpty { ONLINE_LANGUAGES }
                 val toList = support.toLanguages.orEmpty()
                     .sortedBy { it.localizedDisplayName ?: it.code }
-                    .ifEmpty { FALLBACK_LANGUAGES }
+                    .ifEmpty { ONLINE_LANGUAGES }
                 _state.update {
                     it.copy(
                         isLoadingLanguages = false,
@@ -960,8 +1329,8 @@ object UhTranslationManager {
                 _state.update {
                     it.copy(
                         isLoadingLanguages = false,
-                        fromLanguages = it.fromLanguages.ifEmpty { FALLBACK_LANGUAGES },
-                        toLanguages = it.toLanguages.ifEmpty { FALLBACK_LANGUAGES },
+                        fromLanguages = it.fromLanguages.ifEmpty { ONLINE_LANGUAGES },
+                        toLanguages = it.toLanguages.ifEmpty { ONLINE_LANGUAGES },
                     )
                 }
             }
@@ -1047,14 +1416,15 @@ object UhTranslationManager {
         return clean.substringBefore("-").uppercase(Locale.ROOT)
     }
 
-    private fun languageDisplayName(langCode: String): String {
-        return _state.value.fromLanguages.firstOrNull { it.code.equals(langCode, ignoreCase = true) }
-            ?.localizedDisplayName
-            ?: _state.value.toLanguages.firstOrNull { it.code.equals(langCode, ignoreCase = true) }
-                ?.localizedDisplayName
-            ?: FALLBACK_LANGUAGES.firstOrNull { it.code.equals(langCode, ignoreCase = true) }
-                ?.localizedDisplayName
-            ?: langCode.uppercase(Locale.ROOT)
+    fun languageDisplayName(langCode: String): String {
+        if (langCode.equals("auto", ignoreCase = true)) return "Auto-detect"
+        return ONLINE_LANGUAGES.firstOrNull { it.code.equals(langCode, ignoreCase = true) }?.localizedDisplayName
+            ?: _state.value.fromLanguages.firstOrNull { it.code.equals(langCode, ignoreCase = true) }?.localizedDisplayName
+            ?: _state.value.toLanguages.firstOrNull { it.code.equals(langCode, ignoreCase = true) }?.localizedDisplayName
+            ?: ONLINE_LANGUAGES.firstOrNull { baseLang(it.code) == baseLang(langCode) }?.localizedDisplayName
+            ?: Locale.forLanguageTag(langCode).getDisplayLanguage(Locale.ENGLISH)
+                .replaceFirstChar { it.uppercase() }
+                .ifBlank { langCode.uppercase(Locale.ROOT) }
     }
 
     private fun formatDurationShort(durationMs: Long): String {

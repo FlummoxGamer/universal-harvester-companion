@@ -85,6 +85,7 @@ class AppearanceActivity : AppCompatActivity() {
                         UhSettingsDivider()
                         ThemeOptionRow(
                             title = "Dark",
+                            subtitle = "Dark appearance across the app and websites",
                             selected = themeMode == ThemePrefs.MODE_DARK,
                             onClick = {
                                 ThemePrefs.setMode(context, ThemePrefs.MODE_DARK)
@@ -92,24 +93,15 @@ class AppearanceActivity : AppCompatActivity() {
                             },
                         )
 
-                        // Only show AMOLED Dark Mode & Force Dark Mode on Websites when Dark Mode is active
+                        // Only show AMOLED Dark Mode when Dark Mode is active
                         AnimatedVisibility(visible = isDarkActive) {
                             Column {
                                 UhSettingsDivider()
                                 SettingsSwitchRow(
                                     title = "AMOLED Dark Mode",
-                                    subtitle = "True pitch-black #000000 surfaces for the entire app and websites",
+                                    subtitle = "True pitch-black #000000 surfaces for the app and websites",
                                     key = SettingsPrefs.K_ENHANCE_DARK,
                                     default = false,
-                                    insideCard = true,
-                                    onChanged = { UhPrivacyController.applyAllToEngine(context) },
-                                )
-                                UhSettingsDivider()
-                                SettingsSwitchRow(
-                                    title = "Force Dark Mode on Websites",
-                                    subtitle = "Dark Reader-grade forced dark mode on light websites while preserving images and native dark pages",
-                                    key = SettingsPrefs.K_FORCE_DARK_SITES,
-                                    default = true,
                                     insideCard = true,
                                     onChanged = { UhPrivacyController.applyAllToEngine(context) },
                                 )

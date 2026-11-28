@@ -6,7 +6,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,6 +53,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -180,36 +182,31 @@ fun UHAddressBar(
     val hasPageUrl = !isWallpaperActive && url.isNotBlank() && url != "about:blank"
 
     val pillBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)
-    val swipeThresholdPx = with(LocalDensity.current) { 28.dp.toPx() }
+    val swipeThresholdPx = with(LocalDensity.current) { 22.dp.toPx() }
     val swipeFullscreenModifier = if (swipeFullscreenEnabled && !isEditing && hasPageUrl) {
         Modifier.pointerInput(isBarBottom, swipeFullscreenEnabled, hasPageUrl) {
-            var accumDy = 0f
-            var triggered = false
-            detectVerticalDragGestures(
-                onDragStart = {
-                    accumDy = 0f
-                    triggered = false
-                },
-                onDragEnd = {
-                    accumDy = 0f
-                    triggered = false
-                },
-                onDragCancel = {
-                    accumDy = 0f
-                    triggered = false
-                },
-                onVerticalDrag = { _, dragAmount ->
-                    if (!triggered) {
-                        accumDy += dragAmount
-                        val shouldEnter = if (isBarBottom) accumDy > swipeThresholdPx else accumDy < -swipeThresholdPx
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                val startPos = down.position
+                var triggered = false
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                    if (!change.pressed) break
+                    val dx = change.position.x - startPos.x
+                    val dy = change.position.y - startPos.y
+                    if (!triggered && kotlin.math.abs(dy) > kotlin.math.abs(dx) * 1.15f) {
+                        val shouldEnter = if (isBarBottom) dy > swipeThresholdPx else (dy > swipeThresholdPx || dy < -swipeThresholdPx)
                         if (shouldEnter) {
                             triggered = true
+                            change.consume()
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             onEnterImmersiveFullscreen()
+                            break
                         }
                     }
                 }
-            )
+            }
         }
     } else {
         Modifier

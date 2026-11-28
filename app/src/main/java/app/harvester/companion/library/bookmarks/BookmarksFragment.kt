@@ -338,9 +338,15 @@ fun BookmarksScreen(
 
                                     IconButton(
                                         onClick = {
+                                            val cleanUrl = app.harvester.companion.privacy.UhShieldEngine.cleanTrackingUrl(
+                                                rawUrl = url,
+                                                stripTrackers = true,
+                                                deAmp = true,
+                                            )
                                             val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                                            cm?.setPrimaryClip(ClipData.newPlainText("url", url))
-                                            Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
+                                            cm?.setPrimaryClip(ClipData.newPlainText("url", cleanUrl))
+                                            val msg = if (cleanUrl != url) "Clean link copied" else "Link copied"
+                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                         },
                                         modifier = Modifier.size(32.dp)
                                     ) {

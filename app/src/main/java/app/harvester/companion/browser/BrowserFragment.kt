@@ -274,9 +274,14 @@ class BrowserFragment : Fragment() {
             }
         }
 
-        // Keep root XML container synchronized with Light / Dark / AMOLED theme at all times
+        // Keep root XML container synchronized with Reader Mode theme or Light / Dark / AMOLED theme
         val syncRootBackground = {
-            val bg = app.harvester.companion.ThemePrefs.resolveBackgroundColorInt(context)
+            val readerSt = app.harvester.companion.browser.reader.ReaderModeManager.state.value
+            val bg = if (readerSt.isActive) {
+                readerSt.prefs.theme.bgColorInt
+            } else {
+                app.harvester.companion.ThemePrefs.resolveBackgroundColorInt(context)
+            }
             binding.root.setBackgroundColor(bg)
             binding.browserLayout.setBackgroundColor(bg)
         }
@@ -285,12 +290,8 @@ class BrowserFragment : Fragment() {
         setupLogging(components)
         ViewCompat.setOnApplyWindowInsetsListener(binding.browserLayout) { v, insets ->
             val inPip = viewModel.isInPipMode.value
-            val readerStateNow = app.harvester.companion.browser.reader.ReaderModeManager.state.value
-            val isReaderFs = readerStateNow.isActive && readerStateNow.prefs.isFullscreen
-            val isFullScreen = components.store.state.selectedTab?.content?.fullScreen == true ||
-                viewModel.isImmersiveFullscreen.value ||
-                isReaderFs
-            if (inPip || isFullScreen) {
+            val isHtml5VideoFullScreen = components.store.state.selectedTab?.content?.fullScreen == true
+            if (inPip || isHtml5VideoFullScreen) {
                 v.setPadding(0, 0, 0, 0)
                 return@setOnApplyWindowInsetsListener insets
             }
@@ -299,6 +300,13 @@ class BrowserFragment : Fragment() {
                     WindowInsetsCompat.Type.displayCutout() or
                     WindowInsetsCompat.Type.navigationBars()
             )
+            val readerStateNow = app.harvester.companion.browser.reader.ReaderModeManager.state.value
+            val isReaderFs = readerStateNow.isActive && readerStateNow.prefs.isFullscreen
+            if (viewModel.isImmersiveFullscreen.value || isReaderFs) {
+                // Keep webpage and reader content cleanly pushed below the always-visible status bar
+                v.setPadding(bars.left, bars.top, bars.right, 0)
+                return@setOnApplyWindowInsetsListener insets
+            }
             val density = v.resources.displayMetrics.density
             val isLandscape = v.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
             // Exact match with UHAddressBar barHeight (50dp landscape, 58dp portrait) + docked strips
@@ -381,6 +389,7 @@ class BrowserFragment : Fragment() {
                     app.harvester.companion.browser.reader.ReaderModeManager.state.collect { readerState ->
                         updateKeepScreenOn(readerState.isActive || readerState.ttsPlaying)
                         updateReaderBrightness(if (readerState.isActive) readerState.prefs.brightness else -1f)
+                        syncRootBackground()
                         binding.swipeRefresh.isEnabled = !viewModel.isInPipMode.value && !readerState.isActive
                         ViewCompat.requestApplyInsets(binding.browserLayout)
                     }
@@ -733,10 +742,11 @@ class BrowserFragment : Fragment() {
 
     private fun updateReaderBrightness(brightness: Float) {
         val window = activity?.window ?: return
-        val target = if (brightness < 0f) {
+        val computed = app.harvester.companion.browser.reader.ReaderModeManager.computeWindowBrightness(brightness)
+        val target = if (computed < 0f) {
             android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
         } else {
-            brightness.coerceIn(0.05f, 1.0f)
+            computed.coerceIn(0.01f, 1.0f)
         }
         val lp = window.attributes
         if (kotlin.math.abs(lp.screenBrightness - target) > 0.005f) {

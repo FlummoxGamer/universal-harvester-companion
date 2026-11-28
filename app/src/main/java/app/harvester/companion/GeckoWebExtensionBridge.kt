@@ -14,6 +14,8 @@ import android.provider.MediaStore
 import android.util.Base64
 import android.widget.Toast
 import app.harvester.companion.browser.translate.FastTranslatorClient
+import app.harvester.companion.browser.translate.OnlineTranslateClient
+import app.harvester.companion.browser.translate.UhTranslationManager
 import app.harvester.companion.components.Components
 import app.harvester.companion.core.network.UhHttpClient
 import app.harvester.companion.media.UhMediaController
@@ -161,13 +163,14 @@ object GeckoWebExtensionBridge {
         }
     }
 
-    fun triggerImageTranslation(fromLang: String, toLang: String): Boolean {
+    fun triggerImageTranslation(fromLang: String, toLang: String, preferOnline: Boolean = true): Boolean {
         val port = activeBridgePort ?: return false
         return try {
             port.postMessage(JSONObject().apply {
                 put("action", "TRANSLATE_IMAGES")
                 put("fromLang", fromLang.ifBlank { "auto" })
                 put("toLang", toLang.ifBlank { "en" })
+                put("preferOnline", preferOnline)
             })
             true
         } catch (e: Exception) {
@@ -184,6 +187,32 @@ object GeckoWebExtensionBridge {
             })
         } catch (e: Exception) {
             UHLog.w("ext", "Failed sending CLEAR_IMAGE_TRANSLATIONS: ${e.message}")
+        }
+    }
+
+    fun triggerOnlinePageTranslation(fromLang: String, toLang: String): Boolean {
+        val port = activeBridgePort ?: return false
+        return try {
+            port.postMessage(JSONObject().apply {
+                put("action", "ONLINE_TRANSLATE_PAGE")
+                put("fromLang", fromLang.ifBlank { "auto" })
+                put("toLang", toLang.ifBlank { "en" })
+            })
+            true
+        } catch (e: Exception) {
+            UHLog.w("translate_online", "Failed sending ONLINE_TRANSLATE_PAGE: ${e.message}")
+            false
+        }
+    }
+
+    fun restoreOnlinePageTranslation() {
+        val port = activeBridgePort ?: return
+        try {
+            port.postMessage(JSONObject().apply {
+                put("action", "RESTORE_ONLINE_TRANSLATION")
+            })
+        } catch (e: Exception) {
+            UHLog.w("translate_online", "Failed sending RESTORE_ONLINE_TRANSLATION: ${e.message}")
         }
     }
 
@@ -237,6 +266,20 @@ object GeckoWebExtensionBridge {
                     put("action", "READER_TTS_HIGHLIGHT")
                     put("index", index)
                     put("playing", playing)
+                })
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun sendReaderTtsWord(index: Int, charOffset: Int, charLength: Int) {
+        val port = activeBridgePort ?: return
+        mainHandler.post {
+            try {
+                port.postMessage(JSONObject().apply {
+                    put("action", "READER_TTS_WORD")
+                    put("index", index)
+                    put("charOffset", charOffset)
+                    put("charLength", charLength)
                 })
             } catch (_: Exception) {}
         }
@@ -562,6 +605,7 @@ object GeckoWebExtensionBridge {
                         try {
                             val fromLang = json.optString("fromLang", "auto")
                             val toLang = json.optString("toLang", "en")
+                            val preferOnline = json.optBoolean("preferOnline", true)
                             val pageUrl = json.optString("pageUrl", "").ifBlank { null }
                             val imagesArr = json.optJSONArray("images")
                             val items = mutableListOf<Triple<String, String?, String?>>()
@@ -591,6 +635,7 @@ object GeckoWebExtensionBridge {
                                                 pageUrl = pageUrl,
                                                 fromLang = fromLang,
                                                 toLang = toLang,
+                                                preferOnline = preferOnline,
                                             )
                                             id to blocks
                                         }
@@ -637,6 +682,64 @@ object GeckoWebExtensionBridge {
                         }
                     }
                     result
+                }
+
+                "ONLINE_TRANSLATE_BATCH" -> {
+                    val result = GeckoResult<Any>()
+                    scope.launch {
+                        try {
+                            val fromLang = json.optString("fromLang", "auto")
+                            val toLang = json.optString("toLang", "en")
+                            val textsArr = json.optJSONArray("texts")
+                            val inputs = ArrayList<String>(textsArr?.length() ?: 0)
+                            if (textsArr != null) {
+                                for (i in 0 until textsArr.length()) {
+                                    inputs.add(textsArr.optString(i, ""))
+                                }
+                            }
+                            val batch = OnlineTranslateClient.translateBatch(inputs, fromLang, toLang)
+                            val outArr = JSONArray()
+                            batch.translations.forEach { outArr.put(it) }
+                            val resp = JSONObject().apply {
+                                put("ok", batch.ok)
+                                put("translations", outArr)
+                                if (!batch.detectedSourceLang.isNullOrBlank()) {
+                                    put("detectedLang", batch.detectedSourceLang)
+                                }
+                                if (!batch.errorMessage.isNullOrBlank()) {
+                                    put("error", batch.errorMessage)
+                                }
+                            }
+                            mainHandler.post { result.complete(resp) }
+                        } catch (e: Exception) {
+                            val errResp = JSONObject().apply {
+                                put("ok", false)
+                                put("error", e.message ?: "Translation failed")
+                            }
+                            mainHandler.post { result.complete(errResp) }
+                        }
+                    }
+                    result
+                }
+
+                "ONLINE_TRANSLATE_DONE" -> {
+                    val ok = json.optBoolean("ok", false)
+                    val restored = json.optBoolean("restored", false)
+                    val translatedCount = json.optInt("translatedCount", 0)
+                    val detectedLang = json.optString("detectedLang", "").ifBlank { null }
+                    val toLang = json.optString("toLang", "").ifBlank { null }
+                    val error = json.optString("error", "").ifBlank { null }
+                    mainHandler.post {
+                        UhTranslationManager.onOnlinePageTranslationDone(
+                            ok = ok,
+                            restored = restored,
+                            translatedCount = translatedCount,
+                            detectedLang = detectedLang,
+                            toLang = toLang,
+                            error = error
+                        )
+                    }
+                    GeckoResult.fromValue(true)
                 }
 
                 "IMAGE_TRANSLATE_DONE" -> {
@@ -832,6 +935,15 @@ object GeckoWebExtensionBridge {
                 "READER_TTS_FROM_INDEX" -> {
                     app.harvester.companion.browser.reader.ReaderModeManager.playFromSentenceIndex(
                         json.optInt("index", 0)
+                    )
+                    GeckoResult.fromValue(true)
+                }
+
+                "READER_PROGRESS_UPDATE" -> {
+                    app.harvester.companion.browser.reader.ReaderModeManager.onReaderProgressUpdate(
+                        url = json.optString("url"),
+                        scrollRatio = json.optDouble("scrollRatio", 0.0).toFloat(),
+                        pageIndex = json.optInt("pageIndex", 0)
                     )
                     GeckoResult.fromValue(true)
                 }

@@ -115,59 +115,26 @@ object UhPrivacyController {
         applyAllToEngine(ctx)
     }
 
-    fun isDarkModeActive(ctx: Context): Boolean {
-        return when (ThemePrefs.getMode(ctx)) {
-            ThemePrefs.MODE_DARK -> true
-            ThemePrefs.MODE_LIGHT -> false
-            else -> (ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-                Configuration.UI_MODE_NIGHT_YES
-        }
-    }
+    fun isDarkModeActive(ctx: Context): Boolean = ThemePrefs.isDark(ctx)
 
     /**
-     * Force Web Dark Mode is ONLY active when the browser is in Dark Mode AND enabled.
+     * Website Dark Mode is unified directly with App Dark Mode.
      */
-    fun isForceDarkWebEffectivelyEnabled(ctx: Context): Boolean {
-        return isDarkModeActive(ctx) && SettingsPrefs.getBool(ctx, SettingsPrefs.K_FORCE_DARK_SITES, true)
-    }
+    fun isForceDarkWebEffectivelyEnabled(ctx: Context): Boolean = isDarkModeActive(ctx)
 
-    fun isSiteDarkBypassed(ctx: Context, urlOrHost: String): Boolean {
-        val host = UhShieldEngine.normalizeHost(urlOrHost)
-        if (host.isBlank()) return false
-        return host in SettingsPrefs.getStringSet(ctx, SettingsPrefs.K_DARK_BYPASS_HOSTS)
-    }
+    fun isSiteDarkBypassed(ctx: Context, urlOrHost: String): Boolean = false
 
-    fun toggleSiteDarkBypass(ctx: Context, urlOrHost: String): Boolean {
-        val host = UhShieldEngine.normalizeHost(urlOrHost)
-        if (host.isBlank()) return false
-        val current = SettingsPrefs.getStringSet(ctx, SettingsPrefs.K_DARK_BYPASS_HOSTS).toMutableSet()
-        val bypassed = if (host in current) {
-            current.remove(host)
-            false
-        } else {
-            current.add(host)
-            true
-        }
-        SettingsPrefs.setStringSet(ctx, SettingsPrefs.K_DARK_BYPASS_HOSTS, current)
-        _darkBypassHosts.value = current
-        pushRuntimeConfigToExtension()
-        return bypassed
-    }
+    fun toggleSiteDarkBypass(ctx: Context, urlOrHost: String): Boolean = false
 
     fun removeSiteDarkBypass(ctx: Context, host: String) {
         val clean = UhShieldEngine.normalizeHost(host)
         val next = SettingsPrefs.getStringSet(ctx, SettingsPrefs.K_DARK_BYPASS_HOSTS) - clean
         SettingsPrefs.setStringSet(ctx, SettingsPrefs.K_DARK_BYPASS_HOSTS, next)
         _darkBypassHosts.value = next
-        pushRuntimeConfigToExtension()
     }
 
     fun buildPreferredColorScheme(ctx: Context): PreferredColorScheme {
-        return when (ThemePrefs.getMode(ctx)) {
-            ThemePrefs.MODE_LIGHT -> PreferredColorScheme.Light
-            ThemePrefs.MODE_DARK -> PreferredColorScheme.Dark
-            else -> if (isDarkModeActive(ctx)) PreferredColorScheme.Dark else PreferredColorScheme.Light
-        }
+        return if (isDarkModeActive(ctx)) PreferredColorScheme.Dark else PreferredColorScheme.Light
     }
 
     fun buildHttpsOnlyMode(ctx: Context): Engine.HttpsOnlyMode {
@@ -397,6 +364,7 @@ object UhPrivacyController {
                 }
             }
         }
+        pushLightweightSettingsToExtension()
         pushRuntimeConfigToExtension()
     }
 

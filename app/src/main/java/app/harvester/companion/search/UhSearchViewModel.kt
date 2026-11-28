@@ -13,12 +13,12 @@ class UhSearchViewModel(application: Application) : AndroidViewModel(application
     val state: StateFlow<UhSearchState> = store.stateFlow
     private var fetchJob: Job? = null
 
-    fun onQueryChanged(query: String, isBarBottom: Boolean) {
+    fun onQueryChanged(query: String, isBarBottom: Boolean, showCurrentTab: Boolean = false) {
         store.dispatch(UhSearchAction.UpdateQuery(query))
         fetchJob?.cancel()
         fetchJob = viewModelScope.launch {
             try {
-                val result = UhSearchDataProvider.fetchData(getApplication(), query)
+                val result = UhSearchDataProvider.fetchData(getApplication(), query, includeCurrentTab = showCurrentTab)
                 store.dispatch(UhSearchAction.UpdateResults(result.items, result.clipboardUrl, result.currentTab))
             } catch (e: Exception) {
                 UHLog.throwable("search_error", "Failed updating search results", e)
@@ -26,7 +26,7 @@ class UhSearchViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun clearQuery(isBarBottom: Boolean) {
-        onQueryChanged("", isBarBottom)
+    fun clearQuery(isBarBottom: Boolean, showCurrentTab: Boolean = false) {
+        onQueryChanged("", isBarBottom, showCurrentTab)
     }
 }

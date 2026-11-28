@@ -14,6 +14,13 @@
                     overlayCount: 0,
                     pageUrl: ""
                 }).catch(() => {});
+            } else if (msg.action === "ONLINE_TRANSLATE_PAGE") {
+                api.runtime.sendNativeMessage("uhApp", {
+                    type: "ONLINE_TRANSLATE_DONE",
+                    ok: false,
+                    restored: false,
+                    error: "Cannot translate this page"
+                }).catch(() => {});
             }
         } catch (_e) {}
     }

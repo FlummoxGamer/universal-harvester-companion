@@ -61,9 +61,10 @@ internal object UhShieldPayloadBuilder {
             put("gpc", SettingsPrefs.getBool(ctx, SettingsPrefs.K_ADV_GPC, true))
             put("webrtcPolicy", SettingsPrefs.getInt(ctx, SettingsPrefs.K_ADV_WEBRTC_POLICY, 1))
             put("backgroundPlay", SettingsPrefs.getBool(ctx, SettingsPrefs.K_BACKGROUND_PLAY, true))
-            put("forceDarkWeb", UhPrivacyController.isForceDarkWebEffectivelyEnabled(ctx))
-            put("enhanceDark", ThemePrefs.isAmoled(ctx))
-            put("darkBypassHosts", darkBypassArr)
+            val darkActive = UhPrivacyController.isDarkModeActive(ctx)
+            put("forceDarkWeb", darkActive)
+            put("enhanceDark", darkActive && ThemePrefs.isAmoled(ctx))
+            put("darkBypassHosts", JSONArray())
         }
     }
 
@@ -298,9 +299,10 @@ internal object UhShieldPayloadBuilder {
             put("fpSessionSalt", fpSessionSalt)
             put("backgroundPlay", SettingsPrefs.getBool(ctx, SettingsPrefs.K_BACKGROUND_PLAY, true))
             put("webrtcPolicy", SettingsPrefs.getInt(ctx, SettingsPrefs.K_ADV_WEBRTC_POLICY, 1))
-            put("forceDarkWeb", UhPrivacyController.isForceDarkWebEffectivelyEnabled(ctx))
-            put("enhanceDark", ThemePrefs.isAmoled(ctx))
-            put("darkBypassed", UhPrivacyController.isSiteDarkBypassed(ctx, pageUrl))
+            val darkActive = UhPrivacyController.isDarkModeActive(ctx)
+            put("forceDarkWeb", darkActive)
+            put("enhanceDark", darkActive && ThemePrefs.isAmoled(ctx))
+            put("darkBypassed", false)
         }
     }
 }

@@ -139,6 +139,14 @@ fun SearchSettingsScreen(onBack: () -> Unit = {}) {
                 default = true,
                 insideCard = true
             )
+            UhSettingsDivider()
+            SettingsSwitchRow(
+                title = "Show Trending Searches",
+                subtitle = "Live regional trending topics from Google Trends",
+                key = SettingsPrefs.K_SEARCH_TRENDING,
+                default = true,
+                insideCard = true
+            )
         }
 
         SettingsCategory("Address Bar")

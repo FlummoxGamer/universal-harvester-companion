@@ -214,23 +214,6 @@ class SiteSettingsActivity : AppCompatActivity() {
                         }
                     }
 
-                    SettingsCategory("Dark Mode Bypassed Sites")
-                    UhSettingsCardGroup {
-                        val bypassedList = darkBypassHosts.sorted()
-                        if (bypassedList.isEmpty()) {
-                            EmptyExceptionRow("No bypassed sites.")
-                        } else {
-                            bypassedList.forEachIndexed { idx, host ->
-                                if (idx > 0) UhSettingsDivider()
-                                HostExceptionRow(
-                                    host = host,
-                                    subtitle = "Original site theme kept",
-                                    onRemove = { UhPrivacyController.removeSiteDarkBypass(context, host) },
-                                )
-                            }
-                        }
-                    }
-
                     if (httpExceptionHosts.isNotEmpty()) {
                         SettingsCategory("HTTPS-Only Exceptions")
                         UhSettingsCardGroup {

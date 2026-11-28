@@ -228,7 +228,12 @@ fun WallpaperGridTile(
                     }
                     LaunchedEffect(tile.url) {
                         if (cachedThumb == null) {
-                            cachedThumb = WallpaperMediaCache.getOrExtractMotionThumb(context, tile.url)
+                            var extracted = WallpaperMediaCache.getOrExtractMotionThumb(context, tile.url)
+                            if (extracted == null) {
+                                kotlinx.coroutines.delay(900L)
+                                extracted = WallpaperMediaCache.getOrExtractMotionThumb(context, tile.url)
+                            }
+                            cachedThumb = extracted
                         }
                     }
 
@@ -264,8 +269,11 @@ fun WallpaperGridTile(
                         }
                     }
                 } else {
-                    val displayUrl = remember(tile.url) {
-                        WallpaperCatalog.thumbnailUrl(tile.url)
+                    var useFallbackMirror by remember(tile.url) { mutableStateOf(false) }
+                    val fallbackUrl = remember(tile.url) { WallpaperCatalog.fallbackMirrorUrl(tile.url) }
+                    val displayUrl = remember(tile.url, useFallbackMirror) {
+                        val source = if (useFallbackMirror && fallbackUrl != null) fallbackUrl else tile.url
+                        WallpaperCatalog.thumbnailUrl(source)
                     }
                     val req = remember(displayUrl) {
                         ImageRequest.Builder(context)
@@ -278,6 +286,11 @@ fun WallpaperGridTile(
                         model = req,
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
+                        onError = {
+                            if (!useFallbackMirror && fallbackUrl != null) {
+                                useFallbackMirror = true
+                            }
+                        },
                         error = painterResource(id = R.drawable.fx_ic_appearance_24),
                         modifier = Modifier.fillMaxSize(),
                     )

@@ -47,29 +47,27 @@ data class TranslatedImageBlock(
 )
 
 /**
- * Best-in-slot 100% on-device Image OCR + Neural Translation engine:
- * - Multi-script Google ML Kit Vision v2 OCR (Latin, Japanese, Chinese, Korean, Devanagari)
- *   with pooled recognizers and automatic script fallback.
- * - On-device Google ML Kit Language Identification + Neural Translation (59 languages),
- *   zero scraping timeouts, zero API keys, bounded translator & string caches.
- * - Referer-aware downsampled image decoder + border pixel color sampling for natural overlays.
+ * Fast viewport Image OCR + Translation engine:
+ * - Smart script-routed ML Kit Vision v2 OCR (avoids blindly running 4 sequential recognizers per image).
+ * - Translates all OCR blocks per image in a SINGLE fast OnlineTranslateClient batch call (~250ms),
+ *   with automatic on-device ML Kit Translator fallback when offline or in Offline Mode.
+ * - Downsampled 1280px bitmap decode + perimeter color sampling for natural readable overlays.
  */
 object FastTranslatorClient {
 
-    private const val MAX_DECODE_DIM = 1600
-    private const val MAX_IMAGE_BYTES = 10 * 1024 * 1024
+    private const val MAX_DECODE_DIM = 1280
+    private const val MAX_IMAGE_BYTES = 8 * 1024 * 1024
     private const val MAX_CACHE_ENTRIES = 1500
-    private const val MAX_CACHED_TRANSLATORS = 10
+    private const val MAX_CACHED_TRANSLATORS = 8
 
     private val imageHttpClient: OkHttpClient by lazy {
         UhHttpClient.client.newBuilder()
-            .connectTimeout(8, TimeUnit.SECONDS)
-            .readTimeout(12, TimeUnit.SECONDS)
+            .connectTimeout(6, TimeUnit.SECONDS)
+            .readTimeout(9, TimeUnit.SECONDS)
             .followRedirects(true)
             .build()
     }
 
-    // Pooled ML Kit v2 multi-script recognizers (avoids per-image native init/teardown overhead)
     private val latinRecognizer: TextRecognizer by lazy {
         TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     }
@@ -90,7 +88,7 @@ object FastTranslatorClient {
     }
 
     private val translatorLock = Any()
-    private val translatorPool = object : LinkedHashMap<String, Translator>(16, 0.75f, true) {
+    private val translatorPool = object : LinkedHashMap<String, Translator>(12, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Translator>?): Boolean {
             if (size > MAX_CACHED_TRANSLATORS) {
                 try { eldest?.value?.close() } catch (_: Exception) {}
@@ -107,13 +105,8 @@ object FastTranslatorClient {
         }
     }
 
-    private fun getCached(key: String): String? = synchronized(cacheLock) {
-        translationCache[key]
-    }
-
-    private fun putCached(key: String, value: String) = synchronized(cacheLock) {
-        translationCache[key] = value
-    }
+    private fun getCached(key: String): String? = synchronized(cacheLock) { translationCache[key] }
+    private fun putCached(key: String, value: String) = synchronized(cacheLock) { translationCache[key] = value }
 
     private fun getOrCreateTranslator(srcMlKit: String, dstMlKit: String): Translator {
         val key = "$srcMlKit->$dstMlKit"
@@ -141,23 +134,53 @@ object FastTranslatorClient {
         pageUrl: String?,
         fromLang: String,
         toLang: String,
+        preferOnline: Boolean = true,
     ): List<TranslatedImageBlock> = withContext(Dispatchers.IO) {
         val bitmap = decodeImageBitmap(imageUrl, dataUrl, pageUrl) ?: return@withContext emptyList()
         try {
-            if (bitmap.width < 32 || bitmap.height < 32) return@withContext emptyList()
+            if (bitmap.width < 40 || bitmap.height < 28) return@withContext emptyList()
 
-            val recognized = recognizeMultiScript(bitmap, fromLang)
+            val recognized = recognizeFastScriptRouted(bitmap, fromLang)
             if (recognized.isEmpty()) return@withContext emptyList()
 
+            val imgW = bitmap.width.toFloat().coerceAtLeast(1f)
+            val imgH = bitmap.height.toFloat().coerceAtLeast(1f)
+
+            // Fast path: translate ALL OCR blocks in ONE batched online Google Translate call (~200-400ms)
+            if (preferOnline) {
+                val texts = recognized.map { it.text }
+                val batch = OnlineTranslateClient.translateBatch(texts, fromLang, toLang)
+                if (batch.ok && batch.translations.size == recognized.size) {
+                    val out = ArrayList<TranslatedImageBlock>(recognized.size)
+                    for (i in recognized.indices) {
+                        val blk = recognized[i]
+                        val tr = batch.translations[i].trim()
+                        if (tr.isBlank() || tr.equals(blk.text, ignoreCase = true)) continue
+                        val (bgCss, fgCss) = sampleBlockColors(bitmap, blk.box)
+                        out.add(
+                            TranslatedImageBlock(
+                                leftPct = (blk.box.left / imgW * 100f).coerceIn(0f, 95f),
+                                topPct = (blk.box.top / imgH * 100f).coerceIn(0f, 95f),
+                                widthPct = (blk.box.width() / imgW * 100f).coerceIn(5f, 98f),
+                                heightPct = (blk.box.height() / imgH * 100f).coerceIn(4f, 98f),
+                                originalText = blk.text,
+                                translatedText = tr,
+                                bgColor = bgCss,
+                                textColor = fgCss,
+                            )
+                        )
+                    }
+                    return@withContext out
+                }
+            }
+
+            // Offline fallback: on-device ML Kit Translator
             val targetMlKit = mapToMlKitLanguage(toLang) ?: TranslateLanguage.ENGLISH
             val explicitSrcMlKit = if (fromLang.isBlank() || fromLang.equals("auto", ignoreCase = true)) {
                 null
             } else {
                 mapToMlKitLanguage(fromLang)
             }
-
-            val imgW = bitmap.width.toFloat().coerceAtLeast(1f)
-            val imgH = bitmap.height.toFloat().coerceAtLeast(1f)
 
             val output = ArrayList<TranslatedImageBlock>(recognized.size)
             for (block in recognized) {
@@ -194,20 +217,21 @@ object FastTranslatorClient {
         }
     }
 
-    private suspend fun recognizeMultiScript(bitmap: Bitmap, fromLang: String): List<RecognizedBox> {
+    /**
+     * Smart script-routed OCR: runs the exact recognizer matching [fromLang] first,
+     * and in Auto mode runs Japanese (covers Japanese + CJK Hanzi + Latin in 1 pass!)
+     * before trying Korean/Devanagari ONLY when zero solid text was detected.
+     */
+    private suspend fun recognizeFastScriptRouted(bitmap: Bitmap, fromLang: String): List<RecognizedBox> {
         val norm = fromLang.trim().lowercase(Locale.ROOT)
         val orderedRecognizers: List<TextRecognizer> = when {
-            norm.startsWith("ja") -> listOf(japaneseRecognizer, latinRecognizer)
-            norm.startsWith("zh") -> listOf(chineseRecognizer, latinRecognizer)
-            norm.startsWith("ko") -> listOf(koreanRecognizer, latinRecognizer)
+            norm.startsWith("ja") -> listOf(japaneseRecognizer)
+            norm.startsWith("zh") -> listOf(chineseRecognizer)
+            norm.startsWith("ko") -> listOf(koreanRecognizer)
             norm.startsWith("hi") || norm.startsWith("mr") || norm.startsWith("ne") || norm.startsWith("sa") ->
-                listOf(devanagariRecognizer, latinRecognizer)
-            norm.isNotBlank() && norm != "auto" -> listOf(latinRecognizer, japaneseRecognizer)
-            else -> {
-                // Auto mode: Japanese recognizer reads Japanese + CJK Hanzi + Latin simultaneously;
-                // fallback to Chinese, Korean, Devanagari if nothing meaningful is detected.
-                listOf(japaneseRecognizer, chineseRecognizer, koreanRecognizer, devanagariRecognizer)
-            }
+                listOf(devanagariRecognizer)
+            norm.isNotBlank() && norm != "auto" -> listOf(latinRecognizer)
+            else -> listOf(japaneseRecognizer, koreanRecognizer, devanagariRecognizer)
         }
 
         var bestBlocks: List<RecognizedBox> = emptyList()
@@ -219,8 +243,8 @@ object FastTranslatorClient {
                 bestScore = score
                 bestBlocks = found
             }
-            // Stop early as soon as we have solid readable text blocks
-            if (bestScore >= 12) break
+            // Stop immediately as soon as readable text is found (usually 1 pass!)
+            if (bestScore >= 6) break
         }
         return bestBlocks
     }
@@ -270,11 +294,7 @@ object FastTranslatorClient {
             suspendCancellableCoroutine { cont ->
                 languageIdentifier.identifyLanguage(text)
                     .addOnSuccessListener { tag ->
-                        val mapped = if (tag.isNullOrBlank() || tag == "und") {
-                            null
-                        } else {
-                            mapToMlKitLanguage(tag)
-                        }
+                        val mapped = if (tag.isNullOrBlank() || tag == "und") null else mapToMlKitLanguage(tag)
                         if (cont.isActive) cont.resume(mapped)
                     }
                     .addOnFailureListener {
@@ -356,10 +376,6 @@ object FastTranslatorClient {
         }
     }
 
-    /**
-     * Samples pixels right around the perimeter of [box] to render natural,
-     * contrast-adaptive overlays that blend cleanly into comics, posters, and graphics.
-     */
     private fun sampleBlockColors(bitmap: Bitmap, box: Rect): Pair<String, String> {
         return try {
             val w = bitmap.width

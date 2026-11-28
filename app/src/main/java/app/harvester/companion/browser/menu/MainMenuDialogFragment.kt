@@ -890,14 +890,15 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
 
     @Composable
     private fun SettingsPillFooter(onClick: () -> Unit) {
-        val pillShape = RoundedCornerShape(18.dp)
+        val pillShape = RoundedCornerShape(24.dp)
         Surface(
             shape = pillShape,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
-            tonalElevation = 1.dp,
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 2.dp,
+            shadowElevation = 2.dp,
             border = androidx.compose.foundation.BorderStroke(
                 width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.36f)
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
             ),
             modifier = Modifier
                 .fillMaxWidth()
@@ -913,7 +914,7 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
             ) {
                 Box(
                     modifier = Modifier
-                        .size(30.dp)
+                        .size(32.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
                     contentAlignment = Alignment.Center
@@ -922,16 +923,22 @@ class MainMenuDialogFragment : BottomSheetDialogFragment() {
                         painter = painterResource(id = R.drawable.fx_ic_settings_24),
                         contentDescription = "Settings",
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(17.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = "Settings",
                     color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 14.5.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_forward),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
                 )
             }
         }

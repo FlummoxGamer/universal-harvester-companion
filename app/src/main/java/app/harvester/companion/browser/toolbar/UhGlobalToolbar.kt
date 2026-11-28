@@ -14,6 +14,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +23,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -60,11 +63,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -101,6 +108,8 @@ import app.harvester.companion.browser.tabs.TabGroupStore
 import app.harvester.companion.browser.tabs.TabHistoryStore
 import app.harvester.companion.browser.tabs.TabMetaStore
 import app.harvester.companion.browser.tabs.TabPreviewCache
+import app.harvester.companion.browser.translate.BraveTranslateBar
+import app.harvester.companion.browser.translate.TranslateCornerOfferButton
 import app.harvester.companion.browser.translate.TranslatePillPhase
 import app.harvester.companion.browser.translate.TranslateSheet
 import app.harvester.companion.browser.translate.UhTranslationManager
@@ -113,6 +122,7 @@ import app.harvester.companion.settings.trustpanel.TrustPanelFragment
 import mozilla.components.browser.state.action.TabListAction
 import mozilla.components.browser.state.selector.selectedTab
 import java.net.URI
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -186,9 +196,9 @@ fun UhGlobalToolbar(
         )
     }
 
-    LaunchedEffect(isEditing, searchEngine.id) {
+    LaunchedEffect(isEditing, searchEngine.id, isBrowser) {
         if (isEditing) {
-            searchViewModel.onQueryChanged(editText, isBarBottom)
+            searchViewModel.onQueryChanged(editText, isBarBottom, showCurrentTab = isBrowser)
         }
     }
 
@@ -361,7 +371,7 @@ fun UhGlobalToolbar(
 
     val onFillUrl: (String) -> Unit = { url ->
         viewModel.onTextChanged(url)
-        searchViewModel.onQueryChanged(url, isBarBottom)
+        searchViewModel.onQueryChanged(url, isBarBottom, showCurrentTab = isBrowser)
     }
 
     val onReloadStop: () -> Unit = {
@@ -533,13 +543,13 @@ fun UhGlobalToolbar(
                         isCaptureActive = isCaptureActive,
                         onEditTextChanged = {
                             viewModel.onTextChanged(it)
-                            searchViewModel.onQueryChanged(it, isBarBottom)
+                            searchViewModel.onQueryChanged(it, isBarBottom, showCurrentTab = isBrowser)
                         },
                         onSubmit = onSearchSubmit,
                         onEditStart = {},
                         onClear = {
                             viewModel.onTextChanged("")
-                            searchViewModel.clearQuery(isBarBottom)
+                            searchViewModel.clearQuery(isBarBottom, showCurrentTab = isBrowser)
                         },
                         onSearchEngineClick = { showSearchEnginePicker = true },
                         onLockClick = openTrustPanel,
@@ -559,7 +569,22 @@ fun UhGlobalToolbar(
                 showLandscapeStrip -> Modifier
                 else -> Modifier.statusBarsPadding()
             }
-            if (showLandscapeStrip && isBarBottom) {
+            val isPageTranslated = translateState.isCurrentTabTranslated(
+                tabId = selectedTab?.id,
+                tabUrl = selectedTab?.content?.url,
+                geckoTranslated = selectedTab?.translationsState?.isTranslated == true
+            )
+            val isTabTranslateBusy = selectedTab?.translationsState?.isExpectedTranslate == true ||
+                selectedTab?.translationsState?.isExpectedRestore == true
+            val hasImageOverlays = translateState.imageOverlayCount > 0 &&
+                translateState.imageOverlayTabId == selectedTab?.id
+            val statusBarBackingColor = if (readerState.isActive) {
+                Color(readerState.prefs.theme.bgColorInt)
+            } else {
+                MaterialTheme.colorScheme.background
+            }
+
+            if (showLandscapeStrip && isBarBottom && !readerState.isActive) {
                 LandscapeTopTabStrip(
                     tabs = browserState.tabs,
                     groups = allGroups,
@@ -572,13 +597,17 @@ fun UhGlobalToolbar(
                     onNewTab = { openNewModeTab(isPrivateMode) },
                     modifier = Modifier.align(Alignment.TopCenter)
                 )
-            } else if (isBrowser && isBarBottom && !isAnyBrowserFullscreen) {
-                // Paint continuous status bar backing matching Light / Dark / AMOLED theme
+            } else if (
+                isBrowser &&
+                selectedTab?.content?.fullScreen != true &&
+                (isBarBottom || isImmersiveFullscreen || readerState.isActive)
+            ) {
+                // Paint continuous status bar backing matching active Reader Mode theme or Light / Dark / AMOLED theme
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.TopCenter)
-                        .background(MaterialTheme.colorScheme.background)
+                        .background(statusBarBackingColor)
                         .statusBarsPadding()
                 )
             }
@@ -596,7 +625,7 @@ fun UhGlobalToolbar(
                         },
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    if (showLandscapeStrip && !isBarBottom) {
+                    if (showLandscapeStrip && !isBarBottom && !readerState.isActive) {
                         LandscapeTopTabStrip(
                             tabs = browserState.tabs,
                             groups = allGroups,
@@ -610,14 +639,26 @@ fun UhGlobalToolbar(
                         )
                     }
                     if (isBrowser && isBarBottom && !showFindInPage && !showZoomBar) {
-                        TranslateStatusPill(
-                            state = translateState,
-                            fromBottom = true,
-                            onAcceptOffer = { UhTranslationManager.acceptTranslateOffer() },
-                            onRestoreOriginal = { UhTranslationManager.restoreActiveTab() },
-                            onClearImageOverlays = { UhTranslationManager.clearImageTranslations() },
-                            onRetry = { UhTranslationManager.retryLastTranslation() },
-                            onDismiss = { UhTranslationManager.dismissPill() },
+                        BraveTranslateBar(
+                            mgrState = translateState,
+                            isPageTranslated = isPageTranslated,
+                            isTabBusy = isTabTranslateBusy,
+                            hasImageOverlays = hasImageOverlays,
+                            onSelectOriginalTab = {
+                                if (isPageTranslated) UhTranslationManager.restoreActiveTab()
+                            },
+                            onSelectTargetTab = {
+                                if (!isPageTranslated) UhTranslationManager.translateActiveTab()
+                            },
+                            onOpenLanguageSheet = { viewModel.openTranslateSheet() },
+                            onTranslateImages = {
+                                if (hasImageOverlays) {
+                                    UhTranslationManager.clearImageTranslations()
+                                } else {
+                                    UhTranslationManager.translateVisibleImages()
+                                }
+                            },
+                            onDismiss = { UhTranslationManager.hideTranslateBar() },
                         )
                     }
                     if (isBrowser && showFindInPage && isBarBottom) {
@@ -688,7 +729,7 @@ fun UhGlobalToolbar(
                         onSubmit = onSearchSubmit,
                         onEditStart = {
                             viewModel.enterEditMode("")
-                            searchViewModel.onQueryChanged("", isBarBottom)
+                            searchViewModel.onQueryChanged("", isBarBottom, showCurrentTab = isBrowser)
                         },
                         onClear = {},
                         onSearchEngineClick = { showSearchEnginePicker = true },
@@ -757,59 +798,89 @@ fun UhGlobalToolbar(
                         )
                     }
                     if (isBrowser && !isBarBottom && !showFindInPage && !showZoomBar) {
-                        TranslateStatusPill(
-                            state = translateState,
-                            fromBottom = false,
-                            onAcceptOffer = { UhTranslationManager.acceptTranslateOffer() },
-                            onRestoreOriginal = { UhTranslationManager.restoreActiveTab() },
-                            onClearImageOverlays = { UhTranslationManager.clearImageTranslations() },
-                            onRetry = { UhTranslationManager.retryLastTranslation() },
-                            onDismiss = { UhTranslationManager.dismissPill() },
+                        BraveTranslateBar(
+                            mgrState = translateState,
+                            isPageTranslated = isPageTranslated,
+                            isTabBusy = isTabTranslateBusy,
+                            hasImageOverlays = hasImageOverlays,
+                            onSelectOriginalTab = {
+                                if (isPageTranslated) UhTranslationManager.restoreActiveTab()
+                            },
+                            onSelectTargetTab = {
+                                if (!isPageTranslated) UhTranslationManager.translateActiveTab()
+                            },
+                            onOpenLanguageSheet = { viewModel.openTranslateSheet() },
+                            onTranslateImages = {
+                                if (hasImageOverlays) {
+                                    UhTranslationManager.clearImageTranslations()
+                                } else {
+                                    UhTranslationManager.translateVisibleImages()
+                                }
+                            },
+                            onDismiss = { UhTranslationManager.hideTranslateBar() },
                         )
                     }
                 }
             }
 
-            // Sleek compact edge pill to exit Swipe-for-Fullscreen immersive mode
-            AnimatedVisibility(
-                visible = isBrowser && isImmersiveFullscreen && !isReaderFullscreen && !isEditing,
-                enter = fadeIn() + slideInVertically { if (isBarBottom) it else -it },
-                exit = fadeOut() + slideOutVertically { if (isBarBottom) it else -it },
+            // Optional tiny corner Translate icon button (shown ONLY when user enables "Offer to translate")
+            val showCornerTranslateOffer = isBrowser &&
+                !isEditing &&
+                !isAnyBrowserFullscreen &&
+                !readerState.isActive &&
+                !showFindInPage &&
+                !showZoomBar &&
+                translateState.autoOfferEnabled &&
+                !translateState.barVisible &&
+                translateState.pillPhase == TranslatePillPhase.OFFER
+
+            TranslateCornerOfferButton(
+                visible = showCornerTranslateOffer,
+                onClick = { UhTranslationManager.acceptTranslateOffer() },
                 modifier = Modifier
-                    .align(if (isBarBottom) Alignment.BottomCenter else Alignment.TopCenter)
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
-            ) {
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.86f),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
-                    ),
-                    shadowElevation = 6.dp,
+                    .align(if (isBarBottom) Alignment.BottomEnd else Alignment.TopEnd)
+                    .then(if (isBarBottom) Modifier.navigationBarsPadding() else Modifier.statusBarsPadding())
+                    .padding(
+                        end = 14.dp,
+                        bottom = if (isBarBottom) 72.dp else 0.dp,
+                        top = if (!isBarBottom) 72.dp else 0.dp
+                    )
+            )
+
+            // Invisible same-gesture edge zone to exit Swipe-for-Fullscreen (swipe vertically DOWN on the address-bar edge)
+            if (isBrowser && isImmersiveFullscreen && !isReaderFullscreen && !isEditing) {
+                val swipeExitThresholdPx = with(LocalDensity.current) { 24.dp.toPx() }
+                Box(
                     modifier = Modifier
-                        .clip(CircleShape)
-                        .clickable { viewModel.setImmersiveFullscreen(false) }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.fx_ic_close_24),
-                            contentDescription = "Exit fullscreen",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Text(
-                            text = "Exit Fullscreen",
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
+                        .align(if (isBarBottom) Alignment.BottomCenter else Alignment.TopCenter)
+                        .then(if (!isBarBottom) Modifier.statusBarsPadding() else Modifier)
+                        .fillMaxWidth()
+                        .height(42.dp)
+                        .pointerInput(isBarBottom) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(
+                                    requireUnconsumed = false,
+                                    pass = PointerEventPass.Initial
+                                )
+                                val startX = down.position.x
+                                val startY = down.position.y
+                                var triggered = false
+                                while (true) {
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!change.pressed) break
+                                    val dx = change.position.x - startX
+                                    val dy = change.position.y - startY
+                                    if (!triggered && dy > swipeExitThresholdPx && dy > abs(dx) * 1.15f) {
+                                        triggered = true
+                                        change.consume()
+                                        viewModel.setImmersiveFullscreen(false)
+                                        break
+                                    }
+                                }
+                            }
+                        }
+                )
             }
 
             if (isPrivateMode && isPrivateLocked) {
@@ -829,6 +900,15 @@ fun UhGlobalToolbar(
                     }
                 )
             }
+        }
+
+        // Smooth non-touch-blocking night dimmer overlay when Reader brightness is dragged below hardware minimum (0%..20%)
+        if (isBrowser && readerState.isActive && readerState.dimmerOverlayAlpha > 0.005f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = readerState.dimmerOverlayAlpha))
+            )
         }
     }
 
@@ -1401,151 +1481,4 @@ private fun ZoomStepPill(label: String, onClick: () -> Unit) {
     }
 }
 
-@Composable
-private fun TranslateStatusPill(
-    state: UhTranslationManager.State,
-    fromBottom: Boolean,
-    onAcceptOffer: () -> Unit,
-    onRestoreOriginal: () -> Unit,
-    onClearImageOverlays: () -> Unit,
-    onRetry: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val visible = state.pillPhase != TranslatePillPhase.HIDDEN && state.pillMessage.isNotBlank()
-    val isOffer = state.pillPhase == TranslatePillPhase.OFFER
-    val isWorking = state.pillPhase == TranslatePillPhase.DOWNLOADING_MODEL ||
-        state.pillPhase == TranslatePillPhase.TRANSLATING ||
-        state.pillPhase == TranslatePillPhase.TRANSLATING_IMAGES
-    val isError = state.pillPhase == TranslatePillPhase.ERROR
 
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn() + slideInVertically { if (fromBottom) it / 2 else -it / 2 },
-        exit = fadeOut() + slideOutVertically { if (fromBottom) it / 2 else -it / 2 },
-    ) {
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            tonalElevation = 6.dp,
-            shadowElevation = 8.dp,
-            modifier = Modifier
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-                .widthIn(max = 368.dp)
-                .border(
-                    width = 1.dp,
-                    color = when {
-                        isError -> MaterialTheme.colorScheme.error.copy(alpha = 0.35f)
-                        isOffer -> MaterialTheme.colorScheme.primary.copy(alpha = 0.30f)
-                        else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)
-                    },
-                    shape = RoundedCornerShape(24.dp)
-                )
-        ) {
-            Row(
-                modifier = Modifier.padding(start = 12.dp, end = 6.dp, top = 7.dp, bottom = 7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (isWorking) {
-                    if (state.pillProgress > 0.05f && state.pillProgress < 0.99f) {
-                        CircularProgressIndicator(
-                            progress = { state.pillProgress },
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.2.dp,
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-                        )
-                    } else {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.2.dp,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                } else {
-                    Icon(
-                        painter = painterResource(id = R.drawable.uh_ic_translate_24),
-                        contentDescription = null,
-                        tint = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-
-                Text(
-                    text = state.pillMessage,
-                    color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false)
-                )
-
-                if (isOffer) {
-                    Text(
-                        text = "Translate",
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(MaterialTheme.colorScheme.primary)
-                            .clickable(onClick = onAcceptOffer)
-                            .padding(horizontal = 10.dp, vertical = 4.dp)
-                    )
-                } else if (state.pillPhase == TranslatePillPhase.COMPLETED && state.pillCanRestore) {
-                    Text(
-                        text = "Original",
-                        color = MaterialTheme.colorScheme.primary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
-                            .clickable(onClick = onRestoreOriginal)
-                            .padding(horizontal = 9.dp, vertical = 3.dp)
-                    )
-                } else if (state.pillPhase == TranslatePillPhase.COMPLETED && state.pillCanClearImages) {
-                    Text(
-                        text = "Clear",
-                        color = MaterialTheme.colorScheme.primary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
-                            .clickable(onClick = onClearImageOverlays)
-                            .padding(horizontal = 9.dp, vertical = 3.dp)
-                    )
-                } else if (isError && state.pillCanRetry) {
-                    Text(
-                        text = "Retry",
-                        color = MaterialTheme.colorScheme.primary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
-                            .clickable(onClick = onRetry)
-                            .padding(horizontal = 9.dp, vertical = 3.dp)
-                    )
-                }
-
-                Box(
-                    modifier = Modifier
-                        .size(24.dp)
-                        .clip(CircleShape)
-                        .clickable(onClick = onDismiss),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.fx_ic_close_24),
-                        contentDescription = "Dismiss",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
-            }
-        }
-    }
-}

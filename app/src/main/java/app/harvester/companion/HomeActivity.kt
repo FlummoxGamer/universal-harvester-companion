@@ -93,9 +93,19 @@ class HomeActivity : AppCompatActivity() {
             val currentDestId = backStackEntry?.destination?.id
             val isEditing by browserViewModel.isEditing.collectAsState()
             val wallpaperState by WallpaperStore.wallpaperFlow(this).collectAsState()
+            val readerState by app.harvester.companion.browser.reader.ReaderModeManager.state.collectAsState()
             val isOnHome = (currentDestId == R.id.homeFragment || currentDestId == null) && !isEditing
-            val lightStatusOverride = if (isOnHome) wallpaperState.isTopDark?.let { !it } else null
-            val lightNavOverride = if (isOnHome) wallpaperState.isBottomDark?.let { !it } else null
+            val isInReader = currentDestId == R.id.browserFragment && readerState.isActive && !isEditing
+            val lightStatusOverride = when {
+                isInReader -> !readerState.prefs.theme.isDark
+                isOnHome -> wallpaperState.isTopDark?.let { !it }
+                else -> null
+            }
+            val lightNavOverride = when {
+                isInReader -> !readerState.prefs.theme.isDark
+                isOnHome -> wallpaperState.isBottomDark?.let { !it }
+                else -> null
+            }
 
             UHTheme(
                 lightStatusBarOverride = lightStatusOverride,
@@ -282,11 +292,13 @@ class HomeActivity : AppCompatActivity() {
     private fun applySystemBarsImmersive(immersive: Boolean) {
         try {
             val controller = WindowInsetsControllerCompat(window, window.decorView)
+            // Always keep the status bar visible so it never gets stuck or overlaps webpage/reader content
+            controller.show(WindowInsetsCompat.Type.statusBars())
             if (immersive) {
                 controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                controller.hide(WindowInsetsCompat.Type.systemBars())
+                controller.hide(WindowInsetsCompat.Type.navigationBars())
             } else {
-                controller.show(WindowInsetsCompat.Type.systemBars())
+                controller.show(WindowInsetsCompat.Type.navigationBars())
             }
         } catch (_: Exception) {}
     }

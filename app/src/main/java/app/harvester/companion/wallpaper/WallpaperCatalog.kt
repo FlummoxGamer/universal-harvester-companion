@@ -69,9 +69,25 @@ object WallpaperCatalog {
         ),
     )
 
+    private const val REPO_RAW_BASE =
+        "https://raw.githubusercontent.com/FlummoxGamer/universal-harvester-companion/wallpaper"
+
     fun canonicalSourceKey(url: String): String = url.substringBefore('?').trim()
 
     fun isUnsplashUrl(url: String): Boolean = url.contains("images.unsplash.com", ignoreCase = true)
+
+    fun fallbackMirrorUrl(rawUrl: String): String? {
+        return when {
+            rawUrl.startsWith(REPO_CDN_BASE) -> REPO_RAW_BASE + rawUrl.removePrefix(REPO_CDN_BASE)
+            rawUrl.startsWith(REPO_RAW_BASE) -> REPO_CDN_BASE + rawUrl.removePrefix(REPO_RAW_BASE)
+            else -> null
+        }
+    }
+
+    fun candidateUrls(rawUrl: String): List<String> {
+        val fallback = fallbackMirrorUrl(rawUrl)
+        return if (fallback != null && fallback != rawUrl) listOf(rawUrl, fallback) else listOf(rawUrl)
+    }
 
     /**
      * Lightweight crisp thumbnail URL for scrolling grids (fast loading, minimal bandwidth).

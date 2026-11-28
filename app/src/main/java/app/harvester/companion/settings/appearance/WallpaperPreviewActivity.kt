@@ -385,7 +385,7 @@ class WallpaperPreviewActivity : AppCompatActivity() {
                                         try {
                                             var finalPath = selectedUri
                                             if (isRemote) {
-                                                val downloaded = withTimeoutOrNull(60_000L) {
+                                                val downloaded = withTimeoutOrNull(36_000L) {
                                                     WallpaperStore.downloadAndPrepareWallpaper(
                                                         ctx = context,
                                                         rawUrl = selectedUri,
@@ -1048,7 +1048,8 @@ private fun PreviewVideoLayer(
     val density = LocalDensity.current
     var probe by remember(item) { mutableStateOf<WallpaperMediaProcessor.VideoProbe?>(null) }
 
-    val cachedLocalFile = remember(item, isPageActive) {
+    val cachedTick by WallpaperMediaCache.cachedVideoTick.collectAsState()
+    val cachedLocalFile = remember(item, isPageActive, cachedTick) {
         if (item.startsWith("http")) WallpaperMediaCache.getCachedVideoFile(context, item) else null
     }
     var remoteThumbFile by remember(item) {
@@ -1068,8 +1069,6 @@ private fun PreviewVideoLayer(
             cachedLocalFile != null -> cachedLocalFile.absolutePath
             else -> null
         }
-        // Only extract thumbnail from local file here (avoid competing remote MediaMetadataRetriever
-        // HTTP connections while ExoPlayer + prefetchVideoAsync are streaming the same MP4).
         if (item.startsWith("http") && remoteThumbFile == null && cachedLocalFile != null) {
             remoteThumbFile = WallpaperMediaCache.getOrExtractMotionThumb(context, item)
         }
@@ -1081,7 +1080,7 @@ private fun PreviewVideoLayer(
     }
 
     LaunchedEffect(item, isPageActive) {
-        if (isPageActive && item.startsWith("http")) {
+        if (isPageActive && item.startsWith("http") && cachedLocalFile == null) {
             WallpaperMediaCache.prefetchVideoAsync(context, item)
         }
     }
@@ -1148,17 +1147,18 @@ private fun PreviewVideoLayer(
             )
         }
 
-        if (isPageActive) {
-            val mediaUri = remember(item, cachedLocalFile) {
-                when {
-                    cachedLocalFile != null -> Uri.fromFile(cachedLocalFile)
-                    item.startsWith("http") -> Uri.parse(item)
-                    else -> Uri.fromFile(File(item))
-                }
+        // Play strictly from local file (downloaded once via single-flight cache) so dual
+        // crossfade ExoPlayers NEVER repeatedly stream remote MP4s over the internet.
+        val playableLocalUri = remember(item, cachedLocalFile) {
+            when {
+                !item.startsWith("http") -> Uri.fromFile(File(item))
+                cachedLocalFile != null -> Uri.fromFile(cachedLocalFile)
+                else -> null
             }
-
+        }
+        if (isPageActive && playableLocalUri != null) {
             SeamlessVideoWallpaperPlayer(
-                mediaUri = mediaUri,
+                mediaUri = playableLocalUri,
                 clipBounds = clipBounds,
                 isPlaying = true,
                 transform = transform,

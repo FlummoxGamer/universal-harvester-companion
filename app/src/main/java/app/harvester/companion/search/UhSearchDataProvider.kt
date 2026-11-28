@@ -37,7 +37,7 @@ object UhSearchDataProvider {
 
     private data class CachedTrends(val timestampMs: Long, val items: List<String>)
     private val trendsCache = ConcurrentHashMap<String, CachedTrends>()
-    private const val TRENDS_TTL_MS = 15 * 60 * 1000L
+    private const val TRENDS_TTL_MS = 30 * 60 * 1000L
 
     data class SearchFetchResult(
         val items: List<UhSearchListItem>,
@@ -45,7 +45,11 @@ object UhSearchDataProvider {
         val currentTab: UhSearchListItem.CurrentTab?
     )
 
-    suspend fun fetchData(context: Context, query: String): SearchFetchResult = withContext(Dispatchers.IO) {
+    suspend fun fetchData(
+        context: Context,
+        query: String,
+        includeCurrentTab: Boolean = false,
+    ): SearchFetchResult = withContext(Dispatchers.IO) {
         coroutineScope {
             val appCtx = context.applicationContext
             val components = (appCtx as UHApp).components
@@ -67,6 +71,7 @@ object UhSearchDataProvider {
             val selectedTab = components.store.state.selectedTab
             val isPrivate = selectedTab?.content?.private == true
             val currentTabItem = if (
+                includeCurrentTab &&
                 selectedTab != null &&
                 selectedTab.content.url != "about:blank" &&
                 selectedTab.content.url.isNotBlank()
@@ -164,8 +169,11 @@ object UhSearchDataProvider {
                     }
                 }
             } else if (query.isBlank()) {
+                val showTrending = SettingsPrefs.getBool(appCtx, SettingsPrefs.K_SEARCH_TRENDING, true)
                 val recentDeferred = async { fetchRecentSearchTerms(appCtx, components) }
-                val trendsDeferred = async { fetchTrendingWithFallback(activeEngine.trendingUrl) }
+                val trendsDeferred = async {
+                    if (showTrending) fetchRegionalGoogleTrends() else emptyList()
+                }
 
                 val topRecent = recentDeferred.await()
                 if (topRecent.isNotEmpty()) {
@@ -178,7 +186,7 @@ object UhSearchDataProvider {
                 val trends = trendsDeferred.await()
                 if (trends.isNotEmpty()) {
                     items.add(UhSearchListItem.Header("Trending"))
-                    trends.take(6).forEach { trend ->
+                    trends.take(8).forEach { trend ->
                         items.add(UhSearchListItem.Suggestion(trend, SuggestionType.TRENDING))
                     }
                 }
@@ -291,24 +299,24 @@ object UhSearchDataProvider {
             .take(5)
     }
 
-    private fun fetchTrendingWithFallback(engineEndpoint: String?): List<String> {
-        val geo = Locale.getDefault().country.ifBlank { "US" }.uppercase(Locale.US)
-        val candidates = linkedSetOf<String>()
-        if (!engineEndpoint.isNullOrBlank()) {
-            candidates.add(engineEndpoint)
-        }
-        candidates.add("https://trends.google.com/trending/rss?geo=$geo")
+    private fun fetchRegionalGoogleTrends(): List<String> {
+        val rawCountry = Locale.getDefault().country.trim().uppercase(Locale.US)
+        val geo = if (rawCountry.length == 2 && rawCountry.all { it in 'A'..'Z' }) rawCountry else "US"
+        val candidates = linkedSetOf(
+            "https://trends.google.com/trending/rss?geo=$geo",
+            "https://trends.google.com/trends/trendingsearches/daily/rss?geo=$geo",
+        )
         if (geo != "US") {
             candidates.add("https://trends.google.com/trending/rss?geo=US")
         }
 
+        val now = System.currentTimeMillis()
         for (endpoint in candidates) {
-            val now = System.currentTimeMillis()
             val cached = trendsCache[endpoint]
             if (cached != null && (now - cached.timestampMs) < TRENDS_TTL_MS && cached.items.isNotEmpty()) {
                 return cached.items
             }
-            val parsed = fetchTrending(endpoint)
+            val parsed = fetchTrendingRss(endpoint)
             if (parsed.isNotEmpty()) {
                 trendsCache[endpoint] = CachedTrends(now, parsed)
                 return parsed
@@ -317,101 +325,53 @@ object UhSearchDataProvider {
         return emptyList()
     }
 
-    private fun fetchTrending(endpoint: String): List<String> {
+    private fun fetchTrendingRss(endpoint: String): List<String> {
         return try {
             val req = Request.Builder()
                 .url(endpoint)
                 .header("User-Agent", UhHttpClient.DEFAULT_USER_AGENT)
-                .header("Accept", "application/rss+xml, application/xml, application/json, text/xml, */*")
+                .header("Accept", "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8")
+                .header("Accept-Language", Locale.getDefault().toLanguageTag().ifBlank { "en-US" })
                 .build()
             fastSearchClient.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) {
-                    UHLog.w("search_warn", "Trending endpoint ($endpoint) returned HTTP ${resp.code}")
+                    UHLog.w("search_warn", "Google Trends RSS ($endpoint) returned HTTP ${resp.code}")
                     return emptyList()
                 }
                 val body = resp.body?.string().orEmpty()
                 if (body.isBlank()) return emptyList()
-                parseTrendingBody(body)
+                parseGoogleTrendsRss(body)
             }
         } catch (e: Exception) {
-            UHLog.w("search_warn", "Trending fetch failed ($endpoint): ${e.message}")
+            UHLog.w("search_warn", "Google Trends fetch failed ($endpoint): ${e.message}")
             emptyList()
         }
     }
 
-    private fun parseTrendingBody(body: String): List<String> {
-        val trimmed = body.trimStart('\uFEFF', ' ', '\t', '\r', '\n')
+    private fun parseGoogleTrendsRss(xml: String): List<String> {
+        val trimmed = xml.trimStart('\uFEFF', ' ', '\t', '\r', '\n')
+        if (!trimmed.startsWith("<")) return emptyList()
         val out = mutableListOf<String>()
-        if (trimmed.startsWith("<")) {
-            val itemRegex = Regex("<(?:item|entry)\\b[^>]*>([\\s\\S]*?)<\\/(?:item|entry)>", RegexOption.IGNORE_CASE)
-            for (match in itemRegex.findAll(trimmed)) {
-                val itemBlock = match.groupValues[1]
-                val titleMatch = Regex("<title(?:\\s+[^>]*)?>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/title>", RegexOption.IGNORE_CASE).find(itemBlock)
-                if (titleMatch != null) {
-                    var decoded = Html.fromHtml(titleMatch.groupValues[1], Html.FROM_HTML_MODE_LEGACY).toString().trim()
-                    if (decoded.contains(" - ")) decoded = decoded.substringBeforeLast(" - ").trim()
-                    if (decoded.contains(" | ")) decoded = decoded.substringBeforeLast(" | ").trim()
-                    if (decoded.isNotBlank() &&
-                        !decoded.equals("Daily Search Trends", ignoreCase = true) &&
-                        !decoded.equals("Trending Searches", ignoreCase = true) &&
-                        decoded.length <= 55
-                    ) {
-                        out.add(decoded)
-                    }
-                }
-            }
-        } else if (trimmed.startsWith("[")) {
-            try {
-                val arr = JSONArray(trimmed)
-                if (arr.length() >= 2 && arr.opt(1) is JSONArray) {
-                    val inner = arr.getJSONArray(1)
-                    for (i in 0 until inner.length()) {
-                        val v = inner.optString(i).trim()
-                        if (v.isNotBlank()) out.add(v)
-                    }
-                } else {
-                    for (i in 0 until arr.length()) {
-                        val el = arr.opt(i)
-                        if (el is String && el.isNotBlank()) {
-                            out.add(el.trim())
-                        } else if (el is JSONObject) {
-                            val title = el.optString("query")
-                                .ifBlank { el.optString("title") }
-                                .ifBlank { el.optString("Title") }
-                                .ifBlank { el.optString("name") }
-                                .trim()
-                            if (title.isNotBlank()) out.add(title)
-                        }
-                    }
-                }
-            } catch (_: Exception) {
-            }
-        } else if (trimmed.startsWith("{")) {
-            try {
-                val obj = JSONObject(trimmed)
-                val candidates = listOf("topics", "Topics", "items", "data", "trends", "trending", "queries", "TrendingNow")
-                for (key in candidates) {
-                    val arr = obj.optJSONArray(key) ?: continue
-                    for (i in 0 until arr.length()) {
-                        val el = arr.opt(i)
-                        when (el) {
-                            is String -> if (el.isNotBlank()) out.add(el.trim())
-                            is JSONObject -> {
-                                val title = el.optString("query")
-                                    .ifBlank { el.optString("Query") }
-                                    .ifBlank { el.optString("title") }
-                                    .ifBlank { el.optString("Title") }
-                                    .ifBlank { el.optString("name") }
-                                    .trim()
-                                if (title.isNotBlank()) out.add(title)
-                            }
-                        }
-                    }
-                    if (out.isNotEmpty()) break
-                }
-            } catch (_: Exception) {
+        val itemRegex = Regex("<item\\b[^>]*>([\\s\\S]*?)</item>", RegexOption.IGNORE_CASE)
+        val newsItemRegex = Regex("<ht:news_item\\b[^>]*>[\\s\\S]*?</ht:news_item>", RegexOption.IGNORE_CASE)
+        val titleRegex = Regex("<title\\b[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?</title>", RegexOption.IGNORE_CASE)
+
+        for (match in itemRegex.findAll(trimmed)) {
+            // Strip nested <ht:news_item> blocks so we ONLY extract the real top-level trending search term
+            val cleanItem = newsItemRegex.replace(match.groupValues[1], "")
+            val titleMatch = titleRegex.find(cleanItem) ?: continue
+            val decoded = Html.fromHtml(titleMatch.groupValues[1], Html.FROM_HTML_MODE_LEGACY)
+                .toString()
+                .replace(Regex("\\s+"), " ")
+                .trim()
+            if (decoded.length in 2..48 &&
+                !decoded.equals("Daily Search Trends", ignoreCase = true) &&
+                !decoded.equals("Trending Searches", ignoreCase = true) &&
+                !decoded.startsWith("http", ignoreCase = true)
+            ) {
+                out.add(decoded)
             }
         }
-        return out.distinctBy { it.lowercase() }.take(6)
+        return out.distinctBy { it.lowercase(Locale.ROOT) }.take(8)
     }
 }

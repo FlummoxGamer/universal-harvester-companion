@@ -86,7 +86,7 @@ fun CustomizeAddressBarScreen(onBack: () -> Unit = {}) {
             UhSettingsDivider()
             SettingsSwitchRow(
                 title = "Swipe for Fullscreen",
-                subtitle = "Swipe address bar vertically for immersive mode",
+                subtitle = "Swipe down on the address bar to hide it. Swipe down on that same edge again to bring it back.",
                 key = SettingsPrefs.K_SWIPE_FULLSCREEN,
                 default = false,
                 insideCard = true

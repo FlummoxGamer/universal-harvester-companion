@@ -343,6 +343,13 @@ class TabsTrayDialogFragment : DialogFragment() {
                                 val selectedUrls = tabs.filter { it.id in selectedIds }
                                     .map { it.content.url }
                                     .filter { it.isNotBlank() && it != "about:blank" }
+                                    .map {
+                                        app.harvester.companion.privacy.UhShieldEngine.cleanTrackingUrl(
+                                            rawUrl = it,
+                                            stripTrackers = true,
+                                            deAmp = true,
+                                        )
+                                    }
                                 if (selectedUrls.isNotEmpty()) {
                                     val text = selectedUrls.joinToString("\n")
                                     val intent = Intent(Intent.ACTION_SEND).apply {

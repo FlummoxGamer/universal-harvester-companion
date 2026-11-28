@@ -75,7 +75,7 @@ fun TranslateSheet(
     tabTranslationsState: TranslationsState?,
     currentHost: String,
     activeTabId: String? = null,
-    @Suppress("UNUSED_PARAMETER") activeTabUrl: String? = null,
+    activeTabUrl: String? = null,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -83,50 +83,40 @@ fun TranslateSheet(
 
     var currentPage by remember { mutableStateOf(TranslateSheetPage.Main) }
 
-    val detectedDocLang = tabTranslationsState?.translationEngineState?.detectedLanguages?.documentLangTag
-    val activePair = tabTranslationsState?.translationEngineState?.requestedTranslationPair
-    val isTranslated = tabTranslationsState?.isTranslated == true
+    val isTranslated = mgrState.isCurrentTabTranslated(
+        tabId = activeTabId,
+        tabUrl = activeTabUrl,
+        geckoTranslated = tabTranslationsState?.isTranslated == true
+    )
     val isProcessing = tabTranslationsState?.isTranslateProcessing == true ||
         tabTranslationsState?.isRestoreProcessing == true ||
         mgrState.isBusy
     val hasImageOverlays = mgrState.imageOverlayCount > 0 &&
         (activeTabId == null || mgrState.imageOverlayTabId == activeTabId)
 
-    var selectedFromCode by remember(detectedDocLang, activePair?.fromLanguage) {
-        mutableStateOf(
-            activePair?.fromLanguage?.ifBlank { null }
-                ?: detectedDocLang?.ifBlank { null }
-                ?: mgrState.fromLanguages.firstOrNull { it.code != mgrState.preferredTargetLang }?.code
-                ?: "es"
-        )
-    }
-    var selectedToCode by remember(activePair?.toLanguage, mgrState.preferredTargetLang) {
-        mutableStateOf(
-            activePair?.toLanguage?.ifBlank { null }
-                ?: mgrState.preferredTargetLang.ifBlank { "en" }
-        )
-    }
+    val effectiveFrom = mgrState.effectiveFromCode()
+    val effectiveTo = mgrState.preferredTargetLang.ifBlank { "en" }
 
     LaunchedEffect(Unit) {
         UhTranslationManager.refreshEngineCapabilities()
         UhTranslationManager.refreshCurrentTabSiteSetting()
     }
 
-    LaunchedEffect(selectedFromCode, selectedToCode) {
-        if (selectedFromCode.isNotBlank() && selectedToCode.isNotBlank()) {
-            UhTranslationManager.fetchPairDownloadSize(selectedFromCode, selectedToCode)
+    LaunchedEffect(effectiveFrom, effectiveTo, mgrState.useOfflineEngine) {
+        if (mgrState.useOfflineEngine) {
+            UhTranslationManager.fetchPairDownloadSize(effectiveFrom, effectiveTo)
         }
     }
 
-    val fromLabel = mgrState.fromLanguages.firstOrNull { it.code.equals(selectedFromCode, ignoreCase = true) }
-        ?.localizedDisplayName
-        ?: selectedFromCode.uppercase()
-    val toLabel = mgrState.toLanguages.firstOrNull { it.code.equals(selectedToCode, ignoreCase = true) }
-        ?.localizedDisplayName
-        ?: selectedToCode.uppercase()
-
-    val isPairReadyOffline = UhTranslationManager.isModelDownloaded(selectedFromCode) &&
-        UhTranslationManager.isModelDownloaded(selectedToCode)
+    val fromLabel = mgrState.sourceTabDisplayLabel()
+    val toLabel = mgrState.targetTabDisplayLabel()
+    val resolvedFromForOfflineCheck = if (mgrState.isAutoDetect) {
+        mgrState.detectedDocLang ?: "en"
+    } else {
+        mgrState.manualFromLang ?: "en"
+    }
+    val isPairReadyOffline = UhTranslationManager.isModelDownloaded(resolvedFromForOfflineCheck) &&
+        UhTranslationManager.isModelDownloaded(effectiveTo)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -142,24 +132,21 @@ fun TranslateSheet(
                 TranslateSheetPage.Main -> {
                     TranslateMainPanel(
                         mgrState = mgrState,
-                        detectedDocLang = detectedDocLang,
-                        fromCode = selectedFromCode,
-                        toCode = selectedToCode,
+                        fromCode = effectiveFrom,
+                        toCode = effectiveTo,
                         fromLabel = fromLabel,
                         toLabel = toLabel,
                         isPairReadyOffline = isPairReadyOffline,
                         isTranslated = isTranslated,
                         isProcessing = isProcessing,
                         hasImageOverlays = hasImageOverlays,
-                        onSelectFrom = { selectedFromCode = it },
-                        onSelectTo = { selectedToCode = it },
-                        onSwap = {
-                            val tmp = selectedFromCode
-                            selectedFromCode = selectedToCode
-                            selectedToCode = tmp
-                        },
+                        onSelectAutoDetect = { UhTranslationManager.setSourceAutoDetect() },
+                        onSelectManualFrom = { UhTranslationManager.setManualSourceLanguage(it) },
+                        onSelectTo = { UhTranslationManager.setPreferredTargetLanguage(it) },
+                        onSwap = { UhTranslationManager.swapLanguages() },
+                        onToggleOffline = { UhTranslationManager.setUseOfflineEngine(it) },
                         onTranslate = {
-                            UhTranslationManager.translateActiveTab(selectedFromCode, selectedToCode)
+                            UhTranslationManager.translateActiveTab(effectiveFrom, effectiveTo)
                             onDismiss()
                         },
                         onShowOriginal = {
@@ -169,7 +156,7 @@ fun TranslateSheet(
                             if (hasImageOverlays) {
                                 UhTranslationManager.clearImageTranslations()
                             } else {
-                                UhTranslationManager.translateVisibleImages(selectedFromCode, selectedToCode)
+                                UhTranslationManager.translateVisibleImages(effectiveFrom, effectiveTo)
                             }
                             onDismiss()
                         },
@@ -180,10 +167,11 @@ fun TranslateSheet(
                 }
 
                 TranslateSheetPage.Settings -> {
+                    val ruleLangCode = mgrState.resolvedSourceLangForRules()
                     TranslateSettingsPanel(
                         mgrState = mgrState,
-                        sourceLangCode = selectedFromCode,
-                        sourceLangName = fromLabel,
+                        sourceLangCode = ruleLangCode,
+                        sourceLangName = UhTranslationManager.languageDisplayName(ruleLangCode),
                         currentHost = currentHost,
                         onBack = { currentPage = TranslateSheetPage.Main },
                         onOpenModels = { currentPage = TranslateSheetPage.Models },
@@ -204,7 +192,6 @@ fun TranslateSheet(
 @Composable
 private fun TranslateMainPanel(
     mgrState: UhTranslationManager.State,
-    detectedDocLang: String?,
     fromCode: String,
     toCode: String,
     fromLabel: String,
@@ -213,9 +200,11 @@ private fun TranslateMainPanel(
     isTranslated: Boolean,
     isProcessing: Boolean,
     hasImageOverlays: Boolean,
-    onSelectFrom: (String) -> Unit,
+    onSelectAutoDetect: () -> Unit,
+    onSelectManualFrom: (String) -> Unit,
     onSelectTo: (String) -> Unit,
     onSwap: () -> Unit,
+    onToggleOffline: (Boolean) -> Unit,
     onTranslate: () -> Unit,
     onShowOriginal: () -> Unit,
     onTranslateImages: () -> Unit,
@@ -226,6 +215,10 @@ private fun TranslateMainPanel(
     var fromExpanded by remember { mutableStateOf(false) }
     var toExpanded by remember { mutableStateOf(false) }
 
+    val fromList = mgrState.activeFromLanguageList()
+    val toList = mgrState.activeToLanguageList()
+    val sameExplicitLang = !mgrState.isAutoDetect && fromCode.equals(toCode, ignoreCase = true)
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -234,6 +227,7 @@ private fun TranslateMainPanel(
             .padding(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // Header
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -249,15 +243,19 @@ private fun TranslateMainPanel(
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                     Text(
-                        text = if (isTranslated) "Page Translated" else "UH Translate",
+                        text = if (isTranslated) "Page Translated" else "Translate Page",
                         color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Private on-device translation · Works offline",
+                        text = if (mgrState.useOfflineEngine) {
+                            "Offline Mode · Private on-device packs"
+                        } else {
+                            "Fast Online Google Translate · 55+ languages"
+                        },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp
+                        fontSize = 11.5.sp
                     )
                 }
             }
@@ -272,7 +270,7 @@ private fun TranslateMainPanel(
             }
         }
 
-        // Language selector card
+        // Language selector card (responsive before translating; explicit pick turns off Auto-detect)
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surface,
@@ -280,7 +278,7 @@ private fun TranslateMainPanel(
         ) {
             Column(
                 modifier = Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -289,21 +287,23 @@ private fun TranslateMainPanel(
                 ) {
                     Box(modifier = Modifier.weight(1f)) {
                         LanguagePickerButton(
-                            label = if (!detectedDocLang.isNullOrBlank() && detectedDocLang.equals(fromCode, ignoreCase = true)) {
-                                "From (Detected)"
-                            } else {
-                                "Translate from"
-                            },
+                            label = if (mgrState.isAutoDetect) "From (Auto-detect)" else "Translate from",
                             value = fromLabel,
                             onClick = { fromExpanded = true }
                         )
-                        LanguageDropdown(
+                        SourceLanguageDropdown(
                             expanded = fromExpanded,
-                            languages = mgrState.fromLanguages,
-                            selectedCode = fromCode,
-                            onSelect = {
+                            languages = fromList,
+                            isAutoDetect = mgrState.isAutoDetect,
+                            detectedCode = mgrState.detectedDocLang,
+                            selectedManualCode = mgrState.manualFromLang,
+                            onSelectAuto = {
                                 fromExpanded = false
-                                onSelectFrom(it)
+                                onSelectAutoDetect()
+                            },
+                            onSelectLanguage = { code ->
+                                fromExpanded = false
+                                onSelectManualFrom(code)
                             },
                             onDismiss = { fromExpanded = false }
                         )
@@ -329,9 +329,9 @@ private fun TranslateMainPanel(
                             value = toLabel,
                             onClick = { toExpanded = true }
                         )
-                        LanguageDropdown(
+                        TargetLanguageDropdown(
                             expanded = toExpanded,
-                            languages = mgrState.toLanguages,
+                            languages = toList,
                             selectedCode = toCode,
                             onSelect = {
                                 toExpanded = false
@@ -342,22 +342,47 @@ private fun TranslateMainPanel(
                     }
                 }
 
-                if (isPairReadyOffline) {
-                    Text(
-                        text = "Ready offline · Instant on-device translation",
-                        color = MaterialTheme.colorScheme.primary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                } else {
-                    val sizeHint = UhTranslationManager.formatBytes(mgrState.pairDownloadSizeBytes)
-                    if (sizeHint.isNotBlank()) {
+                // Online vs Offline Mode compact switch right inside the card
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.14f))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onToggleOffline(!mgrState.useOfflineEngine) }
+                        .padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "First-time language pack: ~$sizeHint (saved on device afterwards)",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            text = "Offline Mode",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        val modeSubtitle = if (mgrState.useOfflineEngine) {
+                            if (isPairReadyOffline) {
+                                "Ready offline · Saved pack on device"
+                            } else {
+                                val sizeHint = UhTranslationManager.formatBytes(mgrState.pairDownloadSizeBytes)
+                                if (sizeHint.isNotBlank()) "Downloads ~$sizeHint once and saves to Offline Packs"
+                                else "Uses private downloaded language packs"
+                            }
+                        } else {
+                            "Off · Using instant online Google Translate"
+                        }
+                        Text(
+                            text = modeSubtitle,
+                            color = if (mgrState.useOfflineEngine && isPairReadyOffline) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                             fontSize = 11.sp
                         )
                     }
+                    Switch(
+                        checked = mgrState.useOfflineEngine,
+                        onCheckedChange = onToggleOffline
+                    )
                 }
             }
         }
@@ -397,7 +422,7 @@ private fun TranslateMainPanel(
 
             Button(
                 onClick = onTranslate,
-                enabled = !isProcessing && toCode.isNotBlank() && !fromCode.equals(toCode, ignoreCase = true),
+                enabled = !isProcessing && toCode.isNotBlank() && !sameExplicitLang,
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.weight(1f)
             ) {
@@ -419,7 +444,7 @@ private fun TranslateMainPanel(
             }
         }
 
-        // Multi-Script On-Device Image OCR Translation
+        // Fast Viewport Image OCR Translation
         OutlinedButton(
             onClick = onTranslateImages,
             enabled = !mgrState.isTranslatingImages,
@@ -434,7 +459,7 @@ private fun TranslateMainPanel(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Scanning Images (OCR)…",
+                    text = "Scanning Visible Images…",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -450,7 +475,7 @@ private fun TranslateMainPanel(
                     text = if (hasImageOverlays) {
                         "Clear Image Overlays (${mgrState.imageOverlayCount})"
                     } else {
-                        "Translate Images on Screen (OCR)"
+                        "Translate Visible Images (OCR)"
                     },
                     color = if (hasImageOverlays) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                     fontSize = 13.sp,
@@ -459,26 +484,19 @@ private fun TranslateMainPanel(
             }
         }
 
+        // Single clean Offline Packs shortcut (duplicate Language Rules button removed)
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.Start,
             verticalAlignment = Alignment.CenterVertically
         ) {
             TextButton(onClick = onOpenModels) {
                 val downloadedCount = mgrState.languageModels.count { it.status == ModelState.DOWNLOADED }
                 Text(
-                    text = "Offline Packs ($downloadedCount downloaded)",
+                    text = "Offline Packs ($downloadedCount saved)",
                     color = MaterialTheme.colorScheme.primary,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
-                )
-            }
-            TextButton(onClick = onOpenSettings) {
-                Text(
-                    text = "Language Rules →",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium
                 )
             }
         }
@@ -535,9 +553,19 @@ private fun TranslateSettingsPanel(
             Column(modifier = Modifier.fillMaxWidth()) {
                 TranslateToggleRow(
                     title = "Offer to translate foreign pages",
-                    subtitle = "Show a subtle floating Translate pill when another language is detected",
+                    subtitle = "Show a small corner translate icon when another language is detected",
                     checked = mgrState.autoOfferEnabled,
                     onCheckedChange = { UhTranslationManager.setAutoOfferEnabled(it) }
+                )
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 14.dp),
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                )
+                TranslateToggleRow(
+                    title = "Offline Translation Mode",
+                    subtitle = "Use downloaded on-device language packs instead of online Google Translate",
+                    checked = mgrState.useOfflineEngine,
+                    onCheckedChange = { UhTranslationManager.setUseOfflineEngine(it) }
                 )
                 HorizontalDivider(
                     modifier = Modifier.padding(horizontal = 14.dp),
@@ -560,7 +588,7 @@ private fun TranslateSettingsPanel(
                 )
                 TranslateToggleRow(
                     title = "Never translate $sourceLangName",
-                    subtitle = "Do not offer translation for $sourceLangName pages",
+                    subtitle = "Skip translation prompts for $sourceLangName pages",
                     checked = neverForLang,
                     onCheckedChange = { checked ->
                         UhTranslationManager.setLanguageRule(
@@ -576,7 +604,7 @@ private fun TranslateSettingsPanel(
                     )
                     TranslateToggleRow(
                         title = "Never translate $currentHost",
-                        subtitle = "Skip automatic translation prompts on this website",
+                        subtitle = "Skip translation prompts on this website",
                         checked = mgrState.currentSiteNeverTranslate,
                         onCheckedChange = { checked ->
                             UhTranslationManager.setNeverTranslateCurrentSite(checked)
@@ -614,7 +642,7 @@ private fun TranslateSettingsPanel(
                     )
                     val downloadedCount = mgrState.languageModels.count { it.status == ModelState.DOWNLOADED }
                     Text(
-                        text = "$downloadedCount language pack${if (downloadedCount == 1) "" else "s"} stored on device",
+                        text = "$downloadedCount language pack${if (downloadedCount == 1) "" else "s"} saved on device",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp
                     )
@@ -725,14 +753,13 @@ private fun OfflineModelsPanel(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Pre-download languages for instant private translation",
+                    text = "Saved packs stay on your device for private offline translation",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 11.sp
                 )
             }
         }
 
-        // Instant search box
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -789,7 +816,7 @@ private fun OfflineModelsPanel(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = "Language packs will appear here once UH Translate finishes syncing.",
+                    text = "Offline language packs will appear here once synced.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp,
                     modifier = Modifier.padding(16.dp)
@@ -807,7 +834,7 @@ private fun OfflineModelsPanel(
                 if (downloadedModels.isNotEmpty()) {
                     item(key = "hdr_downloaded") {
                         Text(
-                            text = "DOWNLOADED (${downloadedModels.size})",
+                            text = "SAVED ON DEVICE (${downloadedModels.size})",
                             color = MaterialTheme.colorScheme.primary,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
@@ -880,7 +907,7 @@ private fun OfflineModelRow(model: LanguageModel) {
                 )
                 val sizeStr = UhTranslationManager.formatBytes(model.size)
                 val sub = when (model.status) {
-                    ModelState.DOWNLOADED -> "Downloaded${if (sizeStr.isNotBlank()) " · $sizeStr" else ""}"
+                    ModelState.DOWNLOADED -> "Saved offline${if (sizeStr.isNotBlank()) " · $sizeStr" else ""}"
                     ModelState.DOWNLOAD_IN_PROGRESS -> "Downloading…"
                     ModelState.DELETION_IN_PROGRESS -> "Removing…"
                     ModelState.ERROR_DOWNLOAD -> "Download failed — tap to retry"
@@ -954,7 +981,9 @@ private fun LanguagePickerButton(
         Text(
             text = label,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 10.sp
+            fontSize = 10.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
         Spacer(modifier = Modifier.height(2.dp))
         Row(
@@ -980,8 +1009,65 @@ private fun LanguagePickerButton(
     }
 }
 
+/**
+ * Source language dropdown:
+ * - First item is always "Auto-detect" (showing detected language hint if known).
+ * - Every language appears normally below it; picking ANY explicit language turns OFF Auto-detect immediately!
+ */
 @Composable
-private fun LanguageDropdown(
+private fun SourceLanguageDropdown(
+    expanded: Boolean,
+    languages: List<Language>,
+    isAutoDetect: Boolean,
+    detectedCode: String?,
+    selectedManualCode: String?,
+    onSelectAuto: () -> Unit,
+    onSelectLanguage: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        modifier = Modifier.heightIn(max = 340.dp)
+    ) {
+        val autoLabel = if (!detectedCode.isNullOrBlank()) {
+            "Auto-detect (${UhTranslationManager.languageDisplayName(detectedCode)})"
+        } else {
+            "Auto-detect"
+        }
+        DropdownMenuItem(
+            text = {
+                Text(
+                    text = autoLabel,
+                    fontWeight = if (isAutoDetect) FontWeight.Bold else FontWeight.Medium,
+                    color = if (isAutoDetect) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                )
+            },
+            onClick = onSelectAuto
+        )
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
+        languages.forEach { lang ->
+            val isExplicitSelected = !isAutoDetect && lang.code.equals(selectedManualCode, ignoreCase = true)
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = lang.localizedDisplayName ?: lang.code.uppercase(),
+                        fontWeight = if (isExplicitSelected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (isExplicitSelected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
+                    )
+                },
+                onClick = { onSelectLanguage(lang.code) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun TargetLanguageDropdown(
     expanded: Boolean,
     languages: List<Language>,
     selectedCode: String,
@@ -991,7 +1077,7 @@ private fun LanguageDropdown(
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
-        modifier = Modifier.heightIn(max = 320.dp)
+        modifier = Modifier.heightIn(max = 340.dp)
     ) {
         languages.forEach { lang ->
             val isSelected = lang.code.equals(selectedCode, ignoreCase = true)

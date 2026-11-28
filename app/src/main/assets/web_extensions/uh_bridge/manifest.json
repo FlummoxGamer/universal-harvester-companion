@@ -24,6 +24,7 @@
                 "cs_cookie_dark.js",
                 "cs_media_pip.js",
                 "cs_image_translate.js",
+                "cs_translate.js",
                 "cs_element_picker.js",
                 "cs_reader.js",
                 "content.js"

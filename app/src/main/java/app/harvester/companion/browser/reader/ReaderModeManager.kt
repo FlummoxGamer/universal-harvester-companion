@@ -5,11 +5,14 @@ import android.content.SharedPreferences
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
 import app.harvester.companion.GeckoWebExtensionBridge
 import app.harvester.companion.UHLog
+import com.google.mlkit.nl.languageid.LanguageIdentification
+import com.google.mlkit.nl.languageid.LanguageIdentificationOptions
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -21,12 +24,18 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
-enum class ReaderTheme(val id: String, val label: String) {
-    LIGHT("light", "Paper"),
-    SEPIA("sepia", "Sepia"),
-    DARK("dark", "Dark"),
-    OLED("oled", "OLED")
+enum class ReaderTheme(
+    val id: String,
+    val label: String,
+    val bgColorInt: Int,
+    val isDark: Boolean
+) {
+    LIGHT("light", "Paper", 0xFFFAF9F6.toInt(), false),
+    SEPIA("sepia", "Sepia", 0xFFF5ECD8.toInt(), false),
+    DARK("dark", "Dark", 0xFF17181C.toInt(), true),
+    OLED("oled", "OLED", 0xFF000000.toInt(), true)
 }
 
 enum class ReaderFont(val id: String, val label: String) {
@@ -59,7 +68,8 @@ data class ReaderVoiceOption(
     val label: String,
     val gender: ReaderVoiceGender,
     val langTag: String,
-    val quality: Int
+    val quality: Int,
+    val isNeural: Boolean = false
 )
 
 data class ReaderPrefsState(
@@ -75,9 +85,10 @@ data class ReaderPrefsState(
     val voiceName: String = "",
     val pageMode: Boolean = false,
     val isFullscreen: Boolean = false,
+    // -1f = System Auto; 0.0f..0.20f = hardware min + extra dark dimmer overlay; 0.20f..1.0f = hardware 1%..100%
     val brightness: Float = -1f
 ) {
-    fun toJson(): JSONObject = JSONObject().apply {
+    fun toJson(savedProgress: ReaderProgressStore.ArticleProgress? = null): JSONObject = JSONObject().apply {
         put("theme", theme.id)
         put("fontFamily", font.id)
         put("fontSizePx", fontSizePx)
@@ -87,6 +98,10 @@ data class ReaderPrefsState(
         put("ttsEnabled", ttsEnabled)
         put("pageMode", pageMode)
         put("isFullscreen", isFullscreen)
+        if (savedProgress != null) {
+            put("savedScrollRatio", savedProgress.scrollRatio.toDouble())
+            put("savedPageIndex", savedProgress.pageIndex)
+        }
     }
 }
 
@@ -109,12 +124,16 @@ data class ReaderUiState(
 ) {
     val isAutoReaderForCurrentHost: Boolean
         get() = currentHost.isNotBlank() && currentHost in autoReaderHosts
+
+    /** Extra night-dimmer black scrim alpha when Reader brightness is dragged below hardware minimum (0%..20%). */
+    val dimmerOverlayAlpha: Float
+        get() = ReaderModeManager.computeDimmerAlpha(prefs.brightness)
 }
 
 /**
- * Coordinates Kindle-class Book Reader Mode, persisted typography/theme/brightness/fullscreen
- * preferences, horizontal Book Pages mode, live translation re-sync, multi-language auto-detection,
- * and sentence-level Android TextToSpeech with Male/Female human voice picker & exact pause/resume.
+ * Coordinates Book Reader Mode, persisted typography/theme/brightness/fullscreen preferences,
+ * per-article reading progress memory, horizontal Book Pages mode, ML Kit multi-language detection,
+ * free online Neural voices with seamless on-device TTS fallback, and word-level page turning.
  */
 object ReaderModeManager {
 
@@ -134,6 +153,10 @@ object ReaderModeManager {
     private const val K_BRIGHTNESS = "brightness"
     private const val K_AUTO_HOSTS = "auto_reader_hosts"
 
+    private const val EXTRA_DIM_THRESHOLD = 0.20f
+    private const val MAX_DIMMER_ALPHA = 0.78f
+    private const val LOCAL_LOOKAHEAD_COUNT = 2
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private val _state = MutableStateFlow(ReaderUiState())
     val state: StateFlow<ReaderUiState> = _state.asStateFlow()
@@ -143,6 +166,51 @@ object ReaderModeManager {
 
     // Exact per-URL pause/resume sentence memory
     private val savedSentenceByUrl = ConcurrentHashMap<String, Int>()
+    private val ttsSessionGen = AtomicLong(0L)
+
+    // Bundled on-device ML Kit Language Identifier for 100+ languages (including Latin scripts)
+    private val languageIdentifier by lazy {
+        LanguageIdentification.getClient(
+            LanguageIdentificationOptions.Builder()
+                .setConfidenceThreshold(0.35f)
+                .build()
+        )
+    }
+
+    // Verified Google / Android TTS voice suffix -> gender maps (zero guessing!)
+    private val knownFemaleVoiceTokens = setOf(
+        // English US/GB/AU/IN
+        "sfg", "tpf", "iol", "iob", "gba", "sfb", "afc", "gbf", "aud", "ena", "ene",
+        // Hindi & Indic
+        "hia", "hic", "hid", "cfn", "hif", "bna", "taa", "tea", "mra", "gua",
+        // Spanish / French / German / Italian / Portuguese
+        "eea", "eec", "eef", "esf", "fra", "frc", "vlf", "frf", "deb", "nfh", "def",
+        "ita", "itb", "ptb", "pte", "ptf",
+        // CJK & others
+        "jab", "jad", "jpf", "kob", "kod", "kof", "ccd", "cce", "yzu", "ruc", "rue",
+        "tra", "trc", "ida", "idd", "via", "vic", "tha", "nla", "nlc", "pla", "plc",
+        "ara", "ard", "sva", "uka"
+    )
+    private val knownMaleVoiceTokens = setOf(
+        // English US/GB/AU/IN
+        "tpd", "iom", "gbb", "gbd", "rjs", "fis", "afm", "audm", "enb", "enc",
+        // Hindi & Indic
+        "hie", "hib", "him", "bnb", "tab", "teb", "mrb", "gub",
+        // Spanish / French / German / Italian / Portuguese
+        "eeb", "eed", "esm", "frb", "frd", "frm", "deg", "dem", "itc", "itd", "ptd", "ptm",
+        // CJK & others
+        "jac", "htm", "jpm", "ism", "koc", "kom", "ccf", "ccg", "rud", "ruf",
+        "trb", "trd", "idb", "idc", "vib", "vid", "thb", "nlb", "nld", "plb", "pld",
+        "arb", "arc", "svb", "ukb"
+    )
+
+    private val urlRegex = Regex("https?://\\S+|www\\.\\S+", RegexOption.IGNORE_CASE)
+    private val citationRegex = Regex("\\[(?:\\d+|edit|citation needed|note \\d+|clarification needed)\\]", RegexOption.IGNORE_CASE)
+    private val repeatedPunctRegex = Regex("[—–_=~*#|•·»«]{2,}|\\.{3,}")
+    private val boilerplateSpeechRegex = Regex(
+        "^(share|tweet|pin it|subscribe|sign up|read more|related|advertisement|sponsored|cookie|privacy policy|terms of service|skip to content|menu|search|table of contents|comments?)\\b.*",
+        RegexOption.IGNORE_CASE
+    )
 
     @Volatile
     private var appContext: Context? = null
@@ -154,6 +222,12 @@ object ReaderModeManager {
     private var ttsReady = false
     @Volatile
     private var autoEnteredUrl: String = ""
+    @Volatile
+    private var lastAppliedLocalVoiceKey: String = ""
+    @Volatile
+    private var localQueuedUpToIndex: Int = -1
+    @Volatile
+    private var localSpeakingActiveGen: Long = -1L
 
     fun init(ctx: Context) {
         if (appContext != null) return
@@ -164,7 +238,6 @@ object ReaderModeManager {
 
         val theme = ReaderTheme.entries.firstOrNull { it.id == sp.getString(K_THEME, "sepia") } ?: ReaderTheme.SEPIA
         val savedFontId = sp.getString(K_FONT, null)
-        // Upgrade older default ("sans" if never customized or missing) cleanly to bookish SERIF
         val font = ReaderFont.entries.firstOrNull { it.id == savedFontId } ?: ReaderFont.SERIF
         val size = sp.getInt(K_FONT_SIZE, 19).coerceIn(14, 28)
         val lhVal = sp.getFloat(K_LINE_SPACING, 1.78f)
@@ -202,6 +275,47 @@ object ReaderModeManager {
                     brightness = brightness
                 )
             )
+        }
+    }
+
+    /**
+     * Maps the Reader brightness slider value (`-1f` Auto, or `0f..1f`) to the Android Window
+     * hardware `screenBrightness` attribute (`-1f` Auto, or `0.01f..1.0f`).
+     */
+    fun computeWindowBrightness(sliderValue: Float): Float {
+        if (sliderValue < 0f) return -1f
+        if (sliderValue <= EXTRA_DIM_THRESHOLD) return 0.01f
+        val hwFrac = (sliderValue - EXTRA_DIM_THRESHOLD) / (1.0f - EXTRA_DIM_THRESHOLD)
+        return hwFrac.coerceIn(0.01f, 1.0f)
+    }
+
+    /**
+     * Computes the extra-dim dark overlay alpha (`0f..0.78f`) when slider is in `0.0f..0.20f`
+     * (below device minimum hardware brightness).
+     */
+    fun computeDimmerAlpha(sliderValue: Float): Float {
+        if (sliderValue < 0f || sliderValue >= EXTRA_DIM_THRESHOLD) return 0f
+        val dimFrac = (EXTRA_DIM_THRESHOLD - sliderValue) / EXTRA_DIM_THRESHOLD
+        return (dimFrac * MAX_DIMMER_ALPHA).coerceIn(0f, MAX_DIMMER_ALPHA)
+    }
+
+    /**
+     * Reads the device's current system screen brightness and maps it onto the `0.20f..1.0f`
+     * hardware band of our slider so dragging LEFT from Auto immediately dims and dragging RIGHT brightens.
+     */
+    fun readSystemSliderBrightness(ctx: Context): Float {
+        return try {
+            val raw = Settings.System.getInt(ctx.contentResolver, Settings.System.SCREEN_BRIGHTNESS, 128)
+            val maxVal = when {
+                raw > 4095 -> 65535f
+                raw > 1023 -> 4095f
+                raw > 255 -> 1023f
+                else -> 255f
+            }
+            val sysFrac = (raw.toFloat() / maxVal).coerceIn(0.02f, 1.0f)
+            (EXTRA_DIM_THRESHOLD + sysFrac * (1.0f - EXTRA_DIM_THRESHOLD)).coerceIn(EXTRA_DIM_THRESHOLD, 1.0f)
+        } catch (_: Exception) {
+            0.55f
         }
     }
 
@@ -253,7 +367,7 @@ object ReaderModeManager {
         sentencesArray: JSONArray?
     ) {
         val sentences = parseSentences(sentencesArray)
-        val cleanLang = lang.trim().ifBlank { "en" }
+        val initialLang = NeuralTtsClient.normalizeBaseLang(lang.trim().ifBlank { "en" })
         val resolvedUrl = url.ifBlank { _state.value.currentUrl }
         val restoredIdx = savedSentenceByUrl[resolvedUrl]?.takeIf { it in sentences.indices } ?: -1
 
@@ -266,13 +380,16 @@ object ReaderModeManager {
                 title = title,
                 readMins = readMins,
                 wordCount = wordCount,
-                detectedLang = cleanLang,
+                detectedLang = initialLang,
                 sentences = sentences,
                 ttsIndex = restoredIdx,
                 ttsPlaying = false
             )
         }
-        appContext?.let { ensureTtsReadyAndCatalogVoices(it, cleanLang) }
+        appContext?.let { ctx ->
+            ensureTtsReadyAndCatalogVoices(ctx, initialLang)
+            identifyArticleLanguageAsync(ctx, title, sentences)
+        }
     }
 
     fun onReaderContentRefreshed(
@@ -285,11 +402,11 @@ object ReaderModeManager {
         sentencesArray: JSONArray?
     ) {
         val sentences = parseSentences(sentencesArray)
-        val cleanLang = lang.trim().ifBlank { _state.value.detectedLang }
+        val initialLang = NeuralTtsClient.normalizeBaseLang(lang.trim().ifBlank { _state.value.detectedLang })
         val wasPlaying = _state.value.ttsPlaying
         val prevIdx = _state.value.ttsIndex.coerceIn(0, (sentences.lastIndex).coerceAtLeast(0))
         if (wasPlaying) {
-            try { tts?.stop() } catch (_: Exception) {}
+            stopAllEnginesInternal()
         }
         _state.update {
             it.copy(
@@ -298,34 +415,75 @@ object ReaderModeManager {
                 title = title.ifBlank { it.title },
                 readMins = readMins,
                 wordCount = wordCount,
-                detectedLang = cleanLang,
+                detectedLang = initialLang,
                 sentences = sentences,
                 ttsIndex = if (sentences.isNotEmpty() && it.ttsIndex >= 0) prevIdx else -1,
                 ttsPlaying = false
             )
         }
         appContext?.let { ctx ->
-            ensureTtsReadyAndCatalogVoices(ctx, cleanLang)
+            ensureTtsReadyAndCatalogVoices(ctx, initialLang)
+            identifyArticleLanguageAsync(ctx, title, sentences)
             if (wasPlaying && sentences.isNotEmpty()) {
                 speakFromIndex(ctx, prevIdx)
             }
         }
     }
 
+    fun onReaderProgressUpdate(url: String, scrollRatio: Float, pageIndex: Int) {
+        val ctx = appContext ?: return
+        val targetUrl = url.ifBlank { _state.value.currentUrl }
+        if (targetUrl.isNotBlank()) {
+            ReaderProgressStore.save(ctx, targetUrl, scrollRatio, pageIndex)
+        }
+    }
+
     /**
-     * Called by UhTranslationManager whenever on-device page translation finishes or restores.
-     * Re-syncs Reader Mode content immediately in place without closing or reopening Reader.
+     * Uses bundled on-device ML Kit LanguageIdentification to accurately identify 100+ languages
+     * (including all Latin-script languages like Spanish, French, German, Turkish, Indonesian, etc.).
      */
+    private fun identifyArticleLanguageAsync(ctx: Context, title: String, sentences: List<String>) {
+        val sample = buildString {
+            if (title.isNotBlank()) append(title).append(". ")
+            var chars = 0
+            for (s in sentences) {
+                if (s.length < 18) continue
+                append(s).append(' ')
+                chars += s.length
+                if (chars >= 1100) break
+            }
+        }.trim()
+        if (sample.length < 24) return
+
+        val expectedUrl = _state.value.currentUrl
+        try {
+            languageIdentifier.identifyLanguage(sample)
+                .addOnSuccessListener { code ->
+                    if (!code.isNullOrBlank() && code != "und") {
+                        val normalized = NeuralTtsClient.normalizeBaseLang(code)
+                        if (_state.value.currentUrl == expectedUrl && _state.value.detectedLang != normalized) {
+                            _state.update { it.copy(detectedLang = normalized) }
+                            ensureTtsReadyAndCatalogVoices(ctx, normalized)
+                        }
+                    }
+                }
+        } catch (e: Exception) {
+            UHLog.w("reader", "ML Kit lang-id skipped: ${e.message}")
+        }
+    }
+
     fun onPageTranslationChanged(targetLangCode: String? = null) {
         if (!_state.value.isActive) return
         if (!targetLangCode.isNullOrBlank()) {
-            _state.update { it.copy(detectedLang = targetLangCode) }
+            val norm = NeuralTtsClient.normalizeBaseLang(targetLangCode)
+            _state.update { it.copy(detectedLang = norm) }
+            appContext?.let { ensureTtsReadyAndCatalogVoices(it, norm) }
         }
         mainHandler.postDelayed({
             if (_state.value.isActive) {
                 GeckoWebExtensionBridge.sendReaderCommand("READER_REFRESH_CONTENT")
             }
-        }, 260L)
+        }, 280L)
         mainHandler.postDelayed({
             if (_state.value.isActive) {
                 GeckoWebExtensionBridge.sendReaderCommand("READER_REFRESH_CONTENT")
@@ -362,7 +520,11 @@ object ReaderModeManager {
     }
 
     fun enterReader() {
-        val prefsJson = _state.value.prefs.toJson()
+        val ctx = appContext
+        val saved = if (ctx != null && _state.value.currentUrl.isNotBlank()) {
+            ReaderProgressStore.get(ctx, _state.value.currentUrl)
+        } else null
+        val prefsJson = _state.value.prefs.toJson(savedProgress = saved)
         GeckoWebExtensionBridge.sendReaderCommand("READER_ENTER", prefsJson)
     }
 
@@ -381,7 +543,7 @@ object ReaderModeManager {
     }
 
     fun setBrightness(value: Float) {
-        val clamped = if (value < 0f) -1f else value.coerceIn(0.05f, 1.0f)
+        val clamped = if (value < 0f) -1f else value.coerceIn(0.0f, 1.0f)
         updatePrefs { it.copy(brightness = clamped) }
     }
 
@@ -391,9 +553,6 @@ object ReaderModeManager {
         persistPrefs(updated)
         if (_state.value.isActive) {
             GeckoWebExtensionBridge.sendReaderCommand("READER_UPDATE_STYLE", updated.toJson())
-        }
-        if (_state.value.ttsPlaying) {
-            try { tts?.setSpeechRate(updated.ttsSpeed) } catch (_: Exception) {}
         }
     }
 
@@ -405,7 +564,7 @@ object ReaderModeManager {
         sharedPrefs?.edit()?.putStringSet(K_AUTO_HOSTS, next)?.apply()
     }
 
-    // ---- Multi-Language On-Device Android TTS with Male & Female Voices + Exact Resume ----
+    // ---- Free Online Neural TTS Primary + Seamless Upgraded Local TTS Fallback ----
 
     fun setTtsEnabled(enabled: Boolean) {
         if (!enabled) stopTts()
@@ -479,7 +638,7 @@ object ReaderModeManager {
     }
 
     fun pauseTts(keepHighlight: Boolean = true) {
-        try { tts?.stop() } catch (_: Exception) {}
+        stopAllEnginesInternal()
         val st = _state.value
         if (st.currentUrl.isNotBlank() && st.ttsIndex in st.sentences.indices) {
             savedSentenceByUrl[st.currentUrl] = st.ttsIndex
@@ -494,7 +653,7 @@ object ReaderModeManager {
     }
 
     fun stopTts() {
-        try { tts?.stop() } catch (_: Exception) {}
+        stopAllEnginesInternal()
         val st = _state.value
         if (st.currentUrl.isNotBlank()) {
             savedSentenceByUrl.remove(st.currentUrl)
@@ -505,12 +664,21 @@ object ReaderModeManager {
         _state.update { it.copy(ttsPlaying = false, ttsIndex = -1) }
     }
 
+    private fun stopAllEnginesInternal() {
+        ttsSessionGen.incrementAndGet()
+        localSpeakingActiveGen = -1L
+        localQueuedUpToIndex = -1
+        NeuralTtsClient.stop()
+        try { tts?.stop() } catch (_: Exception) {}
+    }
+
     private fun ensureTtsReadyAndCatalogVoices(ctx: Context, langTag: String) {
+        // Immediately expose Neural voices even before local Android TTS finishes binding
+        updateVoiceCatalog(tts?.takeIf { ttsReady }, langTag)
+
         val existing = tts
-        if (existing != null && ttsReady) {
-            catalogVoicesForLang(existing, langTag)
-            return
-        }
+        if (existing != null && ttsReady) return
+
         try {
             val app = ctx.applicationContext
             tts = TextToSpeech(app) { status ->
@@ -518,39 +686,66 @@ object ReaderModeManager {
                     ttsReady = true
                     attachUtteranceListener()
                     mainHandler.post {
-                        tts?.let { catalogVoicesForLang(it, _state.value.detectedLang) }
+                        updateVoiceCatalog(tts, _state.value.detectedLang)
                     }
                 } else {
                     ttsReady = false
                 }
             }
         } catch (e: Exception) {
-            UHLog.w("reader", "TTS prewarm failed: ${e.message}")
+            UHLog.w("reader", "Local TTS prewarm failed: ${e.message}")
         }
     }
 
     private fun attachUtteranceListener() {
         try {
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) {}
-
-                override fun onDone(utteranceId: String?) {
-                    val doneIdx = utteranceId?.removePrefix("uh_tts_")?.toIntOrNull() ?: return
+                override fun onStart(utteranceId: String?) {
+                    val (gen, idx) = parseUtteranceId(utteranceId) ?: return
                     mainHandler.post {
+                        if (localSpeakingActiveGen != gen) return@post
                         val st = _state.value
                         if (!st.ttsPlaying || !st.isActive) return@post
-                        val next = doneIdx + 1
-                        if (next in st.sentences.indices) {
-                            tts?.let { startUtterance(it, next) }
-                        } else {
+                        if (st.currentUrl.isNotBlank()) {
+                            savedSentenceByUrl[st.currentUrl] = idx
+                        }
+                        _state.update { it.copy(ttsIndex = idx) }
+                        GeckoWebExtensionBridge.sendReaderTtsHighlight(idx, playing = true)
+                        // Keep 2 sentences pre-buffered in QUEUE_ADD to eliminate pauses at full stops
+                        enqueueLocalLookahead(gen, idx)
+                    }
+                }
+
+                override fun onRangeStart(utteranceId: String?, start: Int, end: Int, frame: Int) {
+                    val (gen, idx) = parseUtteranceId(utteranceId) ?: return
+                    if (localSpeakingActiveGen != gen) return
+                    val len = (end - start).coerceAtLeast(1)
+                    GeckoWebExtensionBridge.sendReaderTtsWord(idx, start, len)
+                }
+
+                override fun onDone(utteranceId: String?) {
+                    val (gen, doneIdx) = parseUtteranceId(utteranceId) ?: return
+                    mainHandler.post {
+                        if (localSpeakingActiveGen != gen) return@post
+                        val st = _state.value
+                        if (!st.ttsPlaying || !st.isActive) return@post
+                        val nextPlayable = findNextSpeakableIndex(st.sentences, doneIdx + 1)
+                        if (nextPlayable < 0) {
                             stopTts()
+                        } else if (nextPlayable > localQueuedUpToIndex) {
+                            enqueueLocalLookahead(gen, doneIdx)
                         }
                     }
                 }
 
                 @Deprecated("Deprecated in Java")
                 override fun onError(utteranceId: String?) {
-                    mainHandler.post { pauseTts(keepHighlight = true) }
+                    val (gen, _) = parseUtteranceId(utteranceId) ?: return
+                    mainHandler.post {
+                        if (localSpeakingActiveGen == gen) {
+                            pauseTts(keepHighlight = true)
+                        }
+                    }
                 }
             })
         } catch (e: Exception) {
@@ -558,16 +753,81 @@ object ReaderModeManager {
         }
     }
 
-    private fun speakFromIndex(ctx: Context, index: Int) {
-        val sentences = _state.value.sentences
-        if (index !in sentences.indices) {
+    private fun speakFromIndex(ctx: Context, requestedIndex: Int) {
+        val st = _state.value
+        val startIdx = findNextSpeakableIndex(st.sentences, requestedIndex)
+        if (startIdx < 0) {
             stopTts()
             return
         }
 
+        val gen = ttsSessionGen.incrementAndGet()
+        NeuralTtsClient.stop()
+        try { tts?.stop() } catch (_: Exception) {}
+        localSpeakingActiveGen = -1L
+        localQueuedUpToIndex = -1
+
+        val forceLocal = st.prefs.voiceName.startsWith("local:")
+        if (!forceLocal) {
+            speakNeuralAt(ctx, gen, startIdx)
+        } else {
+            speakLocalFrom(ctx, gen, startIdx)
+        }
+    }
+
+    private fun speakNeuralAt(ctx: Context, gen: Long, index: Int) {
+        if (ttsSessionGen.get() != gen) return
+        val st = _state.value
+        if (!st.isActive) return
+
+        val actualIdx = findNextSpeakableIndex(st.sentences, index)
+        if (actualIdx < 0) {
+            stopTts()
+            return
+        }
+        val cleanText = cleanSentenceForSpeech(st.sentences[actualIdx])
+        val nextIdx = findNextSpeakableIndex(st.sentences, actualIdx + 1)
+        val nextCleanText = if (nextIdx >= 0) cleanSentenceForSpeech(st.sentences[nextIdx]) else null
+
+        if (st.currentUrl.isNotBlank()) {
+            savedSentenceByUrl[st.currentUrl] = actualIdx
+        }
+        _state.update { it.copy(ttsPlaying = true, ttsIndex = actualIdx) }
+        GeckoWebExtensionBridge.sendReaderTtsHighlight(actualIdx, playing = true)
+
+        NeuralTtsClient.speakSentence(
+            context = ctx,
+            sentence = cleanText,
+            nextSentence = nextCleanText,
+            langTag = st.detectedLang,
+            prefs = st.prefs,
+            onWordProgress = { charOffset, charLen ->
+                if (ttsSessionGen.get() == gen && _state.value.ttsPlaying) {
+                    GeckoWebExtensionBridge.sendReaderTtsWord(actualIdx, charOffset, charLen)
+                }
+            },
+            onCompleted = {
+                if (ttsSessionGen.get() != gen || !_state.value.ttsPlaying) return@speakSentence
+                if (nextIdx >= 0) {
+                    speakNeuralAt(ctx, gen, nextIdx)
+                } else {
+                    stopTts()
+                }
+            },
+            onFallbackNeeded = {
+                if (ttsSessionGen.get() == gen && _state.value.isActive) {
+                    UHLog.d("reader", "Neural TTS unavailable, switching seamlessly to device TTS")
+                    speakLocalFrom(ctx, gen, actualIdx)
+                }
+            }
+        )
+    }
+
+    private fun speakLocalFrom(ctx: Context, gen: Long, startIdx: Int) {
+        if (ttsSessionGen.get() != gen) return
         val engine = tts
         if (engine != null && ttsReady) {
-            startUtterance(engine, index)
+            startLocalQueue(engine, gen, startIdx)
             return
         }
 
@@ -578,40 +838,101 @@ object ReaderModeManager {
                     ttsReady = true
                     attachUtteranceListener()
                     mainHandler.post {
+                        if (ttsSessionGen.get() != gen) return@post
                         tts?.let {
-                            catalogVoicesForLang(it, _state.value.detectedLang)
-                            startUtterance(it, index)
+                            updateVoiceCatalog(it, _state.value.detectedLang)
+                            startLocalQueue(it, gen, startIdx)
                         }
                     }
                 } else {
                     ttsReady = false
+                    mainHandler.post { pauseTts(keepHighlight = true) }
                 }
             }
         } catch (e: Exception) {
-            UHLog.w("reader", "TTS initialization failed: ${e.message}")
+            UHLog.w("reader", "Local TTS init failed: ${e.message}")
+            pauseTts(keepHighlight = true)
         }
     }
 
-    private fun applyVoiceAndLocale(engine: TextToSpeech, langTag: String, prefs: ReaderPrefsState) {
+    private fun startLocalQueue(engine: TextToSpeech, gen: Long, startIdx: Int) {
+        if (ttsSessionGen.get() != gen) return
+        val st = _state.value
+        val actualIdx = findNextSpeakableIndex(st.sentences, startIdx)
+        if (actualIdx < 0) {
+            stopTts()
+            return
+        }
+
+        localSpeakingActiveGen = gen
+        localQueuedUpToIndex = actualIdx
+        if (st.currentUrl.isNotBlank()) {
+            savedSentenceByUrl[st.currentUrl] = actualIdx
+        }
+        _state.update { it.copy(ttsPlaying = true, ttsIndex = actualIdx) }
+        GeckoWebExtensionBridge.sendReaderTtsHighlight(actualIdx, playing = true)
+
+        try {
+            applyLocalVoiceOnce(engine, st.detectedLang, st.prefs)
+            engine.setSpeechRate(st.prefs.ttsSpeed)
+            val text = cleanSentenceForSpeech(st.sentences[actualIdx])
+            engine.speak(text, TextToSpeech.QUEUE_FLUSH, Bundle(), "uh_tts_${gen}_$actualIdx")
+            enqueueLocalLookahead(gen, actualIdx)
+        } catch (e: Exception) {
+            UHLog.w("reader", "Local TTS speak failed: ${e.message}")
+            pauseTts(keepHighlight = true)
+        }
+    }
+
+    private fun enqueueLocalLookahead(gen: Long, currentIndex: Int) {
+        val engine = tts ?: return
+        if (!ttsReady || localSpeakingActiveGen != gen) return
+        val sentences = _state.value.sentences
+        val targetUpTo = (currentIndex + LOCAL_LOOKAHEAD_COUNT).coerceAtMost(sentences.lastIndex)
+        var cursor = localQueuedUpToIndex + 1
+        while (cursor <= targetUpTo) {
+            val nextIdx = findNextSpeakableIndex(sentences, cursor)
+            if (nextIdx < 0 || nextIdx > targetUpTo) break
+            val cleanText = cleanSentenceForSpeech(sentences[nextIdx])
+            try {
+                engine.speak(cleanText, TextToSpeech.QUEUE_ADD, Bundle(), "uh_tts_${gen}_$nextIdx")
+                localQueuedUpToIndex = nextIdx
+            } catch (_: Exception) {
+                break
+            }
+            cursor = nextIdx + 1
+        }
+    }
+
+    private fun applyLocalVoiceOnce(engine: TextToSpeech, langTag: String, prefs: ReaderPrefsState) {
+        val voiceKey = "${langTag}|${prefs.voiceGender.id}|${prefs.voiceName}"
+        if (voiceKey == lastAppliedLocalVoiceKey) return
+
         val locale = Locale.forLanguageTag(langTag.ifBlank { Locale.getDefault().toLanguageTag() })
         try {
             val allVoices = engine.voices.orEmpty()
-            val baseLang = locale.language.lowercase(Locale.ROOT)
+            val baseLang = NeuralTtsClient.normalizeBaseLang(locale.language)
             val matching = allVoices
-                .filter { v -> v.locale != null && v.locale.language.equals(baseLang, ignoreCase = true) }
+                .filter { v ->
+                    v.locale != null &&
+                        NeuralTtsClient.normalizeBaseLang(v.locale.language) == baseLang
+                }
                 .sortedWith(
-                    compareByDescending<Voice> { !vIsNetworkOnly(it) }
-                        .thenByDescending { it.quality }
+                    compareByDescending<Voice> { it.quality }
+                        .thenByDescending { !it.isNetworkConnectionRequired }
                         .thenBy { it.latency }
                 )
 
-            val exactVoice = if (prefs.voiceName.isNotBlank()) {
-                matching.firstOrNull { it.name == prefs.voiceName }
+            val wantedLocalName = prefs.voiceName.removePrefix("local:")
+            val exactVoice = if (prefs.voiceName.startsWith("local:") && wantedLocalName.isNotBlank()) {
+                matching.firstOrNull { it.name == wantedLocalName }
             } else null
 
             val chosenVoice = exactVoice ?: when (prefs.voiceGender) {
-                ReaderVoiceGender.FEMALE -> matching.firstOrNull { inferVoiceGender(it) == ReaderVoiceGender.FEMALE }
-                ReaderVoiceGender.MALE -> matching.firstOrNull { inferVoiceGender(it) == ReaderVoiceGender.MALE }
+                ReaderVoiceGender.FEMALE -> matching.firstOrNull { inferLocalVoiceGender(it) == ReaderVoiceGender.FEMALE }
+                    ?: matching.firstOrNull()
+                ReaderVoiceGender.MALE -> matching.firstOrNull { inferLocalVoiceGender(it) == ReaderVoiceGender.MALE }
+                    ?: matching.firstOrNull()
                 ReaderVoiceGender.AUTO -> matching.firstOrNull()
             }
 
@@ -623,101 +944,138 @@ object ReaderModeManager {
                     engine.language = Locale.getDefault()
                 }
             }
+            lastAppliedLocalVoiceKey = voiceKey
         } catch (e: Exception) {
-            UHLog.w("reader", "Voice selection fallback: ${e.message}")
+            UHLog.w("reader", "Local voice selection fallback: ${e.message}")
             try { engine.language = locale } catch (_: Exception) {}
         }
     }
 
-    private fun catalogVoicesForLang(engine: TextToSpeech, langTag: String) {
-        try {
-            val locale = Locale.forLanguageTag(langTag.ifBlank { Locale.getDefault().toLanguageTag() })
-            val baseLang = locale.language.lowercase(Locale.ROOT)
-            val voices = engine.voices.orEmpty()
-                .filter { it.locale != null && it.locale.language.equals(baseLang, ignoreCase = true) }
-                .sortedWith(
-                    compareByDescending<Voice> { !vIsNetworkOnly(it) }
-                        .thenByDescending { it.quality }
-                        .thenBy { it.latency }
-                )
+    private fun updateVoiceCatalog(engine: TextToSpeech?, langTag: String) {
+        val options = mutableListOf<ReaderVoiceOption>()
+        // 1. Free Online Neural Voices first (highest realism, verified gender)
+        options.addAll(NeuralTtsClient.voicesForLanguage(langTag))
 
-            var femaleIdx = 0
-            var maleIdx = 0
-            val options = mutableListOf<ReaderVoiceOption>()
-            for (v in voices) {
-                val gender = inferVoiceGender(v)
-                val label = when (gender) {
-                    ReaderVoiceGender.FEMALE -> {
-                        femaleIdx++
-                        if (femaleIdx > 4) continue
-                        "Female $femaleIdx"
+        // 2. Verified On-Device Offline Voices second
+        if (engine != null) {
+            try {
+                val baseLang = NeuralTtsClient.normalizeBaseLang(langTag)
+                val voices = engine.voices.orEmpty()
+                    .filter { v ->
+                        v.locale != null &&
+                            NeuralTtsClient.normalizeBaseLang(v.locale.language) == baseLang &&
+                            !v.isNetworkConnectionRequired
                     }
-                    ReaderVoiceGender.MALE -> {
-                        maleIdx++
-                        if (maleIdx > 4) continue
-                        "Male $maleIdx"
-                    }
-                    ReaderVoiceGender.AUTO -> {
-                        if (options.size >= 6) continue
-                        "Natural ${options.size + 1}"
-                    }
-                }
-                options.add(
-                    ReaderVoiceOption(
-                        name = v.name,
-                        label = label,
-                        gender = gender,
-                        langTag = v.locale.toLanguageTag(),
-                        quality = v.quality
+                    .sortedWith(
+                        compareByDescending<Voice> { it.quality }
+                            .thenBy { it.latency }
                     )
-                )
-            }
-            _state.update { it.copy(availableVoices = options) }
-        } catch (_: Exception) {}
+
+                var fCount = 0
+                var mCount = 0
+                var aCount = 0
+                for (v in voices) {
+                    val gender = inferLocalVoiceGender(v)
+                    val label = when (gender) {
+                        ReaderVoiceGender.FEMALE -> {
+                            fCount++
+                            if (fCount > 2) continue
+                            "Offline Female $fCount"
+                        }
+                        ReaderVoiceGender.MALE -> {
+                            mCount++
+                            if (mCount > 2) continue
+                            "Offline Male $mCount"
+                        }
+                        ReaderVoiceGender.AUTO -> {
+                            aCount++
+                            if (aCount > 2) continue
+                            "Offline Voice $aCount"
+                        }
+                    }
+                    options.add(
+                        ReaderVoiceOption(
+                            name = "local:${v.name}",
+                            label = label,
+                            gender = gender,
+                            langTag = v.locale.toLanguageTag(),
+                            quality = v.quality,
+                            isNeural = false
+                        )
+                    )
+                }
+            } catch (_: Exception) {}
+        }
+
+        _state.update { it.copy(availableVoices = options) }
     }
 
-    private fun vIsNetworkOnly(voice: Voice): Boolean = voice.isNetworkConnectionRequired
-
-    private fun inferVoiceGender(voice: Voice): ReaderVoiceGender {
+    /**
+     * Strictly verified gender classification for local Android TTS voices.
+     * Unlabeled voices return AUTO rather than being misfiled into Male or Female.
+     */
+    private fun inferLocalVoiceGender(voice: Voice): ReaderVoiceGender {
         val n = voice.name.lowercase(Locale.ROOT)
         val features = voice.features?.joinToString(" ")?.lowercase(Locale.ROOT).orEmpty()
         val combined = "$n $features"
-        // Standard Android/Google TTS voice identifiers (e.g., sfg/sfb/tpf/iob/iol/x-iom/male/female)
-        return when {
-            combined.contains("female") ||
-                Regex("[-_#](f|sfg|tpf|iol|iob|gba|sfb|afc|esf|frf|def|hif|jpf)[-_0-9]?").containsMatchIn(n) ||
-                n.endsWith("f-local") || n.endsWith("f-network") ||
-                n.contains("-x-sfg") || n.contains("-x-tpf") || n.contains("-x-iob") || n.contains("-x-iol") ->
-                ReaderVoiceGender.FEMALE
-            combined.contains("male") ||
-                Regex("[-_#](m|tpd|iom|gbb|gbd|afm|esm|frm|dem|him|jpm)[-_0-9]?").containsMatchIn(n) ||
-                n.endsWith("m-local") || n.endsWith("m-network") ||
-                n.contains("-x-tpd") || n.contains("-x-iom") || n.contains("-x-gbd") ->
-                ReaderVoiceGender.MALE
-            else -> {
-                // Deterministic balanced fallback for unlabeled voices so both Female & Male pools populate cleanly
-                if ((voice.name.hashCode() and 1) == 0) ReaderVoiceGender.FEMALE else ReaderVoiceGender.MALE
-            }
+
+        if (combined.contains("female") || n.endsWith("f-local") || n.endsWith("f-network")) {
+            return ReaderVoiceGender.FEMALE
         }
+        if (Regex("\\bmale\\b").containsMatchIn(combined) || n.endsWith("m-local") || n.endsWith("m-network")) {
+            return ReaderVoiceGender.MALE
+        }
+
+        val tokens = n.split('-', '_', '#', '.').filter { it.isNotBlank() }
+        for (tok in tokens) {
+            if (tok in knownFemaleVoiceTokens) return ReaderVoiceGender.FEMALE
+            if (tok in knownMaleVoiceTokens) return ReaderVoiceGender.MALE
+        }
+        return ReaderVoiceGender.AUTO
     }
 
-    private fun startUtterance(engine: TextToSpeech, index: Int) {
-        val st = _state.value
-        val text = st.sentences.getOrNull(index) ?: return
-        if (st.currentUrl.isNotBlank()) {
-            savedSentenceByUrl[st.currentUrl] = index
+    private fun findNextSpeakableIndex(sentences: List<String>, start: Int): Int {
+        for (i in start.coerceAtLeast(0) until sentences.size) {
+            val cleaned = cleanSentenceForSpeech(sentences[i])
+            if (cleaned.length >= 2 && !isUnnecessaryBoilerplate(cleaned)) {
+                return i
+            }
         }
-        _state.update { it.copy(ttsPlaying = true, ttsIndex = index) }
-        GeckoWebExtensionBridge.sendReaderTtsHighlight(index, playing = true)
-        try {
-            applyVoiceAndLocale(engine, st.detectedLang, st.prefs)
-            engine.setSpeechRate(st.prefs.ttsSpeed)
-            val params = Bundle()
-            engine.speak(text, TextToSpeech.QUEUE_FLUSH, params, "uh_tts_$index")
-        } catch (e: Exception) {
-            UHLog.w("reader", "TTS speak failed: ${e.message}")
-            pauseTts(keepHighlight = true)
-        }
+        return -1
+    }
+
+    /**
+     * Cleans raw DOM text before speaking so Read Aloud skips URLs, citation brackets,
+     * symbol clutter, and navigation noise.
+     */
+    private fun cleanSentenceForSpeech(raw: String): String {
+        var s = raw
+            .replace(urlRegex, "")
+            .replace(citationRegex, "")
+            .replace(repeatedPunctRegex, " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        // Drop leading list bullets or stray punctuation
+        s = s.trimStart('•', '·', '-', '–', '—', '|', '»', '›', '*', ' ')
+        return s.trim()
+    }
+
+    private fun isUnnecessaryBoilerplate(text: String): Boolean {
+        if (text.length < 3) return true
+        // Skip strings with almost no letters/digits (pure symbols/dividers)
+        val alphaNum = text.count { it.isLetterOrDigit() }
+        if (alphaNum < 2) return true
+        if (text.length <= 42 && boilerplateSpeechRegex.matches(text)) return true
+        return false
+    }
+
+    private fun parseUtteranceId(id: String?): Pair<Long, Int>? {
+        if (id == null || !id.startsWith("uh_tts_")) return null
+        val parts = id.removePrefix("uh_tts_").split("_")
+        if (parts.size != 2) return null
+        val gen = parts[0].toLongOrNull() ?: return null
+        val idx = parts[1].toIntOrNull() ?: return null
+        return gen to idx
     }
 
     private fun parseSentences(arr: JSONArray?): List<String> {

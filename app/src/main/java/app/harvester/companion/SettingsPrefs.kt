@@ -217,6 +217,7 @@ object SettingsPrefs {
     const val K_SEARCH_VOICE = "search_voice"
     const val K_SEARCH_AUTOCOMPLETE = "search_autocomplete"
     const val K_SEARCH_REMOTE = "search_remote"
+    const val K_SEARCH_TRENDING = "search_trending"
     const val K_SHOW_FULL_URL = "show_full_url"
 
     const val K_TAB_SLEEP_SECONDS = "tab_sleep_seconds"

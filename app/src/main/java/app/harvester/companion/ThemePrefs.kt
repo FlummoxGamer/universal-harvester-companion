@@ -34,7 +34,10 @@ object ThemePrefs {
     fun isDark(ctx: Context, mode: Int = getMode(ctx)): Boolean = when (mode) {
         MODE_DARK -> true
         MODE_LIGHT -> false
-        else -> (ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        else -> {
+            val sysUiMode = android.content.res.Resources.getSystem().configuration.uiMode
+            (sysUiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        }
     }
 
     fun isAmoled(ctx: Context, mode: Int = getMode(ctx)): Boolean =

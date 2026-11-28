@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Call
@@ -29,38 +31,42 @@ import kotlin.math.roundToInt
 
 /**
  * Single-flight remote wallpaper cache:
- * - Tracks live download progress for Preview's compact status pill.
+ * - Tracks live download progress and reactive local-ready notifications for Preview.
  * - Promotes assets cached during Preview straight into wallpaper storage on Apply
- *   with zero redundant re-downloads.
- * - Enforces strict timeouts & call cancellation so slow/stalled streams can never spin infinitely.
- * - Persists extracted catalog Motion wallpaper thumbnails as local WebP files in
- *   `filesDir/wallpaper_thumbs/` so Customize Home never reloads them over the network.
+ *   with zero redundant re-downloads and zero ongoing background network streaming.
+ * - Uses dual-mirror fallback (jsDelivr -> raw.githubusercontent.com) and Semaphore(2)
+ *   throttling for motion thumbnails so fresh installs never rate-limit or hang.
  */
 object WallpaperMediaCache {
 
     private const val CACHE_DIR_NAME = "wallpaper_remote_cache"
     private const val THUMB_DIR_NAME = "wallpaper_thumbs"
     private const val MAX_CACHE_BYTES = 180L * 1024L * 1024L // 180 MB cap for preview video cache
-    private const val VIDEO_DOWNLOAD_TIMEOUT_MS = 55_000L
-    private const val THUMB_EXTRACT_TIMEOUT_MS = 8_000L
+    private const val VIDEO_DOWNLOAD_TIMEOUT_MS = 32_000L
+    private const val THUMB_EXTRACT_TIMEOUT_MS = 12_000L
 
     private val cacheScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val inFlight = ConcurrentHashMap<String, CompletableDeferred<File?>>()
     private val inFlightCalls = ConcurrentHashMap<String, Call>()
     private val inFlightThumbs = ConcurrentHashMap<String, CompletableDeferred<File?>>()
+    private val thumbSemaphore = Semaphore(2)
 
     private val downloadClient: OkHttpClient by lazy {
         UhHttpClient.client.newBuilder()
-            .connectTimeout(12, TimeUnit.SECONDS)
-            .readTimeout(18, TimeUnit.SECONDS)
-            .writeTimeout(15, TimeUnit.SECONDS)
-            .callTimeout(50, TimeUnit.SECONDS)
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(14, TimeUnit.SECONDS)
+            .writeTimeout(12, TimeUnit.SECONDS)
+            .callTimeout(28, TimeUnit.SECONDS)
             .build()
     }
 
     // Keyed by urlHash(url): value in 0f..1f for determinate progress, -1f for indeterminate.
     private val _downloadProgress = MutableStateFlow<Map<String, Float>>(emptyMap())
     val downloadProgress: StateFlow<Map<String, Float>> = _downloadProgress.asStateFlow()
+
+    // Bumped whenever a remote video finishes caching to disk so Preview switches to file:// instantly.
+    private val _cachedVideoTick = MutableStateFlow(0)
+    val cachedVideoTick: StateFlow<Int> = _cachedVideoTick.asStateFlow()
 
     private fun cacheDir(ctx: Context): File {
         val dir = File(ctx.applicationContext.cacheDir, CACHE_DIR_NAME)
@@ -134,36 +140,38 @@ object WallpaperMediaCache {
         }
 
         try {
-            val result = withTimeoutOrNull(THUMB_EXTRACT_TIMEOUT_MS) {
-                val dest = File(thumbDir(appCtx), "mthumb_$hash.webp")
-                val cachedVideo = getCachedVideoFile(appCtx, url)
-                val bitmap = if (cachedVideo != null) {
-                    extractScaledVideoFrameFromFile(cachedVideo.absolutePath, 500L)
-                } else {
-                    extractScaledVideoFrameFromUrl(url, 500L)
-                }
-
-                if (bitmap != null) {
-                    try {
-                        val tmp = File(dest.parentFile, "${dest.name}.tmp")
-                        tmp.outputStream().use { out ->
-                            bitmap.compress(WallpaperMediaProcessor.webpPosterFormat(), 88, out)
-                        }
-                        if (tmp.exists() && tmp.length() > 256L) {
-                            if (dest.exists()) dest.delete()
-                            if (!tmp.renameTo(dest)) {
-                                tmp.copyTo(dest, overwrite = true)
-                                tmp.delete()
-                            }
-                            dest
-                        } else {
-                            tmp.delete()
-                            null
-                        }
-                    } finally {
-                        bitmap.recycle()
+            val result = thumbSemaphore.withPermit {
+                withTimeoutOrNull(THUMB_EXTRACT_TIMEOUT_MS) {
+                    val dest = File(thumbDir(appCtx), "mthumb_$hash.webp")
+                    val cachedVideo = getCachedVideoFile(appCtx, url)
+                    val bitmap = if (cachedVideo != null) {
+                        extractScaledVideoFrameFromFile(cachedVideo.absolutePath, 500L)
+                    } else {
+                        extractScaledVideoFrameFromUrlWithFallback(url, 500L)
                     }
-                } else null
+
+                    if (bitmap != null) {
+                        try {
+                            val tmp = File(dest.parentFile, "${dest.name}.tmp")
+                            tmp.outputStream().use { out ->
+                                bitmap.compress(WallpaperMediaProcessor.webpPosterFormat(), 88, out)
+                            }
+                            if (tmp.exists() && tmp.length() > 256L) {
+                                if (dest.exists()) dest.delete()
+                                if (!tmp.renameTo(dest)) {
+                                    tmp.copyTo(dest, overwrite = true)
+                                    tmp.delete()
+                                }
+                                dest
+                            } else {
+                                tmp.delete()
+                                null
+                            }
+                        } finally {
+                            bitmap.recycle()
+                        }
+                    } else null
+                }
             }
 
             deferred.complete(result)
@@ -189,16 +197,20 @@ object WallpaperMediaCache {
         }
     }
 
-    private fun extractScaledVideoFrameFromUrl(url: String, timeMs: Long): Bitmap? {
-        val retriever = MediaMetadataRetriever()
-        return try {
-            retriever.setDataSource(url, mapOf("User-Agent" to UhHttpClient.DEFAULT_USER_AGENT))
-            extractFrameScaled(retriever, timeMs)
-        } catch (_: Exception) {
-            null
-        } finally {
-            try { retriever.release() } catch (_: Exception) {}
+    private fun extractScaledVideoFrameFromUrlWithFallback(url: String, timeMs: Long): Bitmap? {
+        for (candidate in WallpaperCatalog.candidateUrls(url)) {
+            val retriever = MediaMetadataRetriever()
+            val bmp = try {
+                retriever.setDataSource(candidate, mapOf("User-Agent" to UhHttpClient.DEFAULT_USER_AGENT))
+                extractFrameScaled(retriever, timeMs)
+            } catch (_: Exception) {
+                null
+            } finally {
+                try { retriever.release() } catch (_: Exception) {}
+            }
+            if (bmp != null) return bmp
         }
+        return null
     }
 
     private fun extractFrameScaled(retriever: MediaMetadataRetriever, timeMs: Long): Bitmap? {
@@ -293,6 +305,7 @@ object WallpaperMediaCache {
                     part.delete()
                 }
                 trimCacheIfNeeded(appCtx)
+                _cachedVideoTick.update { it + 1 }
                 if (getCachedMotionThumb(appCtx, url) == null) {
                     cacheScope.launch { getOrExtractMotionThumb(appCtx, url) }
                 }
@@ -355,6 +368,21 @@ object WallpaperMediaCache {
         callKey: String? = null,
         onProgress: ((Float) -> Unit)? = null,
     ): Boolean {
+        for (candidate in WallpaperCatalog.candidateUrls(url)) {
+            if (downloadSingleUrlToFile(candidate, destFile, callKey, onProgress)) {
+                return true
+            }
+            destFile.delete()
+        }
+        return false
+    }
+
+    private fun downloadSingleUrlToFile(
+        url: String,
+        destFile: File,
+        callKey: String? = null,
+        onProgress: ((Float) -> Unit)? = null,
+    ): Boolean {
         var call: Call? = null
         return try {
             val request = Request.Builder()
@@ -397,7 +425,7 @@ object WallpaperMediaCache {
             }
             destFile.exists() && destFile.length() > 64L
         } catch (e: Exception) {
-            UHLog.e("wallpaper_error", "downloadToFile failed: ${e.message}")
+            UHLog.e("wallpaper_error", "downloadToFile failed ($url): ${e.message}")
             false
         } finally {
             if (callKey != null && call != null) {
