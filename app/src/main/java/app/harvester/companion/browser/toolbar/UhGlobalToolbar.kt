@@ -574,8 +574,8 @@ fun UhGlobalToolbar(
                 tabUrl = selectedTab?.content?.url,
                 geckoTranslated = selectedTab?.translationsState?.isTranslated == true
             )
-            val isTabTranslateBusy = selectedTab?.translationsState?.isExpectedTranslate == true ||
-                selectedTab?.translationsState?.isExpectedRestore == true
+            val isTabTranslateBusy = selectedTab?.translationsState?.isTranslateProcessing == true ||
+                selectedTab?.translationsState?.isRestoreProcessing == true
             val hasImageOverlays = translateState.imageOverlayCount > 0 &&
                 translateState.imageOverlayTabId == selectedTab?.id
             val statusBarBackingColor = if (readerState.isActive) {

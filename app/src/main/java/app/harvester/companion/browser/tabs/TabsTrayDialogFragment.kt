@@ -31,6 +31,7 @@ import app.harvester.companion.ThemePrefs
 import app.harvester.companion.UHApp
 import app.harvester.companion.UHLog
 import app.harvester.companion.browser.BrowserViewModel
+import app.harvester.companion.privacy.UhShieldEngine
 import app.harvester.companion.settings.appearance.TabSettingsActivity
 import app.harvester.companion.theme.UHTheme
 import kotlinx.coroutines.Dispatchers
@@ -344,7 +345,7 @@ class TabsTrayDialogFragment : DialogFragment() {
                                     .map { it.content.url }
                                     .filter { it.isNotBlank() && it != "about:blank" }
                                     .map {
-                                        app.harvester.companion.privacy.UhShieldEngine.cleanTrackingUrl(
+                                        UhShieldEngine.cleanTrackingUrl(
                                             rawUrl = it,
                                             stripTrackers = true,
                                             deAmp = true,
